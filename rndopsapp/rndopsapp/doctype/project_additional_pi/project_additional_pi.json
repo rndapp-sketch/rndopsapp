@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-07-30 15:32:35.553913",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "pi_name",
+  "pi_email",
+  "pi_designation",
+  "pi_department",
+  "pi_address",
+  "pi_contact"
+ ],
+ "fields": [
+  {
+   "fetch_from": "pi_email.full_name",
+   "fieldname": "pi_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Name of PI",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pi_email",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "E-mail",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "pi_email.designation_name",
+   "fieldname": "pi_designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fieldname": "pi_address",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Full Address with Affiliation",
+   "reqd": 1
+  },
+  {
+   "default": "+91-",
+   "fieldname": "pi_contact",
+   "fieldtype": "Phone",
+   "in_list_view": 1,
+   "label": "Contact Number",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "pi_email.department_name",
+   "fieldname": "pi_department",
+   "fieldtype": "Data",
+   "label": "Department"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-08-07 17:30:19.855771",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Project Additional PI",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
