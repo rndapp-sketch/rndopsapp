@@ -8,7 +8,8 @@
  "engine": "InnoDB",
  "field_order": [
   "dept_id",
-  "dept_name"
+  "dept_name",
+  "dept_head"
  ],
  "fields": [
   {
@@ -24,12 +25,20 @@
    "in_list_view": 1,
    "label": "Department",
    "reqd": 1
+  },
+  {
+   "description": "*The user who is the official Head (HoD/HoC/HoS) of this department/center/school.",
+   "fieldname": "dept_head",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Department Head",
+   "options": "User"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-08-12 14:56:28.383994",
+ "modified": "2025-08-19 17:22:53.307764",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Department_prornd",

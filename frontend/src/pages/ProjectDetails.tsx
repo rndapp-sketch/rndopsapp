@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useImperativeHandle, forwardRef, useRef } from 'react'; // ✨ CHANGED
 import { useFrappeGetDoc, useFrappePostCall, useFrappeGetCall } from 'frappe-react-sdk';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,6 +20,11 @@ interface WorkflowAction {
 interface ActivityStreamProps {
   doctype: string;
   docname: string;
+}
+
+// ✨ NEW: Define the type for the functions we expose via the ref
+interface ActivityStreamHandle {
+  refetch: () => void;
 }
 
 interface ProjectDetailsProps {
@@ -110,7 +115,8 @@ const ActionButtons = ({ actions, onAction, isLoading }: { actions: WorkflowActi
 };
 
 // --- Activity Stream Component ---
-const ActivityStream: React.FC<ActivityStreamProps> = ({ doctype, docname }) => {
+// ✨ CHANGED: Use forwardRef to get a ref from the parent
+const ActivityStream = forwardRef<ActivityStreamHandle, ActivityStreamProps>(({ doctype, docname }, ref) => {
   const [newComment, setNewComment] = useState('');
 
   const { data: activityData, mutate: refetchActivity } = useFrappeGetCall<{ message: ActivityItem[] }>(
@@ -118,6 +124,13 @@ const ActivityStream: React.FC<ActivityStreamProps> = ({ doctype, docname }) => 
     { doctype, docname },
     { enabled: !!docname }
   );
+  
+  // ✨ NEW: Expose the `refetchActivity` function to the parent component
+  useImperativeHandle(ref, () => ({
+    refetch() {
+      refetchActivity();
+    }
+  }));
 
   const { call: addComment, loading: isCommenting } = useFrappePostCall(
     'rndopsapp.rndopsapp.api.add_project_comment'
@@ -132,7 +145,7 @@ const ActivityStream: React.FC<ActivityStreamProps> = ({ doctype, docname }) => 
         content: newComment
       });
       setNewComment('');
-      await refetchActivity();
+      await refetchActivity(); // This still works for new comments
     } catch (err) {
       console.error("Failed to add comment:", err);
       alert("Error: Could not post comment.");
@@ -187,13 +200,20 @@ const ActivityStream: React.FC<ActivityStreamProps> = ({ doctype, docname }) => 
       </CardContent>
     </Card>
   );
-};
+});
+
+// ✨ NEW: Add display name for easier debugging in React DevTools
+ActivityStream.displayName = 'ActivityStream';
+
 
 // --- Main Component ---
 const ProjectDetailsView: React.FC<ProjectDetailsProps> = ({ projectName }) => {
   const { data, error, isLoading, mutate } = useFrappeGetDoc('Project Registration', projectName, {
     cacheTime: 0,
   });
+
+  // ✨ NEW: Create a ref to get access to the ActivityStream's exposed functions
+  const activityStreamRef = useRef<ActivityStreamHandle>(null);
 
   const { data: actionsData } = useFrappeGetCall<{ message: WorkflowAction[] }>(
     'rndopsapp.rndopsapp.api.get_allowed_actions',
@@ -212,7 +232,10 @@ const ProjectDetailsView: React.FC<ProjectDetailsProps> = ({ projectName }) => {
       action: action
     }).then(() => {
       alert(`Project action '${action}' completed successfully!`);
+      // 1. Refetch the main document data (for status update)
       mutate();
+      // ✨ NEW: 2. Trigger a refetch in the child ActivityStream component
+      activityStreamRef.current?.refetch();
     }).catch((err: any) => {
       console.error(`Error during workflow action:`, err);
       alert(`Failed to ${action} the project: ${err.message || 'An unknown error occurred.'}`);
@@ -281,6 +304,7 @@ const ProjectDetailsView: React.FC<ProjectDetailsProps> = ({ projectName }) => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 bg-white rounded-b-xl shadow-lg p-6 sm:p-8">
                 <main className="lg:col-span-2 print-container">
+                    {/* The main content section is unchanged */}
                     <SectionTitle title="Project Overview" />
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8">
                         <FieldDisplay label="Implementation Department" value={data?.implementation_department} />
@@ -339,7 +363,12 @@ const ProjectDetailsView: React.FC<ProjectDetailsProps> = ({ projectName }) => {
                 </main>
 
                 <aside className="lg:col-span-1 no-print">
-                    <ActivityStream doctype="Project Registration" docname={projectName} />
+                    {/* ✨ CHANGED: Pass the ref to the ActivityStream component */}
+                    <ActivityStream 
+                        ref={activityStreamRef}
+                        doctype="Project Registration" 
+                        docname={projectName} 
+                    />
                 </aside>
             </div>
         </div>

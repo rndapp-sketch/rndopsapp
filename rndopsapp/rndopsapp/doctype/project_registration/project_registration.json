@@ -16,6 +16,9 @@
   "pi_employee_id",
   "principal_investigator_name",
   "designation",
+  "applicant_department",
+  "department_head",
+  "head_approver",
   "is_additional_pi_from_iitg",
   "additional_pi_table",
   "has_co_pi",
@@ -596,13 +599,37 @@
    "fieldname": "approver_comments",
    "fieldtype": "Long Text",
    "label": "Approver Comments"
+  },
+  {
+   "fieldname": "applicant_department",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Department of Applicant",
+   "options": "Department_prornd",
+   "read_only": 1
+  },
+  {
+   "description": "*The Head of the effective department (Applicant or Implementation) who will approve this application. This is set automatically.\n",
+   "fieldname": "department_head",
+   "fieldtype": "Link",
+   "label": "Department Head",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Hidden field used by the workflow to dynamically assign the Head approval task.",
+   "fieldname": "head_approver",
+   "fieldtype": "Link",
+   "label": "Head Approver",
+   "options": "User",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-13 22:36:14.583659",
+ "modified": "2025-08-26 14:38:39.035362",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
@@ -668,15 +695,6 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "HoD (Head of Department)",
-   "share": 1
-  },
-  {
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
    "role": "Hos, RnD (Head of Section, RnD)",
    "share": 1
   },
@@ -699,13 +717,17 @@
    "share": 1
   },
   {
+   "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "head_department_center_school",
-   "share": 1
+   "role": "project staff",
+   "share": 1,
+   "submit": 1,
+   "write": 1
   }
  ],
  "row_format": "Dynamic",

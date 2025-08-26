@@ -12,27 +12,12 @@ import {
 } from "@/components/ui/table"
 
 // Mock data based on the user's sketch for pending tasks
-const pendingTasks = [
-  {
-    projectNumber: "PJ-01102023-00014",
-    projectTitle: "Research on Quantum Computing",
-    status: "Under Review",
-    actionDate: "2023-10-01",
-  },
-  {
-    projectNumber: "PJ-01102023-00015",
-    projectTitle: "Advanced Materials Synthesis",
-    status: "Approved",
-    actionDate: "2023-09-15",
-  },
-];
+const pendingTasks: any = [];
 
 // Mock data based on the user's sketch for my projects
 
 // Filtered data for applications under review
-const applicationsUnderReview = pendingTasks.filter(
-  (task) => task.status === "Under Review"
-);
+const applicationsUnderReview: any = [];
 
 /**
  * Home component displays the main dashboard view with pending tasks and user's projects,
@@ -216,7 +201,7 @@ export function Home({ setActiveView, setSelectedProject }: HomeProps) {
                 : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
             }`}
           >
-            My Projects
+            Project Registered
           </button>
           <button
             onClick={() => setActiveTab("underReview")}
