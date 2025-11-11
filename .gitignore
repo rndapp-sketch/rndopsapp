@@ -5,3 +5,24 @@
 tags
 node_modules
 __pycache__
+frontend/
+
+
+# Ignore frontend build and source
+frontend/
+node_modules/
+dist/
+.vite/
+
+# Python cache and build files
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.log
+
+# OS files
+.DS_Store
+.env
+bench.log
+

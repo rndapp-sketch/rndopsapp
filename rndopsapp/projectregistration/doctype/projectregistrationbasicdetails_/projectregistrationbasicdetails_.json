@@ -1,0 +1,278 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-02 00:15:52.185964",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_number",
+  "ref_num",
+  "employee_id",
+  "initiated_employee_id",
+  "name_of_registrant",
+  "project_registered_by",
+  "pi_webmail",
+  "designation",
+  "department_id",
+  "project_type",
+  "project_category",
+  "other_project_category_name",
+  "project_title",
+  "project_objectives",
+  "project_deliverables",
+  "project_executive_summery",
+  "pi_from_iitg",
+  "column_break_zsht",
+  "has_copi",
+  "collaborating_institute",
+  "funding_agency_type",
+  "funding_agency",
+  "project_scheme",
+  "total_budget_amount",
+  "overhead_amount_percentage",
+  "overhead_amount",
+  "budget_with_overhead_amount",
+  "gst",
+  "grand_total",
+  "gstin_number",
+  "space_required",
+  "duration_in_month",
+  "duration_in_days",
+  "project_implementation_location",
+  "clearance_required",
+  "clearance_ethics_committee",
+  "international_travel"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Project Number",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "ref_num",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Reference Number",
+   "reqd": 1
+  },
+  {
+   "fieldname": "employee_id",
+   "fieldtype": "Link",
+   "label": "Employee ID",
+   "options": "loginuser_"
+  },
+  {
+   "fieldname": "initiated_employee_id",
+   "fieldtype": "Link",
+   "label": "Initiated By Employee ID",
+   "options": "loginuser_"
+  },
+  {
+   "fieldname": "name_of_registrant",
+   "fieldtype": "Data",
+   "label": "Registrant Name"
+  },
+  {
+   "fieldname": "project_registered_by",
+   "fieldtype": "Data",
+   "label": "Project Registered By"
+  },
+  {
+   "fieldname": "pi_webmail",
+   "fieldtype": "Data",
+   "label": "PI Webmail",
+   "options": "Email"
+  },
+  {
+   "fieldname": "designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fieldname": "department_id",
+   "fieldtype": "Int",
+   "label": "Department ID"
+  },
+  {
+   "fieldname": "project_type",
+   "fieldtype": "Data",
+   "label": "Project Type"
+  },
+  {
+   "fieldname": "project_category",
+   "fieldtype": "Data",
+   "label": "Project Category"
+  },
+  {
+   "fieldname": "other_project_category_name",
+   "fieldtype": "Data",
+   "label": "Other Project Category"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Text",
+   "label": "Project Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "project_objectives",
+   "fieldtype": "Long Text",
+   "label": "Project Objectives"
+  },
+  {
+   "fieldname": "project_deliverables",
+   "fieldtype": "Long Text",
+   "label": "Project Deliverables"
+  },
+  {
+   "fieldname": "project_executive_summery",
+   "fieldtype": "Long Text",
+   "label": "Executive Summary"
+  },
+  {
+   "default": "0",
+   "fieldname": "pi_from_iitg",
+   "fieldtype": "Check",
+   "label": "PI from IITG"
+  },
+  {
+   "default": "0",
+   "fieldname": "has_copi",
+   "fieldtype": "Check",
+   "label": "Has Co-PI"
+  },
+  {
+   "fieldname": "collaborating_institute",
+   "fieldtype": "Data",
+   "label": "Collaborating Institute"
+  },
+  {
+   "fieldname": "funding_agency_type",
+   "fieldtype": "Data",
+   "label": "Funding Agency Type"
+  },
+  {
+   "fieldname": "funding_agency",
+   "fieldtype": "Link",
+   "label": "Funding Agency",
+   "options": "fundingagency_"
+  },
+  {
+   "fieldname": "project_scheme",
+   "fieldtype": "Data",
+   "label": "Project Scheme"
+  },
+  {
+   "fieldname": "total_budget_amount",
+   "fieldtype": "Float",
+   "label": "Total Budget Amount",
+   "precision": "2"
+  },
+  {
+   "fieldname": "overhead_amount_percentage",
+   "fieldtype": "Float",
+   "label": "Overhead Percentage",
+   "precision": "2"
+  },
+  {
+   "fieldname": "overhead_amount",
+   "fieldtype": "Float",
+   "label": "Overhead Amount",
+   "precision": "2"
+  },
+  {
+   "fieldname": "budget_with_overhead_amount",
+   "fieldtype": "Float",
+   "label": "Budget with Overhead",
+   "precision": "2"
+  },
+  {
+   "fieldname": "gst",
+   "fieldtype": "Float",
+   "label": "GST",
+   "precision": "2"
+  },
+  {
+   "fieldname": "grand_total",
+   "fieldtype": "Float",
+   "label": "Grand Total",
+   "precision": "2"
+  },
+  {
+   "fieldname": "duration_in_month",
+   "fieldtype": "Data",
+   "label": "Duration (Months)"
+  },
+  {
+   "fieldname": "duration_in_days",
+   "fieldtype": "Data",
+   "label": "Duration (Days)"
+  },
+  {
+   "fieldname": "gstin_number",
+   "fieldtype": "Data",
+   "label": "GSTIN Number"
+  },
+  {
+   "default": "0",
+   "fieldname": "international_travel",
+   "fieldtype": "Check",
+   "label": "International Travel Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "space_required",
+   "fieldtype": "Check",
+   "label": "Space Required"
+  },
+  {
+   "fieldname": "project_implementation_location",
+   "fieldtype": "Data",
+   "label": "Implementation Location"
+  },
+  {
+   "fieldname": "clearance_required",
+   "fieldtype": "Data",
+   "label": "Clearance Required"
+  },
+  {
+   "fieldname": "clearance_ethics_committee",
+   "fieldtype": "Data",
+   "label": "Ethics Committee Clearance"
+  },
+  {
+   "fieldname": "column_break_zsht",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-02 17:15:37.348819",
+ "modified_by": "Administrator",
+ "module": "projectRegistration",
+ "name": "projectregistrationbasicdetails_",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

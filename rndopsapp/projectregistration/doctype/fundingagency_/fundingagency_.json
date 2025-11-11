@@ -1,0 +1,182 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:funding_agency_name",
+ "creation": "2025-10-02 00:30:55.971039",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "funding_agency_id",
+  "funding_agency_name",
+  "funding_agency_initials",
+  "funding_agency_contact_no",
+  "funding_agency_email",
+  "funding_agency_website",
+  "origin_of_funding_agency",
+  "column_break_mflq",
+  "funding_agency_type_1",
+  "ministry_funding_agency",
+  "fundingagency_address",
+  "fundingagency_country",
+  "column_break_svxp",
+  "fundingagency_state",
+  "fundingagency_postalcode",
+  "funding_agency_overhead",
+  "funding_agency_bank_acc",
+  "section_break_ccmp",
+  "funding_agency_address",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "funding_agency_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Funding Agency ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "funding_agency_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Funding Agency Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "funding_agency_initials",
+   "fieldtype": "Data",
+   "label": "Initials"
+  },
+  {
+   "fieldname": "funding_agency_contact_no",
+   "fieldtype": "Data",
+   "label": "Contact Number",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "funding_agency_email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "funding_agency_website",
+   "fieldtype": "Data",
+   "label": "Website"
+  },
+  {
+   "fieldname": "funding_agency_overhead",
+   "fieldtype": "Float",
+   "label": "Overhead Percentage %",
+   "precision": "2"
+  },
+  {
+   "fieldname": "funding_agency_address",
+   "fieldtype": "Link",
+   "label": "Address",
+   "options": "addresses_"
+  },
+  {
+   "fieldname": "funding_agency_bank_acc",
+   "fieldtype": "Data",
+   "label": "Bank Account"
+  },
+  {
+   "fieldname": "column_break_mflq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "funding_agency_type_1",
+   "fieldtype": "Select",
+   "label": "Type of Funding Agency",
+   "options": "\nGovernment\nIndustry"
+  },
+  {
+   "depends_on": "eval:doc.funding_agency_type_1 == \"Government\"",
+   "fieldname": "ministry_funding_agency",
+   "fieldtype": "Select",
+   "label": "Ministry",
+   "options": "\nDefence\nEducation\nWater\nHealth"
+  },
+  {
+   "fieldname": "origin_of_funding_agency",
+   "fieldtype": "Select",
+   "label": "Origin of Funding Agency",
+   "options": "\nNational\nInternational"
+  },
+  {
+   "fieldname": "column_break_svxp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_ccmp",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "fundingagency_",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "fundingagency_address",
+   "fieldtype": "Small Text",
+   "label": "Address"
+  },
+  {
+   "depends_on": "eval:doc.fundingagency_country == \"India\"",
+   "fieldname": "fundingagency_country",
+   "fieldtype": "Link",
+   "label": "Country",
+   "options": "Country"
+  },
+  {
+   "fetch_from": "funding_agency_address.state",
+   "fieldname": "fundingagency_state",
+   "fieldtype": "Data",
+   "label": "State",
+   "options": "\nAndhra Pradesh  \nArunachal Pradesh  \nAssam  \nBihar  \nChhattisgarh  \nGoa  \nGujarat  \nHaryana  \nHimachal Pradesh  \nJharkhand  \nKarnataka  \nKerala  \nMadhya Pradesh  \nMaharashtra  \nManipur  \nMeghalaya  \nMizoram  \nNagaland  \nOdisha  \nPunjab  \nRajasthan  \nSikkim  \nTamil Nadu  \nTelangana  \nTripura  \nUttar Pradesh  \nUttarakhand  \nWest Bengal"
+  },
+  {
+   "fetch_from": "funding_agency_address.postal_code",
+   "fieldname": "fundingagency_postalcode",
+   "fieldtype": "Data",
+   "label": "Postal Code"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-16 14:20:59.196658",
+ "modified_by": "Administrator",
+ "module": "projectRegistration",
+ "name": "fundingagency_",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "funding_agency_initials"
+}

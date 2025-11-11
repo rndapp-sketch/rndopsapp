@@ -1,10 +1,8 @@
 {
  "actions": [],
- "allow_import": 1,
  "allow_rename": 1,
  "creation": "2025-07-30 12:29:37.760857",
  "doctype": "DocType",
- "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "dept_id",
@@ -38,7 +36,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-08-19 17:22:53.307764",
+ "modified": "2025-10-17 11:40:39.150109",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Department_prornd",
@@ -53,18 +51,6 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "All_ProRnd_User",
    "share": 1,
    "write": 1
   }

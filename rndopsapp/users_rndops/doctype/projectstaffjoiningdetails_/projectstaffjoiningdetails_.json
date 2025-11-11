@@ -1,0 +1,234 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "employee_id.YYYYMMDD.####",
+ "creation": "2025-10-02 00:02:43.805696",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "ref_num",
+  "employee_id",
+  "designation_id",
+  "project_number",
+  "department_id",
+  "term_completion_date",
+  "applicant_joining_date",
+  "active_status",
+  "apply_status",
+  "apply_date",
+  "verdict_date",
+  "appointment_order_number",
+  "office_order_generated",
+  "applied_basic",
+  "column_break_auks",
+  "increment",
+  "hra",
+  "medical_allowance",
+  "travel_allowance",
+  "medical_deduction",
+  "funding_agency_id",
+  "sent_to_director_time",
+  "director_approval_time",
+  "director_approval_uploaded",
+  "duration_pi_extension_sought",
+  "current_basic",
+  "staff_extension_sought",
+  "pi_increment",
+  "staff_increment",
+  "tentative_joining_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "ref_num",
+   "fieldtype": "Data",
+   "label": "Reference Number",
+   "options": "REF-.YYYYMMDD.-.#####"
+  },
+  {
+   "fieldname": "employee_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee ID",
+   "options": "projectstaffdetails_",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "designation_id",
+   "fieldtype": "Int",
+   "label": "Designation ID"
+  },
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Link",
+   "label": "Project Number",
+   "options": "projectregistrationbasicdetails_",
+   "reqd": 1
+  },
+  {
+   "fieldname": "department_id",
+   "fieldtype": "Int",
+   "label": "Department ID"
+  },
+  {
+   "fieldname": "term_completion_date",
+   "fieldtype": "Date",
+   "label": "Term Completion Date"
+  },
+  {
+   "fieldname": "applicant_joining_date",
+   "fieldtype": "Date",
+   "label": "Applicant Joining Date"
+  },
+  {
+   "default": "1",
+   "fieldname": "active_status",
+   "fieldtype": "Check",
+   "label": "Active Status"
+  },
+  {
+   "fieldname": "apply_status",
+   "fieldtype": "Data",
+   "label": "Application Status"
+  },
+  {
+   "fieldname": "apply_date",
+   "fieldtype": "Date",
+   "label": "Apply Date"
+  },
+  {
+   "fieldname": "verdict_date",
+   "fieldtype": "Data",
+   "label": "Verdict Date"
+  },
+  {
+   "fieldname": "appointment_order_number",
+   "fieldtype": "Data",
+   "label": "Appointment Order Number"
+  },
+  {
+   "default": "0",
+   "fieldname": "office_order_generated",
+   "fieldtype": "Check",
+   "label": "Office Order Generated"
+  },
+  {
+   "fieldname": "applied_basic",
+   "fieldtype": "Float",
+   "label": "Applied Basic"
+  },
+  {
+   "fieldname": "increment",
+   "fieldtype": "Float",
+   "label": "Increment"
+  },
+  {
+   "fieldname": "hra",
+   "fieldtype": "Float",
+   "label": "HRA"
+  },
+  {
+   "default": "0",
+   "fieldname": "medical_allowance",
+   "fieldtype": "Check",
+   "label": "Medical Allowance"
+  },
+  {
+   "default": "0",
+   "fieldname": "travel_allowance",
+   "fieldtype": "Check",
+   "label": "Travel Allowance"
+  },
+  {
+   "default": "0",
+   "fieldname": "medical_deduction",
+   "fieldtype": "Check",
+   "label": "Medical Deduction"
+  },
+  {
+   "fieldname": "funding_agency_id",
+   "fieldtype": "Link",
+   "label": "Funding Agency",
+   "options": "fundingagency_"
+  },
+  {
+   "fieldname": "sent_to_director_time",
+   "fieldtype": "Int",
+   "label": "Sent to Director Time"
+  },
+  {
+   "fieldname": "director_approval_time",
+   "fieldtype": "Date",
+   "label": "Director Approval Time"
+  },
+  {
+   "default": "0",
+   "fieldname": "director_approval_uploaded",
+   "fieldtype": "Check",
+   "label": "Director Approval Uploaded"
+  },
+  {
+   "fieldname": "duration_pi_extension_sought",
+   "fieldtype": "Int",
+   "label": "Duration PI Extension (Months)"
+  },
+  {
+   "fieldname": "current_basic",
+   "fieldtype": "Float",
+   "label": "Current Basic"
+  },
+  {
+   "fieldname": "staff_extension_sought",
+   "fieldtype": "Int",
+   "label": "Staff Extension (Months)"
+  },
+  {
+   "default": "0",
+   "fieldname": "pi_increment",
+   "fieldtype": "Check",
+   "label": "PI Increment"
+  },
+  {
+   "default": "0",
+   "fieldname": "staff_increment",
+   "fieldtype": "Check",
+   "label": "Staff Increment"
+  },
+  {
+   "fieldname": "tentative_joining_date",
+   "fieldtype": "Date",
+   "label": "Tentative Joining Date"
+  },
+  {
+   "fieldname": "column_break_auks",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-10-02 16:13:42.772049",
+ "modified_by": "Administrator",
+ "module": "users_rndops",
+ "name": "projectstaffjoiningdetails_",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
