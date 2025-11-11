@@ -238,6 +238,60 @@ import json
 
 import json
 import frappe
+import requests
+from frappe.utils import flt
+
+API_URL = "http://172.16.135.27:18080/api/sanction-details/addSanctionDetails"
+
+
+def send_sanction_details_to_api(doc):
+	"""
+	Prepare and send Fund Sanction data to the external API endpoint.
+	"""
+
+	try:
+		# --- Build JSON payload ---
+		payload = {
+			"projectNumber": doc.refnum_prj_num,
+			"sanctionLetterNo": doc.sanctioned_letter_no,
+			"sanctionLetterDate": str(doc.sanctioned_letter_date),
+			"totalSanctionAmount": flt(doc.total_sanctioned_amount),
+			"budgetBreakups": [],
+		}
+
+		# --- Prepare budget breakup list ---
+		for row in doc.sanctioned_budget_breakup:
+			total = (
+				flt(row.first_year_budget)
+				+ flt(row.second_year_budget)
+				+ flt(row.third_year_budget)
+				+ flt(row.fourth_year_budget)
+				+ flt(row.fifth_year_budget)
+			)
+
+			payload["budgetBreakups"].append(
+				{
+					"accountHeadId": row.idx,  # or map based on actual account_head_id if available
+					"accountHeadAmount": total,
+				}
+			)
+
+		frappe.logger().info(f"Sending Sanction Details Payload: {payload}")
+
+		# --- Send POST request ---
+		response = requests.post(API_URL, json=payload, timeout=10)
+
+		if response.status_code == 200:
+			frappe.logger().info(f"✅ Sanction details sent successfully: {response.text}")
+		else:
+			frappe.log_error(
+				f"Failed to send sanction details. Status: {response.status_code}, Response: {response.text}",
+				"Send Sanction Details API Error",
+			)
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Send Sanction Details Exception")
+		print(f"❌ Error sending sanction details: {e}")
 
 
 @frappe.whitelist()
@@ -304,7 +358,8 @@ def save_fund_sanction_data(**data):
 		if submit:
 			doc.submit()
 			print("✅ Submitted successfully")
-
+		# # --- ✅ Send data to external API ---
+		send_sanction_details_to_api(doc)
 		frappe.db.commit()
 		return {"status": "success", "docname": doc.name}
 
@@ -312,41 +367,6 @@ def save_fund_sanction_data(**data):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Fund Sanction Save Error")
 		frappe.throw(f"An error occurred while saving the Fund Sanction: {str(e)}")
-
-
-# @frappe.whitelist()
-# def get_sanctions_for_project(project_name):
-# 	"""
-# 	Retrieves all Fund Sanction documents linked to a given project_name.
-
-# 	This function is designed to return the full document structure,
-# 	including child tables like 'sanctioned_budget_breakup' and 'sanction_related_files'.
-# 	"""
-# 	# 1. Validate the input: Ensure a project_name was provided.
-# 	if not project_name:
-# 		# Return an empty list if no project_name is given, to prevent errors.
-# 		return []
-
-# 	# 2. Find the names of all 'Fund Sanction' documents that match the project.
-# 	# The linking field in the 'Fund Sanction' DocType is 'project_proposal'.
-# 	# We use `pluck='name'` for an efficient query that only returns the document IDs.
-# 	sanction_names = frappe.get_all("Fund Sanction", filters={"project_proposal": project_name}, pluck="name")
-
-# 	# 3. If no matching sanctions are found, return an empty list.
-# 	if not sanction_names:
-# 		return []
-
-# 	# 4. Loop through the list of names and get the full document object for each one.
-# 	# `frappe.get_doc` is necessary to load the document with all its child table data.
-# 	sanctions_list = []
-# 	for name in sanction_names:
-# 		doc = frappe.get_doc("Fund Sanction", name)
-# 		# `doc.as_dict()` converts the full document object (including child tables)
-# 		# into a dictionary that can be easily serialized into JSON for the API response.
-# 		sanctions_list.append(doc.as_dict())
-
-# 	# 5. Return the list of full sanction documents.
-# 	return sanctions_list
 
 
 import frappe
@@ -406,67 +426,3 @@ def get_sanctions_for_project(project_name):
 		sanctions_list.append(doc_dict)
 
 	return sanctions_list
-
-
-
-
-
-
-# ----------------------MKY (10-11-2025) Fund Received API----------------------
-# @frappe.whitelist()
-# def get_fund_received_fields(fund_sanction=None):
-#     """
-#     Returns fields for the Fund Received form.
-#     If a fund_sanction docname is provided, it pre-fills key details.
-#     """
-#     fund_received_meta = frappe.get_meta("Fund Received")
-#     fields = [
-#         {"fieldname": f.fieldname, "label": f.label, "fieldtype": f.fieldtype, "options": f.options,
-#          "mandatory": f.reqd, "hidden": f.hidden, "read_only": f.read_only, "description": f.description}
-#         for f in fund_received_meta.get("fields")
-#     ]
-    
-#     prefill_data = {}
-#     link_options = {}
-
-#     # If this form is being created from a specific sanction, pre-fill the data
-#     if fund_sanction:
-#         sanction_doc = frappe.get_doc("Fund Sanction", fund_sanction)
-#         prefill_data = {
-#             'sanction_ref_no': sanction_doc.name,
-#             'prjreg_refnum': sanction_doc.project_proposal,
-#             'prj_type': sanction_doc.project_type_linked,
-#         }
-    
-#     # Populate Link options
-#     link_options["prjreg_refnum"] = frappe.get_all("Project Registration", fields=["name as value", "project_title as label"])
-    
-#     # The 'sanction_ref_no' options should ideally be filtered by the selected project.
-#     # For now, we'll send all, but this can be enhanced with another API call on project change.
-#     link_options["sanction_ref_no"] = frappe.get_all("Fund Sanction", fields=["name as value", "sanctioned_letter_no as label"])
-
-#     return {
-#         "fields": fields,
-#         "prefill_data": prefill_data,
-#         "link_options": link_options,
-#     }
-
-# # You will also need a save method for this Doctype
-# @frappe.whitelist()
-# def save_fund_received(doc_data):
-#     """Saves the Fund Received data from the React form."""
-#     try:
-#         data = json.loads(doc_data)
-        
-#         # You would add logic here to handle file attachments (base64 conversion)
-        
-#         new_doc = frappe.new_doc("Fund Received")
-#         new_doc.update(data)
-#         new_doc.insert(ignore_permissions=True)
-#         frappe.db.commit()
-        
-#         return {"status": "success", "docname": new_doc.name}
-#     except Exception as e:
-#         frappe.log_error(frappe.get_traceback(), "Fund Received Save Error")
-#         raise e
-

@@ -193,6 +193,7 @@ def log_available_workflow_actions(docname):
 		frappe.msgprint("⚠ No available workflow actions from current state.")
 
 
+# /home/prornd/project/frappe_dev/prornd/apps/rndopsapp/rndopsapp/rndopsapp/doctype/project_registration/project_registration.py
 @frappe.whitelist()
 def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 	doc = frappe.get_doc(doctype, docname)
@@ -498,14 +499,18 @@ def save_project_data(doc):
 	Receives a JSON object from the frontend, creates a new Project Registration document,
 	handles child tables, and processes Base64 encoded file attachments.
 	"""
+	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc}")
 	try:
 		# The 'doc' argument from the frontend is a JSON string, so we parse it.
 		# If the frontend sends an object directly, Frappe might auto-parse it.
 		# This handles both cases.
 		if isinstance(doc, str):
 			form_data = json.loads(doc)
+			frappe.logger().warning(f"Jimmy Logging Debug save project data form_data: {form_data}")
+
 		else:
 			form_data = doc
+			frappe.logger().warning(f"Jimmy Logging Debug save project data doca: {form_data}")
 
 		# Get the metadata for the Doctype to validate fields
 		meta = frappe.get_meta("Project Registration")
@@ -667,9 +672,11 @@ def save_project_draft(doc_data):
 	"""
 	Saves or updates a Project Registration document as a draft (docstatus=0).
 	"""
+	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc_data}")
 	try:
 		if isinstance(doc_data, str):
 			data = json.loads(doc_data)
+			frappe.logger().warning(f"Jimmy Logging Debug save project doc_data: {doc_data}")
 		else:
 			data = doc_data or {}
 
@@ -722,11 +729,15 @@ def save_project_draft(doc_data):
 		for table_fieldname in child_tables_map:
 			doc.set(table_fieldname, [])
 			child_rows_data = data.get(table_fieldname)
+
 			if not isinstance(child_rows_data, list):
 				continue
 
 			for row_data in child_rows_data:
 				update_data = row_data.copy() if isinstance(row_data, dict) else {}
+				frappe.logger().warning(
+					f"Jimmy update_data Logging Debug save project doc_data: {update_data}"
+				)
 
 				if table_fieldname == "additional_pi_table" and "pi_contact" in update_data:
 					formatted = _format_phone_number(update_data.get("pi_contact"))
@@ -739,6 +750,19 @@ def save_project_draft(doc_data):
 					update_data["contact_no"] = formatted
 
 				elif table_fieldname == "proposed_budget_breakup":
+					# Map head -> budget_head if needed
+					if "head" in update_data:
+						update_data["account_head"] = update_data.pop("head")
+						# Log the update_data for debugging
+						# Log the update_data as a warning
+					# frappe.logger("budget_update").warning(f"Updated proposed_budget_breakup data: {update_data}")
+
+					# Sanitize budget_head if frontend sends object
+					if isinstance(update_data.get("account_head"), dict):
+						bh = update_data.get("account_head")
+						update_data["account_head"] = bh.get("value") or bh.get("name") or None
+
+					# Handle year budgets
 					years_array = update_data.pop("years", []) or []
 					year_fields = [
 						"first_year_budget",
@@ -750,6 +774,7 @@ def save_project_draft(doc_data):
 					for i, amount in enumerate(years_array):
 						if i < len(year_fields):
 							update_data[year_fields[i]] = flt(amount)
+				# frappe.logger("budget_update").warning(f"Updated proposed_budget_breakup data: {update_data}")
 
 				child = doc.append(table_fieldname, {})
 				child.update(update_data)

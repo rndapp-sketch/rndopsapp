@@ -24,7 +24,7 @@ class FundReceived(Document):
 #          "mandatory": f.reqd, "hidden": f.hidden, "read_only": f.read_only, "description": f.description}
 #         for f in fund_received_meta.get("fields")
 #     ]
-    
+
 #     prefill_data = {}
 #     link_options = {}
 
@@ -36,10 +36,10 @@ class FundReceived(Document):
 #             'prjreg_refnum': sanction_doc.project_proposal,
 #             'prj_type': sanction_doc.project_type_linked,
 #         }
-    
+
 #     # Populate Link options
 #     link_options["prjreg_refnum"] = frappe.get_all("Project Registration", fields=["name as value", "project_title as label"])
-    
+
 #     # The 'sanction_ref_no' options should ideally be filtered by the selected project.
 #     # For now, we'll send all, but this can be enhanced with another API call on project change.
 #     link_options["sanction_ref_no"] = frappe.get_all("Fund Sanction", fields=["name as value", "sanctioned_letter_no as label"])
@@ -50,71 +50,159 @@ class FundReceived(Document):
 #         "link_options": link_options,
 #     }
 
-@frappe.whitelist()
-def get_fund_received_fields(fund_sanction=None):
-    """
-    Returns fields for the Fund Received form.
-    If a fund_sanction docname is provided, it pre-fills key details.
-    """
-    fund_received_meta = frappe.get_meta("Fund Received")
-    
-    # --- THIS IS THE CRUCIAL PART ---
-    # This loop iterates through ALL fields in your "Fund Received" Doctype
-    # and adds them to the list that will be sent to the frontend.
-    # It does not filter any out, ensuring all are available.
-    fields = [
-        {
-            "fieldname": f.fieldname, 
-            "label": f.label, 
-            "fieldtype": f.fieldtype, 
-            "options": f.options,
-            "mandatory": f.reqd, 
-            "hidden": f.hidden, 
-            "read_only": f.read_only, 
-            "description": f.description
-        }
-        for f in fund_received_meta.get("fields")
-    ]
-    # --- END CRUCIAL PART ---
-    
-    prefill_data = {}
-    link_options = {}
 
-    # If this form is being created from a specific sanction, pre-fill the data
-    if fund_sanction:
-        sanction_doc = frappe.get_doc("Fund Sanction", fund_sanction)
-        prefill_data = {
-            'sanction_ref_no': sanction_doc.name,
-            'prjreg_refnum': sanction_doc.project_proposal,
-            'prj_type': sanction_doc.project_type_linked,
-        }
-    
-    # Populate Link options for dropdowns
-    link_options["prjreg_refnum"] = frappe.get_all("Project Registration", fields=["name as value", "project_title as label"])
-    link_options["sanction_ref_no"] = frappe.get_all("Fund Sanction", fields=["name as value", "sanctioned_letter_no as label"])
-    link_options["amended_from"] = frappe.get_all("Fund Received", fields=["name as value"])
+# @frappe.whitelist()
+# def get_fund_received_fields(fund_sanction=None):
+# 	"""
+# 	Returns fields for the Fund Received form.
+# 	If a fund_sanction docname is provided, it pre-fills key details.
+# 	"""
+# 	fund_received_meta = frappe.get_meta("Fund Received")
 
-    return {
-        "fields": fields,
-        "prefill_data": prefill_data,
-        "link_options": link_options,
-    }
+# 	# --- THIS IS THE CRUCIAL PART ---
+# 	# This loop iterates through ALL fields in your "Fund Received" Doctype
+# 	# and adds them to the list that will be sent to the frontend.
+# 	# It does not filter any out, ensuring all are available.
+# 	fields = [
+# 		{
+# 			"fieldname": f.fieldname,
+# 			"label": f.label,
+# 			"fieldtype": f.fieldtype,
+# 			"options": f.options,
+# 			"mandatory": f.reqd,
+# 			"hidden": f.hidden,
+# 			"read_only": f.read_only,
+# 			"description": f.description,
+# 		}
+# 		for f in fund_received_meta.get("fields")
+# 	]
+# 	# --- END CRUCIAL PART ---
+
+# 	prefill_data = {}
+# 	link_options = {}
+
+# 	# If this form is being created from a specific sanction, pre-fill the data
+# 	if fund_sanction:
+# 		sanction_doc = frappe.get_doc("Fund Sanction", fund_sanction)
+# 		prefill_data = {
+# 			"sanction_ref_no": sanction_doc.name,
+# 			"prjreg_refnum": sanction_doc.project_proposal,
+# 			"prj_type": sanction_doc.project_type_linked,
+# 		}
+
+# 	# Populate Link options for dropdowns
+# 	link_options["prjreg_refnum"] = frappe.get_all(
+# 		"Project Registration", fields=["name as value", "project_title as label"]
+# 	)
+# 	link_options["sanction_ref_no"] = frappe.get_all(
+# 		"Fund Sanction", fields=["name as value", "sanctioned_letter_no as label"]
+# 	)
+# 	link_options["amended_from"] = frappe.get_all("Fund Received", fields=["name as value"])
+
+# 	return {
+# 		"fields": fields,
+# 		"prefill_data": prefill_data,
+# 		"link_options": link_options,
+# 	}
+
 
 # You will also need a save method for this Doctype
 @frappe.whitelist()
 def save_fund_received(doc_data):
-    """Saves the Fund Received data from the React form."""
-    try:
-        data = json.loads(doc_data)
-        
-        # You would add logic here to handle file attachments (base64 conversion)
-        
-        new_doc = frappe.new_doc("Fund Received")
-        new_doc.update(data)
-        new_doc.insert(ignore_permissions=True)
-        frappe.db.commit()
-        
-        return {"status": "success", "docname": new_doc.name}
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Fund Received Save Error")
-        raise e
+	"""Saves the Fund Received data from the React form."""
+	try:
+		data = json.loads(doc_data)
+
+		# You would add logic here to handle file attachments (base64 conversion)
+
+		new_doc = frappe.new_doc("Fund Received")
+		new_doc.update(data)
+		new_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		return {"status": "success", "docname": new_doc.name}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Fund Received Save Error")
+		raise e
+
+
+import frappe
+
+
+# jimmy added
+@frappe.whitelist()
+def get_fund_received_fields(doc_name=None):
+	"""
+	API to return Fund Received field metadata and prefill data
+	based on a Project Registration ref number (doc_name).
+	"""
+	fund_received_meta = frappe.get_meta("Fund Received")
+
+	fields = [
+		{
+			"fieldname": f.fieldname,
+			"label": f.label,
+			"fieldtype": f.fieldtype,
+			"options": f.options,
+			"mandatory": f.reqd,
+			"hidden": f.hidden,
+			"read_only": f.read_only,
+			"description": f.description,
+		}
+		for f in fund_received_meta.get("fields")
+	]
+
+	prefill_data = {}
+	link_options = {}
+	related_project_data = {}
+
+	if not doc_name:
+		frappe.throw("Project ref number (doc_name) is required.")
+
+	# Clean input
+	doc_name = str(doc_name).strip('"').strip("'")
+
+	# Fetch Project Registration
+	project_doc = frappe.db.get_value(
+		"Project Registration", doc_name, ["name", "project_title", "project_type"], as_dict=True
+	)
+
+	if not project_doc:
+		frappe.throw(f"Project Registration '{doc_name}' not found.")
+
+	related_project_data = project_doc
+	prefill_data["prjreg_refnum"] = project_doc.name
+
+	# Fetch Fund Sanction linked to this project
+	sanctions = frappe.get_all(
+		"Fund Sanction",
+		filters={"refnum_prj_num": project_doc.name},
+		fields=["name as value", "sanctioned_letter_no as label", "project_proposal", "refnum_prj_num"],
+	)
+
+	# Only prefill if Fund Sanction ref matches project
+	if sanctions:
+		# If there’s exactly one sanction, prefill related fields
+		if len(sanctions) == 1:
+			sanction_doc = frappe.get_doc("Fund Sanction", sanctions[0]["value"])
+			prefill_data.update(
+				{
+					"sanction_ref_no": sanction_doc.name,
+					"project_proposal": sanction_doc.project_proposal,
+					# Add more fields from sanction if needed
+					# "sanctioned_amount": sanction_doc.sanctioned_amount,
+					# "sanction_date": sanction_doc.sanction_date
+				}
+			)
+
+	# Link options for dropdowns
+	link_options["prjreg_refnum"] = [{"value": project_doc.name, "label": project_doc.project_title}]
+	link_options["sanction_ref_no"] = sanctions
+	link_options["amended_from"] = frappe.get_all("Fund Received", fields=["name as value"])
+
+	return {
+		"fields": fields,
+		"prefill_data": prefill_data,
+		"link_options": link_options,
+		"related_project_data": related_project_data,
+	}

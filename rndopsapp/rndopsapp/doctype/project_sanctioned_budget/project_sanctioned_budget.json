@@ -19,9 +19,8 @@
  "fields": [
   {
    "fieldname": "account_head",
-   "fieldtype": "Link",
-   "label": "Account Head",
-   "options": "Budget Head"
+   "fieldtype": "Data",
+   "label": "Account Head"
   },
   {
    "fieldname": "budget_breakup_details_section",
@@ -79,7 +78,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-10 14:02:52.601880",
+ "modified": "2025-11-11 15:31:52.762565",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Sanctioned Budget",
