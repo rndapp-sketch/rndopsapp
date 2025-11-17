@@ -240,7 +240,7 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 	if next_state and doc.docstatus != 2:
 		doc.workflow_state = next_state
 		doc.save(ignore_permissions=True)
-
+	
 	frappe.msgprint(f"Workflow updated for: {docname}")
 	return doc.workflow_state
 

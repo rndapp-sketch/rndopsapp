@@ -12,121 +12,174 @@ class FundReceived(Document):
 	pass
 
 
+
 # @frappe.whitelist()
-# def get_fund_received_fields(fund_sanction=None):
-#     """
-#     Returns fields for the Fund Received form.
-#     If a fund_sanction docname is provided, it pre-fills key details.
-#     """
-#     fund_received_meta = frappe.get_meta("Fund Received")
-#     fields = [
-#         {"fieldname": f.fieldname, "label": f.label, "fieldtype": f.fieldtype, "options": f.options,
-#          "mandatory": f.reqd, "hidden": f.hidden, "read_only": f.read_only, "description": f.description}
-#         for f in fund_received_meta.get("fields")
-#     ]
-
-#     prefill_data = {}
-#     link_options = {}
-
-#     # If this form is being created from a specific sanction, pre-fill the data
-#     if fund_sanction:
-#         sanction_doc = frappe.get_doc("Fund Sanction", fund_sanction)
-#         prefill_data = {
-#             'sanction_ref_no': sanction_doc.name,
-#             'prjreg_refnum': sanction_doc.project_proposal,
-#             'prj_type': sanction_doc.project_type_linked,
+# def save_fund_received(doc_data):
+#     """Saves the Fund Received data from the React form."""
+#     try:
+#         data = json.loads(doc_data)
+#         print("Received data for Fund Received:", data)  # Debug log
+        
+#         # Create new Fund Received document
+#         new_doc = frappe.new_doc("Fund Received")
+        
+#         # Map the form data to doctype fields
+#         field_mapping = {
+#             'prjreg_title': 'prjreg_title',
+#             'sanction_ref_no': 'sanction_ref_no', 
+#             'prj_type': 'prj_type',
+#             'fund_received_amt': 'fund_received_amt',
+#             'bank_account': 'bank_account',
+#             'gst_invoice_issued': 'gst_invoice_issued',
+#             'invoice_no': 'invoice_no'
 #         }
+        
+#         # Update document with mapped data
+#         for form_field, doctype_field in field_mapping.items():
+#             if form_field in data and data[form_field] not in [None, ""]:
+#                 new_doc.set(doctype_field, data[form_field])
+        
+#         # Handle child tables - FILTER OUT EMPTY ROWS
+#         if 'fund_transactions' in data:
+#             for transaction in data['fund_transactions']:
+#                 # Only add rows that have at least transaction_number OR amount > 0
+#                 if (transaction.get('transaction_number') not in [None, ""] or 
+#                     transaction.get('amount', 0) > 0):
+#                     new_doc.append('fund_transactions', {
+#                         'transaction_number': transaction.get('transaction_number') or "",
+#                         'transaction_date': transaction.get('transaction_date'),
+#                         'amount': transaction.get('amount', 0)
+#                     })
+        
+#         if 'received_amt_breakup' in data:
+#             for breakup in data['received_amt_breakup']:
+#                 # Only add rows that have at least account_head OR amount_received > 0
+#                 if (breakup.get('account_head') not in [None, ""] or 
+#                     breakup.get('amount_received', 0) > 0):
+#                     new_doc.append('received_amt_breakup', {
+#                         'account_head': breakup.get('account_head') or "",
+#                         'amount_received': breakup.get('amount_received', 0),
+#                         'budget_year': breakup.get('budget_year', 1),
+#                         'remarks': breakup.get('remarks') or ""
+#                     })
+        
+#         # Save the document
+#         new_doc.insert(ignore_permissions=True)
+#         frappe.db.commit()
 
-#     # Populate Link options
-#     link_options["prjreg_refnum"] = frappe.get_all("Project Registration", fields=["name as value", "project_title as label"])
-
-#     # The 'sanction_ref_no' options should ideally be filtered by the selected project.
-#     # For now, we'll send all, but this can be enhanced with another API call on project change.
-#     link_options["sanction_ref_no"] = frappe.get_all("Fund Sanction", fields=["name as value", "sanctioned_letter_no as label"])
-
-#     return {
-#         "fields": fields,
-#         "prefill_data": prefill_data,
-#         "link_options": link_options,
-#     }
-
-
-# @frappe.whitelist()
-# def get_fund_received_fields(fund_sanction=None):
-# 	"""
-# 	Returns fields for the Fund Received form.
-# 	If a fund_sanction docname is provided, it pre-fills key details.
-# 	"""
-# 	fund_received_meta = frappe.get_meta("Fund Received")
-
-# 	# --- THIS IS THE CRUCIAL PART ---
-# 	# This loop iterates through ALL fields in your "Fund Received" Doctype
-# 	# and adds them to the list that will be sent to the frontend.
-# 	# It does not filter any out, ensuring all are available.
-# 	fields = [
-# 		{
-# 			"fieldname": f.fieldname,
-# 			"label": f.label,
-# 			"fieldtype": f.fieldtype,
-# 			"options": f.options,
-# 			"mandatory": f.reqd,
-# 			"hidden": f.hidden,
-# 			"read_only": f.read_only,
-# 			"description": f.description,
-# 		}
-# 		for f in fund_received_meta.get("fields")
-# 	]
-# 	# --- END CRUCIAL PART ---
-
-# 	prefill_data = {}
-# 	link_options = {}
-
-# 	# If this form is being created from a specific sanction, pre-fill the data
-# 	if fund_sanction:
-# 		sanction_doc = frappe.get_doc("Fund Sanction", fund_sanction)
-# 		prefill_data = {
-# 			"sanction_ref_no": sanction_doc.name,
-# 			"prjreg_refnum": sanction_doc.project_proposal,
-# 			"prj_type": sanction_doc.project_type_linked,
-# 		}
-
-# 	# Populate Link options for dropdowns
-# 	link_options["prjreg_refnum"] = frappe.get_all(
-# 		"Project Registration", fields=["name as value", "project_title as label"]
-# 	)
-# 	link_options["sanction_ref_no"] = frappe.get_all(
-# 		"Fund Sanction", fields=["name as value", "sanctioned_letter_no as label"]
-# 	)
-# 	link_options["amended_from"] = frappe.get_all("Fund Received", fields=["name as value"])
-
-# 	return {
-# 		"fields": fields,
-# 		"prefill_data": prefill_data,
-# 		"link_options": link_options,
-# 	}
+#         print(f"Successfully created Fund Received: {new_doc.name}")  # Debug log
+#         return {"status": "success", "docname": new_doc.name}
+        
+#     except Exception as e:
+#         frappe.log_error(frappe.get_traceback(), "Fund Received Save Error")
+#         frappe.db.rollback()
+#         frappe.throw(f"Failed to save Fund Received: {str(e)}")
+# # import frappe
 
 
-# You will also need a save method for this Doctype
 @frappe.whitelist()
 def save_fund_received(doc_data):
-	"""Saves the Fund Received data from the React form."""
-	try:
-		data = json.loads(doc_data)
+    """Saves the Fund Received data from the React form."""
+    try:
+        data = json.loads(doc_data)
+        print("Received data for Fund Received:", data)  # Debug log
+        
+        # Create new Fund Received document
+        new_doc = frappe.new_doc("Fund Received")
+        
+        # Map the form data to doctype fields
+        field_mapping = {
+            'prjreg_title': 'prjreg_title',
+            'sanction_ref_no': 'sanction_ref_no', 
+            'prj_type': 'prj_type',
+            'fund_received_amt': 'fund_received_amt',
+            'bank_account': 'bank_account',
+            'gst_invoice_issued': 'gst_invoice_issued',
+            'invoice_no': 'invoice_no'
+        }
+        
+        # Update document with mapped data
+        for form_field, doctype_field in field_mapping.items():
+            if form_field in data and data[form_field] not in [None, ""]:
+                new_doc.set(doctype_field, data[form_field])
+        
+        # Handle child tables - FILTER OUT EMPTY ROWS
+        if 'fund_transactions' in data:
+            for transaction in data['fund_transactions']:
+                # Only add rows that have at least transaction_number OR amount > 0
+                if (transaction.get('transaction_number') not in [None, ""] or 
+                    transaction.get('amount', 0) > 0):
+                    
+                    # Handle file attachment if present
+                    attachment_data = {}
+                    if transaction.get('file_data') and transaction.get('file_name'):
+                        # Save the file and get the file URL
+                        file_doc = save_file(
+                            fname=transaction.get('file_name'),
+                            content=transaction.get('file_data'),
+                            dt="Fund Received",
+                            dn=new_doc.name,
+                            folder="Home/Attachments"
+                        )
+                        if file_doc:
+                            attachment_data['attachment'] = file_doc.file_url
+                    
+                    new_doc.append('fund_transactions', {
+                        'transaction_number': transaction.get('transaction_number') or "",
+                        'transaction_date': transaction.get('transaction_date'),
+                        'amount': transaction.get('amount', 0),
+                        **attachment_data
+                    })
+        
+        if 'received_amt_breakup' in data:
+            for breakup in data['received_amt_breakup']:
+                # Only add rows that have at least account_head OR amount_received > 0
+                if (breakup.get('account_head') not in [None, ""] or 
+                    breakup.get('amount_received', 0) > 0):
+                    new_doc.append('received_amt_breakup', {
+                        'account_head': breakup.get('account_head') or "",
+                        'amount_received': breakup.get('amount_received', 0),
+                        'budget_year': breakup.get('budget_year', 1),
+                        'remarks': breakup.get('remarks') or ""
+                    })
+        
+        # Save the document
+        new_doc.insert(ignore_permissions=True)
+        frappe.db.commit()
 
-		# You would add logic here to handle file attachments (base64 conversion)
+        print(f"Successfully created Fund Received: {new_doc.name}")  # Debug log
+        return {"status": "success", "docname": new_doc.name}
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Fund Received Save Error")
+        frappe.db.rollback()
+        frappe.throw(f"Failed to save Fund Received: {str(e)}")
 
-		new_doc = frappe.new_doc("Fund Received")
-		new_doc.update(data)
-		new_doc.insert(ignore_permissions=True)
-		frappe.db.commit()
+def save_file(fname, content, dt, dn, folder=None):
+    """Save base64 file content as a File document"""
+    try:
+        import base64
+        from frappe.utils.file_manager import save_file
+        
+        # Decode base64 content
+        file_content = base64.b64decode(content)
+        
+        # Save the file
+        file_doc = save_file(
+            fname=fname,
+            content=file_content,
+            dt=dt,
+            dn=dn,
+            folder=folder,
+            is_private=0
+        )
+        
+        return file_doc
+    except Exception as e:
+        print(f"Error saving file {fname}: {str(e)}")
+        return None
 
-		return {"status": "success", "docname": new_doc.name}
-	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), "Fund Received Save Error")
-		raise e
 
-
-import frappe
 
 
 # jimmy added
@@ -206,3 +259,4 @@ def get_fund_received_fields(doc_name=None):
 		"link_options": link_options,
 		"related_project_data": related_project_data,
 	}
+

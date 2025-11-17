@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:REC{DDMMYY}-{prjreg_refnum}",
+ "autoname": "format:REC_{DD}{MM}{YY}{###}-{prjreg_refnum}",
  "creation": "2025-11-07 16:10:11.007781",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -108,7 +108,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-11 12:56:36.571589",
+ "modified": "2025-11-17 17:39:16.772512",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Received",

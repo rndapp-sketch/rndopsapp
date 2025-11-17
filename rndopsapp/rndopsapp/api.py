@@ -1307,31 +1307,5 @@ def get_fund_received_fields(fund_sanction):
 	return {"fields": fields, "prefill_data": prefill_data, "link_options": link_options}
 # ----------------------------------------
 
-# You will also need save methods for both doctypes, similar to previous examples.
 
-# Your save_fund_sanction_data needs to handle JSON strings for tables
-
-
-# @frappe.whitelist()
-# def save_fund_sanction_data(doc_data):
-# 	"""Saves the fund sanction data from the React form."""
-# 	try:
-# 		data = json.loads(doc_data)
-# 		print("sanction manish:", data)
-
-# 		# If 'name' is present, it's an update; otherwise, it's a new doc.
-# 		if data.get("name"):
-# 			doc = frappe.get_doc("Fund Sanction", data.get("name"))
-# 			doc.update(data)
-# 		else:
-# 			doc = frappe.new_doc("Fund Sanction")
-# 			doc.update(data)
-
-# 		doc.save(ignore_permissions=True)
-# 		frappe.db.commit()
-
-# 		return {"status": "success", "docname": doc.name}
-# 	except Exception as e:
-# 		frappe.log_error(frappe.get_traceback(), "Fund Sanction Save Error")
-# 		raise e
 
