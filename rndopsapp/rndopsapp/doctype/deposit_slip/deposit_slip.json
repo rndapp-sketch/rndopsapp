@@ -1,34 +1,37 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:",
- "creation": "2025-11-09 11:22:48.932174",
+ "creation": "2025-11-27 10:16:24.496763",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "budget_head",
-  "id"
+  "section_break_skcd",
+  "amended_from"
  ],
  "fields": [
   {
-   "fieldname": "budget_head",
-   "fieldtype": "Data",
-   "label": "Budget Head"
+   "fieldname": "section_break_skcd",
+   "fieldtype": "Section Break"
   },
   {
-   "fieldname": "id",
-   "fieldtype": "Int",
-   "label": "id"
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Deposit slip",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
+ "is_submittable": 1,
  "links": [],
- "modified": "2025-11-24 15:56:05.444891",
+ "modified": "2025-11-27 10:16:24.496763",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
- "name": "Budget Head",
- "naming_rule": "Expression",
+ "name": "Deposit slip",
  "owner": "Administrator",
  "permissions": [
   {
@@ -40,15 +43,13 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "select": 1,
    "share": 1,
+   "submit": 1,
    "write": 1
   }
  ],
  "row_format": "Dynamic",
- "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
- "title_field": "budget_head"
+ "states": []
 }

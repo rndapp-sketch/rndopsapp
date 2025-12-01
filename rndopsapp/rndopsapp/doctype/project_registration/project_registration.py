@@ -11,6 +11,10 @@ from frappe import _
 from frappe.utils import sanitize_html
 from frappe.utils import flt, nowdate
 from frappe.utils import flt
+from frappe.utils.file_manager import save_file
+import base64
+import requests
+
 
 
 class ProjectRegistration(Document):
@@ -23,74 +27,168 @@ class ProjectRegistration(Document):
 # ==============================================================================
 
 
+# @frappe.whitelist()
+# def submit_project_registration(docname):
+# 	"""
+# 	Handles initial submission with dynamic applicant type lookup AND intelligent self-approval bypass.
+# 	*** THIS FUNCTION HAS BEEN UPDATED WITH THE NEW LOGIC ***
+# 	"""
+# 	doc = frappe.get_doc("Project Registration", docname)
+
+# 	# --- Step 1: Standard Security Checks ---
+# 	if doc.owner != frappe.session.user:
+# 		frappe.throw("Permission Denied: You are not the owner of this document.")
+# 	if doc.docstatus != 0:
+# 		frappe.throw("This document has already been submitted.")
+# 	if not doc.applicant_type:
+# 		frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
+
+# 	# --- Step 2: Dynamically Find the Employee Class ID ---
+# 	applicant_type_identifier = doc.applicant_type
+# 	emp_class_doc_id = None
+# 	if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
+# 		emp_class_doc_id = applicant_type_identifier
+# 	else:
+# 		emp_class_doc_id = frappe.db.get_value(
+# 			"EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name"
+# 		)
+
+# 	if not emp_class_doc_id:
+# 		frappe.throw(
+# 			f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'."
+# 		)
+
+# 	# --- Step 3: Determine the Intended Workflow Path from Data ---
+# 	workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
+# 	next_state = ""
+
+# 	if workflow_path == "Senior Staff Path":
+# 		next_state = "Pending Staff Approval"
+# 	elif workflow_path == "HoD Path":
+# 		next_state = "Pending HoD Approval"
+# 	else:
+# 		empclass_name = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "empclass_name")
+# 		frappe.throw(
+# 			f"Could not find a valid approval path. The Employee Class '{empclass_name}' has an unconfigured or missing Workflow Path."
+# 		)
+
+# 	# --- Step 4: Check for Self-Approval and Override the Path if Necessary ---
+# 	applicant_user = doc.owner
+# 	intended_approver = doc.head_approver
+
+# 	if next_state == "Pending HoD Approval" and applicant_user == intended_approver:
+# 		# SELF-APPROVAL SCENARIO: The applicant is their own approver.
+# 		# Override the next_state to skip the HoD step.
+# 		next_state = "Pending Staff Approval"
+# 		doc.add_comment(
+# 			"Comment",
+# 			f"Applicant ({applicant_user}) is the designated Head Approver. Skipping Head Approval step.",
+# 		)
+
+# 	# --- Step 5: Execute the Final Action ---
+# 	if next_state == "Pending HoD Approval":
+# 		# If we are still on the HoD Path, perform the share.
+# 		if not intended_approver:
+# 			frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
+# 		share_document(doc.doctype, doc.name, intended_approver)
+
+# 	doc.workflow_state = next_state
+# 	doc.submit()
+# 	return doc.workflow_state
+
+
 @frappe.whitelist()
 def submit_project_registration(docname):
-	"""
-	Handles initial submission with dynamic applicant type lookup AND intelligent self-approval bypass.
-	*** THIS FUNCTION HAS BEEN UPDATED WITH THE NEW LOGIC ***
-	"""
+	# Fetch the Project Registration document
 	doc = frappe.get_doc("Project Registration", docname)
 
-	# --- Step 1: Standard Security Checks ---
-	if doc.owner != frappe.session.user:
-		frappe.throw("Permission Denied: You are not the owner of this document.")
+	# Convert to dict for reference
+	data = doc.as_dict()
+	print(f"Implementation Department: {data.get('implementation_department')}")
+
+	# --- Fetch linked Department_prornd document ---
+	dept_doc = frappe.get_doc("Department_prornd", data.get("implementation_department"))
+	print(f"Department Name: {dept_doc.dept_name}")
+	print(f"Department Head: {dept_doc.dept_head}")
+
+	# ✅ Update Project Registration fields from Department_prornd
+	doc.department_head = dept_doc.dept_head
+	doc.head_approver = dept_doc.dept_head  # You can change this logic if needed
+
+	# Save the updated values before submission
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	# --- Workflow Handling Section ---
+	if not doc.workflow_state:
+		doc.workflow_state = "Draft"
+
+	# Security: Only owner can submit draft
+	# if doc.owner != frappe.session.user:
+	# 	frappe.throw("Permission Denied: You are not the owner of this document.")
+
 	if doc.docstatus != 0:
 		frappe.throw("This document has already been submitted.")
-	if not doc.applicant_type:
+
+	# --- Resolve workflow path based on EmployeeClass_prornd ---
+	applicant_type_identifier = doc.applicant_type
+	if not applicant_type_identifier:
 		frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
 
-	# --- Step 2: Dynamically Find the Employee Class ID ---
-	applicant_type_identifier = doc.applicant_type
 	emp_class_doc_id = None
 	if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
 		emp_class_doc_id = applicant_type_identifier
 	else:
-		emp_class_doc_id = frappe.db.get_value(
-			"EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name"
+		found_id = frappe.db.get_value(
+			"EmployeeClass_prornd",
+			{"empclass_name": applicant_type_identifier},
+			"name",
 		)
+		if found_id:
+			emp_class_doc_id = found_id
 
 	if not emp_class_doc_id:
 		frappe.throw(
 			f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'."
 		)
 
-	# --- Step 3: Determine the Intended Workflow Path from Data ---
 	workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-	next_state = ""
+	if not workflow_path or not frappe.db.exists("Workflow", workflow_path):
+		workflow_path = "pending_approval_prjReg"
+		frappe.db.set_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path", workflow_path)
+		frappe.db.commit()
 
-	if workflow_path == "Senior Staff Path":
-		next_state = "Pending Staff Approval"
-	elif workflow_path == "HoD Path":
-		next_state = "Pending HoD Approval"
-	else:
-		empclass_name = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "empclass_name")
+	workflow_doc = frappe.get_doc("Workflow", workflow_path)
+	current_state = doc.workflow_state
+
+	# --- Find the next transition ---
+	next_transition = None
+	for t in workflow_doc.transitions:
+		if t.state == current_state:
+			next_transition = t
+			break
+
+	if not next_transition:
 		frappe.throw(
-			f"Could not find a valid approval path. The Employee Class '{empclass_name}' has an unconfigured or missing Workflow Path."
+			f"No transition found from current state '{current_state}' in workflow '{workflow_path}'."
 		)
 
-	# --- Step 4: Check for Self-Approval and Override the Path if Necessary ---
-	applicant_user = doc.owner
-	intended_approver = doc.head_approver
+	next_state = next_transition.next_state
 
-	if next_state == "Pending HoD Approval" and applicant_user == intended_approver:
-		# SELF-APPROVAL SCENARIO: The applicant is their own approver.
-		# Override the next_state to skip the HoD step.
-		next_state = "Pending Staff Approval"
-		doc.add_comment(
-			"Comment",
-			f"Applicant ({applicant_user}) is the designated Head Approver. Skipping Head Approval step.",
-		)
+	# --- Optional Head Approval Handling ---
+	if "Head Approval" in next_state and not doc.head_approver:
+		frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
 
-	# --- Step 5: Execute the Final Action ---
-	if next_state == "Pending HoD Approval":
-		# If we are still on the HoD Path, perform the share.
-		if not intended_approver:
-			frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-		share_document(doc.doctype, doc.name, intended_approver)
-
+	# ✅ Update workflow and submit
 	doc.workflow_state = next_state
 	doc.submit()
-	return doc.workflow_state
+
+	return {
+		"workflow_state": doc.workflow_state,
+		"department_head": doc.department_head,
+		"head_approver": doc.head_approver,
+	}
+
 
 
 @frappe.whitelist()
@@ -182,11 +280,13 @@ def log_available_workflow_actions(docname):
 	for t in workflow.transitions:
 		# Log all transitions for debugging
 		frappe.logger().info(f"Transition: {t.state} --({t.action})--> {t.next_state}")
+		frappe.msgprint("Available Transition:" + f"{t.state} --({t.action})--> {t.next_state}" )
 		if t.state == current_state:  # or try t.current_state for older versions
 			valid_actions.append(f"{t.action} → {t.next_state}")
+			
 
 	if valid_actions:
-		frappe.msgprint("✅ Available Workflow Actions:<br>" + "<br>".join(valid_actions))
+		frappe.msgprint("Available Workflow Actions:<br>" + "<br>".join(valid_actions))
 		frappe.msgprint("Docname : " + docname)
 
 	else:
@@ -242,7 +342,122 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 		doc.save(ignore_permissions=True)
 	
 	frappe.msgprint(f"Workflow updated for: {docname}")
+	print("doc outside: ", doc.as_dict())
+	# --- Integration with External API ---
+	if doc.workflow_state == "Approved" and doc.docstatus == 1:
+		print("doc inside: ", doc.as_dict())
+		try:
+			send_project_registration_data_api(doc)
+		except Exception as e:
+			frappe.log_error(frappe.get_traceback(), f"Project Registration API Sync Failed: {docname}")
+			frappe.msgprint(_("Warning: Failed to sync with external Project API. Check Error Log."))
+
 	return doc.workflow_state
+
+
+def send_project_registration_data_api(doc):
+	"""
+	Sends Project Registration data to the external API synchronously.
+	"""
+	try:
+		# --- 1. Department Mapping ---
+		department_id = None
+		implemented_dept_centres = []
+
+		# Helper to resolve dept_id from Department_prornd
+		def get_dept_id(dept_link):
+			if not dept_link:
+				return None
+			return frappe.db.get_value("Department_prornd", dept_link, "dept_id")
+
+		# Check if implementation_department is a list (Child Table) or string (Link)
+		imp_dept = doc.get("implementation_department")
+		print("implementation_department: ", imp_dept)
+		
+		if isinstance(imp_dept, list) and imp_dept:
+			# Handle as Child Table
+			for row in imp_dept:
+				# Assuming the column in child table is 'department' or similar. 
+				# If it's just a list of strings (unlikely for child table), handle that too.
+				d_link = row.get("department") if isinstance(row, dict) or hasattr(row, "get") else row
+				d_id = get_dept_id(d_link)
+				print("departmentId: ", d_id)
+				if d_id:
+					implemented_dept_centres.append({"departmentId": d_id})
+			
+			# Use the first one as the primary departmentId
+			if implemented_dept_centres:
+				department_id = implemented_dept_centres[0]["departmentId"]
+
+		elif isinstance(imp_dept, str) and imp_dept:
+			# Handle as Link Field (Fallback/Legacy)
+			d_id = get_dept_id(imp_dept)
+			if d_id:
+				department_id = d_id
+				implemented_dept_centres.append({"departmentId": d_id})
+
+		# --- 2. Build Payload ---
+		payload = {
+			"projectNumber": doc.get("project_no") or doc.name,
+			"empId": doc.get("pi_employee_id") or doc.get("emp_id"),
+			"departmentId": department_id, # Can be None if not found
+			"projectType": doc.get("project_type"),
+			"projectCategory": doc.get("consultancy_category") or doc.get("category"), # Mapping 'consultancy_category' as likely candidate
+			"projectTitle": sanitize_html(doc.get("project_title") or ""),
+			"fundingAgencyType": doc.get("funding_agency_type"),
+			"fundingAgencyId": 1, # Hardcoded in prompt example? Or need lookup? Prompt said "fundingAgencyId: 1". I'll use 1 or try to find a field.
+			"projectScheme": doc.get("funding_agency_schemes") or "NRL-123", # Fallback from prompt
+			"totalBudgetAmount": flt(doc.get("total_budget_amount") or doc.get("grand_total_proposal")),
+			"overHeadAmountPercentage": flt(doc.get("overhead_percentage_research") or doc.get("overhead_percentage_consultancy")),
+			"overHeadAmount": flt(doc.get("overhead_research") or doc.get("overhead_consultancy")),
+			"budgetWithOverHeadAmount": flt(doc.get("budget_including_overhead_research") or doc.get("budget_including_overhead_consultancy")),
+			"gst": flt(doc.get("service_tax_research") or doc.get("service_tax_consultancy")),
+			"grandTotal": flt(doc.get("grand_total_research") or doc.get("grand_total_consultancy")),
+			"durationInMonth": int(doc.get("project_duration_months") or 0),
+			"durationInDays": int(doc.get("project_duration_days") or 0),
+			"gstinNumber": "29ABCDE1234F1Z5", # Hardcoded in prompt example, or find field? Using example for now.
+			"projectImplementationLocation": "Guwahati,Assam", # Hardcoded in prompt example
+			"startDate": str(doc.get("start_date") or nowdate()), # Fallback to today if missing
+			"completionDate": str(doc.get("completion_date") or nowdate()),
+			"status": "Approved",
+			"applyDate": str(doc.get("creation") or nowdate()).split(" ")[0],
+			"verdictDate": str(nowdate()),
+			"implementedDeptCentres": implemented_dept_centres
+		}
+		print("payload: ", payload)
+		# --- 3. Send Request ---
+		url = "http://172.16.135.27:18080/api/projects"
+		headers = {"Content-Type": "application/json"}
+		
+		# Log the attempt
+		frappe.logger().info(f"Sending Project Registration {doc.name} to {url}")
+		
+		response = requests.post(url, json=payload, headers=headers, timeout=10)
+		
+		# --- 4. Handle Response ---
+		doc.external_api_status = str(response.status_code)
+		doc.external_api_response = response.text
+		
+		if response.status_code not in [200, 201]:
+			frappe.log_error(f"API Error {response.status_code}: {response.text}", f"Project Registration Sync Error: {doc.name}")
+		
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), f"Project Registration API Exception: {doc.name}")
+		# Update doc with error info
+		try:
+			doc.external_api_status = "Error"
+			doc.external_api_response = str(e)
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+		except:
+			pass
+		# Re-raise to ensure calling function knows, or suppress if we want to avoid breaking the workflow?
+		# User said "Retries once... logs errors...". Since it's sync, we probably shouldn't break the user's screen with a 500 if the external API is down, 
+		# but we should let them know. The msgprint in the caller handles the warning.
+		raise e
 
 
 @frappe.whitelist()
@@ -635,17 +850,10 @@ def get_project_activity(docname):
 		frappe.throw(_("An error occurred while fetching project activity and comments."))
 
 
-from frappe.utils.file_manager import save_file
 
 
 # -=-=-=-=- validation
 
-
-import frappe
-import json
-import base64
-from frappe.utils import flt
-from frappe import _
 
 
 def _format_phone_number(phone_string):

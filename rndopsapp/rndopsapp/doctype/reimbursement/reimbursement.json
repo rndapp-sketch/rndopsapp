@@ -58,9 +58,9 @@
   },
   {
    "fieldname": "account_head",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "label": "Account Head",
-   "options": "SELECT\nEquipment\nConsumable\nContingency\nOther"
+   "options": "Budget Head"
   },
   {
    "fieldname": "comment",
@@ -86,8 +86,9 @@
   {
    "fetch_from": "applicant_webmail.department_name",
    "fieldname": "applicant_department",
-   "fieldtype": "Select",
-   "label": "Department "
+   "fieldtype": "Data",
+   "label": "Department ",
+   "options": "Department_prornd"
   },
   {
    "fetch_from": "applicant_webmail.designation_name",
@@ -152,6 +153,7 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "Reimbursement",
@@ -200,7 +202,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-09 15:20:27.792308",
+ "modified": "2025-11-28 15:34:52.306515",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",

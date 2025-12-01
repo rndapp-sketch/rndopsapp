@@ -2,289 +2,7 @@ import frappe
 from frappe.utils import sanitize_html
 import json
 import os
-# @frappe.whitelist()
-# def submit_project_registration(docname):
-#     """
-#     Handles initial submission with dynamic applicant type lookup AND intelligent self-approval bypass.
-#     """
-#     doc = frappe.get_doc("Project Registration", docname)
-
-#     # --- Step 1: Standard Security Checks ---
-#     if doc.owner != frappe.session.user:
-#         frappe.throw("Permission Denied: You are not the owner of this document.")
-#     if doc.docstatus != 0:
-#         frappe.throw("This document has already been submitted.")
-#     if not doc.applicant_type:
-#         frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
-
-#     # --- Step 2: Dynamically Find the Employee Class ID ---
-#     applicant_type_identifier = doc.applicant_type
-#     emp_class_doc_id = None
-#     if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
-#         emp_class_doc_id = applicant_type_identifier
-#     else:
-#         emp_class_doc_id = frappe.db.get_value("EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name")
-
-#     if not emp_class_doc_id:
-#         frappe.throw(f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'.")
-
-#     # --- Step 3: Determine the Intended Workflow Path from Data ---
-#     workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-#     next_state = ""
-
-#     if workflow_path == "Senior Staff Path":
-#         next_state = "Pending Staff Approval"
-#     elif workflow_path == "HoD Path":
-#         next_state = "Pending HoD Approval"
-#     else:
-#         empclass_name = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "empclass_name")
-#         frappe.throw(f"Could not find a valid approval path. The Employee Class '{empclass_name}' has an unconfigured or missing Workflow Path.")
-
-#     # --- Step 4: NEW - Check for Self-Approval and Override the Path if Necessary ---
-#     applicant_user = doc.owner
-#     intended_approver = doc.head_approver
-
-#     # This check ONLY runs if the intended path was to the HoD.
-#     if next_state == "Pending HoD Approval" and applicant_user == intended_approver:
-#         # SELF-APPROVAL SCENARIO: The applicant is their own approver.
-#         # Override the next_state to skip the HoD step.
-#         next_state = "Pending Staff Approval"
-
-#         # Add a comment to the document for a clear audit trail.
-#         doc.add_comment("Comment", f"Applicant ({applicant_user}) is the designated Head Approver. Skipping Head Approval step and moving directly to Staff Approval.")
-
-#     # --- Step 5: Execute the Final Action ---
-#     if next_state == "Pending HoD Approval":
-#         # If we are still on the HoD Path, perform the share.
-#         if not intended_approver:
-#             frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-#         share_document(doc.doctype, doc.name, intended_approver)
-
-#     # Update the state and submit the document.
-#     doc.workflow_state = next_state
-#     doc.submit()
-#     return doc.workflow_state
-#     frappe.throw(f"next workflow state ({next_state})")
-
-
-# @frappe.whitelist()
-# def get_user_empclass(user):
-#     """Return both empclass ID and Name for a given User"""
-#     empclass_id = frappe.db.get_value("User", user, "empclass")
-#     if empclass_id:
-#         empclass_name = frappe.db.get_value("EmployeeClass_prornd", empclass_id, "empclass_name")
-#         return {
-#             "empclass_id": empclass_id,          # e.g. EMP-0001 (valid Link ID)
-#             "empclass_name": empclass_name       # e.g. PI - Principal Investigator
-#         }
-#     return {}
-
-# # @frappe.whitelist()
-# # def handle_approval_action(docname, action, comment=None):
-# #     """
-# #     Handles all subsequent workflow actions: Approve, Reject, Put Back, Resubmit.
-# #     This is our main "State Machine" engine.
-# #     """
-# #     doc = frappe.get_doc("Project Registration", docname)
-# #     current_state = doc.workflow_state
-# #     next_state = ""
-
-# #     # --- CORRECTED Security Validation ---
-# #     is_allowed = False
-# #     # Get the roles of the user making the request
-# #     user_roles = frappe.get_roles(frappe.session.user)
-
-# #     if current_state == "Pending HoD Approval" and frappe.session.user == doc.head_approver:
-# #         is_allowed = True
-# #     elif current_state == "Pending Staff Approval" and "staff, RnD" in user_roles:
-# #         is_allowed = True
-# #     elif current_state == "Pending HoS Approval" and "Hos, RnD (Head of Section, RnD)" in user_roles:
-# #         is_allowed = True
-# #     elif current_state == "Pending Dean Approval" and "Dean, RnD" in user_roles:
-# #         is_allowed = True
-# #     elif current_state == "Needs Correction" and frappe.session.user == doc.owner:
-# #         is_allowed = True
-
-# #     if not is_allowed and "System Manager" not in user_roles:
-# #         frappe.throw(f"Permission Denied: You are not authorized to perform the action '{action}' in the current state '{current_state}'.")
-
-# #     # Add comment to a log if provided
-# #     if comment:
-# #         doc.add_comment("Comment", f"<strong>Action: {action}</strong><br>{sanitize_html(comment)}")
-
-# #     # State Machine Logic (This part remains the same)
-# #     if action == "Approve":
-# #         if current_state == "Pending HoD Approval": next_state = "Pending Staff Approval"
-# #         elif current_state == "Pending Staff Approval": next_state = "Pending HoS Approval"
-# #         elif current_state == "Pending HoS Approval": next_state = "Pending Dean Approval"
-# #         elif current_state == "Pending Dean Approval": next_state = "Approved"
-
-# #         if current_state == "Pending HoD Approval":
-# #             unshare_document(doc.doctype, doc.name, doc.head_approver)
-
-# #     elif action == "Reject":
-# #         next_state = "Rejected"
-# #         doc.cancel()
-
-# #     elif action == "Put Back":
-# #         if current_state == "Pending Dean Approval": next_state = "Pending HoS Approval"
-# #         elif current_state == "Pending HoS Approval": next_state = "Pending Staff Approval"
-# #         elif current_state == "Pending Staff Approval": next_state = "Pending HoD Approval"
-# #         elif current_state == "Pending HoD Approval": next_state = "Needs Correction"
-
-# #         if current_state == "Pending HoD Approval":
-# #             unshare_document(doc.doctype, doc.name, doc.head_approver)
-
-# #     elif action == "Resubmit":
-# #         if current_state == "Needs Correction":
-# #             next_state = "Pending Staff Approval"
-
-# #     if next_state and doc.docstatus != 2:
-# #         doc.workflow_state = next_state
-# #         doc.save(ignore_permissions=True)
-
-# #     return doc.workflow_state
-
-
-# # import frappe
-# # from frappe.utils.html_utils import sanitize_html
-# # from frappe.share import unshare_document
-
-
-# working
-# @frappe.whitelist()
-# def handle_approval_action(docname, action, comment=None):
-#     """
-#     Handles all subsequent workflow actions: Approve, Reject, Put Back, Resubmit.
-#     Acts as the main "State Machine" for Project Registration workflow.
-#     """
-
-#     doc = frappe.get_doc("Project Registration", docname)
-#     current_state = doc.workflow_state
-#     next_state = ""
-
-#     # --- Role → Workflow State Mapping ---
-#     ROLE_STATE_MAP = {
-#         "Pending Staff Approval": ["staff, RnD"],
-#         "Pending HoS Approval": ["Hos, RnD (Head of Section, RnD)"],
-#         "Pending Dean Approval": ["Dean, RnD"],
-#     }
-
-#     # --- Security Validation ---
-#     is_allowed = False
-#     user_roles = frappe.get_roles(frappe.session.user)
-
-#     # Special case: HoD approval assigned to a specific user
-#     if current_state == "Pending HoD Approval" and frappe.session.user == doc.head_approver:
-#         is_allowed = True
-#     # Needs Correction can only be resubmitted by owner
-#     elif current_state == "Needs Correction" and frappe.session.user == doc.owner:
-#         is_allowed = True
-#     # Generic role-based checks
-#     elif current_state in ROLE_STATE_MAP:
-#         if any(role in user_roles for role in ROLE_STATE_MAP[current_state]):
-#             is_allowed = True
-
-#     # System Manager override
-#     if not is_allowed and "System Manager" not in user_roles:
-#         frappe.throw(
-#             f"🚫 Permission Denied: You are not authorized to perform '{action}' "
-#             f"in the current state '{current_state}'."
-#         )
-
-#     # --- Optional Comment Logging ---
-#     if comment:
-#         doc.add_comment(
-#             "Comment",
-#             f"<strong>Action: {action}</strong><br>{sanitize_html(comment)}"
-#         )
-
-#     # --- Workflow State Machine ---
-#     if action == "Approve":
-#         if current_state == "Pending HoD Approval":
-#             next_state = "Pending Staff Approval"
-#             unshare_document(doc.doctype, doc.name, doc.head_approver)
-#         elif current_state == "Pending Staff Approval":
-#             next_state = "Pending HoS Approval"
-#         elif current_state == "Pending HoS Approval":
-#             next_state = "Pending Dean Approval"
-#         elif current_state == "Pending Dean Approval":
-#             next_state = "Approved"
-
-#     elif action == "Reject":
-#         next_state = "Rejected"
-#         doc.cancel()
-
-#     elif action == "Put Back":
-#         if current_state == "Pending Dean Approval":
-#             next_state = "Pending HoS Approval"
-#         elif current_state == "Pending HoS Approval":
-#             next_state = "Pending Staff Approval"
-#         elif current_state == "Pending Staff Approval":
-#             next_state = "Pending HoD Approval"
-#         elif current_state == "Pending HoD Approval":
-#             next_state = "Needs Correction"
-#             unshare_document(doc.doctype, doc.name, doc.head_approver)
-
-#     elif action == "Resubmit":
-#         if current_state == "Needs Correction":
-#             next_state = "Pending Staff Approval"
-
-#     # --- Save State Change ---
-#     if next_state and doc.docstatus != 2:  # avoid cancelled docs
-#         doc.workflow_state = next_state
-#         doc.save(ignore_permissions=True)
-
-#     return doc.workflow_state
-
-
-# # --- Helper functions for document sharing ---
-# def share_document(doctype, name, user):
-#     """Shares a document with a user, giving them read and write access."""
-#     frappe.share.add(doctype, name, user, read=1, write=1, notify=1)
-
-# def unshare_document(doctype, name, user):
-#     """Removes a user's share permissions from a document."""
-#     frappe.share.remove(doctype, name, user)
-
-
-# # --- UTILITY FUNCTIONS (OPTIONAL BUT RECOMMENDED) ---
-
-# @frappe.whitelist()
-# def get_project_activity(doctype, docname):
-#     """
-#     Fetches all comments and communications for a given document.
-#     """
-#     try:
-#         # This function is useful if you want to build a custom activity timeline view.
-#         # It is not strictly necessary for the workflow but is good to keep.
-#         comments = frappe.get_all(
-#             "Comment",
-#             filters={"reference_doctype": doctype, "reference_name": docname},
-#             fields=["content", "owner", "creation", "comment_type"],
-#             order_by="creation desc"
-#         )
-#         return comments
-#     except Exception:
-#         frappe.log_error(frappe.get_traceback(), "get_project_activity failed")
-#         return []
-
-# @frappe.whitelist()
-# def add_project_comment(doctype, docname, content):
-#     """
-#     Adds a sanitized comment to a given document.
-#     """
-#     if not content or not content.strip():
-#         frappe.throw("Comment content cannot be empty.")
-
-#     try:
-#         doc = frappe.get_doc(doctype, docname)
-#         doc.add_comment("Comment", sanitize_html(content))
-#         return doc.get("comments")[-1] # Return the newly created comment
-#     except Exception:
-#         frappe.log_error(frappe.get_traceback(), "add_project_comment failed")
-#         frappe.throw("Could not add comment.")
-
+from frappe import _
 
 # -------------------------- SCRIPT-DRIVEN WORKFLOW FUNCTIONS {MKY-V1- 19-09-2025}-------------------------------
 
@@ -320,301 +38,6 @@ def save_doc_as_text_file(doc):
 	logger.info(f"Content:\n{doc_str}")
 
 	return {"file_path": file_path, "file_url": f"/private/files/{file_name}"}
-
-
-# # static define
-# @frappe.whitelist()
-# def submit_project_registration(docname):
-#     """
-#     Handles the initial submission of a Project Registration.
-#     This version dynamically handles the applicant_type being either an ID or a Name.
-#     """
-#     doc = frappe.get_doc("Project Registration", docname)
-#     # file_info = save_doc_as_text_file(doc)
-
-#     # Security Check: Only the owner of the draft can submit it.
-#     if doc.owner != frappe.session.user:
-#         frappe.throw("Permission Denied: You are not the owner of this document.")
-
-#     if doc.docstatus != 0:
-#         frappe.throw("This document has already been submitted.")
-
-#     applicant_type_identifier = doc.applicant_type
-#     if not applicant_type_identifier:
-#         frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
-
-#     # --- DYNAMIC LOOKUP LOGIC ---
-#     emp_class_doc_id = None
-
-#     # Case 1: The identifier is a valid DocType Name (ID). This is the fast path.
-#     if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
-#         emp_class_doc_id = applicant_type_identifier
-#     else:
-#         # Case 2: The identifier is not an ID, so it must be a name. Let's look it up.
-#         found_id = frappe.db.get_value("EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name")
-#         if found_id:
-#             emp_class_doc_id = found_id
-
-#     # If we still haven't found a valid ID, throw an error.
-#     if not emp_class_doc_id:
-#         frappe.throw(f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'.")
-
-#     # --- DATA-DRIVEN WORKFLOW ROUTING ---
-#     # Now that we have the guaranteed ID, fetch the workflow path from the data.
-#     workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-#     next_state = ""
-
-# if workflow_path == "Senior Staff Path":
-#     next_state = "Pending Staff Approval"
-# elif workflow_path == "HoD Path":
-#     next_state = "Pending Head Approval"
-#     if not doc.head_approver:
-#         frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-#     share_document(doc.doctype, doc.name, doc.head_approver)
-# else:
-#     empclass_name = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "empclass_name")
-#     frappe.throw(f"Could not find a valid approval path. The Employee Class '{empclass_name}' has an unconfigured or missing Workflow Path.")
-
-# doc.workflow_state = next_state
-# doc.submit()
-# return doc.workflow_state
-
-# -=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
-#  Dynanmic submit
-# @frappe.whitelist()
-# def submit_project_registration(docname):
-#     """
-#     Handles initial submission of Project Registration dynamically
-#     based on workflow_path and configured transitions.
-#     """
-#     doc = frappe.get_doc("Project Registration", docname)
-
-#     # Security: Only owner can submit draft
-#     if doc.owner != frappe.session.user:
-#         frappe.throw("Permission Denied: You are not the owner of this document.")
-
-#     if doc.docstatus != 0:
-#         frappe.throw("This document has already been submitted.")
-
-#     applicant_type_identifier = doc.applicant_type
-#     if not applicant_type_identifier:
-#         frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
-
-#     # Resolve EmployeeClass_prornd docname from either ID or name
-#     emp_class_doc_id = None
-#     if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
-#         emp_class_doc_id = applicant_type_identifier
-#     else:
-#         found_id = frappe.db.get_value("EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name")
-#         if found_id:
-#             emp_class_doc_id = found_id
-
-#     if not emp_class_doc_id:
-#         frappe.throw(f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'.")
-
-#     # Get the workflow path identifier
-#     workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-#     if not workflow_path:
-#         empclass_name = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "empclass_name")
-#         frappe.throw(f"Employee Class '{empclass_name}' does not have a configured workflow path.")
-
-#     # Fetch the Workflow document linked to this workflow path name
-#     workflow_doc = frappe.get_doc("Workflow", workflow_path)
-#     if not workflow_doc:
-#         frappe.throw(f"Workflow '{workflow_path}' is not configured in the system.")
-
-#     # Determine the current state, usually Draft or Not Started for new submission
-#     current_state = doc.workflow_state or "Draft"
-
-#     # Find the next transition based on the current state
-#     next_transition = None
-#     for t in workflow_doc.transitions:
-#         if t.state == current_state:
-#             next_transition = t
-#             break
-
-#     if not next_transition:
-#         frappe.throw(f"No transition found from current state '{current_state}' in workflow '{workflow_path}'.")
-
-#     next_state = next_transition.next_state
-
-#     # Optional: dynamic handling of approver roles if needed
-#     # For example, if next_state requires head_approver or similar, check here dynamically:
-#     if "Head Approval" in next_state:
-#         if not doc.head_approver:
-#             frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-#         # Share document with head_approver dynamically
-#         share_document(doc.doctype, doc.name, doc.head_approver)
-
-#     # Update doc workflow state and submit
-#     doc.workflow_state = next_state
-#     doc.submit()
-
-#     return doc.workflow_state
-
-# ori
-# @frappe.whitelist()
-# def submit_project_registration(docname):
-# 	"""
-# 	Handles initial submission of Project Registration dynamically
-# 	based on workflow_path and configured transitions.
-# 	"""
-# 	doc = frappe.get_doc("Project Registration", docname)
-# 	frappe.msgprint(f"current_state DOC: <b>{doc}</b>")
-# 	if not doc.workflow_state:
-# 		doc.workflow_state = "Draft"
-# 	# Security: Only owner can submit draft
-# 	if doc.owner != frappe.session.user:
-# 		frappe.throw("Permission Denied: You are not the owner of this document.")
-
-# 	if doc.docstatus != 0:
-# 		frappe.throw("This document has already been submitted.")
-
-# 	applicant_type_identifier = doc.applicant_type
-# 	if not applicant_type_identifier:
-# 		frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
-
-# 	# Resolve EmployeeClass_prornd docname from either ID or name
-# 	emp_class_doc_id = None
-# 	if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
-# 		emp_class_doc_id = applicant_type_identifier
-# 	else:
-# 		found_id = frappe.db.get_value(
-# 			"EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name"
-# 		)
-# 		if found_id:
-# 			emp_class_doc_id = found_id
-
-# 	if not emp_class_doc_id:
-# 		frappe.throw(
-# 			f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'."
-# 		)
-
-# 	# Get the workflow path identifier
-# 	workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-
-# 	# --- FIX: If invalid or missing, default to pending_approval_prjReg ---
-# 	if not workflow_path or not frappe.db.exists("Workflow", workflow_path):
-# 		frappe.msgprint(
-# 			f"⚠️ Employee Class '{applicant_type_identifier}' has invalid workflow path "
-# 			f"('{workflow_path}'). Defaulting to 'pending_approval_prjReg'."
-# 		)
-# 		workflow_path = "pending_approval_prjReg"
-# 		frappe.db.set_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path", workflow_path)
-# 		frappe.db.commit()
-
-# 	# Fetch the Workflow document linked to this workflow path name
-# 	workflow_doc = frappe.get_doc("Workflow", workflow_path)
-
-# 	# Determine the current state, usually Draft or Not Started for new submission
-# 	current_state = doc.workflow_state or "Draft"
-# 	frappe.msgprint(f"current_state Workflow Name: <b>{current_state}</b>")
-# 	# Find the next transition based on the current state
-# 	next_transition = None
-# 	for t in workflow_doc.transitions:
-# 		if t.state == current_state:
-# 			next_transition = t
-# 			break
-
-# 	if not next_transition:
-# 		frappe.throw(
-# 			f"No transition found from current state '{current_state}' in workflow '{workflow_path}'."
-# 		)
-
-# 	next_state = next_transition.next_state
-
-# 	# Optional: dynamic handling of approver roles if needed
-# 	if "Head Approval" in next_state:
-# 		if not doc.head_approver:
-# 			frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-# 		share_document(doc.doctype, doc.name, doc.head_approver)
-
-# 	# Update doc workflow state and submit
-# 	doc.workflow_state = next_state
-# 	doc.submit()
-
-# 	return doc.workflow_state
-
-
-# implementation_department
-#
-
-
-# base code
-# @frappe.whitelist()
-# def submit_project_registration(docname):
-# 	doc = frappe.get_doc("Project Registration", docname)
-
-# 	# Convert to dict for inspection
-# 	data = doc.as_dict()
-# 	print(f"Implementation Department: {data.get('implementation_department')}")
-
-# 	# Fetch the linked Department_prornd document
-# 	doc = frappe.get_doc("Department_prornd", data.get("implementation_department"))
-# 	print(f"Department Name: {doc.dept_name}")
-# 	print(f"Department Head: {doc.dept_head}")
-# 	if not doc.workflow_state:
-# 		doc.workflow_state = "Draft"
-
-# 	# Security: Only owner can submit draft
-# 	if doc.owner != frappe.session.user:
-# 		frappe.throw("Permission Denied: You are not the owner of this document.")
-
-# 	if doc.docstatus != 0:
-# 		frappe.throw("This document has already been submitted.")
-
-# 	# Resolve workflow path
-# 	emp_class_doc_id = None
-# 	applicant_type_identifier = doc.applicant_type
-
-# 	if not applicant_type_identifier:
-# 		frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
-
-# 	if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
-# 		emp_class_doc_id = applicant_type_identifier
-# 	else:
-# 		found_id = frappe.db.get_value(
-# 			"EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name"
-# 		)
-# 		if found_id:
-# 			emp_class_doc_id = found_id
-
-# 	if not emp_class_doc_id:
-# 		frappe.throw(
-# 			f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'."
-# 		)
-
-# 	workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-# 	if not workflow_path or not frappe.db.exists("Workflow", workflow_path):
-# 		workflow_path = "pending_approval_prjReg"
-# 		frappe.db.set_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path", workflow_path)
-# 		frappe.db.commit()
-
-# 	workflow_doc = frappe.get_doc("Workflow", workflow_path)
-# 	current_state = doc.workflow_state
-
-# 	# Find the next transition
-# 	next_transition = None
-# 	for t in workflow_doc.transitions:
-# 		if t.state == current_state:
-# 			next_transition = t
-# 			break
-
-# 	if not next_transition:
-# 		frappe.throw(
-# 			f"No transition found from current state '{current_state}' in workflow '{workflow_path}'."
-# 		)
-
-# 	next_state = next_transition.next_state
-
-# 	# Optional approver handling
-# 	if "Head Approval" in next_state and not doc.head_approver:
-# 		frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-# 		# share_document(doc.doctype, doc.name, doc.head_approver)  # if needed
-
-# 	doc.workflow_state = next_state
-# 	doc.submit()
-# 	return doc.workflow_state
 
 
 @frappe.whitelist()
@@ -723,72 +146,6 @@ def get_user_empclass(user):
 	return {}
 
 
-# @frappe.whitelist()
-# def handle_approval_action(docname, action, comment=None):
-#     """
-#     Handles all subsequent workflow actions: Approve, Reject, Put Back, Resubmit.
-#     This is our main "State Machine" engine.
-#     """
-#     doc = frappe.get_doc("Project Registration", docname)
-#     current_state = doc.workflow_state
-#     next_state = ""
-
-#     # --- CORRECTED Security Validation ---
-#     is_allowed = False
-#     # Get the roles of the user making the request
-#     user_roles = frappe.get_roles(frappe.session.user)
-#     frappe.msgprint(f"User Roles: {user_roles}")
-
-#     if current_state == "Pending HoD Approval" and frappe.session.user == doc.head_approver:
-#         is_allowed = True
-#     elif current_state == "Pending Staff Approval" and "staff, RnD" in user_roles:
-#         is_allowed = True
-#     elif current_state == "Pending HoS Approval" and "Hos, RnD (Head of Section, RnD)" in user_roles:
-#         is_allowed = True
-#     elif current_state == "Pending Dean Approval" and "Dean, RnD" in user_roles:
-#         is_allowed = True
-#     elif current_state == "Needs Correction" and frappe.session.user == doc.owner:
-#         is_allowed = True
-
-#     if not is_allowed and "System Manager" not in user_roles:
-#         frappe.throw(f"Permission Denied: You are not authorized to perform the action '{action}' in the current state '{current_state}'.")
-
-#     # Add comment to a log if provided
-#     if comment:
-#         doc.add_comment("Comment", f"<strong>Action: {action}</strong><br>{sanitize_html(comment)}")
-
-#     # State Machine Logic (This part remains the same)
-#     if action == "Approve":
-#         if current_state == "Pending HoD Approval": next_state = "Pending Staff Approval"
-#         elif current_state == "Pending Staff Approval": next_state = "Pending HoS Approval"
-#         elif current_state == "Pending HoS Approval": next_state = "Pending Dean Approval"
-#         elif current_state == "Pending Dean Approval": next_state = "Approved"
-
-#         if current_state == "Pending HoD Approval":
-#             unshare_document(doc.doctype, doc.name, doc.head_approver)
-
-#     elif action == "Reject":
-#         next_state = "Rejected"
-#         doc.cancel()
-
-#     elif action == "Put Back":
-#         if current_state == "Pending Dean Approval": next_state = "Pending HoS Approval"
-#         elif current_state == "Pending HoS Approval": next_state = "Pending Staff Approval"
-#         elif current_state == "Pending Staff Approval": next_state = "Pending HoD Approval"
-#         elif current_state == "Pending HoD Approval": next_state = "Needs Correction"
-
-#         if current_state == "Pending HoD Approval":
-#             unshare_document(doc.doctype, doc.name, doc.head_approver)
-
-#     elif action == "Resubmit":
-#         if current_state == "Needs Correction":
-#             next_state = "Pending Staff Approval"
-
-#     if next_state and doc.docstatus != 2:
-#         doc.workflow_state = next_state
-#         doc.save(ignore_permissions=True)
-
-#     return doc.workflow_state
 
 
 def get_workflow_states(doctype):
@@ -807,145 +164,7 @@ def get_workflow_states(doctype):
 	workflow = frappe.get_doc("Workflow", workflow_name)
 	return [state.state for state in workflow.states]
 
-	# Jimmy added -=-=-=-=-=-=-= This sections handle form workflow
-	# @frappe.whitelist()
-	# def handle_approval_action(docname, action, comment=None):
-	#     """
-	#     Handles all subsequent workflow actions: Approve, Reject, Put Back, Resubmit.
-	#     This is our main "State Machine" engine.
-	#     """
-	#     doc = frappe.get_doc("Project Registration", docname)
-	#     current_state = doc.workflow_state
-	#     next_state = ""
-	#     # --- DEBUG: Print workflow states ---
-	#     state_names = get_workflow_states("Project Registration")
-	#     # frappe.msgprint(f"Workflow States for {doc.doctype}:<br><br>" + "<br>".join(state_names))
-
-	#     # --- CORRECTED Security Validation ---
-	#     is_allowed = False
-	#     user_roles = frappe.get_roles(frappe.session.user)
-
-	#     # Uncomment for development debug:
-	#     frappe.msgprint(f"User Roles: {user_roles}")
-
-	#     if current_state == "Pending HoD Approval" and frappe.session.user == doc.head_approver:
-	#         is_allowed = True
-	#     elif current_state == "Pending Staff Approval" and "staff, RnD" in user_roles:
-	#         is_allowed = True
-	#     elif current_state == "Pending HoS Approval" and "Hos, RnD (Head of Section, RnD)" in user_roles:
-	#         is_allowed = True
-	#     elif current_state == "Pending Dean Approval" and "Dean, RnD" in user_roles:
-	#         is_allowed = True
-	#     elif current_state == "Needs Correction" and frappe.session.user == doc.owner:
-	#         is_allowed = True
-
-	#     # Allow System Manager override
-	#     if not is_allowed and "System Manager" not in user_roles:
-	#         frappe.throw(f"Permission Denied: You are not authorized to perform the action '{action}' in the current state '{current_state}'.")
-
-	#     # Log comment if provided
-	#     if comment:
-	#         doc.add_comment("Comment", f"<strong>Action: {action}</strong><br>{sanitize_html(comment)}")
-
-	#     # --- STATE MACHINE LOGIC ---
-	#     if action == "Approve":
-	#         if current_state == "Pending HoD Approval":
-	#             next_state = "Pending Staff Approval"
-	#             unshare_document(doc.doctype, doc.name, doc.head_approver)
-	#         elif current_state == "Pending Staff Approval":
-	#             next_state = "Pending HoS Approval"
-	#         elif current_state == "Pending HoS Approval":
-	#             next_state = "Pending Dean Approval"
-	#         elif current_state == "Pending Dean Approval":
-	#             next_state = "Approved"
-
-	#     elif action == "Reject":
-	#         next_state = "Rejected"
-	#         doc.cancel()
-
-	#     elif action == "Put Back":
-	#         if current_state == "Pending Dean Approval":
-	#             next_state = "Pending HoS Approval"
-	#         elif current_state == "Pending HoS Approval":
-	#             next_state = "Pending Staff Approval"
-	#         elif current_state == "Pending Staff Approval":
-	#             next_state = "Pending HoD Approval"
-	#         elif current_state == "Pending HoD Approval":
-	#             next_state = "Needs Correction"
-	#             unshare_document(doc.doctype, doc.name, doc.head_approver)
-
-	#     elif action == "Resubmit":
-	#         if current_state == "Needs Correction":
-	#             next_state = "Pending Staff Approval"
-
-	#     # Update state if valid
-	#     if next_state and doc.docstatus != 2:
-	#         doc.workflow_state = next_state
-	#         doc.save(ignore_permissions=True)
-
-	#     return doc.workflow_state
-
-	# jimmy added -=-=-=-=-=-=-= Dynamic workflow handle approval
-	# @frappe.whitelist()
-	# def handle_approval_action(doctype, docname, action, comment=None):
-	#     """
-	#     Generic dynamic workflow state handler for any DocType using Frappe's Workflow system.
-	#     """
-	#     doc = frappe.get_doc(doctype, docname)
-	#     current_state = doc.workflow_state
-	#     user = frappe.session.user
-	#     user_roles = frappe.get_roles(user)
-
-	#     # Get associated workflow for this DocType
-	#     workflow = frappe.get_value("Workflow Document State", {"parenttype": "Workflow", "parent": ["like", "%"], "doctype": doctype}, "parent")
-	#     if not workflow:
-	#         frappe.throw(f"No workflow configured for DocType {doctype}.")
-
-	#     workflow_doc = frappe.get_doc("Workflow", workflow)
-
-	#     # --- PERMISSION VALIDATION ---
-	#     is_allowed = False
-	#     valid_transitions = []
-
-	#     for transition in workflow_doc.transitions:
-	#         if transition.current_state == current_state and transition.action == action:
-	#             valid_transitions.append(transition)
-
-	#             # Role-based check
-	#             allowed_roles = [
-	#                 state.allow_edit for state in workflow_doc.states
-	#                 if state.state == transition.current_state
-	#             ]
-	#             if allowed_roles:
-	#                 allowed_roles = allowed_roles[0] if isinstance(allowed_roles[0], list) else [allowed_roles[0]]
-	#                 if any(role in user_roles for role in allowed_roles):
-	#                     is_allowed = True
-
-	#     if not valid_transitions:
-	#         frappe.throw(f"Invalid action '{action}' from state '{current_state}'.")
-
-	#     if not is_allowed and "System Manager" not in user_roles:
-	#         frappe.throw(f"Permission Denied: You are not authorized to perform the action '{action}' in the current state '{current_state}'.")
-
-	# Log comment
-	if comment:
-		doc.add_comment("Comment", f"<strong>Action: {action}</strong><br>{sanitize_html(comment)}")
-
-
-#     # --- TRANSITION STATE ---
-#     transition = valid_transitions[0]  # assume one match for simplicity
-#     next_state = transition.next_state
-
-#     # Cancel if rejected (optional logic)
-#     if action.lower() == "reject":
-#         doc.cancel()
-
-#     # Update workflow state and save
-#     if next_state and doc.docstatus != 2:
-#         doc.workflow_state = next_state
-#         doc.save(ignore_permissions=True)
-
-#     return doc.workflow_state
+	
 
 
 # --- Helper functions for document sharing --- Jimmy
@@ -953,10 +172,6 @@ def share_document(doctype, name, user):
 	"""Shares a document with a user, giving them read and write access."""
 	frappe.share.add(doctype, name, user, read=1, write=1, notify=1)
 
-
-# def unshare_document(doctype, name, user):
-#     """Removes a user's share permissions from a document."""
-#     frappe.share.remove(doctype, name, user)
 
 
 # ---------- MKY 20-09-25 COMMENTED ABOVE AND REPLACED WITH BELOW (unshare_document)------------------
@@ -981,30 +196,6 @@ def unshare_document(doctype, name, user):
 # --- UTILITY FUNCTIONS (OPTIONAL BUT RECOMMENDED) --- jimmy
 
 
-# @frappe.whitelist()
-# def get_project_activity(doctype, docname):
-# 	"""
-# 	Fetches all comments and communications for a given document.
-# 	"""
-# 	# frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: {docname}")
-# #
-# 	try:
-
-# 		# This function is useful if you want to build a custom activity timeline view.
-# 		# It is not strictly necessary for the workflow but is good to keep.
-# 		comments = frappe.get_all(
-# 			"Comment",
-# 			filters={"reference_doctype": doctype, "reference_name": docname},
-# 			fields=["content", "owner", "creation", "comment_type"],
-# 			order_by="creation desc",
-# 		)
-# 	    # frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: {comments}")
-# #
-# 		return comments
-# 	except Exception:
-# 		frappe.log_error(frappe.get_traceback(), "get_project_activity failed")
-# 		return []
-#
 
 
 @frappe.whitelist()
@@ -1032,22 +223,6 @@ def get_project_activity(doctype, docname):
 		frappe.log_error(frappe.get_traceback(), "get_project_activity failed")
 		return []
 
-
-# @frappe.whitelist()
-# def add_project_comment(doctype, docname, content):
-# 	"""
-# 	Adds a sanitized comment to a given document.
-# 	"""
-# 	if not content or not content.strip():
-# 		frappe.throw("Comment content cannot be empty.")
-
-# 	try:
-# 		doc = frappe.get_doc(doctype, docname)
-# 		doc.add_comment("Comment", sanitize_html(content))
-# 		return doc.get("comments")[-1]  # Return the newly created comment
-# 	except Exception:
-# 		frappe.log_error(frappe.get_traceback(), "add_project_comment failed")
-# 		frappe.throw("Could not add comment.")
 
 
 @frappe.whitelist()
@@ -1143,91 +318,6 @@ def create_research_project_and_approve(proposal_docname, id_components, comment
 	return new_project
 
 
-# ------------- Added by MKY (08/10/2025) --------------
-# @frappe.whitelist()
-# def get_reimbursement_form_fields():
-# 	"""
-# 	Returns the doctype fields, pre-fill data, and link options
-# 	for the Reimbursement form, mirroring the ProjectRegistration pattern.
-# 	"""
-# 	reimbursement_meta = frappe.get_meta("Reimbursement")
-# 	fields = []
-
-# 	# We can fetch all fields and let the frontend decide what to show,
-# 	# or filter them here if some should never be sent.
-# 	for field_doc in reimbursement_meta.get("fields"):
-# 		fields.append(
-# 			{
-# 				"fieldname": field_doc.fieldname,
-# 				"label": field_doc.label,
-# 				"fieldtype": field_doc.fieldtype,
-# 				"options": field_doc.options,
-# 				"mandatory": field_doc.reqd,
-# 				"hidden": field_doc.hidden,
-# 				"read_only": field_doc.read_only,
-# 				"description": field_doc.description,
-# 				"default": field_doc.default,
-# 			}
-# 		)
-
-# 	# Pre-fill data for the current user
-# 	user_email = frappe.session.user
-# 	user_details = frappe.get_all("User", filters={"email": user_email}, fields=["first_name", "last_name"])
-# 	user_full_name = (
-# 		f"{user_details[0].first_name} {user_details[0].last_name}" if user_details else user_email
-# 	)
-
-# 	prefill_data = {
-# 		"reimbursement_user": user_email,
-# 		"applicat_webmail": user_email,
-# 		# You can add more pre-filled data based on user profile if needed
-# 	}
-
-# 	# Fetch options for Link fields
-# 	link_options = {
-# 		"reimbursement_user": frappe.get_all("User", fields=["email as value", "full_name as label"]),
-# 		"applicat_webmail": frappe.get_all("User", fields=["email as value", "full_name as label"]),
-# 		"project_name": frappe.get_all(
-# 			"Project Registration", fields=["name as value", "project_title as label"]
-# 		),
-# 		"amended_from": frappe.get_all(
-# 			"Reimbursement", fields=["name as value", "name as label"]
-# 		),  # Shows previous reimbursements
-# 	}
-
-# 	return {
-# 		"fields": fields,
-# 		"prefill_data": prefill_data,
-# 		"link_options": link_options,
-# 	}
-
-
-# @frappe.whitelist()
-# def submit_reimbursement(doc):
-# 	"""
-# 	Receives the reimbursement form data from React and creates a new document.
-# 	"""
-# 	try:
-# 		doc_data = frappe.parse_json(doc)
-
-# 		# Create the new reimbursement document
-# 		new_reimbursement = frappe.get_doc(
-# 			{
-# 				"doctype": "Reimbursement",
-# 				**doc_data,  # Unpack all fields from the form
-# 			}
-# 		)
-
-# 		new_reimbursement.insert(
-# 			ignore_permissions=True
-# 		)  # Or use check_permissions=True if you have workflows
-# 		frappe.db.commit()
-
-# 		return {"status": "success", "docname": new_reimbursement.name}
-# 	except Exception as e:
-# 		frappe.log_error(frappe.get_traceback(), "Reimbursement Submission Failed")
-# 		raise e
-
 
 # ------------- Added by MKY (09/10/2025) --------------
 @frappe.whitelist()
@@ -1309,3 +399,74 @@ def get_fund_received_fields(fund_sanction):
 
 
 
+
+@frappe.whitelist()
+def get_project_details(docname):
+	"""
+	Fetches project details and all associated Fund Received records with their budget breakups.
+	"""
+	if not docname:
+		frappe.throw(_("Project Registration ID (docname) is required."))
+
+	try:
+		# 1. Fetch Project Registration Document
+		project_doc = frappe.get_doc("Project Registration", docname)
+		
+		# Extract basic project details
+		project_data = {
+			"name": project_doc.name,
+			"project_title": project_doc.project_title,
+			"project_type": project_doc.project_type,
+			"principal_investigator_name": project_doc.principal_investigator_name,
+			"pi_employee_id": project_doc.pi_employee_id,
+			"pi_webmail": project_doc.pi_webmail,
+			"implementation_department": project_doc.implementation_department,
+			"workflow_state": project_doc.workflow_state,
+			"total_budget_amount": project_doc.total_budget_amount,
+			"creation": project_doc.creation
+		}
+
+		# 2. Fetch All Linked Fund Received Documents
+		# Filter by 'prjreg_title' which links to Project Registration
+		funds = frappe.get_all(
+			"Fund Received",
+			filters={"prjreg_title": docname, "docstatus": 0}, 
+			fields=["name", "fund_received_amt", "creation", "bank_account", "invoice_no", "gst_invoice_issued", "docstatus"]
+		)
+		
+		funds_data = []
+		for fund in funds:
+			# Fetch the full doc to get the child table 'received_amt_breakup'
+			fund_doc = frappe.get_doc("Fund Received", fund.name)
+			
+			fund_info = {
+				"name": fund_doc.name,
+				"fund_received_amt": fund_doc.fund_received_amt,
+				"creation": fund_doc.creation,
+				"bank_account": fund_doc.bank_account,
+				"invoice_no": fund_doc.invoice_no,
+				"gst_invoice_issued": fund_doc.gst_invoice_issued,
+				"docstatus": fund_doc.docstatus,
+				"budget_breakup": []
+			}
+			
+			# Extract child table details
+			for row in fund_doc.received_amt_breakup:
+				fund_info["budget_breakup"].append({
+					"account_head": row.account_head, 
+					"amount_received": row.amount_received,           
+					"remarks": row.remarks  
+				})
+			
+			funds_data.append(fund_info)
+
+		return {
+			"project_details": project_data,
+			"funds": funds_data
+		}
+
+	except frappe.DoesNotExistError:
+		frappe.throw(_("Project Registration not found."), title="Not Found")
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), f"Error fetching details for {docname}")
+		frappe.throw(_("An error occurred while fetching project details."))

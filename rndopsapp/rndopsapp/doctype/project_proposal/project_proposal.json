@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{YYYY}{MM}{DD}{funding_agen}{01}{######}",
+ "autoname": "format:{YYYY}{MM}{DD}{fund_agen_initials}{01}{######}",
  "creation": "2025-10-17 13:19:22.760047",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -25,6 +25,7 @@
   "funding_agency_type",
   "origin_of_funding_agency",
   "funding_agency_ministry",
+  "fund_agen_initials",
   "column_break_zivq",
   "address_country",
   "address_street_village_locality",
@@ -88,6 +89,7 @@
   "biosafety_category",
   "declaration_html",
   "endorsement_prj",
+  "workflow_status_display",
   "endorsement_status",
   "approver_signature",
   "approver_name",
@@ -334,6 +336,7 @@
    "options": "User"
   },
   {
+   "fetch_from": "pi_webmail.department_name",
    "fieldname": "applicant_department",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -342,6 +345,7 @@
    "read_only": 1
   },
   {
+   "fetch_from": "pi_webmail.email",
    "fieldname": "pi_userid",
    "fieldtype": "Link",
    "label": "Webmail of PI",
@@ -616,8 +620,21 @@
   },
   {
    "fieldname": "edited_endorsement_content",
-   "fieldtype": "HTML Editor",
+   "fieldtype": "Text Editor",
    "label": "Edited Endorsement Content",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "funding_agen.funding_agency_initials",
+   "fieldname": "fund_agen_initials",
+   "fieldtype": "Data",
+   "label": "Funding Agency Initials",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_status_display",
+   "fieldtype": "Data",
+   "label": "Workflow Status Display",
    "read_only": 1
   }
  ],
@@ -625,7 +642,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-10-24 12:14:43.709888",
+ "modified": "2025-11-30 22:12:26.142792",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Proposal",

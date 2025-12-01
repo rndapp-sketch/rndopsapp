@@ -1,3 +1,5 @@
+import base64
+
 import frappe
 
 
@@ -23,52 +25,6 @@ def get_user_roles(user=None):
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "get_user_roles failed")
 		frappe.throw("Could not fetch user roles.")
-
-
-# @frappe.whitelist()
-# def get_fund_sanction_form_data(project_proposal=None):
-#     """
-#     Returns the doctype fields, pre-fill data, and link options
-#     for the Fund Sanction form. This is the backend source of truth.
-#     """
-#     fund_sanction_meta = frappe.get_meta("Fund Sanction")
-
-#     # Define exactly which fields the form should display
-#     form_fieldnames = [
-#         'project_proposal', 'refnum_prj_num', 'total_sanctioned_amount',
-#         'sanctioned_letter_no', 'sanctioned_letter_date', 'sanctioned_budget_breakup'
-#     ]
-
-#     fields = []
-#     for f in fund_sanction_meta.get("fields"):
-#         if f.fieldname in form_fieldnames:
-#             fields.append({
-#                 "fieldname": f.fieldname,
-#                 "label": f.label,
-#                 "fieldtype": f.fieldtype,
-#                 "options": f.options,
-#                 "mandatory": f.reqd,
-#                 "hidden": f.hidden,
-#                 "read_only": f.read_only,
-#                 "description": f.description,
-#             })
-
-#     # Pre-fill the project proposal and ref number if provided
-#     prefill_data = {}
-#     if project_proposal:
-#         prefill_data['project_proposal'] = project_proposal
-#         prefill_data['refnum_prj_num'] = project_proposal
-
-#     # Provide the list of projects for the 'project_proposal' Link field
-#     link_options = {
-#         "project_proposal": frappe.get_all("Project Registration", fields=["name as value", "project_title as label"])
-#     }
-
-#     return {
-#         "fields": fields,
-#         "prefill_data": prefill_data,
-#         "link_options": link_options,
-#     }
 
 
 @frappe.whitelist()
@@ -127,116 +83,6 @@ def get_fund_sanction_form_data(project_proposal=None):
 
 import json
 
-
-# @frappe.whitelist()
-# def save_fund_sanction_data(doc):
-# 	"""Saves the fund sanction data from the React form."""
-# 	try:
-# 		data = json.loads(doc)
-# 		print("sanction manish:", data)
-
-# 		if data.get("name"):
-# 			doc = frappe.get_doc("Fund Sanction", data.get("name"))
-# 			doc.update(data)
-# 		else:
-# 			doc = frappe.new_doc("Fund Sanction")
-# 			doc.update(data)
-
-# 		doc.save(ignore_permissions=True)
-# 		frappe.db.commit()
-
-# 		return {"status": "success", "docname": doc.name}
-# 	except Exception as e:
-# 		frappe.log_error(frappe.get_traceback(), "Fund Sanction Save Error")
-# 		raise e
-
-# import json
-# import frappe
-
-
-# @frappe.whitelist()
-# def save_fund_sanction_data(**data):
-# 	"""
-# 	Saves Fund Sanction data, correctly handling child tables and file uploads
-# 	by separating them and saving the parent document in stages.
-# 	"""
-# 	try:
-# 		# 1. Separate BOTH child tables from the main data dictionary.
-# 		budget_data = data.pop("sanctioned_budget_breakup", [])
-# 		files_data = data.pop("sanction_related_files", [])
-# 		submit = data.pop("submit", False)
-
-# 		# --- DEBUG: Print the main data after popping child tables ---
-# 		print("--- Main Document Data Keys (after popping ALL child tables) ---")
-# 		print(list(data.keys()))
-# 		print("---------------------------------------------------------------")
-
-# 		# 2. Create or load the main document object using ONLY top-level fields.
-# 		if data.get("name"):
-# 			doc = frappe.get_doc("Fund Sanction", data.get("name"))
-# 			doc.update(data)
-# 			# Explicitly clear old child table data
-# 			doc.set("sanctioned_budget_breakup", [])
-# 			doc.set("sanction_related_files", [])
-# 		else:
-# 			data["doctype"] = "Fund Sanction"
-# 			doc = frappe.get_doc(data)
-
-# 		# 3. *** CRITICAL STEP 1 ***
-# 		# Save the main document WITHOUT any child table data. This generates the `doc.name`.
-# 		doc.save(ignore_permissions=True)
-# 		print(f"SUCCESS: First save complete. Parent Doc Name: {doc.name}")
-
-# 		# 4. Now that `doc.name` exists, manually append rows to the child tables.
-
-# 		# Append budget breakup rows
-# 		if budget_data:
-# 			print("--- Appending Budget Breakup Rows ---")
-# 			for row in budget_data:
-# 				doc.append("sanctioned_budget_breakup", row)
-# 			print(f"Appended {len(budget_data)} budget rows.")
-
-# 		# Process and append file rows
-# 		if files_data:
-# 			print("--- Appending Sanction File Rows ---")
-# 			for file_obj in files_data:
-# 				if not file_obj.get("file_name") or not file_obj.get("file_data"):
-# 					continue
-
-# 				saved_file = frappe.get_doc(
-# 					{
-# 						"doctype": "File",
-# 						"file_name": file_obj.get("file_name"),
-# 						"attached_to_doctype": doc.doctype,
-# 						"attached_to_name": doc.name,
-# 						"content": file_obj.get("file_data").split(",", 1)[1],
-# 						"decode": True,
-# 					}
-# 				)
-# 				saved_file.save(ignore_permissions=True)
-
-# 				doc.append(
-# 					"sanction_related_files",
-# 					{"description": file_obj.get("description"), "sanction_file": saved_file.file_url},
-# 				)
-# 			print(f"Appended {len(files_data)} file link rows.")
-
-# 		# 5. *** CRITICAL STEP 2 ***
-# 		# Save the parent document AGAIN to persist ALL the newly added child table rows.
-# 		print("Attempting second save to persist all child tables...")
-# 		doc.save(ignore_permissions=True)
-# 		print("SUCCESS: Second save complete.")
-
-# 		if submit:
-# 			doc.submit()
-
-# 		return {"status": "success", "docname": doc.name}
-
-# 	except Exception as e:
-# 		frappe.log_error(frappe.get_traceback(), "Fund Sanction Save Error")
-# 		frappe.throw(f"An error occurred while saving the document: {str(e)}")
-
-import json
 import frappe
 import requests
 from frappe.utils import flt
@@ -295,7 +141,7 @@ def send_sanction_details_to_api(doc):
 
 
 @frappe.whitelist()
-def save_fund_sanction_data(**data):
+def draft_fund_sanction_data(**data):
 	"""
 	Save Fund Sanction data (parent + child tables), skipping all
 	ERPNext link validations and saving only file paths.
@@ -369,10 +215,6 @@ def save_fund_sanction_data(**data):
 		frappe.throw(f"An error occurred while saving the Fund Sanction: {str(e)}")
 
 
-import frappe
-import base64  # Import the base64 library
-
-
 @frappe.whitelist()
 def get_sanctions_for_project(project_name):
 	"""
@@ -426,3 +268,41 @@ def get_sanctions_for_project(project_name):
 		sanctions_list.append(doc_dict)
 
 	return sanctions_list
+
+
+@frappe.whitelist()
+def get_all_workflow_states(workflow_name=None):
+	"""
+	Returns:
+	  - all workflows with their states and allow_edit roles
+	  - OR a specific workflow if workflow_name is passed
+	"""
+
+	result = []
+
+	# If specific workflow is requested
+	if workflow_name:
+		if not frappe.db.exists("Workflow", workflow_name):
+			return {"error": f"Workflow '{workflow_name}' does not exist."}
+
+		doc = frappe.get_doc("Workflow", workflow_name)
+
+		states_info = []
+		for s in doc.states:
+			states_info.append({"state": s.state, "allow_edit": s.allow_edit or []})
+
+		return {"workflow": doc.name, "states": states_info}
+
+	# Else fetch ALL workflows
+	workflows = frappe.get_all("Workflow", fields=["name"])
+
+	for wf in workflows:
+		doc = frappe.get_doc("Workflow", wf.name)
+
+		states_info = []
+		for s in doc.states:
+			states_info.append({"state": s.state, "allow_edit": s.allow_edit or []})
+
+		result.append({"workflow": wf.name, "states": states_info})
+
+	return result

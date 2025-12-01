@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-11-26 16:08:04.021067",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_oqr2",
+  "amended_from",
+  "section_break_yvdb",
+  "webmail_id_travel",
+  "applicant_name_travel",
+  "designation_travel",
+  "department_travel",
+  "html_lzwz",
+  "details_travel",
+  "visit_type_travel",
+  "data_hwmw"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_oqr2",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Travel",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_yvdb",
+   "fieldtype": "Section Break",
+   "label": "Apply for Travel "
+  },
+  {
+   "fetch_from": "webmail_id_travel.full_name",
+   "fieldname": "applicant_name_travel",
+   "fieldtype": "Data",
+   "label": "Name of the Applicant"
+  },
+  {
+   "fieldname": "webmail_id_travel",
+   "fieldtype": "Link",
+   "label": "webmail_Id",
+   "options": "User"
+  },
+  {
+   "fetch_from": "webmail_id_travel.department_name",
+   "fieldname": "department_travel",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fetch_from": "webmail_id_travel.designation_name",
+   "fieldname": "designation_travel",
+   "fieldtype": "Data",
+   "label": "Designation of the applicant"
+  },
+  {
+   "fieldname": "html_lzwz",
+   "fieldtype": "HTML",
+   "options": "<div class=\"left-column\">\n                    <label id=\"labelDepartment\">If Applicant is the traveler? </label>\n                </div>\n<div class=\"right-column\">\n                    <input type=\"radio\" value=\"1\" id=\"yesApplicantTravel\" name=\"travelApplicant\">\n                    Yes\n                    <input type=\"radio\" value=\"0\" id=\"noApplicantTravel\" name=\"travelApplicant\">\n                    No\n                </div>"
+  },
+  {
+   "fieldname": "details_travel",
+   "fieldtype": "Section Break",
+   "label": "DETAILS OF THE CONFERENCE FOR WHICH FINANCIAL ASSISTANCE IS SOUGHT"
+  },
+  {
+   "fieldname": "visit_type_travel",
+   "fieldtype": "Select",
+   "label": "Type Of Visit",
+   "options": "\nConference\nField Visit\nOther"
+  },
+  {
+   "depends_on": "eval:doc.visit_type_travel == 'Other'",
+   "fieldname": "data_hwmw",
+   "fieldtype": "Data",
+   "placeholder": "Please mention the other type of visit."
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-11-27 17:52:59.252311",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Travel",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

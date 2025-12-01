@@ -241,6 +241,7 @@
   {
    "fieldname": "refnum_prj_num",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Ref Number (Project Registration)"
   },
   {
@@ -253,7 +254,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-10 11:54:12.543937",
+ "modified": "2025-11-20 15:44:59.942078",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Sanction",

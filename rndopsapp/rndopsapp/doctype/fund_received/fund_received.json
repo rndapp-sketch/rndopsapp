@@ -17,6 +17,7 @@
   "section_break_hchd",
   "gst_invoice_issued",
   "invoice_no",
+  "document_upload",
   "fund_transactions",
   "received_amt_breakup"
  ],
@@ -41,6 +42,7 @@
    "fetch_from": "prjreg_refnum.project_type",
    "fieldname": "prj_type",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Project Type",
    "read_only": 1
   },
@@ -95,20 +97,28 @@
    "fetch_from": "prjReg_refNum.sanctioned_letter_no",
    "fieldname": "sanction_ref_no",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Sanction Ref No."
   },
   {
    "fieldname": "prjreg_title",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Project Title",
-   "options": "Project Registration"
+   "options": "Project Registration",
+   "reqd": 1
+  },
+  {
+   "fieldname": "document_upload",
+   "fieldtype": "Attach",
+   "label": "Upload Supporting Document"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-17 17:39:16.772512",
+ "modified": "2025-11-21 09:41:30.035552",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Received",
