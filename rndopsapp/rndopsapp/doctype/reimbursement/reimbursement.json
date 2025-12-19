@@ -1,12 +1,15 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}{project_number}-{####}",
  "creation": "2025-11-04 15:46:38.581906",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "rules",
   "rules_content",
+  "section_break_ujss",
+  "self_other",
   "applying_for_section",
   "reimbursement_for_id",
   "reimbursement_for_department",
@@ -74,11 +77,13 @@
    "options": "Particulars of Items Reimbursement"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Other\"",
    "fieldname": "applying_for_section",
    "fieldtype": "Section Break",
    "label": "Applying for"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Self\"",
    "fieldname": "applicant_details_section",
    "fieldtype": "Section Break",
    "label": "Applicant Details"
@@ -196,16 +201,28 @@
    "fieldname": "bank_account_number",
    "fieldtype": "Data",
    "label": "Bank Account Number"
+  },
+  {
+   "default": "Self",
+   "fieldname": "self_other",
+   "fieldtype": "Select",
+   "label": "Applying for self or other?",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "fieldname": "section_break_ujss",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-28 15:34:52.306515",
+ "modified": "2025-12-08 12:11:54.347151",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

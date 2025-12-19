@@ -324,7 +324,7 @@ def get_project_proposal_fields(doc_name=None):
 		"link_options": link_options,
 	}
 
-
+import json
 @frappe.whitelist()
 def save_project_proposal(data):
 	"""
@@ -332,38 +332,93 @@ def save_project_proposal(data):
 	Expects 'data' as a JSON string or dict.
 	Supports file uploads for 'Attach' fields if passed as {file_name, file_data}.
 	"""
+	print("\n=== SAVE PROJECT PROPOSAL START ===")
 	try:
+		print(f"[DEBUG] Raw data type: {type(data)}")
 		if isinstance(data, str):
+			print("[DEBUG] Data is string, parsing JSON...")
 			data = json.loads(data)
+		print(f"[DEBUG] Parsed data keys: {list(data.keys())}")
 
 		docname = data.get("name")
+		print(f"[DEBUG] docname from data: {docname}")
+		
 		if docname:
+			print(f"[DEBUG] Fetching existing doc: {docname}")
 			doc = frappe.get_doc("Project Proposal", docname)
 		else:
+			print("[DEBUG] Creating new Project Proposal doc")
 			doc = frappe.new_doc("Project Proposal")
+		
+		print(f"[DEBUG] Doc is_new: {doc.is_new()}, doc.name: {doc.name}")
 
 		# Get metadata to filter valid fields
 		meta = frappe.get_meta("Project Proposal")
+		print(f"[DEBUG] Got metadata for Project Proposal")
 		
 		# Iterate over data and set fields
+		print("[DEBUG] Starting field iteration...")
 		for fieldname, value in data.items():
 			if not meta.has_field(fieldname):
+				print(f"[DEBUG] Skipping non-existent field: {fieldname}")
 				continue
 				
 			df = meta.get_field(fieldname)
+			print(f"[DEBUG] Processing field: {fieldname}, fieldtype: {df.fieldtype}, value type: {type(value)}")
 			
 			# Handle Child Tables
 			if df.fieldtype == "Table" and isinstance(value, list):
+				print(f"[DEBUG] Processing child table: {fieldname}, rows: {len(value)}")
 				# Clear existing rows if updating
 				doc.set(fieldname, [])
 				child_meta = frappe.get_meta(df.options)
+				print(f"[DEBUG] Child doctype: {df.options}")
 				
-				for child_row in value:
+				for idx, child_row in enumerate(value):
+					print(f"[DEBUG] Processing child row {idx}: {list(child_row.keys()) if isinstance(child_row, dict) else child_row}")
+					
+					# Handle Phone fields - clear if invalid
+					import re
+					print(f"[DEBUG] Checking fields for child row {idx}...")
+					for cf in child_meta.fields:
+						# print(f"[DEBUG] Checking field {cf.fieldname} ({cf.fieldtype})") # Uncomment if needed, but might be too verbose
+						if cf.fieldtype == "Phone" and child_row.get(cf.fieldname):
+							phone_val = child_row[cf.fieldname]
+							print(f"[DEBUG] Found Phone field '{cf.fieldname}' with value: '{phone_val}'")
+							
+							# Frappe requires valid phone numbers with country code (starts with +)
+							if isinstance(phone_val, str):
+								phone_val = phone_val.strip()
+								digits_only = re.sub(r'\D', '', phone_val)  # Remove non-digits
+								
+								if not phone_val:
+									print(f"[DEBUG] Phone field '{cf.fieldname}' is empty")
+									child_row[cf.fieldname] = "" # Set to empty string to trigger mandatory check if reqd
+								elif not phone_val.startswith("+"):
+									# No country code - assume +91-
+									print(f"[DEBUG] Phone field '{cf.fieldname}' has no country code, prepending +91-: {phone_val}")
+									child_row[cf.fieldname] = f"+91-{phone_val}"
+								elif len(digits_only) < 6:
+									# Has + but not enough digits (e.g., +91- or +91)
+									# If it matches the default "+91-", clear it to empty string
+									if phone_val == "+91-":
+										print(f"[DEBUG] Phone field '{cf.fieldname}' is default '+91-', clearing to empty")
+										child_row[cf.fieldname] = ""
+									else:
+										print(f"[DEBUG] Phone field '{cf.fieldname}' invalid (too few digits: {len(digits_only)}), clearing: {phone_val}")
+										child_row[cf.fieldname] = ""
+								else:
+									print(f"[DEBUG] Phone field '{cf.fieldname}' seems valid: {phone_val}")
+							elif not phone_val:
+								child_row[cf.fieldname] = ""
+					
 					# Check for file uploads in child row fields
 					for cf in child_meta.fields:
 						if cf.fieldtype == "Attach" and child_row.get(cf.fieldname):
 							f_val = child_row[cf.fieldname]
+							print(f"[DEBUG] Found Attach field in child: {cf.fieldname}, value type: {type(f_val)}")
 							if isinstance(f_val, dict) and f_val.get("file_name") and f_val.get("file_data"):
+								print(f"[DEBUG] Attempting file upload for child: {f_val.get('file_name')}")
 								try:
 									saved_file = save_file(
 										f_val["file_name"],
@@ -381,14 +436,18 @@ def save_project_proposal(data):
 										df=cf.fieldname
 									)
 									child_row[cf.fieldname] = saved_file.file_url
+									print(f"[DEBUG] Child file saved: {saved_file.file_url}")
 								except Exception as e:
+									print(f"[DEBUG] Child file upload error: {str(e)}")
 									frappe.log_error(f"Child Table File Upload Error: {str(e)}")
 									child_row[cf.fieldname] = None
 
 					doc.append(fieldname, child_row)
+					print(f"[DEBUG] Appended child row {idx} to {fieldname}")
 					
 			# Handle Attach fields (Base64) - if sent as dict {file_name, file_data}
 			elif df.fieldtype == "Attach" and isinstance(value, dict) and value.get("file_data"):
+				print(f"[DEBUG] Processing Attach field: {fieldname}, file_name: {value.get('file_name')}")
 				try:
 					saved_file = save_file(
 						value["file_name"],
@@ -404,28 +463,42 @@ def save_project_proposal(data):
 						df=fieldname
 					)
 					doc.set(fieldname, saved_file.file_url)
+					print(f"[DEBUG] File saved: {saved_file.file_url}")
 				except Exception as e:
+					print(f"[DEBUG] File upload error: {str(e)}")
 					frappe.log_error(f"File Upload Error: {str(e)}")
 					# Don't set the field if upload fails
 					pass
 				
 			# Standard fields
 			else:
+				print(f"[DEBUG] Setting standard field: {fieldname} = {value if not isinstance(value, str) or len(str(value)) < 100 else str(value)[:100] + '...'}")
 				doc.set(fieldname, value)
 
 		# Set owner if new
 		if doc.is_new():
+			print(f"[DEBUG] Setting owner for new doc: {frappe.session.user}")
 			doc.owner = frappe.session.user
 
+		print("[DEBUG] Setting flags.ignore_permissions = True")
 		doc.flags.ignore_permissions = True
+		
+		print("[DEBUG] Calling doc.save()...")
 		doc.save()
+		print(f"[DEBUG] Doc saved successfully: {doc.name}")
+		
+		print("[DEBUG] Calling frappe.db.commit()...")
 		frappe.db.commit()
+		print("=== SAVE PROJECT PROPOSAL END (SUCCESS) ===\n")
 
 		return {"status": "success", "docname": doc.name, "message": "Project Proposal saved successfully."}
 
 	except Exception as e:
+		print(f"[DEBUG] EXCEPTION: {str(e)}")
+		print(f"[DEBUG] Traceback: {frappe.get_traceback()}")
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Project Proposal Save Error")
+		print("=== SAVE PROJECT PROPOSAL END (ERROR) ===\n")
 		return {"status": "error", "message": str(e)}
 
 
@@ -434,33 +507,43 @@ def submit_project_proposal(docname):
 	"""
 	Submit a Project Proposal document using Workflow transitions.
 	"""
+	print("\n=== SUBMIT PROJECT PROPOSAL START ===")
+	print(f"[DEBUG] docname: {docname}")
 	try:
 		doc = frappe.get_doc("Project Proposal", docname)
 		current_state = doc.workflow_state or "Draft"
+		print(f"[DEBUG] Current state: {current_state}")
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.get_value("Workflow", {"document_type": "Project Proposal"}, "name")
+		print(f"[DEBUG] Workflow name: {workflow_name}")
 		
 		if not workflow_name:
+			print("[DEBUG] No workflow found, falling back to standard submit")
 			# Fallback to standard submit if no workflow exists
 			if doc.docstatus == 0:
 				doc.submit()
+				print("[DEBUG] Standard submit successful")
 				return {"status": "success", "message": "Submitted successfully (No Workflow)", "docname": docname}
+			print("[DEBUG] Document already submitted")
 			return {"status": "success", "message": "Already submitted", "docname": docname}
 
 		workflow = frappe.get_doc("Workflow", workflow_name)
 
 		# Find the transition for "Submit" action from current state
-		action = "Submit" 
+		action = "Submit for Endorsement" 
+		print(f"[DEBUG] Looking for transition for action: {action}")
 		
 		next_state = None
 		
 		for t in workflow.transitions:
 			if t.state == current_state and t.action == action:
 				next_state = t.next_state
+				print(f"[DEBUG] Found transition: {current_state} -> {next_state}")
 				break
 		
 		if not next_state:
+			print(f"[DEBUG] No transition found for action '{action}' from state '{current_state}'")
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
 
 		# Update workflow state
@@ -468,12 +551,17 @@ def submit_project_proposal(docname):
 		
 		# Check if next state requires submission
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
+		print(f"[DEBUG] Next state doc_status: {state_doc.doc_status if state_doc else 'None'}")
+		
 		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
+			print("[DEBUG] Submitting document...")
 			doc.submit()
 		else:
+			print("[DEBUG] Saving document (no submit)...")
 			doc.save(ignore_permissions=True)
 
 		frappe.db.commit()
+		print("=== SUBMIT PROJECT PROPOSAL END (SUCCESS) ===\n")
 
 		return {
 			"status": "success",
@@ -483,6 +571,9 @@ def submit_project_proposal(docname):
 		}
 
 	except Exception as e:
+		print(f"[DEBUG] EXCEPTION: {str(e)}")
+		print(f"[DEBUG] Traceback: {frappe.get_traceback()}")
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Project Proposal Submit Error")
+		print("=== SUBMIT PROJECT PROPOSAL END (ERROR) ===\n")
 		return {"status": "error", "message": str(e)}

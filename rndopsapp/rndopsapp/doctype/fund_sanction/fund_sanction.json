@@ -16,19 +16,6 @@
   "sanctioned_letter_no",
   "sanctioned_letter_date",
   "sanctioned_budget_breakup",
-  "section_break_qrqj",
-  "column_break_lahy",
-  "total_first_year_budget_1",
-  "column_break_eies",
-  "total_second_year_budget_1",
-  "column_break_sfta",
-  "total_third_year_budget_1",
-  "column_break_ueax",
-  "total_fourth_year_budget_1",
-  "column_break_zmgf",
-  "total_fifth_year_budget_1",
-  "column_break_sngj",
-  "grand_total_proposal_1",
   "section_break_wzqv",
   "sanction_related_files",
   "have_fund_details",
@@ -82,78 +69,6 @@
    "fieldtype": "Table",
    "label": "Total Budget Break-up",
    "options": "Project Sanctioned Budget"
-  },
-  {
-   "fieldname": "section_break_qrqj",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "total_first_year_budget_1",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Total 1st year",
-   "print_hide_if_no_value": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_second_year_budget_1",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Total 2nd year",
-   "print_hide_if_no_value": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_third_year_budget_1",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Total 3rd year",
-   "print_hide_if_no_value": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_fourth_year_budget_1",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Total 4th year",
-   "print_hide_if_no_value": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_fifth_year_budget_1",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Total 5th year",
-   "print_hide_if_no_value": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "grand_total_proposal_1",
-   "fieldtype": "Currency",
-   "hidden": 1,
-   "label": "Grand Total",
-   "print_hide": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_eies",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_sfta",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_ueax",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_zmgf",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_sngj",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "section_break_wzqv",
@@ -235,10 +150,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "column_break_lahy",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "refnum_prj_num",
    "fieldtype": "Data",
    "hidden": 1,
@@ -254,7 +165,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-20 15:44:59.942078",
+ "modified": "2025-12-08 10:34:47.164217",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Sanction",

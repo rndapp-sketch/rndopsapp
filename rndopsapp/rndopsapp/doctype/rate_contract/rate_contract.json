@@ -1,0 +1,82 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-19 10:12:58.873627",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_jmgm",
+  "amended_from",
+  "section_break_ivll",
+  "select_form_type",
+  "email_id",
+  "indentor"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_jmgm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Rate Contract",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_ivll",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "select_form_type",
+   "fieldtype": "Select",
+   "label": "Select Form Type",
+   "options": "\nP3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\nP4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)"
+  },
+  {
+   "fetch_from": "email_id.full_name",
+   "fieldname": "indentor",
+   "fieldtype": "Link",
+   "label": "Indentor",
+   "options": "User"
+  },
+  {
+   "fieldname": "email_id",
+   "fieldtype": "Link",
+   "label": "Email ID",
+   "options": "User"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-19 10:17:58.629385",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Rate Contract",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -386,6 +386,114 @@ def save_reimbursement_data(data):
 
 
 @frappe.whitelist()
+def edit_reimbursement(data):
+	"""
+	Edit Reimbursement data (parent + child tables) only if the document is in Draft state.
+	Expects 'data' as a JSON string or dict with 'name' field required.
+	"""
+	try:
+		if isinstance(data, str):
+			data = json.loads(data)
+
+		docname = data.get("name")
+		if not docname:
+			frappe.throw(_("Document name is required for editing."))
+
+		doc = frappe.get_doc("Reimbursement", docname)
+
+		# Check if document is in Draft state
+		if doc.docstatus != 0:
+			frappe.throw(_("Cannot edit a submitted or cancelled document. Document must be in Draft state."))
+
+		# Check workflow state if applicable
+		workflow_state = getattr(doc, "workflow_state", None)
+		if workflow_state and workflow_state.lower() != "draft":
+			frappe.throw(_(f"Cannot edit document in '{workflow_state}' state. Document must be in Draft state."))
+
+		# Map simple fields
+		simple_fields = [
+			"project_number",
+			"project_name",
+			"account_head",
+			"other_head",
+			"comment",
+			"bank_name",
+			"account_holder_name",
+			"bank_account_number",
+			"ifsc_code",
+			"applicant_webmail",
+			"applicant_department",
+			"applicant_designation",
+			"reimbursement_for_id",
+			"reimbursement_for_department",
+			"reimbursement_for_designation",
+			"dec1",
+			"dec2",
+			"dec3",
+			"dec4",
+			"amended_from",
+		]
+
+		for field in simple_fields:
+			if field in data:
+				val = data[field]
+				# Handle boolean checks coming as strings "0" or "1" or boolean
+				if field.startswith("dec"):
+					doc.set(field, 1 if val in [1, "1", True, "True"] else 0)
+				elif field in ["applicant_department", "reimbursement_for_department"]:
+					# If value looks like an ID (random string), try to fetch dept_id
+					if val:
+						val = str(val).strip()
+						dept_id = frappe.db.get_value("Department_prornd", val, "dept_id")
+						doc.set(field, dept_id or val)
+					else:
+						doc.set(field, None)
+				else:
+					doc.set(field, val if val != "null" else None)
+
+		# Handle child table: table_bosk
+		items_data = data.get("table_bosk", [])
+		if isinstance(items_data, str):
+			items_data = json.loads(items_data)
+
+		if items_data:
+			doc.set("table_bosk", [])
+			for item in items_data:
+				# Handle file upload for 'uploads' field
+				if item.get("uploads") and isinstance(item["uploads"], dict):
+					file_data = item["uploads"]
+					if file_data.get("file_name") and file_data.get("file_data"):
+						try:
+							saved_file = save_file(
+								file_data["file_name"],
+								file_data["file_data"],
+								doc.doctype,
+								doc.name,
+								decode=True,
+								is_private=0,
+								df="uploads"
+							)
+							item["uploads"] = saved_file.file_url
+						except Exception as e:
+							frappe.log_error(f"Error saving file: {str(e)}", "Reimbursement File Upload")
+							item["uploads"] = None
+
+				doc.append("table_bosk", item)
+
+		# Save
+		doc.flags.ignore_permissions = True
+		doc.save()
+		frappe.db.commit()
+
+		return {"status": "success", "docname": doc.name, "message": "Reimbursement updated successfully."}
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Reimbursement Edit Error")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
 def get_reimbursement_workflow_actions(docname):
 	"""
 	Get available workflow actions for the current user based on document state.

@@ -14,6 +14,8 @@ from frappe.utils import flt
 from frappe.utils.file_manager import save_file
 import base64
 import requests
+from rndopsapp.rndopsapp.kafka_sync import publish_project
+
 
 
 
@@ -343,14 +345,14 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 	
 	frappe.msgprint(f"Workflow updated for: {docname}")
 	print("doc outside: ", doc.as_dict())
-	# --- Integration with External API ---
+	# --- Integration with External API (Kafka) ---
 	if doc.workflow_state == "Approved" and doc.docstatus == 1:
 		print("doc inside: ", doc.as_dict())
 		try:
-			send_project_registration_data_api(doc)
+			publish_project(doc)
 		except Exception as e:
-			frappe.log_error(frappe.get_traceback(), f"Project Registration API Sync Failed: {docname}")
-			frappe.msgprint(_("Warning: Failed to sync with external Project API. Check Error Log."))
+			frappe.log_error(frappe.get_traceback(), f"Project Registration Kafka Sync Failed: {docname}")
+			frappe.msgprint(_("Warning: Failed to sync with external Project system. Check Error Log."))
 
 	return doc.workflow_state
 

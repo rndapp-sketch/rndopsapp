@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{YYYY}{MM}{DD}{fund_agen_initials}{01}{######}",
+ "autoname": "format:PP{YYYY}{MM}{DD}{fund_agen_initials}{01}{#####}",
  "creation": "2025-10-17 13:19:22.760047",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -19,6 +19,7 @@
   "executive_summary",
   "upload_proj_prop",
   "section_break_ujap",
+  "column_break_svle",
   "funding_agen",
   "funding_agency_schemes",
   "column_break_ghbn",
@@ -71,8 +72,10 @@
   "column_break_qkyv",
   "grand_total_proposal",
   "section_break_ekxj",
+  "column_break_pqgw",
   "total_budget_amount",
   "section_break_teuq",
+  "column_break_okkl",
   "check_project_heads",
   "equipment_checkbox",
   "manpower_checkbox",
@@ -115,7 +118,8 @@
    "fieldname": "pi_webmail",
    "fieldtype": "Link",
    "label": "If you are registering this project on behalf of other, please enter the email Id of the Principal Investigator",
-   "options": "User"
+   "options": "User",
+   "placeholder": " Leave it Empty If Generating endorsement for Self"
   },
   {
    "fieldname": "project_type",
@@ -138,21 +142,25 @@
   {
    "fieldname": "project_objective",
    "fieldtype": "Text",
+   "hidden": 1,
    "label": "Objective of the Project"
   },
   {
    "fieldname": "project_deliverables",
    "fieldtype": "Text",
+   "hidden": 1,
    "label": "Deliverables of the Project"
   },
   {
    "fieldname": "executive_summary",
    "fieldtype": "Text",
+   "hidden": 1,
    "label": "Executive Summary"
   },
   {
    "fieldname": "upload_proj_prop",
    "fieldtype": "Attach",
+   "hidden": 1,
    "label": "Upload Project Proposal"
   },
   {
@@ -162,12 +170,14 @@
   {
    "fieldname": "funding_agen",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Select Funding Agency",
    "options": "fundingagency_"
   },
   {
    "fieldname": "funding_agency_schemes",
    "fieldtype": "Small Text",
+   "hidden": 1,
    "label": "Name of the Research Scheme if applicable"
   },
   {
@@ -192,7 +202,8 @@
    "fetch_from": "funding_agen.ministry_funding_agency",
    "fieldname": "funding_agency_ministry",
    "fieldtype": "Data",
-   "label": "Ministry"
+   "label": "Ministry",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_zivq",
@@ -376,6 +387,7 @@
    "default": "No",
    "fieldname": "is_additional_pi",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Does this project has additional PI?",
    "options": "Yes\nNo",
    "reqd": 1
@@ -392,6 +404,7 @@
    "default": "No",
    "fieldname": "has_co_pi",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Does this project has Co-PI?",
    "options": "Yes\nNo"
   },
@@ -411,18 +424,21 @@
   {
    "fieldname": "budget_proposal_details_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Budget Details"
   },
   {
    "allow_in_quick_entry": 1,
    "fieldname": "proposed_budget_breakup",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Proposed Budget Break-up",
    "options": "Project Sanctioned Budget"
   },
   {
    "fieldname": "section_break_cmno",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "fieldname": "total_first_year_budget",
@@ -503,36 +519,42 @@
    "default": "0",
    "fieldname": "equipment_checkbox",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Equipment"
   },
   {
    "default": "0",
    "fieldname": "manpower_checkbox",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Manpower"
   },
   {
    "depends_on": "eval:doc.equipment_checkbox == 1\r\n",
    "fieldname": "proposed_equipment_details",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Equipment Details",
    "options": "project_registration_equipment_details"
   },
   {
    "fieldname": "proposed_manpower_details",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Manpower Details",
    "options": "project_registration_manpower_details"
   },
   {
    "fieldname": "committee_clearance",
    "fieldtype": "Tab Break",
+   "hidden": 1,
    "label": "Committee Clearance"
   },
   {
    "default": "No",
    "fieldname": "needs_committee_clearance",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Does this project need clearance from any committee?",
    "options": "\nYes\nNo"
   },
@@ -628,21 +650,35 @@
    "fetch_from": "funding_agen.funding_agency_initials",
    "fieldname": "fund_agen_initials",
    "fieldtype": "Data",
-   "label": "Funding Agency Initials",
-   "read_only": 1
+   "hidden": 1,
+   "label": "Funding Agency Initials"
   },
   {
    "fieldname": "workflow_status_display",
    "fieldtype": "Data",
    "label": "Workflow Status Display",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_okkl",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_pqgw",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_svle",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-30 22:12:26.142792",
+ "modified": "2025-12-17 12:44:21.581541",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Proposal",

@@ -51,6 +51,8 @@
   "involves_international_travel",
   "project_duration_months",
   "project_duration_days",
+  "prj_start_date",
+  "prj_end_date",
   "collaborators",
   "section_break_nlcs",
   "column_break_xjtz",
@@ -417,7 +419,8 @@
    "fieldtype": "Int",
    "label": "Duration of the Project (in Months)",
    "mandatory_depends_on": "eval:doc.project_type == 'Research'",
-   "non_negative": 1
+   "non_negative": 1,
+   "reqd": 1
   },
   {
    "depends_on": "eval:doc.project_type == 'Consultancy'",
@@ -1017,13 +1020,23 @@
    "fieldtype": "Data",
    "label": "Funding Agency Initials",
    "read_only": 1
+  },
+  {
+   "fieldname": "prj_start_date",
+   "fieldtype": "Date",
+   "label": "Project Start Date"
+  },
+  {
+   "fieldname": "prj_end_date",
+   "fieldtype": "Date",
+   "label": "Project End Date"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-13 12:10:12.147747",
+ "modified": "2025-12-19 12:24:00.933326",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

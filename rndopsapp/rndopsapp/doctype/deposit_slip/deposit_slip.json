@@ -6,7 +6,48 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_skcd",
-  "amended_from"
+  "amended_from",
+  "primary_section",
+  "category",
+  "fund_received_ref",
+  "research_details_section",
+  "project_title",
+  "principal_investigator",
+  "consultancy_details_section",
+  "consultancy_event_title",
+  "principal_consultant_organizer",
+  "financial_section",
+  "client",
+  "funding_agency",
+  "gstin_of_funding_agency",
+  "iitg_invoice_no",
+  "bank",
+  "amount_inclusive_of_gst",
+  "ecs_section",
+  "ecs_acc_no",
+  "ecs_dates",
+  "calculation_section",
+  "igst_18",
+  "cgst_9",
+  "sgst_9",
+  "overhead_amount",
+  "amount_after_gst_tds",
+  "total_cost_x",
+  "consultancy_charge_y",
+  "operational_charge_z",
+  "section_break_qnrm",
+  "overhead_from_z_multiplier",
+  "total_overhead_y_multiplier",
+  "total_overhead_z_multiplier",
+  "institute_share_multiplier",
+  "column_break_nfxa",
+  "overhead_from_z_label",
+  "overhead_from_z_amount",
+  "total_overhead_label",
+  "total_overhead_amount",
+  "institute_share_label",
+  "institute_share_amount",
+  "total_overhead_institute_share"
  ],
  "fields": [
   {
@@ -16,19 +57,258 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "Deposit slip",
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "primary_section",
+   "fieldtype": "Section Break",
+   "label": "Primary Section"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Category",
+   "options": "\nResearch\nResearch (Consultancy)\nD (Consultancy)\nE (Non Routine)\nT (Testing)\nOther Event",
+   "reqd": 1
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Link",
+   "label": "Fund Received Reference",
+   "options": "Fund Received"
+  },
+  {
+   "depends_on": "eval:doc.category=='Research'",
+   "fieldname": "research_details_section",
+   "fieldtype": "Section Break",
+   "label": "Research Project Details"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "principal_investigator",
+   "fieldtype": "Link",
+   "label": "Principal Investigator",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.category.includes('Consultancy')",
+   "fieldname": "consultancy_details_section",
+   "fieldtype": "Section Break",
+   "label": "Consultancy / Event Details"
+  },
+  {
+   "fieldname": "consultancy_event_title",
+   "fieldtype": "Data",
+   "label": "Consultancy / Event Title"
+  },
+  {
+   "fieldname": "principal_consultant_organizer",
+   "fieldtype": "Link",
+   "label": "Principal Consultant / Organizer",
+   "options": "User"
+  },
+  {
+   "fieldname": "financial_section",
+   "fieldtype": "Section Break",
+   "label": "Client & Financials"
+  },
+  {
+   "depends_on": "eval:doc.category!=='Research'",
+   "fieldname": "client",
+   "fieldtype": "Data",
+   "label": "Client"
+  },
+  {
+   "fieldname": "funding_agency",
+   "fieldtype": "Link",
+   "label": "Funding Agency",
+   "options": "fundingagency_"
+  },
+  {
+   "fieldname": "gstin_of_funding_agency",
+   "fieldtype": "Data",
+   "label": "GSTIN of Funding Agency"
+  },
+  {
+   "depends_on": "eval:doc.category.includes('Consultancy')",
+   "fieldname": "iitg_invoice_no",
+   "fieldtype": "Data",
+   "label": "IITG Invoice No."
+  },
+  {
+   "fieldname": "bank",
+   "fieldtype": "Data",
+   "label": "Bank"
+  },
+  {
+   "fieldname": "amount_inclusive_of_gst",
+   "fieldtype": "Currency",
+   "label": "Amount Inclusive of GST"
+  },
+  {
+   "fieldname": "ecs_section",
+   "fieldtype": "Section Break",
+   "label": "ECS Details"
+  },
+  {
+   "fieldname": "ecs_acc_no",
+   "fieldtype": "Data",
+   "label": "ECS A/C No.\t"
+  },
+  {
+   "fieldname": "ecs_dates",
+   "fieldtype": "Table",
+   "label": "ECS Dates",
+   "options": "Deposit Slip ECS Date"
+  },
+  {
+   "fieldname": "calculation_section",
+   "fieldtype": "Section Break",
+   "label": "GST and Fee Calculations"
+  },
+  {
+   "depends_on": "eval:doc.category=='D Consultancy'",
+   "fieldname": "igst_18",
+   "fieldtype": "Currency",
+   "label": "IGST @18%"
+  },
+  {
+   "depends_on": "eval:doc.category=='T (Testing)'",
+   "fieldname": "cgst_9",
+   "fieldtype": "Currency",
+   "label": "CGST @9%"
+  },
+  {
+   "depends_on": "eval:doc.category=='T (Testing)'",
+   "fieldname": "sgst_9",
+   "fieldtype": "Currency",
+   "label": "SGST @9%"
+  },
+  {
+   "depends_on": "eval:doc.category=='D Consultancy'",
+   "fieldname": "consultancy_charge_y",
+   "fieldtype": "Currency",
+   "label": "Consultancy Charge (Y)"
+  },
+  {
+   "depends_on": "eval:doc.category=='D Consultancy'",
+   "fieldname": "operational_charge_z",
+   "fieldtype": "Currency",
+   "label": "Operational Charge (Z)"
+  },
+  {
+   "depends_on": "eval:doc.category!='D Consultancy'",
+   "fieldname": "overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead Amount"
+  },
+  {
+   "fieldname": "amount_after_gst_tds",
+   "fieldtype": "Currency",
+   "label": "Amount Received after GST TDS @ 2%"
+  },
+  {
+   "description": "*Balance after Deduction of GST",
+   "fieldname": "total_cost_x",
+   "fieldtype": "Currency",
+   "label": "Total Cost X"
+  },
+  {
+   "fieldname": "section_break_qnrm",
+   "fieldtype": "Section Break",
+   "label": "Calculations"
+  },
+  {
+   "default": "0.1",
+   "fieldname": "overhead_from_z_multiplier",
+   "fieldtype": "Float",
+   "label": "Overhead from Z Multiplier",
+   "read_only": 1
+  },
+  {
+   "default": "0.1",
+   "fieldname": "total_overhead_y_multiplier",
+   "fieldtype": "Float",
+   "label": "Total Overhead Y Multiplier",
+   "read_only": 1
+  },
+  {
+   "default": "0.1",
+   "fieldname": "total_overhead_z_multiplier",
+   "fieldtype": "Float",
+   "label": "Total Overhead Z Multiplier",
+   "read_only": 1
+  },
+  {
+   "default": "0.2",
+   "fieldname": "institute_share_multiplier",
+   "fieldtype": "Float",
+   "label": "Institute Share Multiplier",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_nfxa",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "overhead_from_z_label",
+   "fieldtype": "HTML",
+   "label": "Overhead from Z Label"
+  },
+  {
+   "fieldname": "overhead_from_z_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead from Z Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_overhead_label",
+   "fieldtype": "HTML",
+   "label": "Total Overhead Label"
+  },
+  {
+   "fieldname": "total_overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Total Overhead Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "institute_share_label",
+   "fieldtype": "HTML",
+   "label": "Institute Share Label"
+  },
+  {
+   "fieldname": "institute_share_amount",
+   "fieldtype": "Currency",
+   "label": "Institute Share Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_overhead_institute_share",
+   "fieldtype": "Currency",
+   "label": "Overhead + Institute Share",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-27 10:16:24.496763",
+ "modified": "2025-12-09 10:28:53.722262",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Deposit slip",
@@ -43,6 +323,19 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
    "share": 1,
    "submit": 1,
    "write": 1

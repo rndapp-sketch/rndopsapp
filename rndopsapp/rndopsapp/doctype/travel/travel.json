@@ -12,10 +12,31 @@
   "applicant_name_travel",
   "designation_travel",
   "department_travel",
-  "html_lzwz",
+  "if_traveler",
+  "other_traveler",
+  "other_traveler_address",
   "details_travel",
   "visit_type_travel",
-  "data_hwmw"
+  "specify_type_of_visit",
+  "nature_of_travel",
+  "venue_address",
+  "organizing_authority",
+  "purpose_of_visit",
+  "travel_project_title",
+  "travel_project_number",
+  "travel_period_section",
+  "from_date",
+  "to_date",
+  "account_heads_section",
+  "travel_head",
+  "contingency_head",
+  "other_head",
+  "travel_contribution",
+  "contingency_contribution",
+  "other_account_head",
+  "other_contribution",
+  "travel_financial_assistance",
+  "travel_mode_of_travel"
  ],
  "fields": [
   {
@@ -63,11 +84,6 @@
    "label": "Designation of the applicant"
   },
   {
-   "fieldname": "html_lzwz",
-   "fieldtype": "HTML",
-   "options": "<div class=\"left-column\">\n                    <label id=\"labelDepartment\">If Applicant is the traveler? </label>\n                </div>\n<div class=\"right-column\">\n                    <input type=\"radio\" value=\"1\" id=\"yesApplicantTravel\" name=\"travelApplicant\">\n                    Yes\n                    <input type=\"radio\" value=\"0\" id=\"noApplicantTravel\" name=\"travelApplicant\">\n                    No\n                </div>"
-  },
-  {
    "fieldname": "details_travel",
    "fieldtype": "Section Break",
    "label": "DETAILS OF THE CONFERENCE FOR WHICH FINANCIAL ASSISTANCE IS SOUGHT"
@@ -79,17 +95,152 @@
    "options": "\nConference\nField Visit\nOther"
   },
   {
-   "depends_on": "eval:doc.visit_type_travel == 'Other'",
-   "fieldname": "data_hwmw",
+   "fieldname": "if_traveler",
+   "fieldtype": "Select",
+   "label": "If Applicant is the traveler? ",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == 'No'",
+   "fieldname": "other_traveler",
    "fieldtype": "Data",
-   "placeholder": "Please mention the other type of visit."
+   "label": "Name of the traveler"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == 'No'",
+   "fieldname": "other_traveler_address",
+   "fieldtype": "Data",
+   "label": "Designation and full address of traveler"
+  },
+  {
+   "depends_on": "eval:doc.visit_type_travel== 'Other'",
+   "fieldname": "specify_type_of_visit",
+   "fieldtype": "Data",
+   "label": "Specify Type of Visit",
+   "mandatory_depends_on": "eval:doc.type_of_visit==\"Other\""
+  },
+  {
+   "fieldname": "nature_of_travel",
+   "fieldtype": "Select",
+   "label": "Nature of Travel",
+   "options": "\nLocal\nNational\nInternational"
+  },
+  {
+   "fieldname": "venue_address",
+   "fieldtype": "Small Text",
+   "label": "Venue / Address of Visit"
+  },
+  {
+   "fieldname": "travel_period_section",
+   "fieldtype": "Section Break",
+   "label": "Travel Period"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "To Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "organizing_authority",
+   "fieldtype": "Small Text",
+   "label": "Organizing Authority",
+   "reqd": 1
+  },
+  {
+   "fieldname": "purpose_of_visit",
+   "fieldtype": "Small Text",
+   "label": "Purpose of Visit"
+  },
+  {
+   "fieldname": "account_heads_section",
+   "fieldtype": "Section Break",
+   "label": "Account Head(s)"
+  },
+  {
+   "default": "0",
+   "fieldname": "travel_head",
+   "fieldtype": "Check",
+   "label": "Travel"
+  },
+  {
+   "default": "0",
+   "fieldname": "contingency_head",
+   "fieldtype": "Check",
+   "label": "Contingency"
+  },
+  {
+   "default": "0",
+   "fieldname": "other_head",
+   "fieldtype": "Check",
+   "label": "Other"
+  },
+  {
+   "fieldname": "travel_contribution",
+   "fieldtype": "Currency",
+   "label": "Contribution Amount (Travel)",
+   "placeholder": "Contribution"
+  },
+  {
+   "fieldname": "contingency_contribution",
+   "fieldtype": "Currency",
+   "label": "Contribution Amount (Contingency)",
+   "placeholder": "Contribution"
+  },
+  {
+   "fieldname": "other_account_head",
+   "fieldtype": "Data",
+   "label": "Specify Other Account Head",
+   "placeholder": "Specify other head"
+  },
+  {
+   "fieldname": "other_contribution",
+   "fieldtype": "Currency",
+   "label": "Contribution Amount (Other)",
+   "placeholder": "Contribution"
+  },
+  {
+   "fetch_from": "travel_project_title.address_postal_code",
+   "fieldname": "travel_project_number",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "travel_project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration",
+   "reqd": 1
+  },
+  {
+   "description": "If you require an advance, a separate Advance Request form must be submitted.",
+   "fieldname": "travel_financial_assistance",
+   "fieldtype": "Select",
+   "label": "Do you require financial assistance?",
+   "options": "\nYes\nNo",
+   "reqd": 1
+  },
+  {
+   "fieldname": "travel_mode_of_travel",
+   "fieldtype": "Select",
+   "label": "Mode of Travel",
+   "options": "By Air\nBy Train\nBy Road"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-27 17:52:59.252311",
+ "modified": "2025-12-19 12:45:17.019658",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Travel",

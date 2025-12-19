@@ -28,7 +28,7 @@
   "justification",
   "documents",
   "comments",
-  "amended_from"
+  "declaration"
  ],
  "fields": [
   {
@@ -137,16 +137,6 @@
    "label": "Comments"
   },
   {
-   "fieldname": "amended_from",
-   "fieldtype": "Link",
-   "label": "Amended From",
-   "no_copy": 1,
-   "options": "Temporary Advance",
-   "print_hide": 1,
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
    "fieldname": "section_applying_for",
    "fieldtype": "Section Break",
    "label": "Applying For"
@@ -156,13 +146,19 @@
    "fieldtype": "Select",
    "label": "Are you applying this travel for someone?",
    "options": "Yes\nNo"
+  },
+  {
+   "fieldname": "declaration",
+   "fieldtype": "HTML",
+   "label": "Declaration",
+   "options": "<li>I am aware of the rule that temporary advance should be settled with in 45 days from the date of advance amount is transferred. Here the penalty clause may be stated.</li>\n<li>I am aware of the rule that items which are available under rate contract shall not be purchase using temporary advance. Link (http://local.iitg.ernet.in/snp/node/7) for items under rate contract..</li>"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-11-10 13:08:21.779019",
+ "modified": "2025-12-03 16:46:29.663075",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Temporary Advance",

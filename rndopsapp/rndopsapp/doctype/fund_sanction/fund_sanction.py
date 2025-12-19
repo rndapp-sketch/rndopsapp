@@ -10,6 +10,7 @@ import requests
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
+from rndopsapp.rndopsapp.kafka_sync import publish_sanction
 
 # from frappe.workflow.doctype.workflow.workflow import get_workflow_name
 
@@ -463,8 +464,11 @@ def save_fund_sanction_data(**data):
 			doc.submit()
 			print("✅ Submitted successfully")
 
-		# --- ✅ Send data to external API ---
-		send_sanction_details_to_api(doc)
+		# --- ✅ Send data to external API (Kafka) ---
+		try:
+			publish_sanction(doc)
+		except Exception as e:
+			frappe.log_error(frappe.get_traceback(), "Fund Sanction Kafka Sync Error")
 
 		frappe.db.commit()
 		return {"status": "success", "docname": doc.name}

@@ -10,6 +10,7 @@ import requests
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, sanitize_html
+from rndopsapp.rndopsapp.kafka_sync import publish_fund_received
 
 
 class FundReceived(Document):
@@ -117,7 +118,7 @@ def get_fund_received_fields(doc_name=None):
 
 
 @frappe.whitelist(allow_guest=False)
-def get_fund_received_by_prjreg(prjreg_title: str = "2025111101DST000103", limit: int = 200, start: int = 0):
+def get_fund_received_by_prjreg(prjreg_title: str = "", limit: int = 200, start: int = 0):
 	"""
 	Returns Fund Received docs for a given prjreg_title in the format:
 	{ "message": [ { ... full doc as dict ... }, ... ] }
@@ -133,7 +134,7 @@ def get_fund_received_by_prjreg(prjreg_title: str = "2025111101DST000103", limit
 	# --- 0) basic arg sanitization / casting ---
 	limit = int(cint(limit) or 200)
 	start = int(cint(start) or 0)
-	prjreg_title = (prjreg_title or "").strip() or "2025111101DST000103"
+	prjreg_title = (prjreg_title or "").strip()
 
 	# --- 1) gateway guard: allow Bruno via internal secret header ---
 	bruno_secret = frappe.conf.get("bruno_internal_secret")
@@ -265,7 +266,7 @@ def save_fund_received(doc_data):
 						{
 							"account_head": breakup.get("account_head") or "",
 							"amount_received": breakup.get("amount_received", 0),
-							"budget_year": breakup.get("budget_year", 1),
+							"budget_year_funds_receive": breakup.get("budget_year_funds_receive", 1),
 							"remarks": breakup.get("remarks") or "",
 						},
 					)
@@ -276,13 +277,13 @@ def save_fund_received(doc_data):
 
 		print(f"Successfully created Fund Received: {new_doc.name}")  # Debug log
 
-		# --- Send payload to external API (fire-and-forget style, but synchronous here) ---
+		# --- Send payload to external API (Kafka) ---
 		try:
-			send_fund_received_to_api(new_doc)
+			publish_fund_received(new_doc)
 		except Exception as ex:
 			# Log the error but don't roll back the created document
-			frappe.log_error(frappe.get_traceback(), "Fund Received -> External API error")
-			print("Error while sending to external API:", ex)
+			frappe.log_error(frappe.get_traceback(), "Fund Received -> Kafka Sync error")
+			print("Error while sending to Kafka:", ex)
 
 		return {"status": "success", "docname": new_doc.name}
 

@@ -306,3 +306,31 @@ def get_all_workflow_states(workflow_name=None):
 		result.append({"workflow": wf.name, "states": states_info})
 
 	return result
+
+
+@frappe.whitelist()
+def get_workflow_transitions(workflow_name):
+	"""
+	Returns the transitions (paths) for a given workflow.
+	"""
+	if not workflow_name:
+		return []
+
+	if not frappe.db.exists("Workflow", workflow_name):
+		frappe.throw(f"Workflow '{workflow_name}' does not exist.")
+
+	doc = frappe.get_doc("Workflow", workflow_name)
+
+	transitions = []
+	for t in doc.transitions:
+		transitions.append({
+			"state": t.state,
+			"action": t.action,
+			"next_state": t.next_state,
+			"allowed": t.allowed,
+			"allow_self_approval": t.allow_self_approval,
+			"condition": t.condition
+		})
+
+	return transitions
+

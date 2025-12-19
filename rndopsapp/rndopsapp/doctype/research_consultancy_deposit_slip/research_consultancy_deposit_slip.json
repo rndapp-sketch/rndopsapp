@@ -1,0 +1,191 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:RES-DS-.YYYY.-.#####",
+ "creation": "2025-12-12 07:43:16.296523",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "primary_details",
+  "project_title",
+  "principal_investigator",
+  "client",
+  "funding_agency",
+  "gstin_of_funding_agency",
+  "ecs_ac_no",
+  "ecs_dates",
+  "bank",
+  "calculations_section",
+  "amount_inclusive_gst_capital",
+  "cgst_9",
+  "sgst_9",
+  "project_balance_after_gst",
+  "overhead_multiplier",
+  "overhead_amount_label",
+  "overhead_amount",
+  "credit_distribution_section",
+  "credit_distribution",
+  "section_break_ahgv",
+  "total_gst",
+  "total_budget"
+ ],
+ "fields": [
+  {
+   "fieldname": "primary_details",
+   "fieldtype": "Section Break",
+   "label": "Primary Details"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "principal_investigator",
+   "fieldtype": "Link",
+   "label": "Principal Investigator",
+   "options": "User"
+  },
+  {
+   "fieldname": "client",
+   "fieldtype": "Data",
+   "label": "Client"
+  },
+  {
+   "fieldname": "funding_agency",
+   "fieldtype": "Data",
+   "label": "Funding Agency"
+  },
+  {
+   "fieldname": "gstin_of_funding_agency",
+   "fieldtype": "Data",
+   "label": "GSTIN of Funding Agency"
+  },
+  {
+   "fieldname": "ecs_ac_no",
+   "fieldtype": "Data",
+   "label": "ECS A/C No."
+  },
+  {
+   "fieldname": "ecs_dates",
+   "fieldtype": "Table",
+   "label": "ECS Dates",
+   "options": "Deposit Slip ECS Date"
+  },
+  {
+   "fieldname": "bank",
+   "fieldtype": "Data",
+   "label": "Bank"
+  },
+  {
+   "fieldname": "calculations_section",
+   "fieldtype": "Section Break",
+   "label": "Calculations"
+  },
+  {
+   "fieldname": "amount_inclusive_gst_capital",
+   "fieldtype": "Currency",
+   "label": "Amount Inclusive of GST (Capital)"
+  },
+  {
+   "fieldname": "cgst_9",
+   "fieldtype": "Currency",
+   "label": "CGST @9%"
+  },
+  {
+   "fieldname": "sgst_9",
+   "fieldtype": "Currency",
+   "label": "SGST @9%"
+  },
+  {
+   "fieldname": "project_balance_after_gst",
+   "fieldtype": "Currency",
+   "label": "Project Balance (After GST)",
+   "read_only": 1
+  },
+  {
+   "default": "0.15",
+   "fieldname": "overhead_multiplier",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Overhead Multiplier"
+  },
+  {
+   "fieldname": "overhead_amount_label",
+   "fieldtype": "HTML",
+   "label": "Overhead Amount Label"
+  },
+  {
+   "fieldname": "overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "credit_distribution_section",
+   "fieldtype": "Section Break",
+   "label": "Credit Distribution"
+  },
+  {
+   "fieldname": "credit_distribution",
+   "fieldtype": "Table",
+   "label": "Credit as follows",
+   "options": "Deposit Slip Credit Distribution"
+  },
+  {
+   "fieldname": "section_break_ahgv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_gst",
+   "fieldtype": "Currency",
+   "label": "Total GST"
+  },
+  {
+   "fieldname": "total_budget",
+   "fieldtype": "Currency",
+   "label": "Total Budget",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-12-12 10:44:48.703699",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Research Consultancy Deposit Slip",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
