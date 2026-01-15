@@ -8,6 +8,28 @@ from frappe import _
 from frappe.model.document import Document
 
 
+def extract_eval_expression(expression):
+	"""
+	Extracts the JavaScript expression from a Frappe 'eval:' string.
+	Returns the expression without 'eval:' prefix for frontend evaluation.
+	
+	Examples:
+		"eval:doc.category=='Research'" -> "doc.category=='Research'"
+		"eval:doc.category.includes('Consultancy')" -> "doc.category.includes('Consultancy')"
+		None -> None
+		"" -> None
+	"""
+	if not expression:
+		return None
+	
+	expression = str(expression).strip()
+	
+	if expression.startswith("eval:"):
+		return expression[5:].strip()  # Remove 'eval:' prefix
+	
+	return expression
+
+
 class Depositslip(Document):
 	pass
 
@@ -17,6 +39,7 @@ def get_deposit_slip_fields(doc_name=None):
 	"""
 	API to return Deposit Slip field metadata and prefill data
 	based on a Fund Received reference (doc_name).
+	Includes eval expressions for frontend conditional logic.
 	"""
 	deposit_slip_meta = frappe.get_meta("Deposit slip")
 
@@ -30,8 +53,15 @@ def get_deposit_slip_fields(doc_name=None):
 			"hidden": f.hidden,
 			"read_only": f.read_only,
 			"description": f.description,
-			"depends_on": f.depends_on,
 			"default": f.default,
+			# Eval expressions for frontend conditional logic
+			"depends_on": f.depends_on,
+			"mandatory_depends_on": f.mandatory_depends_on,
+			"read_only_depends_on": f.read_only_depends_on,
+			# Extract eval expression for easier frontend parsing
+			"depends_on_eval": extract_eval_expression(f.depends_on),
+			"mandatory_depends_on_eval": extract_eval_expression(f.mandatory_depends_on),
+			"read_only_depends_on_eval": extract_eval_expression(f.read_only_depends_on),
 		}
 		for f in deposit_slip_meta.get("fields")
 	]

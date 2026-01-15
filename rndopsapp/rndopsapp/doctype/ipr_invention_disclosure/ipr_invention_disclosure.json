@@ -1,0 +1,135 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-22 13:01:44.522664",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_dpw7",
+  "amended_from",
+  "section_break_tdrs",
+  "ipr_header",
+  "section_break_lfbi",
+  "ipr_date",
+  "title_of_project_invention",
+  "section_break_bulh",
+  "note_for_coinventors",
+  "coinventors_detail",
+  "section_break_pxzu",
+  "source_of_funding",
+  "other_source_of_funding",
+  "is_work_bound",
+  "other_is_work_bound"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_dpw7",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "IPR Invention Disclosure",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_tdrs",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ipr_header",
+   "fieldtype": "HTML",
+   "label": "INVENTION DISCLOSURE FORM",
+   "options": "\n                    <p id=\"heading-panel\"><b>The inventor is requested to fill up the following form while submitting an application for filling a patent by Indian Institute of Technology  Guwahati.</b></p>\n                    <br>\n                    <hr id=\"hr-thick\">\n                    <div style=\"text-decoration: none;font-weight: bolder;\">\n                    \n                    </div>\n                "
+  },
+  {
+   "fieldname": "section_break_lfbi",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ipr_date",
+   "fieldtype": "Date",
+   "label": "Date of Submission",
+   "options": "today"
+  },
+  {
+   "fieldname": "title_of_project_invention",
+   "fieldtype": "Data",
+   "label": "Title of Project / Invention"
+  },
+  {
+   "fieldname": "section_break_bulh",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "note_for_coinventors",
+   "fieldtype": "HTML",
+   "options": "<p>[Note: Please include the names of all co-inventors, Co-inventors include any individual who has conceived or contributed to an essential element of the invention, either independently or jointly with others, during the evolution of the technology or reduction to practice]</p>"
+  },
+  {
+   "fieldname": "coinventors_detail",
+   "fieldtype": "Table",
+   "label": "Name of the inventors including faculty, students and staff:",
+   "options": "Project Co-Investigator"
+  },
+  {
+   "fieldname": "section_break_pxzu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "source_of_funding",
+   "fieldtype": "Select",
+   "label": "Source of Funding",
+   "options": "\nInstitute Funding\nIndustry Funded\nGovernment Aided\nConsultancy with Contractual Agreement\nConsultancy without Contractual Agreement\nOther"
+  },
+  {
+   "depends_on": "eval:doc.source_of_funding==\"Other\"",
+   "fieldname": "other_source_of_funding",
+   "fieldtype": "Data",
+   "placeholder": "Mention the other source of funding agency"
+  },
+  {
+   "fieldname": "is_work_bound",
+   "fieldtype": "Select",
+   "label": "Is the work bound by any agreement/contract/MOU?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.is_work_bound==\"Yes\"",
+   "fieldname": "other_is_work_bound",
+   "fieldtype": "Data"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-22 16:06:58.863474",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "IPR Invention Disclosure",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

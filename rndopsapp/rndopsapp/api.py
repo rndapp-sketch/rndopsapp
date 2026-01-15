@@ -470,3 +470,45 @@ def get_project_details(docname):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), f"Error fetching details for {docname}")
 		frappe.throw(_("An error occurred while fetching project details."))
+
+
+@frappe.whitelist()
+def get_user_details(user_email):
+	"""
+	Fetches details for a specific user to populate advance form fields.
+	Returns the user document with resolved department name and employee class.
+	"""
+	from frappe import _
+	
+	if not user_email:
+		frappe.throw(_("User Email is required."))
+	
+	try:
+		user_email = str(user_email).strip('"').strip("'")
+		user_doc = frappe.get_doc("User", user_email)
+		user_dict = user_doc.as_dict()
+		
+		# Resolve department_name ID to actual department name from Department_prornd
+		dept_link = user_dict.get("department_name")
+		if dept_link:
+			try:
+				dept_doc = frappe.get_doc("Department_prornd", dept_link)
+				user_dict["department_name"] = dept_doc.dept_name  # Replace ID with actual name
+			except Exception:
+				pass  # Keep original value if lookup fails
+		
+		# Resolve empclass ID to actual employee class name from EmployeeClass_prornd
+		empclass_link = user_dict.get("empclass")
+		if empclass_link:
+			try:
+				empclass_doc = frappe.get_doc("EmployeeClass_prornd", empclass_link)
+				user_dict["empclass"] = empclass_doc.empclass_name  # Replace ID with actual name
+			except Exception:
+				pass  # Keep original value if lookup fails
+		
+		return user_dict
+	except frappe.DoesNotExistError:
+		return None
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), _("Error fetching user details"))
+		frappe.throw(_("An error occurred while fetching user details."))

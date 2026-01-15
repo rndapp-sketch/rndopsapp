@@ -14,7 +14,83 @@ from rndopsapp.rndopsapp.kafka_sync import publish_fund_received
 
 
 class FundReceived(Document):
-	pass
+	def validate(self):
+		"""Validate and auto-populate sanction letter details from linked Fund Sanction"""
+		self.populate_sanction_details()
+	
+	def populate_sanction_details(self):
+		"""
+		Fetch sanction letter number and date from the Fund Sanction 
+		linked to this project and populate them on this document.
+		"""
+		# Use getattr for safe access - fields may not exist on the doctype
+		current_letter_no = getattr(self, 'sanctioned_letter_no', None)
+		current_letter_date = getattr(self, 'sanctioned_letter_date', None)
+		
+		# Skip if already populated
+		if current_letter_no and current_letter_date:
+			return
+		
+		# Get the project registration number
+		project_number = getattr(self, 'prjreg_title', None)
+		if not project_number:
+			return
+		
+		try:
+			# Find the latest Fund Sanction for this project
+			# First try using sanction_ref_no if available
+			sanction_name = getattr(self, 'sanction_ref_no', None)
+			
+			if not sanction_name:
+				# Fallback: find Fund Sanction by project registration
+				sanction_name = frappe.db.get_value(
+					"Fund Sanction",
+					{"refnum_prj_num": project_number},
+					"name",
+					order_by="creation desc"
+				)
+				
+				# Also try project_proposal field
+				if not sanction_name:
+					sanction_name = frappe.db.get_value(
+						"Fund Sanction",
+						{"project_proposal": project_number},
+						"name",
+						order_by="creation desc"
+					)
+			
+			if sanction_name:
+				# Fetch sanction letter details
+				sanction_doc = frappe.db.get_value(
+					"Fund Sanction",
+					sanction_name,
+					["sanctioned_letter_no", "sanctioned_letter_date"],
+					as_dict=True
+				)
+				
+				if sanction_doc:
+					# Only set if not already set and field exists on doctype
+					if not current_letter_no and sanction_doc.get("sanctioned_letter_no"):
+						if hasattr(self, 'sanctioned_letter_no') or 'sanctioned_letter_no' in [f.fieldname for f in self.meta.fields]:
+							self.sanctioned_letter_no = sanction_doc.get("sanctioned_letter_no")
+					
+					if not current_letter_date and sanction_doc.get("sanctioned_letter_date"):
+						if hasattr(self, 'sanctioned_letter_date') or 'sanctioned_letter_date' in [f.fieldname for f in self.meta.fields]:
+							self.sanctioned_letter_date = sanction_doc.get("sanctioned_letter_date")
+					
+					# Also set sanction_ref_no if not set
+					if not getattr(self, 'sanction_ref_no', None):
+						self.sanction_ref_no = sanction_name
+					
+					print(f"✅ Auto-populated sanction details for {self.name}: letter_no={sanction_doc.get('sanctioned_letter_no')}, date={sanction_doc.get('sanctioned_letter_date')}")
+				else:
+					print(f"⚠️ Fund Sanction {sanction_name} found but has no letter details")
+			else:
+				print(f"📋 No Fund Sanction found for project {project_number}")
+				
+		except Exception as e:
+			frappe.log_error(f"Error fetching sanction details for Fund Received: {e}", "Fund Received Validate Error")
+			print(f"❌ Error fetching sanction details: {e}")
 
 
 
@@ -198,11 +274,15 @@ def get_fund_received_by_prjreg(prjreg_title: str = "", limit: int = 200, start:
 
 
 @frappe.whitelist()
-def save_fund_received(doc_data):
+def save_fund_received(doc_data, prjreg_title=None):
 	"""Saves the Fund Received data from the React form and forwards to external API (no DB writes for API response)."""
 	try:
 		data = json.loads(doc_data)
-		print("Received data for Fund Received:", data)  # Debug log
+		print(f"Received data for Fund Received: {data}, prjreg_title arg: {prjreg_title}")  # Debug log
+
+		# If prjreg_title is not in data but passed as argument, add it to data
+		if "prjreg_title" not in data and prjreg_title:
+			data["prjreg_title"] = prjreg_title
 
 		# Create new Fund Received document
 		new_doc = frappe.new_doc("Fund Received")
@@ -210,6 +290,7 @@ def save_fund_received(doc_data):
 		# Map the form data to doctype fields
 		field_mapping = {
 			"prjreg_title": "prjreg_title",
+			"prjreg_refnum": "prjreg_title",  # Map prjreg_refnum to prjreg_title as fallback
 			"sanction_ref_no": "sanction_ref_no",
 			"prj_type": "prj_type",
 			"fund_received_amt": "fund_received_amt",
@@ -220,7 +301,12 @@ def save_fund_received(doc_data):
 		}
 
 		# Update document with mapped data
+		# Process prjreg_title first, then prjreg_refnum (so prjreg_title takes precedence if both exist)
 		for form_field, doctype_field in field_mapping.items():
+			# Skip if already set (for fallback mappings like prjreg_refnum -> prjreg_title)
+			current_value = new_doc.get(doctype_field)
+			if current_value not in [None, ""]:
+				continue
 			if form_field in data and data[form_field] not in [None, ""]:
 				new_doc.set(doctype_field, data[form_field])
 
@@ -279,11 +365,22 @@ def save_fund_received(doc_data):
 
 		# --- Send payload to external API (Kafka) ---
 		try:
-			publish_fund_received(new_doc)
+			success = publish_fund_received(new_doc)
+			if success:
+				frappe.msgprint(_("Fund Received data synced successfully to external system."), indicator="green")
+			else:
+				# Rollback: Delete newly created document
+				new_doc.delete(ignore_permissions=True)
+				frappe.db.rollback()
+				frappe.throw(_("Kafka sync failed. Fund Received was not saved. Please try again."))
+		except frappe.ValidationError:
+			raise  # Re-raise validation errors from frappe.throw
 		except Exception as ex:
-			# Log the error but don't roll back the created document
+			# Rollback: Delete newly created document
 			frappe.log_error(frappe.get_traceback(), "Fund Received -> Kafka Sync error")
-			print("Error while sending to Kafka:", ex)
+			new_doc.delete(ignore_permissions=True)
+			frappe.db.rollback()
+			frappe.throw(_("Kafka sync failed. Fund Received was not saved. Please try again."))
 
 		return {"status": "success", "docname": new_doc.name}
 

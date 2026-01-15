@@ -1,0 +1,269 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-22 11:56:43.350445",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_zj8y",
+  "amended_from",
+  "section_break_orsk",
+  "ta_da_travel_application",
+  "section_break_gvbr",
+  "ta_da_name",
+  "ta_da_designation",
+  "ta_da_department_section",
+  "ta_da_employee_number",
+  "ta_da_project_code",
+  "ta_da_contact",
+  "ta_da_ifsc_code",
+  "ta_da_scale_of_pay",
+  "ta_da_bank_account_number",
+  "ta_da_bank_account_holder",
+  "section_break_ynqx",
+  "ta_da_purpose_of_journey",
+  "ta_da_journey_particulars",
+  "ta_da_local_conveyance_used",
+  "other_expenses_attach_proof_mandatory_section",
+  "ta_da_other_expenses_p",
+  "ta_da_amount_summary_fields",
+  "ta_da_total_claimed",
+  "ta_da_advance_taken",
+  "ta_da_net_claimed",
+  "comment_section_section",
+  "ta_da_comment",
+  "ta_da_additional_comment",
+  "declaration_and_certification_section",
+  "ta_da_check",
+  "ta_da_entitled_class",
+  "ta_da_shortest_route",
+  "ta_da_not_paid_elsewhere",
+  "ta_da_boarding_lodging_status",
+  "ta_da_free_transport"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_zj8y",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "TA DA Settlement",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_orsk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ta_da_travel_application",
+   "fieldtype": "Link",
+   "label": "Select Travel Application",
+   "options": "Travel"
+  },
+  {
+   "fieldname": "section_break_gvbr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "ta_da_travel_application.applicant_name_travel",
+   "fieldname": "ta_da_name",
+   "fieldtype": "Data",
+   "label": "Name"
+  },
+  {
+   "fetch_from": "ta_da_travel_application.designation_travel",
+   "fieldname": "ta_da_designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fetch_from": "ta_da_travel_application.department_travel",
+   "fieldname": "ta_da_department_section",
+   "fieldtype": "Data",
+   "label": "Department/Section"
+  },
+  {
+   "fieldname": "ta_da_employee_number",
+   "fieldtype": "Data",
+   "label": "Employee Number"
+  },
+  {
+   "fetch_from": "ta_da_travel_application.travel_project_number",
+   "fieldname": "ta_da_project_code",
+   "fieldtype": "Data",
+   "label": "Project Code"
+  },
+  {
+   "fieldname": "ta_da_contact",
+   "fieldtype": "Int",
+   "label": "Contact No."
+  },
+  {
+   "fieldname": "ta_da_ifsc_code",
+   "fieldtype": "Int",
+   "label": "IFSC Code"
+  },
+  {
+   "fieldname": "ta_da_scale_of_pay",
+   "fieldtype": "Int",
+   "label": "Scale Of Pay"
+  },
+  {
+   "fieldname": "ta_da_bank_account_number",
+   "fieldtype": "Data",
+   "label": "Bank account number"
+  },
+  {
+   "fieldname": "ta_da_bank_account_holder",
+   "fieldtype": "Small Text",
+   "label": "Bank Account Holder's Name"
+  },
+  {
+   "fieldname": "section_break_ynqx",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ta_da_purpose_of_journey",
+   "fieldtype": "Small Text",
+   "label": "Purpose of Journey"
+  },
+  {
+   "fieldname": "ta_da_journey_particulars",
+   "fieldtype": "Select",
+   "label": "Particulars of Journey Used (From Station to Station)",
+   "options": "Yes\nNo"
+  },
+  {
+   "fieldname": "ta_da_local_conveyance_used",
+   "fieldtype": "Select",
+   "label": "Particulars of Local Conveyance Used",
+   "options": "Yes\nNo"
+  },
+  {
+   "fieldname": "other_expenses_attach_proof_mandatory_section",
+   "fieldtype": "Section Break",
+   "label": "Other Expenses (Attach Proof Mandatory)"
+  },
+  {
+   "fieldname": "ta_da_other_expenses_p",
+   "fieldtype": "Table",
+   "label": "Other Expenses",
+   "options": "TA DA Other Expense"
+  },
+  {
+   "fieldname": "ta_da_amount_summary_fields",
+   "fieldtype": "Section Break",
+   "label": "Amount Summary Fields"
+  },
+  {
+   "fieldname": "ta_da_total_claimed",
+   "fieldtype": "Currency",
+   "label": "Total Amount Claimed (INR)"
+  },
+  {
+   "fieldname": "ta_da_advance_taken",
+   "fieldtype": "Currency",
+   "label": "Advance Taken (INR)"
+  },
+  {
+   "fieldname": "ta_da_net_claimed",
+   "fieldtype": "Currency",
+   "label": "Net Amount Claimed (INR)"
+  },
+  {
+   "fieldname": "comment_section_section",
+   "fieldtype": "Section Break",
+   "label": "Comment Section"
+  },
+  {
+   "fieldname": "ta_da_comment",
+   "fieldtype": "Small Text",
+   "label": "Comment"
+  },
+  {
+   "fieldname": "ta_da_additional_comment",
+   "fieldtype": "Small Text",
+   "label": "Comment, If any"
+  },
+  {
+   "fieldname": "declaration_and_certification_section",
+   "fieldtype": "Section Break",
+   "label": "Declaration and Certification"
+  },
+  {
+   "default": "0",
+   "fieldname": "ta_da_check",
+   "fieldtype": "Check",
+   "label": "Distances shown are correct"
+  },
+  {
+   "default": "0",
+   "fieldname": "ta_da_entitled_class",
+   "fieldtype": "Check",
+   "label": "Traveled in entitled class"
+  },
+  {
+   "default": "0",
+   "fieldname": "ta_da_shortest_route",
+   "fieldtype": "Check",
+   "label": "Journey by shortest route"
+  },
+  {
+   "default": "0",
+   "fieldname": "ta_da_not_paid_elsewhere",
+   "fieldtype": "Check",
+   "label": "Claim not paid elsewhere"
+  },
+  {
+   "fieldname": "ta_da_boarding_lodging_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Boarding and Lodging Status",
+   "options": "\nTreated as guest and allowed free boarding lodging\nTreated as guest and not allowed free boarding lodging\nNot treated as guest and allowed free boarding lodging\nNot treated as guest and not allowed free boarding lodging",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ta_da_free_transport",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Free Transport Availed",
+   "options": "\nAvailed free transport for the journey\nNot availed free transport for the journey",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-22 15:17:02.955887",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "TA DA Settlement",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

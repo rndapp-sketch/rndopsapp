@@ -1,0 +1,47 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-30 17:10:31.021395",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "webmail_id__email",
+  "upfa_member_name",
+  "upfa_member_designation"
+ ],
+ "fields": [
+  {
+   "fieldname": "webmail_id__email",
+   "fieldtype": "Link",
+   "label": "Webmail ID / Email",
+   "options": "User"
+  },
+  {
+   "fetch_from": "webmail_id__email.full_name",
+   "fieldname": "upfa_member_name",
+   "fieldtype": "Data",
+   "label": "Name"
+  },
+  {
+   "fieldname": "upfa_member_designation",
+   "fieldtype": "Select",
+   "label": "Designation",
+   "options": "\nPI & Convener\nExpert Member\nExternal Expart"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-12-30 17:15:11.982160",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Unified Selection Committee Member",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

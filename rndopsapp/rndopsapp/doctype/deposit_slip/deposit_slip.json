@@ -81,6 +81,7 @@
   {
    "fieldname": "fund_received_ref",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Fund Received Reference",
    "options": "Fund Received"
   },
@@ -94,15 +95,13 @@
    "fieldname": "project_title",
    "fieldtype": "Link",
    "label": "Project Title",
-   "options": "Project Registration",
-   "read_only": 1
+   "options": "Project Registration"
   },
   {
    "fieldname": "principal_investigator",
    "fieldtype": "Link",
    "label": "Principal Investigator",
-   "options": "User",
-   "read_only": 1
+   "options": "User"
   },
   {
    "depends_on": "eval:doc.category.includes('Consultancy')",
@@ -308,7 +307,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-09 10:28:53.722262",
+ "modified": "2025-12-23 16:46:02.975779",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Deposit slip",

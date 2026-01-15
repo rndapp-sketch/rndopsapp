@@ -8,7 +8,18 @@
   "section_break_9pd2",
   "amended_from",
   "project_title",
-  "project_number"
+  "project_number",
+  "completion_date",
+  "ps_name",
+  "emp_id",
+  "ps_designation",
+  "department",
+  "doj",
+  "expiry_date",
+  "last_ext_date",
+  "no_of_months_worked",
+  "ext_sought",
+  "basic_pay"
  ],
  "fields": [
   {
@@ -35,13 +46,69 @@
    "fieldname": "project_number",
    "fieldtype": "Data",
    "label": "Project No. "
+  },
+  {
+   "fieldname": "completion_date",
+   "fieldtype": "Date",
+   "label": "Date of Completion Of Project "
+  },
+  {
+   "fieldname": "ps_name",
+   "fieldtype": "Small Text",
+   "label": "Name "
+  },
+  {
+   "fieldname": "emp_id",
+   "fieldtype": "Small Text",
+   "label": "Employee ID "
+  },
+  {
+   "fieldname": "ps_designation",
+   "fieldtype": "Small Text",
+   "label": "Designation "
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Link",
+   "label": "Please Select your Department",
+   "options": "Department_prornd"
+  },
+  {
+   "fieldname": "doj",
+   "fieldtype": "Small Text",
+   "label": "Initial Date of Joining "
+  },
+  {
+   "fieldname": "expiry_date",
+   "fieldtype": "Small Text",
+   "label": "Date of Expiry of Tenure"
+  },
+  {
+   "fieldname": "last_ext_date",
+   "fieldtype": "Small Text",
+   "label": "Date of Last Extension Applied"
+  },
+  {
+   "fieldname": "no_of_months_worked",
+   "fieldtype": "Small Text",
+   "label": "No. of month worked"
+  },
+  {
+   "fieldname": "ext_sought",
+   "fieldtype": "Int",
+   "label": "Period Of Extension Sought (Month) "
+  },
+  {
+   "fieldname": "basic_pay",
+   "fieldtype": "Int",
+   "label": "Current Basic pay"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-19 12:57:42.443104",
+ "modified": "2025-12-19 13:07:12.963041",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Extension Of Tenure Of Appointment",

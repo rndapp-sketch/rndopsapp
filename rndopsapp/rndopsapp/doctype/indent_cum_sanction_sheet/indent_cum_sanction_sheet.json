@@ -1,0 +1,704 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-28 17:12:21.442599",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_lysy",
+  "amended_from",
+  "icss_purchase_indent_cum_sanction_sheet_form",
+  "icss_webmail_id",
+  "icss_indenter_designation",
+  "icss_indenter",
+  "icss_employee_code",
+  "icss_department__centre__section",
+  "icss_project_details_section",
+  "icss_project_title",
+  "icss_account_head",
+  "icss_other_account_head",
+  "section_break_mibz",
+  "icss_indent_type",
+  "icss_picssg",
+  "icss_item_type",
+  "icss_proprietary_details",
+  "icss_proprietary_manufacturer",
+  "icss_standardized_details",
+  "icss_standardized_manufacturer",
+  "icss_standardized_reasons",
+  "icss_direct_purchase",
+  "icss_direct_purchase_details",
+  "icss_items_section",
+  "icss_items",
+  "icss_total_basic_value",
+  "icss_packing_charges",
+  "icss_freight_charges",
+  "icss_other_charges",
+  "icss_grand_total",
+  "icss_amount_in_words",
+  "icss_terms_conditions",
+  "icss_terms_conditions_section",
+  "icss_mode_of_payment",
+  "icss_delivery_period",
+  "icss_warranty_details",
+  "icss_supplier_name_address",
+  "icss_supplier_email",
+  "icss_indenter_contact",
+  "icss_funding_agency_sanctioned",
+  "icss_file_upload_section",
+  "icss_proprietary_certificate",
+  "icss_original_purchase_order",
+  "icss_quotation",
+  "icss_declaration_sanctioned_section",
+  "icss_declaration_sanctioned_text",
+  "icss_declaration_sanctioned_accept",
+  "icss_declaration_nonsanctioned_section",
+  "icss_declaration_nonsanctioned_text",
+  "icss_declaration_nonsanctioned_accept",
+  "icss_repair_section",
+  "icss_repair_item_name",
+  "po_no_under_which_the_item_was_purchased",
+  "icss_repair_justification",
+  "icss_repair_dimension_weight",
+  "icss_repair_under_warranty",
+  "icss_repair_vendor_details",
+  "icss_repair_vendor_email",
+  "icss_repair_indenter_contact",
+  "icss_repair_carrier",
+  "icss_repair_expenditure",
+  "icss_repair_other_charges",
+  "icss_repair_grand_total",
+  "icss_repair_grand_total_amount_in_word",
+  "icss_repair_mode_of_payment",
+  "icss_repair_file_upload_section",
+  "icss_repair_upload_po",
+  "icss_repair_upload_service_report",
+  "icss_upload_estimate",
+  "icss_repair_declaration_section",
+  "icss_repair_declaration_text",
+  "icss_repair_declaration_checkbox",
+  "icss_amc_section",
+  "icss_amc_po_number",
+  "icss_amc_po_date",
+  "icss_amc_basic_value",
+  "icss_amc_equipment_section",
+  "icss_amc_equipment_name",
+  "icss_amc_equipment_model",
+  "icss_amc_installation_date",
+  "icss_amc_duration",
+  "icss_amc_value",
+  "icss_amc_other_charges",
+  "icss_amc_gst_percent",
+  "icss_amc_grand_total",
+  "icss_amc_amount_in_words",
+  "icss_amc_service_provider_section",
+  "icss_amc_proposal_no",
+  "icss_amc_proposal_date",
+  "icss_amc_service_provider",
+  "icss_amc_service_provider_contact",
+  "icss_amc_service_provider_email",
+  "icss_amc_indenter_contact",
+  "icss_amc_payment_term",
+  "icss_amc_previous_service_satisfactory",
+  "icss_amc_file_upload_section",
+  "icss_amc_upload_estimate",
+  "icss_amc_upload_proposal",
+  "icss_amc_upload_po",
+  "icss_amc_declaration_section",
+  "icss_amc_declaration"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_lysy",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Indent Cum Sanction Sheet",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "icss_purchase_indent_cum_sanction_sheet_form",
+   "fieldtype": "Section Break",
+   "label": "Purchase Indent-cum-Sanction Sheet Form"
+  },
+  {
+   "fetch_from": "icss_webmail_id.designation_name",
+   "fieldname": "icss_indenter_designation",
+   "fieldtype": "Link",
+   "label": "Indenter Designation",
+   "options": "Designation_prornd"
+  },
+  {
+   "fetch_from": "icss_indenter.username",
+   "fieldname": "icss_webmail_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Webmail ID",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "icss_webmail_id.full_name",
+   "fieldname": "icss_indenter",
+   "fieldtype": "Data",
+   "label": "Indenter"
+  },
+  {
+   "fetch_from": "icss_webmail_id.department_name",
+   "fieldname": "icss_department__centre__section",
+   "fieldtype": "Link",
+   "label": "Department / Centre / Section",
+   "options": "Department_prornd"
+  },
+  {
+   "fieldname": "icss_project_details_section",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
+  },
+  {
+   "fieldname": "icss_account_head",
+   "fieldtype": "Select",
+   "label": "Account Head",
+   "options": "\nConsumable\nContingency\nEquipment\nOther",
+   "placeholder": "Select the Account Head",
+   "reqd": 1
+  },
+  {
+   "fieldname": "icss_other_account_head",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Other Account Head (Specify)",
+   "placeholder": "Mention the other head"
+  },
+  {
+   "fieldname": "icss_project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration",
+   "placeholder": "Select the Project Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_mibz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "icss_indent_type",
+   "fieldtype": "Select",
+   "label": "Indent Type",
+   "options": "\nGeneral Purpose\nRepair / Replacement\nAMC"
+  },
+  {
+   "fieldname": "icss_picssg",
+   "fieldtype": "Section Break",
+   "label": "PURCHASE INDENT-CUM-SANCTION SHEET GENERAL"
+  },
+  {
+   "fieldname": "icss_item_type",
+   "fieldtype": "Select",
+   "label": "Item Type",
+   "options": "\nProprietary Item(s)\nStandardized Item(s)\nDirect Purchase(Less than 100000)",
+   "placeholder": "Select Item Type"
+  },
+  {
+   "fieldname": "icss_proprietary_details",
+   "fieldtype": "Section Break",
+   "label": "Proprietary Items(s) Purchase Details"
+  },
+  {
+   "fieldname": "icss_proprietary_manufacturer",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Manufacturer Name"
+  },
+  {
+   "fieldname": "icss_standardized_details",
+   "fieldtype": "Section Break",
+   "label": "Standardized Items(s) Purchase Details"
+  },
+  {
+   "fieldname": "icss_standardized_manufacturer",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Manufacturer Name"
+  },
+  {
+   "fieldname": "icss_standardized_reasons",
+   "fieldtype": "Table",
+   "hidden": 1,
+   "label": "Reasons for not accepting other make/model",
+   "options": "ICSS Standardized Reason Item"
+  },
+  {
+   "fieldname": "icss_direct_purchase",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval:doc.icss_item_type == \"Direct Purchase(Less than 100000)\"",
+   "fieldname": "icss_direct_purchase_details",
+   "fieldtype": "HTML",
+   "label": "Enter the Direct Purchase Items(s) Purchase Details below",
+   "options": "<div style=\"font-weight: 600; font-size: 14px; margin-top: 8px;\">\n    Enter the Direct Purchase Item(s) Purchase Details below\n</div>",
+   "read_only": 1
+  },
+  {
+   "fieldname": "icss_items",
+   "fieldtype": "Table",
+   "label": "Details of Items to be purchased",
+   "options": "ICSS Indent Cum Sanction Sheet Item"
+  },
+  {
+   "fieldname": "icss_total_basic_value",
+   "fieldtype": "Currency",
+   "label": "Total Estd. Basic Value"
+  },
+  {
+   "fieldname": "icss_packing_charges",
+   "fieldtype": "Currency",
+   "label": "Add: Packing and Forwarding"
+  },
+  {
+   "fieldname": "icss_freight_charges",
+   "fieldtype": "Currency",
+   "label": "Add: Freight"
+  },
+  {
+   "fieldname": "icss_other_charges",
+   "fieldtype": "Currency",
+   "label": "Add: Other Charges"
+  },
+  {
+   "fieldname": "icss_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total"
+  },
+  {
+   "fieldname": "icss_amount_in_words",
+   "fieldtype": "Data",
+   "label": "Amount in Words"
+  },
+  {
+   "fieldname": "icss_terms_conditions",
+   "fieldtype": "Section Break",
+   "label": "Terms & Conditions"
+  },
+  {
+   "fieldname": "icss_mode_of_payment",
+   "fieldtype": "Data",
+   "label": "Mode of Payment"
+  },
+  {
+   "fieldname": "icss_delivery_period",
+   "fieldtype": "Data",
+   "label": "Delivery Period"
+  },
+  {
+   "fieldname": "icss_warranty_details",
+   "fieldtype": "Small Text",
+   "label": "Warranty etc."
+  },
+  {
+   "fieldname": "icss_supplier_name_address",
+   "fieldtype": "Small Text",
+   "label": "Supplier Name & Address"
+  },
+  {
+   "fieldname": "icss_supplier_email",
+   "fieldtype": "Data",
+   "label": "Supplier Email ID",
+   "options": "Email"
+  },
+  {
+   "fieldname": "icss_indenter_contact",
+   "fieldtype": "Data",
+   "label": "Indenter Contact Number"
+  },
+  {
+   "fieldname": "icss_funding_agency_sanctioned",
+   "fieldtype": "Select",
+   "label": "Were the above items sanctioned by the Funding Agency?",
+   "options": "\nYes\nNo",
+   "placeholder": "Select Were the above items sanctioned by the Funding Agency?"
+  },
+  {
+   "fieldname": "icss_file_upload_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "File Upload Section"
+  },
+  {
+   "fieldname": "icss_proprietary_certificate",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Upload Proprietary Certificate"
+  },
+  {
+   "fieldname": "icss_quotation",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Upload Quotation"
+  },
+  {
+   "fieldname": "icss_declaration_sanctioned_section",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "icss_declaration_sanctioned_text",
+   "fieldtype": "HTML",
+   "hidden": 1,
+   "label": "Declaration Text",
+   "options": "<p><b>DECLARATION</b></p>\n<p>All prices/ amounts mentioned in the form are in India Rupee (INR).</p>\n\n<p><b>Proprietary Item(s)</b></p>\n<p>\nCertified that to the best of our knowledge, the item indented is the proprietary item of M/s\n____________ and is marketed by them / their only authorized distributor M/s ____________ in India.\nTo the best of our knowledge there is no other product available in the market that meets the\nspecifications of this item. We shall be held responsible in case the certificate is found to be incorrect.\n</p>\n"
+  },
+  {
+   "default": "0",
+   "fieldname": "icss_declaration_sanctioned_accept",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "I agree to the above declaration"
+  },
+  {
+   "fieldname": "icss_declaration_nonsanctioned_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Label DECLARATION"
+  },
+  {
+   "fieldname": "icss_declaration_nonsanctioned_text",
+   "fieldtype": "HTML",
+   "hidden": 1,
+   "label": "Declaration Text",
+   "options": "<p><b>DECLARATION</b></p>\n<p>\nFor non sanctioned item, the PI will be responsible for any financial obligations that may arise.\n</p>\n\n<p>All prices/ amounts mentioned in the form are in India Rupee (INR).</p>\n\n<p><b>Proprietary Item(s)</b></p>\n<p>\nCertified that to the best of our knowledge, the item indented is the proprietary item of M/s\n____________ and is marketed by them / their only authorized distributor M/s ____________ in India.\nTo the best of our knowledge there is no other product available in the market that meets the\nspecifications of this item. We shall be held responsible in case the certificate is found to be incorrect.\n</p>\n"
+  },
+  {
+   "default": "0",
+   "fieldname": "icss_declaration_nonsanctioned_accept",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "I agree to the above declaration"
+  },
+  {
+   "fieldname": "icss_original_purchase_order",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Upload Original Purchase Order(s)"
+  },
+  {
+   "fieldname": "icss_repair_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "PURCHASE INDENT-CUM-SANCTION SHEET REPAIR"
+  },
+  {
+   "fieldname": "po_no_under_which_the_item_was_purchased",
+   "fieldtype": "Data",
+   "label": "P.O. No. under which the item was purchased"
+  },
+  {
+   "fieldname": "icss_repair_item_name",
+   "fieldtype": "Data",
+   "label": "Item/s Name"
+  },
+  {
+   "fieldname": "icss_repair_justification",
+   "fieldtype": "Small Text",
+   "label": "Justification / Purpose (Please attach separate sheet if needed)"
+  },
+  {
+   "fieldname": "icss_repair_dimension_weight",
+   "fieldtype": "Data",
+   "label": "Dimension & Weight of the item/s after packing"
+  },
+  {
+   "fieldname": "icss_repair_under_warranty",
+   "fieldtype": "Select",
+   "label": "Item currently under warranty period",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "icss_repair_vendor_details",
+   "fieldtype": "Small Text",
+   "label": "Details of Vendor to whom item is proposed to be sent"
+  },
+  {
+   "fieldname": "icss_repair_vendor_email",
+   "fieldtype": "Data",
+   "label": "Vendor Email ID",
+   "options": "Email"
+  },
+  {
+   "fieldname": "icss_repair_indenter_contact",
+   "fieldtype": "Data",
+   "label": "Indenter Contact Number (10 digits only)"
+  },
+  {
+   "fieldname": "icss_repair_carrier",
+   "fieldtype": "Data",
+   "label": "Proposed Carrier"
+  },
+  {
+   "fieldname": "icss_repair_expenditure",
+   "fieldtype": "Currency",
+   "label": "Repair Expenditure"
+  },
+  {
+   "fieldname": "icss_repair_other_charges",
+   "fieldtype": "Currency",
+   "label": "Add: Other Charges (Freight, Custom Duty, etc.)"
+  },
+  {
+   "fieldname": "icss_repair_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "icss_repair_mode_of_payment",
+   "fieldtype": "Data",
+   "label": "Mode of Payment"
+  },
+  {
+   "fieldname": "icss_repair_file_upload_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "File Upload Section"
+  },
+  {
+   "fieldname": "icss_repair_upload_po",
+   "fieldtype": "Attach",
+   "label": "Upload Original Purchase Order"
+  },
+  {
+   "fieldname": "icss_repair_upload_service_report",
+   "fieldtype": "Attach",
+   "label": "Upload Service Report"
+  },
+  {
+   "fieldname": "icss_repair_declaration_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "DECLARATION"
+  },
+  {
+   "fieldname": "icss_repair_declaration_text",
+   "fieldtype": "HTML",
+   "options": "All prices/ amounts mentioned in the form are in India Rupee (INR)."
+  },
+  {
+   "default": "0",
+   "fieldname": "icss_repair_declaration_checkbox",
+   "fieldtype": "Check",
+   "label": "I agree to the above declaration"
+  },
+  {
+   "fieldname": "icss_items_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "icss_terms_conditions_section",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "icss_upload_estimate",
+   "fieldtype": "Attach",
+   "label": "Upload Estimate"
+  },
+  {
+   "fieldname": "icss_repair_grand_total_amount_in_word",
+   "fieldtype": "Data",
+   "label": "Grand Total Amount in Word"
+  },
+  {
+   "fieldname": "icss_amc_section",
+   "fieldtype": "Section Break",
+   "label": "PURCHASE INDENT-CUM-SANCTION SHEET AMC"
+  },
+  {
+   "fieldname": "icss_amc_po_number",
+   "fieldtype": "Data",
+   "label": "Original P.O. Number / Reference"
+  },
+  {
+   "fieldname": "icss_amc_po_date",
+   "fieldtype": "Date",
+   "label": "Dated"
+  },
+  {
+   "fieldname": "icss_amc_basic_value",
+   "fieldtype": "Currency",
+   "label": "Basic Value (BV) of the PO"
+  },
+  {
+   "fieldname": "icss_amc_equipment_section",
+   "fieldtype": "Section Break",
+   "label": "Details of Equipments to be serviced"
+  },
+  {
+   "fieldname": "icss_amc_equipment_name",
+   "fieldtype": "Data",
+   "label": "Name of the Equipment"
+  },
+  {
+   "fieldname": "icss_amc_equipment_model",
+   "fieldtype": "Data",
+   "label": "Model No. / Sl. No"
+  },
+  {
+   "fieldname": "icss_amc_installation_date",
+   "fieldtype": "Date",
+   "label": "Date of Installation"
+  },
+  {
+   "fieldname": "icss_amc_duration",
+   "fieldtype": "Int",
+   "label": "Duration of AMC (Years)"
+  },
+  {
+   "description": "% of BV ",
+   "fieldname": "icss_amc_value",
+   "fieldtype": "Currency",
+   "label": "Value of AMC"
+  },
+  {
+   "fieldname": "icss_amc_other_charges",
+   "fieldtype": "Currency",
+   "label": "Add: Other Charges"
+  },
+  {
+   "fieldname": "icss_amc_gst_percent",
+   "fieldtype": "Float",
+   "label": "Add: GST (%)"
+  },
+  {
+   "fieldname": "icss_amc_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "icss_amc_amount_in_words",
+   "fieldtype": "Data",
+   "label": "Amount in Words"
+  },
+  {
+   "fieldname": "icss_amc_service_provider_section",
+   "fieldtype": "Section Break",
+   "label": "AMC SERVICE PROVIDER DETAILS"
+  },
+  {
+   "fieldname": "icss_amc_proposal_no",
+   "fieldtype": "Data",
+   "label": "Proposal / Quotation No"
+  },
+  {
+   "fieldname": "icss_amc_proposal_date",
+   "fieldtype": "Data",
+   "label": "Proposal Dated"
+  },
+  {
+   "fieldname": "icss_amc_service_provider",
+   "fieldtype": "Data",
+   "label": "Name of Service Provider"
+  },
+  {
+   "fieldname": "icss_amc_service_provider_contact",
+   "fieldtype": "Data",
+   "label": "Contact Number"
+  },
+  {
+   "fieldname": "icss_amc_service_provider_email",
+   "fieldtype": "Data",
+   "label": "Email ID",
+   "options": "Email"
+  },
+  {
+   "fieldname": "icss_amc_indenter_contact",
+   "fieldtype": "Data",
+   "label": "Indenter Contact Number"
+  },
+  {
+   "fieldname": "icss_amc_payment_term",
+   "fieldtype": "Select",
+   "label": "Term of Payment",
+   "options": "\nAfter Completion of Work\nAdvance"
+  },
+  {
+   "fieldname": "icss_amc_previous_service_satisfactory",
+   "fieldtype": "Small Text",
+   "label": "Whether the services rendered during the previous year have been satisfactory or not"
+  },
+  {
+   "fieldname": "icss_amc_file_upload_section",
+   "fieldtype": "Section Break",
+   "label": "AMC FILE UPLOAD SECTION"
+  },
+  {
+   "fieldname": "icss_amc_upload_estimate",
+   "fieldtype": "Attach",
+   "label": "Upload Estimate"
+  },
+  {
+   "fieldname": "icss_amc_upload_proposal",
+   "fieldtype": "Attach",
+   "label": "Upload Proposal"
+  },
+  {
+   "fieldname": "icss_amc_upload_po",
+   "fieldtype": "Attach",
+   "label": "Upload Original Purchase Order"
+  },
+  {
+   "fieldname": "icss_amc_declaration_section",
+   "fieldtype": "Section Break",
+   "label": "AMC DECLARATION SECTION"
+  },
+  {
+   "default": "0",
+   "description": "All prices/ amounts mentioned in the form are in India Rupee (INR).",
+   "fieldname": "icss_amc_declaration",
+   "fieldtype": "Check",
+   "label": "Declaration"
+  },
+  {
+   "fetch_from": "icss_webmail_id.employee_id",
+   "fieldname": "icss_employee_code",
+   "fieldtype": "Data",
+   "label": "Employee Code"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-01-13 15:12:56.183738",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Indent Cum Sanction Sheet",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

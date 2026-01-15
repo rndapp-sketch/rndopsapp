@@ -29,75 +29,6 @@ class ProjectRegistration(Document):
 # ==============================================================================
 
 
-# @frappe.whitelist()
-# def submit_project_registration(docname):
-# 	"""
-# 	Handles initial submission with dynamic applicant type lookup AND intelligent self-approval bypass.
-# 	*** THIS FUNCTION HAS BEEN UPDATED WITH THE NEW LOGIC ***
-# 	"""
-# 	doc = frappe.get_doc("Project Registration", docname)
-
-# 	# --- Step 1: Standard Security Checks ---
-# 	if doc.owner != frappe.session.user:
-# 		frappe.throw("Permission Denied: You are not the owner of this document.")
-# 	if doc.docstatus != 0:
-# 		frappe.throw("This document has already been submitted.")
-# 	if not doc.applicant_type:
-# 		frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
-
-# 	# --- Step 2: Dynamically Find the Employee Class ID ---
-# 	applicant_type_identifier = doc.applicant_type
-# 	emp_class_doc_id = None
-# 	if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
-# 		emp_class_doc_id = applicant_type_identifier
-# 	else:
-# 		emp_class_doc_id = frappe.db.get_value(
-# 			"EmployeeClass_prornd", {"empclass_name": applicant_type_identifier}, "name"
-# 		)
-
-# 	if not emp_class_doc_id:
-# 		frappe.throw(
-# 			f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'."
-# 		)
-
-# 	# --- Step 3: Determine the Intended Workflow Path from Data ---
-# 	workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-# 	next_state = ""
-
-# 	if workflow_path == "Senior Staff Path":
-# 		next_state = "Pending Staff Approval"
-# 	elif workflow_path == "HoD Path":
-# 		next_state = "Pending HoD Approval"
-# 	else:
-# 		empclass_name = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "empclass_name")
-# 		frappe.throw(
-# 			f"Could not find a valid approval path. The Employee Class '{empclass_name}' has an unconfigured or missing Workflow Path."
-# 		)
-
-# 	# --- Step 4: Check for Self-Approval and Override the Path if Necessary ---
-# 	applicant_user = doc.owner
-# 	intended_approver = doc.head_approver
-
-# 	if next_state == "Pending HoD Approval" and applicant_user == intended_approver:
-# 		# SELF-APPROVAL SCENARIO: The applicant is their own approver.
-# 		# Override the next_state to skip the HoD step.
-# 		next_state = "Pending Staff Approval"
-# 		doc.add_comment(
-# 			"Comment",
-# 			f"Applicant ({applicant_user}) is the designated Head Approver. Skipping Head Approval step.",
-# 		)
-
-# 	# --- Step 5: Execute the Final Action ---
-# 	if next_state == "Pending HoD Approval":
-# 		# If we are still on the HoD Path, perform the share.
-# 		if not intended_approver:
-# 			frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-# 		share_document(doc.doctype, doc.name, intended_approver)
-
-# 	doc.workflow_state = next_state
-# 	doc.submit()
-# 	return doc.workflow_state
-
 
 @frappe.whitelist()
 def submit_project_registration(docname):
@@ -336,6 +267,8 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 		doc.add_comment("Comment", f"<strong>Action: {action}</strong><br>{sanitize_html(comment)}")
 
 	# Step 4: Apply transition
+	previous_state = doc.workflow_state  # Store current state for rollback
+	
 	if action.lower() == "reject":
 		doc.cancel()
 
@@ -343,16 +276,28 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 		doc.workflow_state = next_state
 		doc.save(ignore_permissions=True)
 	
-	frappe.msgprint(f"Workflow updated for: {docname}")
-	print("doc outside: ", doc.as_dict())
 	# --- Integration with External API (Kafka) ---
 	if doc.workflow_state == "Approved" and doc.docstatus == 1:
 		print("doc inside: ", doc.as_dict())
 		try:
-			publish_project(doc)
+			success = publish_project(doc)
+			if success:
+				frappe.msgprint(_(f"Workflow updated to: {doc.workflow_state}"), indicator="blue")
+				frappe.msgprint(_("Project data synced successfully to external system."), indicator="green")
+			else:
+				# Rollback workflow state on Kafka failure
+				doc.workflow_state = previous_state
+				doc.save(ignore_permissions=True)
+				frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
+				frappe.log_error(f"Kafka sync failed for {docname}, rolled back workflow state", "Kafka Rollback")
 		except Exception as e:
+			# Rollback workflow state on exception
+			doc.workflow_state = previous_state
+			doc.save(ignore_permissions=True)
 			frappe.log_error(frappe.get_traceback(), f"Project Registration Kafka Sync Failed: {docname}")
-			frappe.msgprint(_("Warning: Failed to sync with external Project system. Check Error Log."))
+			frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
+	else:
+		frappe.msgprint(_(f"Workflow updated to: {doc.workflow_state}"), indicator="blue")
 
 	return doc.workflow_state
 
@@ -530,11 +475,13 @@ def perform_workflow_action(docname, action):
 	return next_state
 
 
+
 @frappe.whitelist()
-def get_project_form_data():
+def get_project_form_data(docname=None):
 	"""
 	Return a comprehensive dictionary containing all data needed to render the Project Registration form.
 	This includes field definitions, options for Link/Select fields, and pre-fill data for the current user.
+	If docname is provided, it also returns the document data and attached files.
 	"""
 	doctype_name = "Project Registration"
 
@@ -602,7 +549,30 @@ def get_project_form_data():
 				"applicant_department": user_doc.department_name,  # Using department_name field from User doctype
 			}
 
-		return {"fields": fields, "link_options": link_options, "prefill_data": prefill_data}
+		result = {"fields": fields, "link_options": link_options, "prefill_data": prefill_data}
+
+		# 4. If docname is provided, fetch document data and files
+		if docname:
+			doc = frappe.get_doc(doctype_name, docname)
+			
+			# Check permissions
+			if not doc.has_permission("read"):
+				frappe.throw(_("You do not have permission to view this document."))
+
+			result["doc_data"] = doc.as_dict()
+			
+			# Fetch attached files
+			files = frappe.get_all(
+				"File",
+				filters={
+					"attached_to_doctype": doctype_name,
+					"attached_to_name": docname
+				},
+				fields=["name", "file_name", "file_url", "is_private", "creation"]
+			)
+			result["files"] = files
+
+		return result
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), _("Error fetching project form data"))
@@ -711,11 +681,14 @@ def get_funding_agency_details(agency_name):
 
 
 @frappe.whitelist()
-def save_project_data(doc):
+def save_project_data(doc, html_content=None):
 	"""
 	Receives a JSON object from the frontend, creates a new Project Registration document,
 	handles child tables, and processes Base64 encoded file attachments.
+	Optionally saves HTML content and converts it to PDF for endorsement.
 	"""
+	print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
+	print(doc)
 	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc}")
 	try:
 		# The 'doc' argument from the frontend is a JSON string, so we parse it.
@@ -769,10 +742,64 @@ def save_project_data(doc):
 
 		# Insert the document into the database. This is a single transaction.
 		# It saves the main doc, child docs, and handles file attachments.
-		new_project.insert(ignore_permissions=False)
+		new_project.insert(ignore_permissions=False, ignore_mandatory=True)
 
 		# Commit the transaction
 		frappe.db.commit()
+
+		# --- Handle HTML content - Convert to PDF and save ---
+		if html_content:
+			try:
+				from frappe.utils.pdf import get_pdf
+				
+				# Get the site path and create Endorsement folder if not exists
+				site_path = frappe.get_site_path()
+				endorsement_dir = os.path.join(site_path, "private", "files", "Endorsement")
+				os.makedirs(endorsement_dir, exist_ok=True)
+				
+				# Save HTML file directly to filesystem
+				html_filename = f"{new_project.name}.html"
+				html_filepath = os.path.join(endorsement_dir, html_filename)
+				with open(html_filepath, "w", encoding="utf-8") as f:
+					f.write(html_content)
+				
+				# Create File record for HTML
+				html_file_url = f"/private/files/Endorsement/{html_filename}"
+				html_file_doc = frappe.new_doc("File")
+				html_file_doc.file_name = html_filename
+				html_file_doc.file_url = html_file_url
+				html_file_doc.attached_to_doctype = new_project.doctype
+				html_file_doc.attached_to_name = new_project.name
+				html_file_doc.is_private = 1
+				html_file_doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				frappe.logger().info(f"HTML file saved: {html_filepath}")
+				
+				# Convert HTML to PDF and save directly to filesystem
+				pdf_filename = f"{new_project.name}.pdf"
+				pdf_filepath = os.path.join(endorsement_dir, pdf_filename)
+				pdf_content = get_pdf(html_content)
+				with open(pdf_filepath, "wb") as f:
+					f.write(pdf_content)
+				
+				# Create File record for PDF
+				pdf_file_url = f"/private/files/Endorsement/{pdf_filename}"
+				pdf_file_doc = frappe.new_doc("File")
+				pdf_file_doc.file_name = pdf_filename
+				pdf_file_doc.file_url = pdf_file_url
+				pdf_file_doc.attached_to_doctype = new_project.doctype
+				pdf_file_doc.attached_to_name = new_project.name
+				pdf_file_doc.is_private = 1
+				pdf_file_doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				
+				frappe.logger().info(f"PDF file saved: {pdf_filepath}")
+			except Exception as pdf_error:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"save_project_data: PDF conversion/save error for {new_project.name}",
+				)
+				# Don't throw, just log the error so the main save succeeds
 
 		# Return the name of the newly created document to the frontend
 		return {
@@ -877,20 +904,57 @@ def _format_phone_number(phone_string):
 	return raw_phone
 
 
+
 @frappe.whitelist()
-def save_project_draft(doc_data):
+def save_project_draft(doc_data, html_content=None, files=None):
 	"""
 	Saves or updates a Project Registration document as a draft (docstatus=0).
+	Optionally receives HTML content and saves it as {doc.name}.html file.
+	
+	Args:
+		doc_data: The document data as JSON string or dictionary
+		html_content: Optional HTML content to save as a file
+		files: Optional list of files to attach (if sent as separate argument)
 	"""
-	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc_data}")
-	try:
-		if isinstance(doc_data, str):
-			data = json.loads(doc_data)
-			frappe.logger().warning(f"Jimmy Logging Debug save project doc_data: {doc_data}")
-		else:
-			data = doc_data or {}
+	print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
+	
+	# --- FIX START: Convert JSON string to Python Dictionary ---
+	if isinstance(doc_data, str):
+		data = frappe.parse_json(doc_data)
+	else:
+		data = doc_data or {}
+	# --- FIX END ---
 
-		files_payload = data.pop("files", None)
+	# Now 'data' is a dictionary
+	frappe.logger().warning(f"Jimmy Logging Debug save project data keys: {list(data.keys())}")
+	
+	if data.get("implementation_department"):
+		# --- Fetch linked Department_prornd document ---
+		dept_doc = frappe.get_doc("Department_prornd", data.get("implementation_department"))
+		implementation_department = dept_doc.dept_name
+		implementation_department_head = dept_doc.dept_head
+		implementation_department_id = dept_doc.dept_id
+		print(f"Department Name: {dept_doc.dept_name}")
+		print(f"Department Head: {dept_doc.dept_head}")
+		print(f"Department ID: {dept_doc.dept_id}")
+	else:
+		print("No Implementation Department found in data")
+
+	try:
+		# Extract files payload - check argument first, then doc_data
+		files_payload = files
+		if not files_payload:
+			files_payload = data.pop("files", None)
+			
+		if isinstance(files_payload, str):
+			try:
+				files_payload = json.loads(files_payload)
+			except Exception:
+				pass
+		frappe.logger().warning(f"Jimmy Logging Debug files_payload count: {len(files_payload) if files_payload else 0}")
+		if files_payload:
+			frappe.logger().warning(f"Jimmy Logging Debug first file: {files_payload[0] if len(files_payload) > 0 else 'None'}")
+
 		docname = data.get("name")
 
 		if docname:
@@ -1016,8 +1080,8 @@ def save_project_draft(doc_data):
 			for f in files_payload:
 				# **FIX 3: The indented block for the 'try' statement is now correctly filled.**
 				try:
-					filename = f.get("filename") or f.get("name")
-					content_b64 = f.get("content") or ""
+					filename = f.get("filename") or f.get("file_name") or f.get("name")
+					content_b64 = f.get("content") or f.get("file_data") or f.get("data") or ""
 					is_private = int(f.get("is_private") or 1)
 
 					if not (filename and content_b64):
@@ -1044,8 +1108,238 @@ def save_project_draft(doc_data):
 					continue
 
 		frappe.db.commit()
+
+		# --- Handle HTML content - Convert to PDF and save ---
+		if html_content:
+			try:
+				import os
+				from frappe.utils.pdf import get_pdf
+				
+				# Get the site path and create Endorsement folder if not exists
+				site_path = frappe.get_site_path()
+				endorsement_dir = os.path.join(site_path, "private", "files", "Endorsement")
+				os.makedirs(endorsement_dir, exist_ok=True)
+				
+				# Save HTML file directly to filesystem
+				html_filename = f"{doc.name}.html"
+				html_filepath = os.path.join(endorsement_dir, html_filename)
+				with open(html_filepath, "w", encoding="utf-8") as f:
+					f.write(html_content)
+				
+				# Create File record for HTML
+				html_file_url = f"/private/files/Endorsement/{html_filename}"
+				html_file_doc = frappe.new_doc("File")
+				html_file_doc.file_name = html_filename
+				html_file_doc.file_url = html_file_url
+				html_file_doc.attached_to_doctype = doc.doctype
+				html_file_doc.attached_to_name = doc.name
+				html_file_doc.is_private = 1
+				html_file_doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				frappe.logger().info(f"HTML file saved: {html_filepath}")
+				
+				# Convert HTML to PDF and save directly to filesystem
+				pdf_filename = f"{doc.name}.pdf"
+				pdf_filepath = os.path.join(endorsement_dir, pdf_filename)
+				pdf_content = get_pdf(html_content)
+				with open(pdf_filepath, "wb") as f:
+					f.write(pdf_content)
+				
+				# Create File record for PDF
+				pdf_file_url = f"/private/files/Endorsement/{pdf_filename}"
+				pdf_file_doc = frappe.new_doc("File")
+				pdf_file_doc.file_name = pdf_filename
+				pdf_file_doc.file_url = pdf_file_url
+				pdf_file_doc.attached_to_doctype = doc.doctype
+				pdf_file_doc.attached_to_name = doc.name
+				pdf_file_doc.is_private = 1
+				pdf_file_doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				
+				frappe.logger().info(f"PDF file saved: {pdf_filepath}")
+			except Exception as pdf_error:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"save_project_draft: PDF conversion/save error for {doc.name}",
+				)
+				# Don't throw, just log the error so the main save succeeds
+
 		return {"docname": doc.name}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Project Draft Save Error")
 		frappe.throw(_("An error occurred while saving the draft: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def view_endorsement_file(docname):
+	"""
+	View the endorsement files (PDF and HTML) for a Project Registration document.
+	Returns file URLs and HTML content for rendering in the browser.
+	
+	Args:
+		docname: The name of the Project Registration document
+		
+	Returns:
+		dict: Contains file URLs and HTML content if available
+	"""
+	if not docname:
+		frappe.throw(_("Document name is required."))
+	
+	try:
+		# Check if user has permission to view the document
+		doc = frappe.get_doc("Project Registration", docname)
+		
+		result = {
+			"pdf_file_url": None,
+			"html_file_url": None,
+			"html_content": None
+		}
+		
+		# Search for PDF file (first try Endorsement folder, then fallback)
+		pdf_files = frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Project Registration",
+				"attached_to_name": docname,
+				"file_url": ["like", f"%/Endorsement/{docname}.pdf"]
+			},
+			fields=["name", "file_name", "file_url"],
+			order_by="creation desc",
+			limit=1
+		)
+		
+		# Fallback for PDF
+		if not pdf_files:
+			pdf_files = frappe.get_all(
+				"File",
+				filters={
+					"attached_to_doctype": "Project Registration",
+					"attached_to_name": docname,
+					"file_name": ["like", "%.pdf"]
+				},
+				fields=["name", "file_name", "file_url"],
+				order_by="creation desc",
+				limit=1
+			)
+		
+		if pdf_files:
+			result["pdf_file_url"] = pdf_files[0].get("file_url")
+		
+		# Search for HTML file (first try Endorsement folder, then fallback)
+		html_files = frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Project Registration",
+				"attached_to_name": docname,
+				"file_url": ["like", f"%/Endorsement/{docname}.html"]
+			},
+			fields=["name", "file_url"],
+			order_by="creation desc",
+			limit=1
+		)
+		
+		# Fallback for HTML
+		if not html_files:
+			html_files = frappe.get_all(
+				"File",
+				filters={
+					"attached_to_doctype": "Project Registration",
+					"attached_to_name": docname,
+					"file_name": ["like", "%.html"]
+				},
+				fields=["name", "file_url"],
+				order_by="creation desc",
+				limit=1
+			)
+		
+		if html_files:
+			result["html_file_url"] = html_files[0].get("file_url")
+			# Also read and return HTML content for inline viewing
+			try:
+				file_doc = frappe.get_doc("File", html_files[0].name)
+				file_path = file_doc.get_full_path()
+				with open(file_path, "r", encoding="utf-8") as f:
+					result["html_content"] = f.read()
+			except Exception:
+				pass
+		
+		return result
+		
+	except frappe.DoesNotExistError:
+		frappe.throw(_("Project Registration document not found."), title="Not Found")
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Error viewing endorsement file")
+		frappe.throw(_("An error occurred while viewing endorsement file: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def download_endorsement_file(docname, file_type="pdf"):
+	"""
+	Download the endorsement file (PDF or HTML) for a Project Registration document.
+	
+	Args:
+		docname: The name of the Project Registration document
+		file_type: Either 'pdf' or 'html' (default: 'pdf')
+		
+	Returns:
+		File download response
+	"""
+	if not docname:
+		frappe.throw(_("Document name is required."))
+	
+	if file_type not in ["pdf", "html"]:
+		frappe.throw(_("Invalid file type. Use 'pdf' or 'html'."))
+	
+	try:
+		# Check if user has permission to view the document
+		doc = frappe.get_doc("Project Registration", docname)
+		
+		# First try to find file in Endorsement folder (new pattern)
+		files = frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Project Registration",
+				"attached_to_name": docname,
+				"file_url": ["like", f"%/Endorsement/{docname}.{file_type}"]
+			},
+			fields=["name", "file_url"],
+			order_by="creation desc",
+			limit=1
+		)
+		
+		# Fallback: search for any file with matching extension attached to the document
+		if not files:
+			files = frappe.get_all(
+				"File",
+				filters={
+					"attached_to_doctype": "Project Registration",
+					"attached_to_name": docname,
+					"file_name": ["like", f"%.{file_type}"]
+				},
+				fields=["name", "file_url"],
+				order_by="creation desc",
+				limit=1
+			)
+		
+		if not files:
+			frappe.throw(_("No endorsement {0} file found for this document.").format(file_type.upper()))
+		
+		file_doc = frappe.get_doc("File", files[0].name)
+		file_path = file_doc.get_full_path()
+		
+		with open(file_path, "rb") as f:
+			file_content = f.read()
+		
+		frappe.local.response.filename = f"{docname}.{file_type}"
+		frappe.local.response.filecontent = file_content
+		frappe.local.response.type = "download"
+		
+	except frappe.DoesNotExistError:
+		frappe.throw(_("Project Registration document or file not found."), title="Not Found")
+	except FileNotFoundError:
+		frappe.throw(_("The file could not be found on the server."))
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Error downloading endorsement file")
+		frappe.throw(_("An error occurred while downloading the file: {0}").format(str(e)))
+

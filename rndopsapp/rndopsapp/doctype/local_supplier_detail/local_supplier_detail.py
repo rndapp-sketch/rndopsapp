@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class ApplyProjectExtension(Document):
+class LocalSupplierDetail(Document):
 	pass

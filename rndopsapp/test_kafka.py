@@ -37,3 +37,7 @@ try:
     
 except Exception as e:
     print(f"Error: {e}")
+
+
+
+#  /home/prornd/project/frappe_dev/prornd/env/bin/python test_kafka_dummy_data.py

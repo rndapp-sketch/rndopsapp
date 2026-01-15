@@ -10,6 +10,32 @@
   "pi_webmail",
   "project_type",
   "other_project_type_name",
+  "consultancy_category",
+  "consultancy_calc_section",
+  "consultancy_gstin",
+  "consultancy_gst_rate",
+  "sec_cat_d_inputs",
+  "category_d_note",
+  "cat_d_grand_total_input",
+  "cat_d_project_cost_excl_gst",
+  "cat_d_consultancy_fee_input",
+  "operational_expense_input_inc_10_oh",
+  "sec_cat_d_breakup",
+  "cat_d_cf_base",
+  "cat_d_oe_base",
+  "cat_d_total_overhead",
+  "cat_d_institute_share",
+  "cat_d_gst_amt",
+  "cat_d_grand_total_calc",
+  "sec_cat_ef_breakup",
+  "category_e_note",
+  "category_t_note",
+  "cat_ef_total_amount",
+  "col_break_ef",
+  "cat_ef_honorarium",
+  "cat_ef_institute_share",
+  "cat_ef_gst",
+  "cat_ef_grand_total",
   "proj_details",
   "column_break_lufi",
   "project_title",
@@ -47,11 +73,10 @@
   "funding_agency_other",
   "multi_department_section",
   "implementation_department",
-  "consultancy_category",
   "involves_international_travel",
+  "prj_start_date",
   "project_duration_months",
   "project_duration_days",
-  "prj_start_date",
   "prj_end_date",
   "collaborators",
   "section_break_nlcs",
@@ -95,12 +120,6 @@
   "manpower_checkbox",
   "proposed_equipment_details",
   "proposed_manpower_details",
-  "consultancy_fields_section",
-  "overhead_percentage_consultancy",
-  "overhead_consultancy",
-  "budget_including_overhead_consultancy",
-  "service_tax_consultancy",
-  "grand_total_consultancy",
   "research_fields_section",
   "overhead_percentage_research",
   "overhead_research",
@@ -186,13 +205,15 @@
    "fetch_from": "pi_webmail.employee_id",
    "fieldname": "pi_employee_id",
    "fieldtype": "Data",
-   "label": "Employee ID of Principal Investigator :"
+   "label": "Employee ID of Principal Investigator :",
+   "read_only": 1
   },
   {
    "fetch_from": "pi_webmail.full_name",
    "fieldname": "principal_investigator_name",
    "fieldtype": "Data",
-   "label": "Name of the Principal Investigator :"
+   "label": "Name of the Principal Investigator :",
+   "read_only": 1
   },
   {
    "fieldname": "project_description",
@@ -245,7 +266,7 @@
    "fieldname": "consultancy_category",
    "fieldtype": "Select",
    "label": "Consultancy Category",
-   "options": "\nCategory D : Technology Transfer / Research Based\nCategory E : Non-Routine\nCategory F : Routine / Testing"
+   "options": "\nCategory D : Technology Transfer / Research Based\nCategory T : Routine / Testing\nCategory E : Non-Routine"
   },
   {
    "fieldname": "proposed_budget",
@@ -451,13 +472,6 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.project_type == 'Consultancy'",
-   "fieldname": "consultancy_fields_section",
-   "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Consultancy Calculations"
-  },
-  {
    "depends_on": "eval:doc.committees == 'Biosafety Committee'",
    "fieldname": "biosafety_category",
    "fieldtype": "Select",
@@ -503,26 +517,6 @@
    "options": "EmployeeClass_prornd"
   },
   {
-   "fieldname": "overhead_consultancy",
-   "fieldtype": "Currency",
-   "label": "Overhead (30% of the gross amount)"
-  },
-  {
-   "fieldname": "budget_including_overhead_consultancy",
-   "fieldtype": "Currency",
-   "label": "Budget including overhead (in Rupees)"
-  },
-  {
-   "fieldname": "service_tax_consultancy",
-   "fieldtype": "Currency",
-   "label": "Goods & Service Tax"
-  },
-  {
-   "fieldname": "grand_total_consultancy",
-   "fieldtype": "Currency",
-   "label": "Grand Total"
-  },
-  {
    "depends_on": "eval:doc.project_type == 'Research'",
    "fieldname": "research_fields_section",
    "fieldtype": "Section Break",
@@ -548,13 +542,6 @@
    "fieldname": "grand_total_research",
    "fieldtype": "Currency",
    "label": "Grand Total"
-  },
-  {
-   "default": "30",
-   "fieldname": "overhead_percentage_consultancy",
-   "fieldtype": "Percent",
-   "hidden": 1,
-   "label": "Overhead Percentage (%)"
   },
   {
    "default": "15",
@@ -1030,13 +1017,160 @@
    "fieldname": "prj_end_date",
    "fieldtype": "Date",
    "label": "Project End Date"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Consultancy'",
+   "fieldname": "consultancy_calc_section",
+   "fieldtype": "Section Break",
+   "label": "Consultancy Calculations"
+  },
+  {
+   "fieldname": "consultancy_gstin",
+   "fieldtype": "Data",
+   "label": "GSTIN Number"
+  },
+  {
+   "default": "18",
+   "fieldname": "consultancy_gst_rate",
+   "fieldtype": "Float",
+   "label": "GST @ % *",
+   "non_negative": 1
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category D : Technology Transfer / Research Based')",
+   "fieldname": "sec_cat_d_inputs",
+   "fieldtype": "Section Break",
+   "label": "Category D (Technology Transfer/Research)"
+  },
+  {
+   "fieldname": "cat_d_grand_total_input",
+   "fieldtype": "Currency",
+   "label": "Grand Total Amount (Inclusive of GST) *"
+  },
+  {
+   "fieldname": "cat_d_project_cost_excl_gst",
+   "fieldtype": "Currency",
+   "label": "Total Project Cost (Excluding GST)",
+   "read_only": 1
+  },
+  {
+   "description": " (Inc. 10% OverHead & 20% Institute Share)",
+   "fieldname": "cat_d_consultancy_fee_input",
+   "fieldtype": "Currency",
+   "label": "Consultancy Fee/ Honorarium/ Chair Professorship Input *",
+   "placeholder": "N.B.: Consultancy fee should be less than 30% of total project cost"
+  },
+  {
+   "description": "(Inc. 10% OverHead.)",
+   "fieldname": "operational_expense_input_inc_10_oh",
+   "fieldtype": "Currency",
+   "label": "Operational Expense Input (Contingency/Consumable/Equipment/Travel/Manpower, etc) "
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category D : Technology Transfer / Research Based')",
+   "fieldname": "sec_cat_d_breakup",
+   "fieldtype": "Section Break",
+   "label": "Category D Budget Break-up"
+  },
+  {
+   "fieldname": "cat_d_cf_base",
+   "fieldtype": "Currency",
+   "label": "Consultancy Fee/Honorarium (Base)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_oe_base",
+   "fieldtype": "Currency",
+   "label": "Operational Expenses (Base)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_total_overhead",
+   "fieldtype": "Currency",
+   "label": "Total Overhead",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_institute_share",
+   "fieldtype": "Currency",
+   "label": "Institute Share",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_gst_amt",
+   "fieldtype": "Currency",
+   "label": "GST Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_grand_total_calc",
+   "fieldtype": "Currency",
+   "label": "Grand Total (Calculated)",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && !doc.consultancy_category.startsWith('Category D : Technology Transfer / Research Based')",
+   "fieldname": "sec_cat_ef_breakup",
+   "fieldtype": "Section Break",
+   "label": "Category T/E Breakdown"
+  },
+  {
+   "fieldname": "cat_ef_total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount (Excluding GST) *"
+  },
+  {
+   "fieldname": "col_break_ef",
+   "fieldtype": "Column Break",
+   "label": "Breakup Details"
+  },
+  {
+   "fieldname": "cat_ef_honorarium",
+   "fieldtype": "Currency",
+   "label": "Honorarium (0.3 * TE)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_ef_institute_share",
+   "fieldtype": "Currency",
+   "label": "Institute Share (0.7 * TE)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_ef_gst",
+   "fieldtype": "Currency",
+   "label": "GST Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_ef_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "category_d_note",
+   "fieldtype": "HTML",
+   "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category D: Technology Transfer</b><br>\n                                        The project is Research Based Consultancy and the minimum duration is 1 year (12 months). The consultancy fee should be less than 30% of the total project cost.\n                                        </div>"
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category E : Non-Routine')",
+   "fieldname": "category_e_note",
+   "fieldtype": "HTML",
+   "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category E: Non-routine</b><br>\n                                        The project requires expert advertise and there is no restriction on consultancy fee.<br>\n                                        </div>"
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category T : Routine / Testing')",
+   "fieldname": "category_t_note",
+   "fieldtype": "HTML",
+   "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category T: Routine/Testing</b><br>\n                                        The project is category T based.<br>\n                                        </div>"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-19 12:24:00.933326",
+ "modified": "2026-01-15 23:12:30.527858",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

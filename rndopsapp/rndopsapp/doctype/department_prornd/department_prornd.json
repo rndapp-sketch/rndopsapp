@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-07-30 12:29:37.760857",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -22,7 +21,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Department",
-   "reqd": 1
+   "reqd": 1,
+   "unique": 1
   },
   {
    "description": "*The user who is the official Head (HoD/HoC/HoS) of this department/center/school.",
@@ -36,7 +36,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-17 11:40:39.150109",
+ "modified": "2026-01-02 16:14:41.355618",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Department_prornd",

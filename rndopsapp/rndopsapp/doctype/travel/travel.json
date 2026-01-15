@@ -1,13 +1,14 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}{16}TRAV{######}",
  "creation": "2025-11-26 16:08:04.021067",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_oqr2",
   "amended_from",
-  "section_break_yvdb",
+  "trvel_leave_balance_section",
   "webmail_id_travel",
   "applicant_name_travel",
   "designation_travel",
@@ -15,6 +16,9 @@
   "if_traveler",
   "other_traveler",
   "other_traveler_address",
+  "travel_right_column",
+  "travel_leave_balance_html",
+  "travel_supporting_documents",
   "details_travel",
   "visit_type_travel",
   "specify_type_of_visit",
@@ -36,7 +40,27 @@
   "other_account_head",
   "other_contribution",
   "travel_financial_assistance",
-  "travel_mode_of_travel"
+  "travel_mode_of_travel",
+  "section_break_jfah",
+  "travel_special_casual_leave",
+  "travel_leave_from_date",
+  "travel_leave_to_date",
+  "station_leave_details_section",
+  "travel_station_leave_from_date",
+  "travel_station_leave_from_session",
+  "travel_station_leave_to_date",
+  "travel_station_leave_to_session",
+  "section_break_zlyp",
+  "travel_additional_responsibility",
+  "travel_additional_responsibility_details",
+  "arrangement_for_classes_during_the_proposed_leave_section",
+  "travel_classes_arrangement",
+  "comments__remarks_if_any_section",
+  "travel_comment_if_any",
+  "travel_declaration_section",
+  "declaration_section",
+  "travel_declaration_text",
+  "travel_declaration_accepted"
  ],
  "fields": [
   {
@@ -53,11 +77,6 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "section_break_yvdb",
-   "fieldtype": "Section Break",
-   "label": "Apply for Travel "
   },
   {
    "fetch_from": "webmail_id_travel.full_name",
@@ -234,16 +253,147 @@
    "fieldtype": "Select",
    "label": "Mode of Travel",
    "options": "By Air\nBy Train\nBy Road"
+  },
+  {
+   "fieldname": "section_break_jfah",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "If leave has been approved by Faculty Affairs/Department (for CL), please upload the relevant document in the Attachments section.",
+   "fieldname": "travel_special_casual_leave",
+   "fieldtype": "Select",
+   "label": "Special Casual Leave (R&D Section)",
+   "options": "Required\nNot Required"
+  },
+  {
+   "fieldname": "travel_leave_from_date",
+   "fieldtype": "Date",
+   "label": "Leave Period \u2013 From Date"
+  },
+  {
+   "fieldname": "travel_leave_to_date",
+   "fieldtype": "Date",
+   "label": "Leave Period \u2013 To Date"
+  },
+  {
+   "fieldname": "station_leave_details_section",
+   "fieldtype": "Section Break",
+   "label": "Station Leave Details"
+  },
+  {
+   "fieldname": "travel_station_leave_from_date",
+   "fieldtype": "Date",
+   "label": "Station Leave From Date"
+  },
+  {
+   "fieldname": "travel_station_leave_from_session",
+   "fieldtype": "Select",
+   "label": "Station Leave (From Session)",
+   "options": "Full Day\nForenoon\nAfternoon"
+  },
+  {
+   "fieldname": "travel_station_leave_to_date",
+   "fieldtype": "Date",
+   "label": "Station Leave To Date"
+  },
+  {
+   "fieldname": "travel_station_leave_to_session",
+   "fieldtype": "Select",
+   "label": "Station Leave (To Session)",
+   "options": "Full Day\nForenoon\nAfternoon"
+  },
+  {
+   "fieldname": "section_break_zlyp",
+   "fieldtype": "Section Break",
+   "label": "Are you currently holding any additional administrative or academic responsibility?"
+  },
+  {
+   "description": "\n",
+   "fieldname": "travel_additional_responsibility",
+   "fieldtype": "Select",
+   "label": "Examples include HOD, HOC, HOS, Warden, Chairman of a Committee, or similar roles.",
+   "options": "Yes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.travel_additional_responsibility==\"Yes\"",
+   "fieldname": "travel_additional_responsibility_details",
+   "fieldtype": "Small Text",
+   "label": "Please provide details of the position(s) held"
+  },
+  {
+   "fieldname": "arrangement_for_classes_during_the_proposed_leave_section",
+   "fieldtype": "Section Break",
+   "label": "Arrangement for Classes During the Proposed Leave"
+  },
+  {
+   "fieldname": "travel_classes_arrangement",
+   "fieldtype": "Int",
+   "label": "Number of Classes Arranged",
+   "placeholder": "Total number of classes with alternate arrangements"
+  },
+  {
+   "fieldname": "comments__remarks_if_any_section",
+   "fieldtype": "Section Break",
+   "label": "Comments / Remarks (if any)"
+  },
+  {
+   "fieldname": "travel_comment_if_any",
+   "fieldtype": "Small Text",
+   "label": "Additional Remarks (if any)"
+  },
+  {
+   "fieldname": "travel_declaration_section",
+   "fieldtype": "Section Break",
+   "label": "DECLARATION"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "travel_declaration_text",
+   "fieldtype": "HTML",
+   "label": "Declaration Text",
+   "options": "<p>\nI hereby certify that my participation in the above-mentioned\nconference/workshop/seminar is in the interest of teaching and research\nat this Institute. I further confirm that suitable arrangements will be\nmade to fulfill my academic and research responsibilities during the\nperiod of my leave/absence.\n</p>\n\n<p>\nI also certify that the proposed travel has a direct relevance to the\nProject for which financial support is being sought. It is requested\nthat permission for attending the event, grant of leave, and financial\nassistance may kindly be accorded.\n</p>\n\n<p>\nI declare that the travel and related expenses claimed herein have not\nbeen, and will not be, claimed from any other source.\n</p>\n"
+  },
+  {
+   "default": "0",
+   "fieldname": "travel_declaration_accepted",
+   "fieldtype": "Check",
+   "label": "I hereby accept and agree to the above declaration"
+  },
+  {
+   "fieldname": "trvel_leave_balance_section",
+   "fieldtype": "Section Break",
+   "label": "Apply for Travel "
+  },
+  {
+   "fieldname": "travel_right_column",
+   "fieldtype": "Column Break",
+   "label": "Your Leave Balance"
+  },
+  {
+   "fieldname": "travel_leave_balance_html",
+   "fieldtype": "HTML",
+   "label": "Leave Balance",
+   "options": "<div style=\"border:1px solid #d1d8dd; padding:10px; border-radius:6px;\">\n    <strong>Special Casual Leave (SCL)</strong><br>\n    <span>30 days remaining</span>\n</div>\n"
+  },
+  {
+   "description": "Upload relevant supporting documents such as Leave Sanction Order (for students),\nInvitation Letter, or Leave Approval Letter from Faculty Affairs/Department (for CL), as applicable.\n",
+   "fieldname": "travel_supporting_documents",
+   "fieldtype": "Attach",
+   "label": "Supporting Documents"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-19 12:45:17.019658",
+ "modified": "2025-12-22 12:21:22.578507",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Travel",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

@@ -391,17 +391,32 @@ def get_fund_sanction_form_data(project_proposal=None):
 
 
 @frappe.whitelist()
-def save_fund_sanction_data(**data):
+def save_fund_sanction_data(files=None, **data):
 	"""
 	Save Fund Sanction data (parent + child tables), skipping all
 	ERPNext link validations and saving only file paths.
 	"""
+	import json
+	import base64
+
+	is_new = False  # Initialize is_new flag
 
 	try:
 		# Extract child tables and flags
 		budget_data = data.pop("sanctioned_budget_breakup", [])
 		files_data = data.pop("sanction_related_files", [])
 		submit = data.pop("submit", False)
+		
+		# Handle files payload from argument or data
+		files_payload = files
+		if not files_payload:
+			files_payload = data.pop("files", None)
+			
+		if isinstance(files_payload, str):
+			try:
+				files_payload = json.loads(files_payload)
+			except Exception:
+				pass
 
 		print(f"\nIncoming Fund Sanction save request. Keys: {list(data.keys())}")
 		print(f"Budget rows: {len(budget_data)}, File rows: {len(files_data)}")
@@ -416,6 +431,7 @@ def save_fund_sanction_data(**data):
 			doc.sanction_workflow_status = "Submitted"
 		else:
 			# Logic for creating a new document
+			is_new = True
 			data["doctype"] = "Fund Sanction"
 			doc = frappe.get_doc(data)
 
@@ -442,7 +458,6 @@ def save_fund_sanction_data(**data):
 
 		# --- Add file rows (path only) ---
 		# Note: This logic assumes the frontend sends a direct URL in 'sanction_file'.
-		# It will not handle the Base64 upload from your React code.
 		if files_data:
 			for f in files_data:
 				file_path = f.get("sanction_file")
@@ -459,16 +474,77 @@ def save_fund_sanction_data(**data):
 		doc.save(ignore_permissions=True)
 		print("✅ Second save complete")
 
+		# --- Handle new file uploads (Base64) ---
+		if files_payload and isinstance(files_payload, list):
+			for f in files_payload:
+				try:
+					filename = f.get("filename") or f.get("file_name") or f.get("name")
+					content_b64 = f.get("content") or f.get("file_data") or f.get("data") or ""
+					is_private = int(f.get("is_private") or 1)
+
+					if not (filename and content_b64):
+						continue
+
+					if content_b64.startswith("data:"):
+						content_b64 = content_b64.split(",", 1)[1]
+
+					file_content = base64.b64decode(content_b64)
+
+					file_doc = frappe.new_doc("File")
+					file_doc.file_name = filename
+					file_doc.attached_to_doctype = doc.doctype
+					file_doc.attached_to_name = doc.name
+					file_doc.is_private = is_private
+					file_doc.content = file_content
+					file_doc.save(ignore_permissions=True)
+					
+					# Also add to sanction_related_files child table if needed
+					# Assuming sanction_related_files has 'sanction_file' field which expects a URL
+					doc.append("sanction_related_files", {
+						"description": filename,
+						"sanction_file": file_doc.file_url
+					})
+
+				except Exception as fe:
+					frappe.log_error(
+						frappe.get_traceback(),
+						f"save_fund_sanction_data: file upload error for {f.get('filename')}",
+					)
+					continue
+			
+			# Save again to update child table with new files
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+
 		# --- Submit if requested ---
 		if submit:
 			doc.submit()
 			print("✅ Submitted successfully")
 
 		# --- ✅ Send data to external API (Kafka) ---
+		kafka_success = False
 		try:
-			publish_sanction(doc)
+			kafka_success = publish_sanction(doc)
+			if kafka_success:
+				frappe.msgprint(_("Sanction data synced successfully to external system."), indicator="green")
+			else:
+				# Rollback: Delete if newly created, otherwise log error
+				if is_new:
+					doc.delete(ignore_permissions=True)
+					frappe.db.rollback()
+					frappe.throw(_("Kafka sync failed. Fund Sanction was not saved. Please try again."))
+				else:
+					frappe.msgprint(_("Warning: Kafka sync failed. Data saved locally but not synced."), indicator="orange")
+		except frappe.ValidationError:
+			raise  # Re-raise validation errors from frappe.throw
 		except Exception as e:
 			frappe.log_error(frappe.get_traceback(), "Fund Sanction Kafka Sync Error")
+			if is_new:
+				doc.delete(ignore_permissions=True)
+				frappe.db.rollback()
+				frappe.throw(_("Kafka sync failed. Fund Sanction was not saved. Please try again."))
+			else:
+				frappe.msgprint(_("Warning: Kafka sync failed. Check Error Log."), indicator="red")
 
 		frappe.db.commit()
 		return {"status": "success", "docname": doc.name}

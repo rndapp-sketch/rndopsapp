@@ -45,6 +45,7 @@
   },
   {
    "default": "+91-",
+   "fetch_from": "pi_email.mobile_no",
    "fieldname": "pi_contact",
    "fieldtype": "Phone",
    "in_list_view": 1,
@@ -62,7 +63,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-16 14:17:20.289326",
+ "modified": "2026-01-12 02:08:01.577788",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Additional PI",

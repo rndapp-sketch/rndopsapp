@@ -8,6 +8,7 @@
   "section_break_sfpw",
   "amended_from",
   "section_break_zlkb",
+  "project_extension_heading",
   "project_ref",
   "section_break_bigy",
   "email_id",
@@ -26,7 +27,7 @@
    "fieldtype": "Link",
    "label": "Amended From",
    "no_copy": 1,
-   "options": "Apply Project Extension",
+   "options": "Project Extension",
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
@@ -72,16 +73,21 @@
    "fieldname": "prj_extended_till_date",
    "fieldtype": "Date",
    "label": "Project extended till"
+  },
+  {
+   "fieldname": "project_extension_heading",
+   "fieldtype": "Heading",
+   "label": "Apply Project Extension"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-19 12:47:34.309272",
+ "modified": "2025-12-19 13:21:05.979383",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
- "name": "Apply Project Extension",
+ "name": "Project Extension",
  "owner": "Administrator",
  "permissions": [
   {

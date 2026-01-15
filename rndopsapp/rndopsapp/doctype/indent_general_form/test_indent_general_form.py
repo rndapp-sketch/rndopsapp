@@ -5,5 +5,5 @@
 from frappe.tests.utils import FrappeTestCase
 
 
-class TestApplyProjectExtension(FrappeTestCase):
+class TestIndentGeneralForm(FrappeTestCase):
 	pass
