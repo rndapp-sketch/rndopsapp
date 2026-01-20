@@ -18,6 +18,8 @@
   "applicant_designation",
   "applicant_department",
   "is_project_of_other_pi",
+  "pi_head_mentor_user_id",
+  "current_approver",
   "section_break_piwc",
   "project_number",
   "account_head",
@@ -25,6 +27,7 @@
   "section_break_zlko",
   "other_pi_email",
   "name_other_pi",
+  "piheadmentor_user_id_other_pi",
   "emp_class_other_pi",
   "other_pi_dept",
   "p3_section_break",
@@ -314,24 +317,25 @@
    "fieldtype": "Section Break"
   },
   {
-   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\"",
+   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user",
    "fieldname": "section_break_zlko",
    "fieldtype": "Section Break"
   },
   {
+   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user\r\n",
    "fieldname": "other_pi_email",
    "fieldtype": "Link",
    "label": "Webmail-ID of other PI",
    "options": "User"
   },
   {
+   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user\r\n",
    "fetch_from": "other_pi_email.full_name",
    "fieldname": "name_other_pi",
    "fieldtype": "Data",
    "label": "Name of other PI"
   },
   {
-   "default": "No",
    "fieldname": "is_project_of_other_pi",
    "fieldtype": "Select",
    "label": "Is Project of other PI?",
@@ -357,13 +361,33 @@
    "fieldtype": "Data",
    "label": "Department",
    "read_only": 1
+  },
+  {
+   "fetch_from": "email_id.piheadmentor_user_id",
+   "fieldname": "pi_head_mentor_user_id",
+   "fieldtype": "Select",
+   "label": "PI/Head/Mentor User Id",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "other_pi_email.piheadmentor_user_id",
+   "fieldname": "piheadmentor_user_id_other_pi",
+   "fieldtype": "Select",
+   "label": "PI/Head/Mentor User Id (Other PI)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_approver",
+   "fieldtype": "Link",
+   "label": "Current Approver",
+   "options": "User"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-15 15:58:28.173899",
+ "modified": "2026-01-20 17:07:50.350528",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Rate Contract",

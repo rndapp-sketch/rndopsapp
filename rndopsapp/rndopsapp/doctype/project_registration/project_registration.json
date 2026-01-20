@@ -56,6 +56,7 @@
   "funding_agen",
   "add_funding_agency_button",
   "funding_agency_schemes",
+  "gstin_number",
   "column_break_gtum",
   "funding_agency_type",
   "origin_of_funding_agency",
@@ -1164,13 +1165,19 @@
    "fieldname": "category_t_note",
    "fieldtype": "HTML",
    "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category T: Routine/Testing</b><br>\n                                        The project is category T based.<br>\n                                        </div>"
+  },
+  {
+   "fetch_from": "funding_agen.gstin_of_funding_agency",
+   "fieldname": "gstin_number",
+   "fieldtype": "Data",
+   "label": "GSTIN number"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-15 23:12:30.527858",
+ "modified": "2026-01-19 16:33:32.958053",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

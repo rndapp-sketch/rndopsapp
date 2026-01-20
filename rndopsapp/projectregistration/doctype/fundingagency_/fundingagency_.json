@@ -14,6 +14,7 @@
   "funding_agency_email",
   "funding_agency_website",
   "origin_of_funding_agency",
+  "gstin_of_funding_agency",
   "column_break_mflq",
   "funding_agency_type_1",
   "ministry_funding_agency",
@@ -25,7 +26,6 @@
   "funding_agency_overhead",
   "funding_agency_bank_acc",
   "section_break_ccmp",
-  "funding_agency_address",
   "amended_from"
  ],
  "fields": [
@@ -71,12 +71,6 @@
    "fieldtype": "Float",
    "label": "Overhead Percentage %",
    "precision": "2"
-  },
-  {
-   "fieldname": "funding_agency_address",
-   "fieldtype": "Link",
-   "label": "Address",
-   "options": "addresses_"
   },
   {
    "fieldname": "funding_agency_bank_acc",
@@ -148,12 +142,17 @@
    "fieldname": "fundingagency_postalcode",
    "fieldtype": "Data",
    "label": "Postal Code"
+  },
+  {
+   "fieldname": "gstin_of_funding_agency",
+   "fieldtype": "Data",
+   "label": "GSTIN of Funding Agency"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-16 14:20:59.196658",
+ "modified": "2026-01-19 16:38:55.101345",
  "modified_by": "Administrator",
  "module": "projectRegistration",
  "name": "fundingagency_",

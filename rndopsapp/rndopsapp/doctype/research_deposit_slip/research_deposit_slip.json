@@ -1,0 +1,246 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{DDMMYYYY}RND_DS{#####}",
+ "creation": "2026-01-19 15:47:25.531038",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_details_section",
+  "principal_investigator",
+  "project_title",
+  "funding_agency",
+  "deposit_date",
+  "payment_information_section",
+  "total_amount",
+  "overhead_amount",
+  "ecs_scheme_no",
+  "bank_name",
+  "account_number",
+  "ecs_date",
+  "credit_distribution_section",
+  "idf_amount",
+  "dpf_amount",
+  "pdf_amount",
+  "staff_welfare_amount",
+  "student_welfare_fund",
+  "final_totals_section",
+  "project_no",
+  "column_break_jomq",
+  "project_account_balance",
+  "section_break_yhjm",
+  "grand_total"
+ ],
+ "fields": [
+  {
+   "fieldname": "principal_investigator",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Principal Investigator",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "project_details_section",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Project Title",
+   "options": "Project Registration",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "project_title.fund_agen_initials",
+   "fieldname": "funding_agency",
+   "fieldtype": "Data",
+   "label": "Funding Agency"
+  },
+  {
+   "default": "Today",
+   "fieldname": "deposit_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Deposit Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "payment_information_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Information"
+  },
+  {
+   "fieldname": "total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Deposit Amount",
+   "non_negative": 1,
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead Amount",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ecs_scheme_no",
+   "fieldtype": "Data",
+   "label": "ECS / Scheme No"
+  },
+  {
+   "fieldname": "bank_name",
+   "fieldtype": "Data",
+   "label": "Bank Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "credit_distribution_section",
+   "fieldtype": "Section Break",
+   "label": "Credit Distribution"
+  },
+  {
+   "description": "(40% Of Overhead Amount)",
+   "fieldname": "idf_amount",
+   "fieldtype": "Currency",
+   "label": "(a) IDF",
+   "read_only": 1
+  },
+  {
+   "description": "(25% Of Overhead Amount)",
+   "fieldname": "dpf_amount",
+   "fieldtype": "Currency",
+   "label": "(b) DPF"
+  },
+  {
+   "fieldname": "ecs_date",
+   "fieldtype": "Table",
+   "label": "ECS Date",
+   "options": "Deposit Slip ECS Date"
+  },
+  {
+   "fieldname": "account_number",
+   "fieldtype": "Data",
+   "label": "Account Number",
+   "placeholder": "SBIN123456",
+   "reqd": 1
+  },
+  {
+   "description": "(25% Of Overhead Amount)",
+   "fieldname": "pdf_amount",
+   "fieldtype": "Currency",
+   "label": "(c) PDF"
+  },
+  {
+   "description": "(5% Of Overhead Amount)",
+   "fieldname": "staff_welfare_amount",
+   "fieldtype": "Currency",
+   "label": "(c) Staff Welfare Fund",
+   "read_only": 1
+  },
+  {
+   "description": "(5% Of Overhead Amount)",
+   "fieldname": "student_welfare_fund",
+   "fieldtype": "Data",
+   "label": "Student Welfare Fund"
+  },
+  {
+   "fieldname": "final_totals_section",
+   "fieldtype": "Section Break",
+   "label": "Final Totals"
+  },
+  {
+   "fetch_from": "project_title.project_no",
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project No"
+  },
+  {
+   "fieldname": "column_break_jomq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "project_account_balance",
+   "fieldtype": "Currency",
+   "label": "Project Balance",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_yhjm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-01-19 22:39:40.385500",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Research Deposit Slip",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "RnD Accounts",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "RnD Miscellaneous",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

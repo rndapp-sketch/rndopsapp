@@ -1,9 +1,306 @@
 # Copyright (c) 2025, rndops and contributors
 # For license information, please see license.txt
 
-# import frappe
+import json
+import frappe
+from frappe import _
 from frappe.model.document import Document
+from frappe.model.naming import make_autoname
+
+
+def extract_eval_expression(expression):
+	"""
+	Extracts the JavaScript expression from a Frappe 'eval:' string.
+	"""
+	if not expression:
+		return None
+	expression = str(expression).strip()
+	if expression.startswith("eval:"):
+		return expression[5:].strip()
+	return expression
 
 
 class TTestingDepositSlip(Document):
-	pass
+	def autoname(self):
+		self.name = make_autoname("T-TEST-DS-.YYYY.-.#####")
+
+
+@frappe.whitelist()
+def get_t_testing_deposit_slip_fields(doc_name=None):
+	"""
+	API to return T Testing Deposit Slip field metadata and prefill data.
+	Includes eval expressions for frontend conditional logic.
+	"""
+	doctype_name = "T Testing Deposit Slip"
+	meta = frappe.get_meta(doctype_name)
+
+	fields = []
+	link_fields = []
+	child_table_meta = {}
+	
+	for f in meta.get("fields"):
+		field_data = {
+			"fieldname": f.fieldname,
+			"label": f.label,
+			"fieldtype": f.fieldtype,
+			"options": f.options,
+			"mandatory": f.reqd,
+			"hidden": f.hidden,
+			"read_only": f.read_only,
+			"description": f.description,
+			"default": f.default,
+			"fetch_from": f.fetch_from,
+			"fetch_if_empty": f.fetch_if_empty,
+			"depends_on": f.depends_on,
+			"mandatory_depends_on": f.mandatory_depends_on,
+			"read_only_depends_on": f.read_only_depends_on,
+			"depends_on_eval": extract_eval_expression(f.depends_on),
+			"mandatory_depends_on_eval": extract_eval_expression(f.mandatory_depends_on),
+			"read_only_depends_on_eval": extract_eval_expression(f.read_only_depends_on),
+		}
+		fields.append(field_data)
+		
+		if f.fieldtype == "Link" and f.options:
+			link_fields.append({"fieldname": f.fieldname, "options": f.options})
+		
+		if f.fieldtype == "Table" and f.options:
+			try:
+				child_meta = frappe.get_meta(f.options)
+				child_fields = []
+				for cf in child_meta.get("fields"):
+					child_fields.append({
+						"fieldname": cf.fieldname,
+						"label": cf.label,
+						"fieldtype": cf.fieldtype,
+						"options": cf.options,
+						"mandatory": cf.reqd,
+						"hidden": cf.hidden,
+						"read_only": cf.read_only,
+						"description": cf.description,
+						"default": cf.default,
+						"fetch_from": cf.fetch_from,
+						"in_list_view": cf.in_list_view,
+						"columns": cf.columns,
+					})
+				child_table_meta[f.fieldname] = {
+					"doctype": f.options,
+					"fields": child_fields
+				}
+			except Exception:
+				pass
+
+	prefill_data = {}
+	link_options = {}
+	related_data = {}
+
+	if doc_name:
+		doc_name = str(doc_name).strip('"').strip("'")
+		if frappe.db.exists(doctype_name, doc_name):
+			doc = frappe.get_doc(doctype_name, doc_name)
+			related_data = doc.as_dict()
+			prefill_data = doc.as_dict()
+
+	# Dynamically get link options for all Link fields
+	for link_field in link_fields:
+		fieldname = link_field["fieldname"]
+		linked_doctype = link_field["options"]
+		
+		try:
+			linked_meta = frappe.get_meta(linked_doctype)
+			title_field = linked_meta.title_field or "name"
+			
+			if linked_doctype == "User":
+				link_options[fieldname] = frappe.get_all(
+					linked_doctype, fields=["name as value", "full_name as label"], limit=200
+				)
+			else:
+				link_options[fieldname] = frappe.get_all(
+					linked_doctype, fields=["name as value", f"{title_field} as label"], limit=200
+				)
+		except Exception:
+			link_options[fieldname] = frappe.get_all(
+				linked_doctype, fields=["name as value", "name as label"], limit=200
+			)
+
+	# Fetch Client Scripts from Frappe UI (stored in database)
+	client_scripts = []
+	try:
+		scripts = frappe.get_all(
+			"Client Script",
+			filters={"dt": doctype_name, "enabled": 1},
+			fields=["name", "script", "view"]
+		)
+		for script in scripts:
+			client_scripts.append({
+				"name": script.name,
+				"script": script.script,
+				"view": script.view
+			})
+	except Exception:
+		pass
+
+	return {
+		"fields": fields,
+		"prefill_data": prefill_data,
+		"link_options": link_options,
+		"related_data": related_data,
+		"client_scripts": client_scripts,
+		"child_table_meta": child_table_meta,
+	}
+
+
+@frappe.whitelist()
+def save_t_testing_deposit_slip(doc_data):
+	"""Saves the T Testing Deposit Slip data from the React form."""
+	try:
+		data = json.loads(doc_data) if isinstance(doc_data, str) else doc_data
+		print("Received data for T Testing Deposit Slip:", data)
+
+		doc_name = data.get("name") or data.get("docname")
+		
+		if doc_name and frappe.db.exists("T Testing Deposit Slip", doc_name):
+			# Update existing document
+			doc = frappe.get_doc("T Testing Deposit Slip", doc_name)
+		else:
+			# Create new document
+			doc = frappe.new_doc("T Testing Deposit Slip")
+
+		# Map the form data to doctype fields
+		field_mapping = {
+			"project_title": "project_title",
+			"principal_investigator": "principal_investigator",
+			"client": "client",
+			"gstin_of_funding_agency": "gstin_of_funding_agency",
+			"ecs_ac_no": "ecs_ac_no",
+			"bank": "bank",
+			"amount_inclusive_of_gst": "amount_inclusive_of_gst",
+			"cgst_9": "cgst_9",
+			"sgst_9": "sgst_9",
+			"consultancy_fee_x": "consultancy_fee_x",
+			"overhead_multiplier": "overhead_multiplier",
+			"overhead_amount": "overhead_amount",
+			"total_gst": "total_gst",
+			"total_budget": "total_budget",
+		}
+
+		for form_field, doctype_field in field_mapping.items():
+			if form_field in data and data[form_field] not in [None, ""]:
+				doc.set(doctype_field, data[form_field])
+
+		# Handle child table - ECS Dates
+		if "ecs_dates" in data:
+			doc.ecs_dates = []
+			for ecs_date in data["ecs_dates"]:
+				if ecs_date.get("ecs_date") or ecs_date.get("amount", 0) > 0:
+					doc.append("ecs_dates", {
+						"ecs_date": ecs_date.get("ecs_date"),
+						"amount": ecs_date.get("amount", 0),
+					})
+
+		# Handle child table - Credit Distribution
+		if "credit_distribution" in data:
+			doc.credit_distribution = []
+			for row in data["credit_distribution"]:
+				doc.append("credit_distribution", row)
+
+		# Handle child table - Additional Project Credits
+		if "additional_project_credits" in data:
+			doc.additional_project_credits = []
+			for row in data["additional_project_credits"]:
+				doc.append("additional_project_credits", row)
+
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		print(f"Successfully saved T Testing Deposit Slip: {doc.name}")
+		return {"status": "success", "docname": doc.name}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "T Testing Deposit Slip Save Error")
+		frappe.db.rollback()
+		frappe.throw(f"Failed to save T Testing Deposit Slip: {str(e)}")
+
+
+@frappe.whitelist()
+def submit_t_testing_deposit_slip(docname):
+	"""Submit a T Testing Deposit Slip document."""
+	try:
+		doc = frappe.get_doc("T Testing Deposit Slip", docname)
+		
+		if doc.docstatus == 0:
+			doc.submit()
+			frappe.db.commit()
+			return {
+				"status": "success",
+				"message": f"T Testing Deposit Slip '{docname}' submitted successfully.",
+				"docname": docname,
+				"docstatus": doc.docstatus,
+			}
+		elif doc.docstatus == 1:
+			return {
+				"status": "info",
+				"message": f"T Testing Deposit Slip '{docname}' is already submitted.",
+				"docname": docname,
+				"docstatus": doc.docstatus,
+			}
+		else:
+			return {
+				"status": "error",
+				"message": f"T Testing Deposit Slip '{docname}' is cancelled and cannot be submitted.",
+				"docname": docname,
+				"docstatus": doc.docstatus,
+			}
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "T Testing Deposit Slip Submit Error")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_t_testing_deposit_slip_workflow_actions():
+	"""
+	Returns available workflow actions for T Testing Deposit Slip based on user role.
+	"""
+	user_roles = frappe.get_roles(frappe.session.user)
+	workflow_name = "T_Testing_Deposit_Slip_Workflow"
+	
+	if not frappe.db.exists("Workflow", workflow_name):
+		return []
+
+	workflow = frappe.get_doc("Workflow", workflow_name)
+	actions = []
+
+	for transition in workflow.transitions:
+		if transition.allowed in user_roles:
+			actions.append({
+				"action": transition.action,
+				"state": transition.state,
+				"next_state": transition.next_state,
+				"allowed": transition.allowed,
+			})
+
+	return actions
+
+
+@frappe.whitelist()
+def perform_t_testing_deposit_slip_workflow_action(docname, action):
+	"""
+	Perform a workflow action on a T Testing Deposit Slip document.
+	"""
+	try:
+		doc = frappe.get_doc("T Testing Deposit Slip", docname)
+		doc.run_method("apply_workflow", action)
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		
+		return {
+			"status": "success",
+			"message": f"Action '{action}' performed successfully.",
+			"docname": docname,
+			"workflow_state": doc.workflow_state,
+		}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "T Testing Deposit Slip Workflow Error")
+		return {"status": "error", "message": str(e)}

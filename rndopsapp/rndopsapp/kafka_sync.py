@@ -43,7 +43,8 @@ TOPIC_FUND_RECEIVED_DLQ = 'fund-received-events-dlq'
 ALL_TOPICS = [
 	TOPIC_PROJECT, TOPIC_PROJECT_DLQ,
 	TOPIC_SANCTION, TOPIC_SANCTION_DLQ,
-	TOPIC_FUND_RECEIVED, TOPIC_FUND_RECEIVED_DLQ
+	TOPIC_FUND_RECEIVED, TOPIC_FUND_RECEIVED_DLQ,
+	'deposit-slip-events', 'deposit-slip-events-dlq'
 ]
 
 # Schema Versions
@@ -642,13 +643,14 @@ def publish_fund_received(doc, method=None):
 		# - bank_account: Bank Account Number (maps to iitgAccountNumber)
 		# - workflow_state: Status (maps to fundReceivedStatus)
 		payload = {
-			# "fundReceivedRefNumber": doc.name,  # Mapped from autoname
+			"fundReceivedRefNumberFap": doc.name,  # Mapped from autoname
+			"sanctionNumber": sanction_ref,  # Fund Sanction document name (different from sanctionLetterNo)
 			"sanctionLetterNo": sanction_letter_no,
 			"projectNumber": doc.prjreg_title,  # Link field stores project name
 			"amountReceived": float(getattr(doc, 'fund_received_amt', 0) or 0),
 			"iitgAccountNumber": getattr(doc, 'bank_account', None) or "",
 			"depositSlipStatus": False,  # No deposit_slip_status field in Fund Received doctype
-			"fundReceivedStatus": getattr(doc, 'workflow_state', None) or "PENDING_APPROVAL",
+			"fundReceivedStatus": "PENDING_APPROVAL",
 			"depositeStatusUpdateTime": current_timestamp,
 			"fundReceivedStatusUpdateTime": current_timestamp,
 			"fundBudgetBreakupList": fund_budget_breakup_list,
@@ -675,4 +677,253 @@ def publish_fund_received(doc, method=None):
 		print(f"❌ [KAFKA] {error_msg}")
 		frappe.log_error(error_msg, "Kafka Sync Error")
 		return False
+
+
+def publish_research_consultancy_deposit_slip(doc):
+	"""
+	Publishes Research Consultancy Deposit Slip to 'deposit-slip-events' topic.
+	
+	Updated payload structure includes:
+	- gstDetails: CGST/SGST/IGST breakdown
+	- consultancyEDetails: Consultancy E specific fields
+	- Enhanced creditDistributionPdf/Dpf with employeeId and departmentId
+	"""
+	try:
+		if not KAFKA_AVAILABLE:
+			print("⚠️ [KAFKA] Kafka module not available, skipping sync.")
+			return False
+
+		print(f"🔄 [KAFKA] Preparing payload for Research Consultancy Deposit Slip: {doc.name}")
+
+		# Helper to format dates in ISO 8601 format with T separator
+		def fmt_date(d):
+			if not d:
+				return None
+			# Convert to string and replace space with T for ISO 8601 format
+			date_str = str(d)
+			return date_str.replace(' ', 'T')
+		
+		from frappe.utils import flt
+		
+		# Get project details for project number
+		project_number = doc.project_number or ""
+		if not project_number and doc.project_title:
+			try:
+				project_number = frappe.db.get_value(
+					"Project Registration", 
+					doc.project_title, 
+					"name"
+				) or doc.project_title
+			except Exception:
+				project_number = doc.project_title or ""
+		
+		# Get project type to determine category
+		project_type = ""
+		if doc.project_title:
+			try:
+				project_type = frappe.db.get_value(
+					"Project Registration", 
+					doc.project_title, 
+					"project_type"
+				) or ""
+			except Exception:
+				project_type = ""
+		
+		# Determine category based on project type
+		category = "RESEARCH"
+		if project_type and "Consultancy" in project_type:
+			category = "CONSULTANCY_E"
+		
+		# Process ECS Dates
+		ecs_dates = []
+		if hasattr(doc, "ecs_dates"):
+			for row in doc.ecs_dates:
+				if row.ecs_date:
+					ecs_dates.append(fmt_date(row.ecs_date))
+
+		# Credit Distribution Lists
+		pdf_list = []
+		dpf_list = []
+		
+		# Child table processing for credit_distribution
+		if hasattr(doc, "credit_distribution"):
+			for row in doc.credit_distribution:
+				label = (getattr(row, 'label', '') or "").upper()
+				
+				# Try to get employee_id and department_id if available
+				employee_id = getattr(row, 'employee_id', None) or getattr(row, 'emp_id', None) or ""
+				department_id = getattr(row, 'department_id', None) or getattr(row, 'dept_id', None)
+				
+				# Fetch dept_id from Department_prornd if department name is provided
+				dept_name = getattr(row, 'department', None) or getattr(row, 'department_name', None)
+				if dept_name and not department_id:
+					try:
+						department_id = frappe.db.get_value("Department_prornd", dept_name, "dept_id")
+					except Exception:
+						department_id = None
+				
+				if "PDF" in label or "PRINCIPAL" in label:
+					pdf_list.append({
+						"employeeId": employee_id,
+						"departmentId": int(department_id) if department_id else None,
+						"pdfPercentage": flt(getattr(row, 'percentage_of_overhead', 0) or getattr(row, 'percentage', 0)),
+						"pdfAmount": flt(getattr(row, 'amount', 0))
+					})
+				elif "DPF" in label or "DEPARTMENTAL" in label:
+					dpf_list.append({
+						"departmentId": int(department_id) if department_id else None,
+						"dpfPercentage": flt(getattr(row, 'percentage_of_overhead', 0) or getattr(row, 'percentage', 0)),
+						"dpfAmount": flt(getattr(row, 'amount', 0))
+					})
+
+		# Fetch fund_received_ref_number from linked Fund Received
+		fund_received_ref_number = 0
+		if getattr(doc, "fund_received_ref", None):
+			try:
+				val = frappe.db.get_value("Fund Received", doc.fund_received_ref, "fund_received_ref_number")
+				fund_received_ref_number = int(val) if val else 0
+			except Exception:
+				fund_received_ref_number = 0
+		
+		# Calculate GST amounts
+		cgst_amount = flt(doc.cgst_9) if hasattr(doc, 'cgst_9') else 0
+		sgst_amount = flt(doc.sgst_9) if hasattr(doc, 'sgst_9') else 0
+		total_gst = flt(doc.total_gst) if hasattr(doc, 'total_gst') else 0
+		
+		# Determine GST type and calculate IGST if needed
+		# If CGST and SGST are both present, it's GST (intra-state)
+		# If only total_gst is present (or CGST+SGST are zero), assume IGST (inter-state)
+		gst_type = "NOGST"
+		igst_amount = 0
+		cgst_percentage = None
+		sgst_percentage = None
+		igst_percentage = None
+		
+		if total_gst > 0:
+			if cgst_amount > 0 or sgst_amount > 0:
+				gst_type = "CGST_SGST"  # CGST + SGST (intra-state)
+				cgst_percentage = 9.0
+				sgst_percentage = 9.0
+			else:
+				gst_type = "IGST"  # Inter-state
+				igst_amount = total_gst
+				igst_percentage = 18.0
+		
+		# Build gstDetails object
+		gst_details = {
+			"cgstPercentage": cgst_percentage,
+			"cgstAmount": cgst_amount if cgst_amount > 0 else None,
+			"sgstPercentage": sgst_percentage,
+			"sgstAmount": sgst_amount if sgst_amount > 0 else None,
+			"igstPercentage": igst_percentage,
+			"igstAmount": igst_amount if igst_amount > 0 else None,
+			"totalGstAmount": total_gst
+		}
+		
+		# Build consultancyEDetails (only for Consultancy E projects)
+		consultancy_e_details = None
+		if category == "CONSULTANCY_E":
+			# Try to get consultancy fee / training fee from document or linked project
+			consultancy_fee = 0
+			if hasattr(doc, 'consultancy_fee'):
+				consultancy_fee = flt(doc.consultancy_fee)
+			elif hasattr(doc, 'training_fee'):
+				consultancy_fee = flt(doc.training_fee)
+			
+			consultancy_e_details = {
+				"consultancyFeeX_trainingFee": consultancy_fee
+			}
+		
+		# Calculate overhead percentage from document or use default
+		overhead_percentage = 15.0
+		if hasattr(doc, 'overhead_percentage') and doc.overhead_percentage:
+			overhead_percentage = flt(doc.overhead_percentage)
+		
+		# Staff Welfare Amount (swf) - 5% of overhead
+		swf_percentage = 5.0
+		swf_amount = flt(doc.staff_welfare_amount) if hasattr(doc, 'staff_welfare_amount') else 0
+		
+		# Student Welfare Amount (stwf) - 5% of overhead  
+		stwf_percentage = 5.0
+		stwf_amount = flt(doc.student_welfare_amount) if hasattr(doc, 'student_welfare_amount') else 0
+		
+		# IDF Amount - 40% of overhead
+		idf_percentage = 40.0
+		idf_amount = flt(doc.idf_amount) if hasattr(doc, 'idf_amount') else 0
+		
+		# DPF/CLE Amount - 25% of overhead
+		dpf_cle_percentage = 25.0
+		dpf_cle_amount = flt(doc.dpf_cle_amount) if hasattr(doc, 'dpf_cle_amount') else 0
+
+		# Build the payload
+		payload = {
+			"projectNumber": project_number,
+			"fundReceivedRefNumber": fund_received_ref_number,
+			"slipNumber": doc.name,
+			"category": category,
+			"ecsAccountNo": doc.ecs_ac_no or "",
+			"bankName": doc.bank or "",
+			"bmrNumber": getattr(doc, 'bmr_number', '') or "",
+			"amountReceived": flt(doc.amount_inclusive_gst_capital),
+			"amountInclusiveGst": flt(doc.amount_inclusive_gst_capital),
+			"gstType": gst_type,
+			"finalGstAmount": total_gst,
+			"finalTotalAmount": flt(doc.total_budget) if hasattr(doc, 'total_budget') else flt(doc.amount_inclusive_gst_capital),
+			"totalOverheadPercentage": overhead_percentage,
+			"totalOverheadAmount": flt(doc.overhead_amount) if hasattr(doc, 'overhead_amount') else 0,
+			"netProjectAmount": flt(doc.project_balance_after_gst) if hasattr(doc, 'project_balance_after_gst') else flt(doc.prj_amount),
+			"depositDate": fmt_date(doc.creation),
+			"createdAt": fmt_date(doc.creation),
+			"updatedAt": fmt_date(doc.modified),
+			"createdBy": doc.owner,
+			"updatedBy": doc.modified_by,
+			"status": "APPROVED",
+			"ecsDates": ecs_dates,
+			# GST Details object
+			"gstDetails": gst_details,
+			# Credit Distributions
+			"creditDistributionSwf": {
+				"swfPercentage": swf_percentage,
+				"swfAmount": swf_amount
+			},
+			"creditDistributionPdf": pdf_list,
+			"creditDistributionDpf": dpf_list,
+			"creditDistributionIdf": {
+				"idfPercentage": idf_percentage,
+				"idfAmount": idf_amount
+			},
+			"creditDistributionStwf": {
+				"stwfPercentage": stwf_percentage,
+				"stwfAmount": stwf_amount
+			}
+		}
+		
+		# Add consultancyEDetails only for Consultancy E projects
+		if consultancy_e_details:
+			payload["consultancyEDetails"] = consultancy_e_details
+
+		# Wrap payload with schema metadata
+		wrapped_payload = {
+			"schemaVersion": "1.0",
+			"eventType": f"DEPOSIT_SLIP_{category.replace('_', '')}",
+			"timestamp": datetime.utcnow().isoformat(),
+			"data": payload
+		}
+
+		topic = 'deposit-slip-events'
+		dlq_topic = 'deposit-slip-events-dlq'
+		
+		print(f"📤 [KAFKA] Sending to topic: {topic}")
+		print(f"📦 [KAFKA] Payload: {json.dumps(payload, indent=2, default=str)}")
+		
+		result = publish_message(topic, wrapped_payload, doc.name, dlq_topic)
+		print(f"{'✅' if result else '❌'} [KAFKA] publish_message returned: {result}")
+		return result
+
+	except Exception as e:
+		error_msg = f"Error preparing Research Deposit Slip payload: {str(e)}"
+		print(f"❌ [KAFKA] {error_msg}")
+		frappe.log_error(error_msg, "Kafka Sync Error")
+		return False
+
 

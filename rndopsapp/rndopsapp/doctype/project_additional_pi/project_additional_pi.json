@@ -37,6 +37,7 @@
    "label": "Designation"
   },
   {
+   "fetch_from": "pi_email.inst_name_address",
    "fieldname": "pi_address",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -44,10 +45,9 @@
    "reqd": 1
   },
   {
-   "default": "+91-",
-   "fetch_from": "pi_email.mobile_no",
+   "fetch_from": "pi_email.phone",
    "fieldname": "pi_contact",
-   "fieldtype": "Phone",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Contact Number",
    "reqd": 1
@@ -63,7 +63,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-01-12 02:08:01.577788",
+ "modified": "2026-01-16 09:45:44.726606",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Additional PI",

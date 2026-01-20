@@ -18,28 +18,24 @@
   "ecs_ac_no",
   "ecs_dates",
   "section_break_mqkq",
+  "col_1_column",
   "amount_inclusive_of_gst",
   "igst_18_on_consultancy",
   "amount_after_gst_tds",
   "total_cost_x",
   "consultancy_charge_y",
   "operational_charge_z",
-  "column_break_ybcq",
-  "overhead_from_y_multiplier",
-  "overhead_from_z_multiplier",
-  "institute_share_multiplier",
   "column_break_fwob",
-  "overhead_from_y_label",
   "overhead_from_y_amount",
-  "overhead_from_z_label",
   "overhead_from_z_amount",
-  "total_overhead_label",
   "total_overhead_amount",
-  "institute_share_label",
   "institute_share_amount",
   "total_overhead_institute_share",
   "credit_distribution_section",
-  "credit_distribution",
+  "idf_amount",
+  "dpf_amount",
+  "staff_welfare_amount",
+  "student_welfare_amount",
   "final_totals",
   "balance_consultancy_fee",
   "balance_operation_charge",
@@ -70,8 +66,9 @@
   },
   {
    "fieldname": "funding_agency",
-   "fieldtype": "Data",
-   "label": "Funding Agency"
+   "fieldtype": "Link",
+   "label": "Funding Agency",
+   "options": "fundingagency_"
   },
   {
    "fieldname": "gstin_of_funding_agency",
@@ -136,76 +133,34 @@
    "label": "Operational Charge (Z)"
   },
   {
-   "fieldname": "column_break_ybcq",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0.1",
-   "fieldname": "overhead_from_y_multiplier",
-   "fieldtype": "Float",
-   "label": "Overhead from Y Multiplier",
-   "non_negative": 1
-  },
-  {
-   "default": "0.1",
-   "fieldname": "overhead_from_z_multiplier",
-   "fieldtype": "Float",
-   "label": "Overhead from Z Multiplier",
-   "non_negative": 1
-  },
-  {
-   "default": "0.2",
-   "fieldname": "institute_share_multiplier",
-   "fieldtype": "Float",
-   "label": "Institute Share Multiplier"
-  },
-  {
    "fieldname": "column_break_fwob",
    "fieldtype": "Column Break",
+   "hidden": 1,
+   "label": "COL 3",
    "read_only": 1
-  },
-  {
-   "fieldname": "overhead_from_y_label",
-   "fieldtype": "HTML",
-   "label": "Overhead from Y Label"
   },
   {
    "fieldname": "overhead_from_y_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Y Amount",
+   "label": "Overhead from Y (10% * Y) Amount",
    "read_only": 1
-  },
-  {
-   "fieldname": "overhead_from_z_label",
-   "fieldtype": "HTML",
-   "label": "Overhead from Z Label"
   },
   {
    "fieldname": "overhead_from_z_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Z Amount",
+   "label": "Overhead from Z (10% * Z) Amount",
    "read_only": 1
-  },
-  {
-   "fieldname": "total_overhead_label",
-   "fieldtype": "HTML",
-   "label": "Total Overhead Label"
   },
   {
    "fieldname": "total_overhead_amount",
    "fieldtype": "Currency",
-   "label": "Total Overhead Amount",
+   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount",
    "read_only": 1
-  },
-  {
-   "fieldname": "institute_share_label",
-   "fieldtype": "HTML",
-   "label": "Institute Share Label"
   },
   {
    "fieldname": "institute_share_amount",
    "fieldtype": "Currency",
-   "label": "Institute Share Amount",
+   "label": "Institute Share (20% * Y) Amount",
    "read_only": 1
   },
   {
@@ -223,12 +178,6 @@
    "fieldname": "credit_distribution_section",
    "fieldtype": "Section Break",
    "label": "Credit Distribution"
-  },
-  {
-   "fieldname": "credit_distribution",
-   "fieldtype": "Table",
-   "label": "Credit as follows",
-   "options": "Deposit Slip Credit Distribution"
   },
   {
    "fieldname": "final_totals",
@@ -257,12 +206,42 @@
    "fieldtype": "Currency",
    "label": "Total Amount",
    "read_only": 1
+  },
+  {
+   "fieldname": "col_1_column",
+   "fieldtype": "Column Break",
+   "hidden": 1,
+   "label": "COL 1"
+  },
+  {
+   "description": "(40% of Overhead + Institute Share)",
+   "fieldname": "idf_amount",
+   "fieldtype": "Currency",
+   "label": "IDF"
+  },
+  {
+   "description": "(50% of Overhead + Institute Share)",
+   "fieldname": "dpf_amount",
+   "fieldtype": "Currency",
+   "label": "DPF/CE"
+  },
+  {
+   "description": "(5% of Overhead + Institute Share)",
+   "fieldname": "staff_welfare_amount",
+   "fieldtype": "Currency",
+   "label": "Staff welfare Amount"
+  },
+  {
+   "description": "(5% of Overhead + Institute Share)",
+   "fieldname": "student_welfare_amount",
+   "fieldtype": "Currency",
+   "label": "Student welfare Amount"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-12 10:43:09.787772",
+ "modified": "2026-01-19 14:35:04.050814",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "D Consultancy Deposit Slip",

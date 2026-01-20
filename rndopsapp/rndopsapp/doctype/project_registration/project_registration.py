@@ -37,12 +37,12 @@ def submit_project_registration(docname):
 
 	# Convert to dict for reference
 	data = doc.as_dict()
-	print(f"Implementation Department: {data.get('implementation_department')}")
+	# print(f"Implementation Department: {data.get('implementation_department')}")
 
 	# --- Fetch linked Department_prornd document ---
 	dept_doc = frappe.get_doc("Department_prornd", data.get("implementation_department"))
-	print(f"Department Name: {dept_doc.dept_name}")
-	print(f"Department Head: {dept_doc.dept_head}")
+	# print(f"Department Name: {dept_doc.dept_name}")
+	# print(f"Department Head: {dept_doc.dept_head}")
 
 	# ✅ Update Project Registration fields from Department_prornd
 	doc.department_head = dept_doc.dept_head
@@ -278,7 +278,7 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 	
 	# --- Integration with External API (Kafka) ---
 	if doc.workflow_state == "Approved" and doc.docstatus == 1:
-		print("doc inside: ", doc.as_dict())
+		# print("doc inside: ", doc.as_dict())
 		try:
 			success = publish_project(doc)
 			if success:
@@ -319,7 +319,7 @@ def send_project_registration_data_api(doc):
 
 		# Check if implementation_department is a list (Child Table) or string (Link)
 		imp_dept = doc.get("implementation_department")
-		print("implementation_department: ", imp_dept)
+		# print("implementation_department: ", imp_dept)
 		
 		if isinstance(imp_dept, list) and imp_dept:
 			# Handle as Child Table
@@ -328,7 +328,7 @@ def send_project_registration_data_api(doc):
 				# If it's just a list of strings (unlikely for child table), handle that too.
 				d_link = row.get("department") if isinstance(row, dict) or hasattr(row, "get") else row
 				d_id = get_dept_id(d_link)
-				print("departmentId: ", d_id)
+				# print("departmentId: ", d_id)
 				if d_id:
 					implemented_dept_centres.append({"departmentId": d_id})
 			
@@ -371,7 +371,7 @@ def send_project_registration_data_api(doc):
 			"verdictDate": str(nowdate()),
 			"implementedDeptCentres": implemented_dept_centres
 		}
-		print("payload: ", payload)
+		# print("payload: ", payload)
 		# --- 3. Send Request ---
 		url = "http://172.16.135.27:18080/api/projects"
 		headers = {"Content-Type": "application/json"}
@@ -687,8 +687,8 @@ def save_project_data(doc, html_content=None):
 	handles child tables, and processes Base64 encoded file attachments.
 	Optionally saves HTML content and converts it to PDF for endorsement.
 	"""
-	print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
-	print(doc)
+	# print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
+	# print(doc)
 	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc}")
 	try:
 		# The 'doc' argument from the frontend is a JSON string, so we parse it.
@@ -892,16 +892,16 @@ def _format_phone_number(phone_string):
 	"""
 	raw_phone = str(phone_string or "").strip()
 
-	# Case 1: Already correctly formatted as +91-xxxxxxxxxx
-	if raw_phone.startswith("+91-") and len(raw_phone) == 14 and raw_phone[4:].isdigit():
+	# Case 1: Already correctly formatted as +91-xxxxxxxxxx OR starts with +
+	if raw_phone.startswith("+"):
 		return raw_phone
 
 	# Case 2: Raw 10-digit number that needs formatting
 	if raw_phone.isdigit() and len(raw_phone) == 10:
 		return f"+91-{raw_phone}"
 
-	# Case 3: Invalid or empty. Return the original value for Frappe's validation to handle.
-	return raw_phone
+	# Case 3: Invalid or empty. Return None to skip phone validation during draft save.
+	return None
 
 
 
@@ -934,9 +934,9 @@ def save_project_draft(doc_data, html_content=None, files=None):
 		implementation_department = dept_doc.dept_name
 		implementation_department_head = dept_doc.dept_head
 		implementation_department_id = dept_doc.dept_id
-		print(f"Department Name: {dept_doc.dept_name}")
-		print(f"Department Head: {dept_doc.dept_head}")
-		print(f"Department ID: {dept_doc.dept_id}")
+		# print(f"Department Name: {dept_doc.dept_name}")
+		# print(f"Department Head: {dept_doc.dept_head}")
+		# print(f"Department ID: {dept_doc.dept_id}")
 	else:
 		print("No Implementation Department found in data")
 
@@ -1053,6 +1053,12 @@ def save_project_draft(doc_data, html_content=None, files=None):
 				child = doc.append(table_fieldname, {})
 				child.update(update_data)
 
+				# Sanitize phone fields AFTER update to handle fetch_from values
+				if table_fieldname == "additional_pi_table":
+					child.pi_contact = _format_phone_number(child.pi_contact)
+				elif table_fieldname == "co_investigator_table":
+					child.copi_contact = _format_phone_number(child.copi_contact)
+
 		# --- Server-side budget calculations ---
 		grand_total = 0
 		if doc.proposed_budget_breakup:
@@ -1073,6 +1079,16 @@ def save_project_draft(doc_data, html_content=None, files=None):
 		if not doc.workflow_state:
 			doc.workflow_state = "Draft"
 
+		# --- CRITICAL: Sanitize ALL phone fields across ALL child tables before save ---
+		# This catches values from fetch_from, frontend, or any other source
+		for child in doc.get("additional_pi_table") or []:
+			child.pi_contact = _format_phone_number(child.pi_contact)
+		for child in doc.get("co_investigator_table") or []:
+			child.copi_contact = _format_phone_number(child.copi_contact)
+
+		# Use flags to ignore mandatory fields and validation during save
+		doc.flags.ignore_mandatory = True
+		doc.flags.ignore_validate = True
 		doc.save(ignore_permissions=True)
 
 		# --- Handle files payload ---
@@ -1111,6 +1127,7 @@ def save_project_draft(doc_data, html_content=None, files=None):
 
 		# --- Handle HTML content - Convert to PDF and save ---
 		if html_content:
+			# print(f"DEBUG: html_content received, length={len(html_content)}")
 			try:
 				import os
 				from frappe.utils.pdf import get_pdf
@@ -1119,12 +1136,14 @@ def save_project_draft(doc_data, html_content=None, files=None):
 				site_path = frappe.get_site_path()
 				endorsement_dir = os.path.join(site_path, "private", "files", "Endorsement")
 				os.makedirs(endorsement_dir, exist_ok=True)
+				print(f"DEBUG: endorsement_dir={endorsement_dir}")
 				
 				# Save HTML file directly to filesystem
 				html_filename = f"{doc.name}.html"
 				html_filepath = os.path.join(endorsement_dir, html_filename)
 				with open(html_filepath, "w", encoding="utf-8") as f:
 					f.write(html_content)
+				print(f"DEBUG: HTML file written to {html_filepath}")
 				
 				# Create File record for HTML
 				html_file_url = f"/private/files/Endorsement/{html_filename}"
@@ -1137,6 +1156,7 @@ def save_project_draft(doc_data, html_content=None, files=None):
 				html_file_doc.save(ignore_permissions=True)
 				frappe.db.commit()
 				frappe.logger().info(f"HTML file saved: {html_filepath}")
+				# print(f"DEBUG: HTML File record created: {html_file_doc.name}")
 				
 				# Convert HTML to PDF and save directly to filesystem
 				pdf_filename = f"{doc.name}.pdf"
@@ -1144,6 +1164,7 @@ def save_project_draft(doc_data, html_content=None, files=None):
 				pdf_content = get_pdf(html_content)
 				with open(pdf_filepath, "wb") as f:
 					f.write(pdf_content)
+				# print(f"DEBUG: PDF file written to {pdf_filepath}")
 				
 				# Create File record for PDF
 				pdf_file_url = f"/private/files/Endorsement/{pdf_filename}"
@@ -1157,12 +1178,16 @@ def save_project_draft(doc_data, html_content=None, files=None):
 				frappe.db.commit()
 				
 				frappe.logger().info(f"PDF file saved: {pdf_filepath}")
+				print(f"DEBUG: PDF File record created: {pdf_file_doc.name}")
 			except Exception as pdf_error:
+				print(f"DEBUG ERROR: PDF conversion/save error: {str(pdf_error)}")
 				frappe.log_error(
 					frappe.get_traceback(),
 					f"save_project_draft: PDF conversion/save error for {doc.name}",
 				)
 				# Don't throw, just log the error so the main save succeeds
+		else:
+			print("DEBUG: html_content is empty or None")
 
 		return {"docname": doc.name}
 

@@ -75,8 +75,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Category",
-   "options": "\nResearch\nResearch (Consultancy)\nD (Consultancy)\nE (Non Routine)\nT (Testing)\nOther Event",
-   "reqd": 1
+   "options": "\nResearch\nResearch (Consultancy)\nD (Consultancy)\nE (Non Routine)\nT (Testing)\nOther Event"
   },
   {
    "fieldname": "fund_received_ref",
@@ -138,6 +137,7 @@
    "options": "fundingagency_"
   },
   {
+   "depends_on": "eval:doc.category != \"Research\";",
    "fieldname": "gstin_of_funding_agency",
    "fieldtype": "Data",
    "label": "GSTIN of Funding Agency"
@@ -154,6 +154,7 @@
    "label": "Bank"
   },
   {
+   "depends_on": "eval:doc.category != \"Research\";",
    "fieldname": "amount_inclusive_of_gst",
    "fieldtype": "Currency",
    "label": "Amount Inclusive of GST"
@@ -216,6 +217,7 @@
    "label": "Overhead Amount"
   },
   {
+   "depends_on": "eval:doc.category != \"Research\";",
    "fieldname": "amount_after_gst_tds",
    "fieldtype": "Currency",
    "label": "Amount Received after GST TDS @ 2%"
@@ -307,7 +309,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-23 16:46:02.975779",
+ "modified": "2026-01-18 11:11:03.904668",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Deposit slip",

@@ -190,6 +190,7 @@ def handle_accounts_fund_received_update(message):
         timestamp = message.get('timestamp')
         
         fund_received_ref_number = data.get('fundReceivedRefNumber')
+        fund_received_ref_number_fap = data.get('fundReceivedRefNumberFap')
         sanction_letter_no = data.get('sanctionLetterNo')
         project_number = data.get('projectNumber')
         amount_received = data.get('amountReceived')
@@ -209,6 +210,7 @@ def handle_accounts_fund_received_update(message):
         # Update Fund Received document (Update Only)
         fund_received_doc = update_fund_received(
             fund_received_ref_number=fund_received_ref_number,
+            fund_received_ref_number_fap=fund_received_ref_number_fap,
             sanction_letter_no=sanction_letter_no,
             project_number=project_number,
             amount_received=amount_received,
@@ -219,6 +221,9 @@ def handle_accounts_fund_received_update(message):
         )
         
         if fund_received_doc:
+            # Commit changes from update_fund_received before modifying child tables
+            frappe.db.commit()
+            
             # Process Fund Budget Breakup List
             if fund_budget_breakup_list:
                 create_fund_budget_breakup_items(
@@ -268,9 +273,13 @@ def update_fund_received(**kwargs):
     """
     try:
         fund_received_ref_number = kwargs.get('fund_received_ref_number')
+        fund_received_ref_number_fap = kwargs.get('fund_received_ref_number_fap')
         
-        # Check if document exists by Name (Ref Number)
-        if frappe.db.exists('Fund Received', fund_received_ref_number):
+        # Check if document exists by Name (Ref Number FAP) - Primary lookup
+        if fund_received_ref_number_fap and frappe.db.exists('Fund Received', fund_received_ref_number_fap):
+             fund_received = frappe.get_doc('Fund Received', fund_received_ref_number_fap)
+        # Fallback: Check if document exists by Name (Ref Number)
+        elif frappe.db.exists('Fund Received', fund_received_ref_number):
              fund_received = frappe.get_doc('Fund Received', fund_received_ref_number)
         else:
              # Fallback: Try to find by sanction letter and project
@@ -315,8 +324,19 @@ def update_fund_received(**kwargs):
             frappe.db.set_value('Fund Received', doc_name, 'bank_account', kwargs.get('iitg_account_number'))
         
         # Map fundReceivedStatus -> workflow_state
-        if kwargs.get('fund_received_status'):
-            frappe.db.set_value('Fund Received', doc_name, 'workflow_state', kwargs.get('fund_received_status').title())
+        fund_received_status = kwargs.get('fund_received_status')
+        if fund_received_status:
+            # Specific logic: If status is 'APPROVED' (case-insensitive), set to 'Pending Misc. Staff Approval(Deposit Slip Pending)'
+            if fund_received_status.upper() == 'APPROVED':
+                 new_status = 'Pending Misc. Staff Approval(Deposit Slip Pending)'
+            else:
+                 new_status = fund_received_status.title()
+            
+            frappe.db.set_value('Fund Received', doc_name, 'workflow_state', new_status)
+        
+        # Map fundReceivedRefNumber -> fund_received_ref_number (integer field)
+        if fund_received_ref_number is not None:
+            frappe.db.set_value('Fund Received', doc_name, 'fund_received_ref_number', int(fund_received_ref_number))
         
         print(f"DEBUG: Successfully updated Fund Received: {doc_name}")
         frappe.logger().info(f"Fund Received document updated: {doc_name}")
@@ -336,32 +356,41 @@ def update_fund_received(**kwargs):
 def create_fund_budget_breakup_items(fund_received_name, fund_budget_breakup_list):
     """
     Creates Fund Budget Breakup Line Items for the Fund Received document.
+    Uses direct DB operations to avoid ORM binding issues in background threads.
     
     Args:
         fund_received_name: Name of the parent Fund Received document
         fund_budget_breakup_list: List of budget breakup items from Kafka message
     """
     try:
-        # Get the parent document
-        fund_received = frappe.get_doc('Fund Received', fund_received_name)
+        # Child table doctype: Project Received Budget
+        # Parent field: received_amt_breakup
+        child_doctype = 'Project Received Budget'
+        parent_field = 'received_amt_breakup'
         
-        # Clear existing items
-        fund_received.fund_budget_breakup = []
+        # Clear existing items using direct DB delete
+        frappe.db.delete(child_doctype, {'parent': fund_received_name})
         
-        # Add new items from Kafka message
-        for item in fund_budget_breakup_list:
-            fund_received.append('fund_budget_breakup', {
-                'account_head_id': item.get('accountHeadId'),
-                'amount': item.get('amount'),
-                'remarks': item.get('remarks')
-            })
+        # Add new items from Kafka message using direct DB insert
+        for idx, item in enumerate(fund_budget_breakup_list, start=1):
+            child_doc = frappe.new_doc(child_doctype)
+            child_doc.parent = fund_received_name
+            child_doc.parenttype = 'Fund Received'
+            child_doc.parentfield = parent_field
+            child_doc.idx = idx
+            # Map accountHeadId to account_head (lookup or direct)
+            child_doc.account_head = item.get('accountHeadId') or item.get('accountHead')
+            child_doc.amount_received = item.get('amount')
+            child_doc.remarks = item.get('remarks')
+            child_doc.db_insert()
         
-        fund_received.save(ignore_permissions=True)
+        print(f"Created {len(fund_budget_breakup_list)} budget breakup items for {fund_received_name}")
         frappe.logger().info(
             f"Created {len(fund_budget_breakup_list)} budget breakup items for {fund_received_name}"
         )
         
     except Exception as e:
+        print(f"ERROR creating Fund Budget Breakup items: {str(e)}")
         frappe.log_error(
             f"Error creating Fund Budget Breakup items: {str(e)}", 
             "Fund Budget Breakup Creation Error"
@@ -371,40 +400,50 @@ def create_fund_budget_breakup_items(fund_received_name, fund_budget_breakup_lis
 def create_transaction_detail_items(fund_received_name, transaction_details_list):
     """
     Creates Transaction Detail Line Items for the Fund Received document.
+    Uses direct DB operations to avoid ORM binding issues in background threads.
     
     Args:
         fund_received_name: Name of the parent Fund Received document
         transaction_details_list: List of transaction details from Kafka message
     """
     try:
-        # Get the parent document
-        fund_received = frappe.get_doc('Fund Received', fund_received_name)
+        # Child table doctype: Project Fund Transaction
+        # Parent field: fund_transactions
+        child_doctype = 'Project Fund Transaction'
+        parent_field = 'fund_transactions'
         
-        # Clear existing items
-        fund_received.transaction_details = []
+        # Clear existing items using direct DB delete
+        frappe.db.delete(child_doctype, {'parent': fund_received_name})
         
-        # Add new items from Kafka message
-        for item in transaction_details_list:
-            # Handle transaction_received_date which is an array [year, month, day]
-            date_array = item.get('transactionReceivedDate', [])
-            if date_array and len(date_array) >= 3:
-                transaction_date = f"{date_array[0]}-{date_array[1]:02d}-{date_array[2]:02d}"
+        # Add new items from Kafka message using direct DB insert
+        for idx, item in enumerate(transaction_details_list, start=1):
+            # Handle transaction_received_date - can be array [year, month, day] or string
+            date_value = item.get('transactionReceivedDate')
+            if isinstance(date_value, list) and len(date_value) >= 3:
+                transaction_date = f"{date_value[0]}-{date_value[1]:02d}-{date_value[2]:02d}"
+            elif isinstance(date_value, str):
+                transaction_date = date_value  # Already a string like "2026-01-07"
             else:
                 transaction_date = None
             
-            fund_received.append('transaction_details', {
-                'unique_transaction_number': item.get('uniqueTransactionNumber'),
-                'project_number': item.get('projectNumber'),
-                'transaction_received_date': transaction_date,
-                'transaction_amount': item.get('transactionAmount')
-            })
+            child_doc = frappe.new_doc(child_doctype)
+            child_doc.parent = fund_received_name
+            child_doc.parenttype = 'Fund Received'
+            child_doc.parentfield = parent_field
+            child_doc.idx = idx
+            # Map to correct field names: transaction_number, transaction_date, amount
+            child_doc.transaction_number = item.get('uniqueTransactionNumber')
+            child_doc.transaction_date = transaction_date
+            child_doc.amount = item.get('transactionAmount')
+            child_doc.db_insert()
         
-        fund_received.save(ignore_permissions=True)
+        print(f"Created {len(transaction_details_list)} transaction detail items for {fund_received_name}")
         frappe.logger().info(
             f"Created {len(transaction_details_list)} transaction detail items for {fund_received_name}"
         )
         
     except Exception as e:
+        print(f"ERROR creating Transaction Detail items: {str(e)}")
         frappe.log_error(
             f"Error creating Transaction Detail items: {str(e)}", 
             "Transaction Detail Creation Error"
@@ -503,6 +542,77 @@ def consume_messages(max_messages=None, timeout_ms=1000):
     return messages_processed
 
 
+def ensure_frappe_site_init():
+    """
+    Ensures Frappe site is properly initialized for the current thread.
+    Required for background threads that need database access.
+    
+    Returns:
+        bool: True if site is ready, False otherwise
+    """
+    try:
+        # Check if site is already initialized
+        if frappe.local and hasattr(frappe.local, 'site') and frappe.local.site:
+            # Site is initialized, check DB connection
+            if not frappe.db:
+                frappe.connect()
+            return True
+        
+        # Need to initialize the site
+        import os
+        
+        # Get site name from environment or default
+        site_name = os.environ.get('FRAPPE_SITE') or frappe.local.site if hasattr(frappe.local, 'site') else None
+        
+        if not site_name:
+            # Try to get from sites directory
+            sites_path = os.environ.get('SITES_PATH') or '.'
+            sites = [d for d in os.listdir(sites_path) 
+                    if os.path.isdir(os.path.join(sites_path, d)) 
+                    and not d.startswith('.') 
+                    and d not in ('assets', 'logs')]
+            if sites:
+                site_name = sites[0]
+            else:
+                print("ERROR: Could not determine Frappe site name")
+                return False
+        
+        frappe.init(site=site_name)
+        frappe.connect()
+        print(f"DEBUG: Initialized Frappe site: {site_name}")
+        return True
+        
+    except Exception as e:
+        print(f"ERROR: Failed to initialize Frappe site: {str(e)}")
+        return False
+
+
+def process_message_with_context(topic, message_value):
+    """
+    Wrapper to process message with proper Frappe context.
+    Ensures database connection is active before processing.
+    """
+    try:
+        # Ensure Frappe site and DB connection are initialized for this thread
+        if not ensure_frappe_site_init():
+            print("ERROR: Failed to initialize Frappe context for message processing")
+            return False
+        
+        # Process the message
+        result = process_message(topic, message_value)
+        
+        return result
+        
+    except Exception as e:
+        print(f"ERROR: Exception in process_message_with_context: {str(e)}")
+        # Try to rollback any partial transaction
+        try:
+            frappe.db.rollback()
+        except:
+            pass
+        return False
+
+
 def start_consumer_loop():
     """
     Starts an infinite consumer loop in a background thread.
@@ -517,6 +627,11 @@ def start_consumer_loop():
     
     # Check for unconsumed offset 0 data on startup
     # check_unconsumed_offset_zero() # Disabled as we rely on auto_offset_reset with new group
+    
+    # Initialize Frappe site for this thread
+    if not ensure_frappe_site_init():
+        print("ERROR: Failed to initialize Frappe site for consumer thread")
+        return False
     
     frappe.logger().info("Starting Kafka consumer loop...")
     print("DEBUG: Starting Kafka consumer loop...")
@@ -546,7 +661,8 @@ def start_consumer_loop():
                             break
                             
                         try:
-                            process_message(topic, message.value)
+                            # Use wrapper with Frappe context
+                            process_message_with_context(topic, message.value)
                         except Exception as e:
                             print(f"ERROR: Exception in consumer loop: {str(e)}")
                             frappe.log_error(
