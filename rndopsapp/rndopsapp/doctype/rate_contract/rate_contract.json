@@ -312,7 +312,7 @@
    "placeholder": "Mention Other Account Head"
   },
   {
-   "depends_on": "eval:doc.is_project_of_other_pi == \"No\" && (doc.select_form_type == \"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\" || doc.select_form_type == \"P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\")\n",
+   "depends_on": "eval:doc.is_project_of_other_pi == \"No\" && (doc.select_form_type == \"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\" || doc.select_form_type == \"P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\")\n|| doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user",
    "fieldname": "section_break_piwc",
    "fieldtype": "Section Break"
   },
@@ -387,7 +387,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-20 17:07:50.350528",
+ "modified": "2026-01-21 07:48:32.272829",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Rate Contract",
@@ -442,6 +442,19 @@
    "read": 1,
    "report": 1,
    "role": "Ado_RnD",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
    "share": 1,
    "submit": 1,
    "write": 1

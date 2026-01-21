@@ -22,8 +22,10 @@
   "overhead_label",
   "overhead_amount",
   "credit_distribution_section",
-  "credit_distribution",
-  "additional_project_credits",
+  "idf_t_testing_fee",
+  "dpf_t_testing_fee",
+  "staff_welfare_t_testing_fund",
+  "student_welfare_t_testing_fund",
   "totals_section",
   "total_gst",
   "total_budget"
@@ -117,18 +119,6 @@
    "label": "Credit Distribution"
   },
   {
-   "fieldname": "credit_distribution",
-   "fieldtype": "Table",
-   "label": "Credit as follows",
-   "options": "Deposit Slip Credit Distribution"
-  },
-  {
-   "fieldname": "additional_project_credits",
-   "fieldtype": "Table",
-   "label": "Additional Credits",
-   "options": "Deposit Slip Project Credit"
-  },
-  {
    "fieldname": "totals_section",
    "fieldtype": "Section Break",
    "label": "Totals"
@@ -143,12 +133,36 @@
    "fieldtype": "Currency",
    "label": "Total Budget",
    "read_only": 1
+  },
+  {
+   "description": "(40% of the Consultancy fee)",
+   "fieldname": "idf_t_testing_fee",
+   "fieldtype": "Data",
+   "label": "(a.) IDF"
+  },
+  {
+   "description": "(50% of the Consultancy fee)",
+   "fieldname": "dpf_t_testing_fee",
+   "fieldtype": "Data",
+   "label": "(b.) DPF/CE"
+  },
+  {
+   "description": "(5% of Overhead amount)",
+   "fieldname": "staff_welfare_t_testing_fund",
+   "fieldtype": "Data",
+   "label": "(c.) Staff Welfare fund"
+  },
+  {
+   "description": "(5% of Overhead amount)",
+   "fieldname": "student_welfare_t_testing_fund",
+   "fieldtype": "Data",
+   "label": "(d.) Student Welfare fund"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-12 10:44:36.523448",
+ "modified": "2026-01-21 11:04:07.009414",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "T Testing Deposit Slip",
