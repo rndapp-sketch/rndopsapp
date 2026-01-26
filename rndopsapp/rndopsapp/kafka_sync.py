@@ -370,6 +370,38 @@ def publish_project(doc, method=None):
 		if not verdict_date and doc.workflow_state == "Approved":
 			verdict_date = datetime.now().date()
 
+		# Determine project type and category for conditional field mapping
+		is_consultancy = doc.project_type == "Consultancy"
+		consultancy_category = getattr(doc, 'consultancy_category', '')
+		is_category_d = is_consultancy and 'Category D' in consultancy_category
+		is_category_ef = is_consultancy and ('Category E' in consultancy_category or 'Category F' in consultancy_category)
+
+		# Map GSTIN based on project type
+		gstin_number = doc.consultancy_gstin if is_consultancy and doc.consultancy_gstin else getattr(doc, 'gstin_number', '')
+
+		# Map financial fields based on category
+		if is_category_d:
+			# Category D: Technology Transfer / Research Based
+			overhead_percentage = 0.0  # Category D doesn't use percentage
+			overhead_amount = float(getattr(doc, 'cat_d_total_overhead', 0))
+			gst_amount = float(getattr(doc, 'cat_d_gst_amt', 0))
+			grand_total = float(getattr(doc, 'cat_d_grand_total_calc', 0))
+			budget_with_overhead = float(getattr(doc, 'cat_d_project_cost_excl_gst', 0))
+		elif is_category_ef:
+			# Category E/F: Non-routine / Testing
+			overhead_percentage = 0.0  # Category E/F doesn't have overhead
+			overhead_amount = 0.0
+			gst_amount = float(getattr(doc, 'cat_ef_gst', 0))
+			grand_total = float(getattr(doc, 'cat_ef_grand_total', 0))
+			budget_with_overhead = float(getattr(doc, 'cat_ef_total_amount', 0))
+		else:
+			# Research projects or other consultancy categories
+			overhead_percentage = float(doc.overhead_percentage_research or doc.overhead_percentage_consultancy or 0)
+			overhead_amount = float(doc.overhead_research or doc.overhead_consultancy or 0)
+			gst_amount = float(doc.service_tax_research or doc.service_tax_consultancy or 0)
+			grand_total = float(doc.grand_total_research or doc.grand_total_consultancy or 0)
+			budget_with_overhead = float(doc.budget_including_overhead_research or doc.budget_including_overhead_consultancy or 0)
+
 		# Build ProjectDataDTO
 		project_data = ProjectDataDTO(
 			projectNumber=doc.name,
@@ -381,16 +413,16 @@ def publish_project(doc, method=None):
 			fundingAgencyId=doc.funding_agen or "",
 			projectScheme=doc.funding_agency_schemes or "",
 			totalBudgetAmount=float(doc.total_budget_amount or 0),
-			overHeadAmountPercentage=float(doc.overhead_percentage_research or doc.overhead_percentage_consultancy or 0),
-			overHeadAmount=float(doc.overhead_research or doc.overhead_consultancy or 0),
-			budgetWithOverHeadAmount=float(doc.budget_including_overhead_research or doc.budget_including_overhead_consultancy or 0),
-			gst=float(doc.service_tax_research or doc.service_tax_consultancy or 0),
-			grandTotal=float(doc.grand_total_research or doc.grand_total_consultancy or 0),
+			overHeadAmountPercentage=overhead_percentage,
+			overHeadAmount=overhead_amount,
+			budgetWithOverHeadAmount=budget_with_overhead,
+			gst=gst_amount,
+			grandTotal=grand_total,
 			startDate=start_date,
 			completionDate=completion_date,
 			durationMonths=doc.project_duration_months,
 			durationInDays=doc.project_duration_days,
-			gstinNumber=getattr(doc, 'gstin_number', '29ABCDE1234F1Z5'),
+			gstinNumber=gstin_number,
 			projectImplementationLocation=getattr(doc, 'project_implementation_location', 'Guwahati,Assam'), 
 			verdictDate=verdict_date,
 			status=doc.workflow_state or "",
