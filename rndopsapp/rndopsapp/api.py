@@ -59,6 +59,8 @@ def submit_project_registration(docname):
 	doc.head_approver = dept_doc.dept_head  # You can change this logic if needed
 
 	# Save the updated values before submission
+	# Use flags to skip mandatory validation for fields not yet populated
+	doc.flags.ignore_mandatory = True
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 

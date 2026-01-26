@@ -29,6 +29,28 @@ class ProjectRegistration(Document):
 # ==============================================================================
 
 
+def extract_eval_expression(expression):
+	"""
+	Extracts the JavaScript expression from a Frappe 'eval:' string.
+	Returns the expression without 'eval:' prefix for frontend evaluation.
+	
+	Examples:
+		"eval:doc.category=='Research'" -> "doc.category=='Research'"
+		"eval:doc.category.includes('Consultancy')" -> "doc.category.includes('Consultancy')"
+		None -> None
+		"" -> None
+	"""
+	if not expression:
+		return None
+	
+	expression = str(expression).strip()
+	
+	if expression.startswith("eval:"):
+		return expression[5:].strip()  # Remove 'eval:' prefix
+	
+	return expression
+
+
 
 @frappe.whitelist()
 def submit_project_registration(docname):
@@ -236,6 +258,10 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 	if not doc.workflow_state:
 		doc.workflow_state = "Draft"
 		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		# Reload the document to get the latest timestamp and avoid conflicts
+		doc = frappe.get_doc(doctype, docname)
+		current_state = doc.workflow_state
 
 	user = frappe.session.user
 	user_roles = frappe.get_roles(user)
@@ -274,7 +300,21 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 
 	if next_state and doc.docstatus != 2:
 		doc.workflow_state = next_state
-		doc.save(ignore_permissions=True)
+		
+		# Check if the next state requires document submission
+		# Find the state configuration in the workflow
+		next_state_config = next(
+			(s for s in workflow.get("states", []) if s.get("state") == next_state),
+			None
+		)
+		
+		# If the state requires doc_status = 1 (Submitted) and doc is currently draft
+		if next_state_config and next_state_config.get("doc_status") == "1" and doc.docstatus == 0:
+			doc.submit()
+		else:
+			# Skip mandatory validation for workflow transitions
+			doc.flags.ignore_mandatory = True
+			doc.save(ignore_permissions=True)
 	
 	# --- Integration with External API (Kafka) ---
 	if doc.workflow_state == "Approved" and doc.docstatus == 1:
@@ -285,14 +325,18 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 				frappe.msgprint(_(f"Workflow updated to: {doc.workflow_state}"), indicator="blue")
 				frappe.msgprint(_("Project data synced successfully to external system."), indicator="green")
 			else:
-				# Rollback workflow state on Kafka failure
+				# Reload document before rollback to avoid timestamp conflicts
+				doc = frappe.get_doc(doctype, docname)
 				doc.workflow_state = previous_state
+				doc.flags.ignore_mandatory = True
 				doc.save(ignore_permissions=True)
 				frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
 				frappe.log_error(f"Kafka sync failed for {docname}, rolled back workflow state", "Kafka Rollback")
 		except Exception as e:
-			# Rollback workflow state on exception
+			# Reload document before rollback to avoid timestamp conflicts
+			doc = frappe.get_doc(doctype, docname)
 			doc.workflow_state = previous_state
+			doc.flags.ignore_mandatory = True
 			doc.save(ignore_permissions=True)
 			frappe.log_error(frappe.get_traceback(), f"Project Registration Kafka Sync Failed: {docname}")
 			frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
@@ -506,6 +550,14 @@ def get_project_form_data(docname=None):
 					"hidden": bool(field.hidden),
 					"description": _(field.description) if field.description else None,
 					"options": field.options,
+					# Eval expressions for frontend conditional logic
+					"depends_on": field.depends_on,
+					"mandatory_depends_on": field.mandatory_depends_on,
+					"read_only_depends_on": field.read_only_depends_on,
+					# Extract eval expression for easier frontend parsing
+					"depends_on_eval": extract_eval_expression(field.depends_on),
+					"mandatory_depends_on_eval": extract_eval_expression(field.mandatory_depends_on),
+					"read_only_depends_on_eval": extract_eval_expression(field.read_only_depends_on),
 				}
 			)
 
@@ -549,7 +601,29 @@ def get_project_form_data(docname=None):
 				"applicant_department": user_doc.department_name,  # Using department_name field from User doctype
 			}
 
-		result = {"fields": fields, "link_options": link_options, "prefill_data": prefill_data}
+		# Fetch Client Scripts from Frappe UI (stored in database)
+		client_scripts = []
+		try:
+			scripts = frappe.get_all(
+				"Client Script",
+				filters={"dt": doctype_name, "enabled": 1},
+				fields=["name", "script", "view"]
+			)
+			for script in scripts:
+				client_scripts.append({
+					"name": script.name,
+					"script": script.script,
+					"view": script.view  # "Form", "List", or "Report"
+				})
+		except Exception:
+			pass  # Client Script doctype may not exist in older Frappe versions
+
+		result = {
+			"fields": fields,
+			"link_options": link_options,
+			"prefill_data": prefill_data,
+			"client_scripts": client_scripts,
+		}
 
 		# 4. If docname is provided, fetch document data and files
 		if docname:
@@ -1094,7 +1168,6 @@ def save_project_draft(doc_data, html_content=None, files=None):
 		# --- Handle files payload ---
 		if files_payload and isinstance(files_payload, list):
 			for f in files_payload:
-				# **FIX 3: The indented block for the 'try' statement is now correctly filled.**
 				try:
 					filename = f.get("filename") or f.get("file_name") or f.get("name")
 					content_b64 = f.get("content") or f.get("file_data") or f.get("data") or ""
@@ -1103,25 +1176,31 @@ def save_project_draft(doc_data, html_content=None, files=None):
 					if not (filename and content_b64):
 						continue
 
+					# Strip data URI prefix if present
 					if content_b64.startswith("data:"):
 						content_b64 = content_b64.split(",", 1)[1]
 
+					# Decode base64 content
 					file_content = base64.b64decode(content_b64)
 
-					file_doc = frappe.new_doc("File")
-					file_doc.file_name = filename
-					file_doc.attached_to_doctype = doc.doctype
-					file_doc.attached_to_name = doc.name
-					file_doc.is_private = is_private
-					file_doc.content = file_content
-					file_doc.save(ignore_permissions=True)
+					# Use save_file utility to properly save file to disk and create File record
+					file_doc = save_file(
+						fname=filename,
+						content=file_content,
+						dt=doc.doctype,
+						dn=doc.name,
+						is_private=is_private,
+						decode=False  # Already decoded above
+					)
+					
+					frappe.logger().info(f"File saved successfully: {filename} -> {file_doc.file_url}")
 
 				except Exception as fe:
-					frappe.log_error(
-						frappe.get_traceback(),
-						f"save_project_draft: file upload error for {f.get('filename')}",
-					)
-					continue
+						frappe.log_error(
+							frappe.get_traceback(),
+							f"save_project_draft: file upload error for {f.get('filename')}",
+						)
+						continue
 
 		frappe.db.commit()
 
