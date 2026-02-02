@@ -11,6 +11,7 @@
   "ta_da_travel_application",
   "section_break_gvbr",
   "ta_da_name",
+  "webmail_id",
   "ta_da_designation",
   "ta_da_department_section",
   "ta_da_employee_number",
@@ -38,7 +39,7 @@
   "ta_da_entitled_class",
   "ta_da_shortest_route",
   "ta_da_not_paid_elsewhere",
-  "ta_da_boarding_lodging_status",
+  "boarding_and_lodging_status",
   "ta_da_free_transport"
  ],
  "fields": [
@@ -122,7 +123,7 @@
   },
   {
    "fieldname": "ta_da_bank_account_holder",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Bank Account Holder's Name"
   },
   {
@@ -195,46 +196,58 @@
   {
    "fieldname": "declaration_and_certification_section",
    "fieldtype": "Section Break",
-   "label": "Declaration and Certification"
+   "label": "I Do hereby Clarify that,"
   },
   {
    "default": "0",
+   "description": "The distances for road journeys shown in the bill are correct to the best of my knowledge.",
    "fieldname": "ta_da_check",
    "fieldtype": "Check",
    "label": "Distances shown are correct"
   },
   {
    "default": "0",
+   "description": "I have traveled in a class of accommodation not lower than the ones for which fares are claimed in this bill and to which I am\nentitled,",
    "fieldname": "ta_da_entitled_class",
    "fieldtype": "Check",
    "label": "Traveled in entitled class"
   },
   {
    "default": "0",
+   "description": "The journeys were performed by the shortest routes,",
    "fieldname": "ta_da_shortest_route",
    "fieldtype": "Check",
    "label": "Journey by shortest route"
   },
   {
    "default": "0",
+   "description": "The claims for journeys mentioned in this bill have neither been preferred nor paid from any other sources.",
    "fieldname": "ta_da_not_paid_elsewhere",
    "fieldtype": "Check",
    "label": "Claim not paid elsewhere"
   },
   {
-   "fieldname": "ta_da_boarding_lodging_status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Boarding and Lodging Status",
-   "options": "\nTreated as guest and allowed free boarding lodging\nTreated as guest and not allowed free boarding lodging\nNot treated as guest and allowed free boarding lodging\nNot treated as guest and not allowed free boarding lodging",
-   "reqd": 1
-  },
-  {
+   "description": "Please Choose Appropriate option among 2 options",
    "fieldname": "ta_da_free_transport",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Free Transport Availed",
-   "options": "\nAvailed free transport for the journey\nNot availed free transport for the journey",
+   "options": "\nI have availed any free transport of this Institute or anyone else for the journeys for which claims have been made.\nI have not availed any free transport of this Institute or anyone else for the journeys for which claims have been made.",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "ta_da_travel_application.webmail_id_travel",
+   "fieldname": "webmail_id",
+   "fieldtype": "Data",
+   "label": "Webmail Id"
+  },
+  {
+   "description": "Please Choose Appropriate option among 4 options",
+   "fieldname": "boarding_and_lodging_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Boarding and Lodging Status",
+   "options": "\nI was treated as a guest of a Government / an Institution and was allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.\nI was treated as a guest of a Government / an Institution and was allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.\nI was not treated as a guest of a Government / an Institution and was allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.\nI was not treated as a guest of a Govemment / an Institution and was not allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.",
    "reqd": 1
   }
  ],
@@ -242,7 +255,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-22 15:17:02.955887",
+ "modified": "2026-01-23 10:16:04.744794",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "TA DA Settlement",

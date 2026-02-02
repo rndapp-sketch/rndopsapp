@@ -12,9 +12,8 @@
  "fields": [
   {
    "fieldname": "budget_head",
-   "fieldtype": "Link",
-   "label": "Budget Head",
-   "options": "Budget Head"
+   "fieldtype": "Data",
+   "label": "Budget Head"
   },
   {
    "fieldname": "id",
@@ -25,7 +24,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-19 11:08:46.805175",
+ "modified": "2026-01-23 16:43:36.846742",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Budget Head",

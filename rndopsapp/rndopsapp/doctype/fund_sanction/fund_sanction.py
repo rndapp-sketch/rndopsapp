@@ -10,7 +10,7 @@ import requests
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
-from rndopsapp.rndopsapp.kafka_sync import publish_sanction
+from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_sanction
 
 # from frappe.workflow.doctype.workflow.workflow import get_workflow_name
 

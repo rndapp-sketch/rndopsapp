@@ -9,6 +9,22 @@ class Reimbursement(Document):
 	pass
 
 
+def extract_eval_expression(expression):
+	"""
+	Extracts the JavaScript expression from a Frappe 'eval:' string.
+	Returns the expression without 'eval:' prefix for frontend evaluation.
+	"""
+	if not expression:
+		return None
+	
+	expression = str(expression).strip()
+	
+	if expression.startswith("eval:"):
+		return expression[5:].strip()  # Remove 'eval:' prefix
+	
+	return expression
+
+
 # reimbursement.py
 
 
@@ -32,6 +48,15 @@ def get_reimbursement_fields(doc_name=None):
 				"hidden": getattr(f, "hidden", False),
 				"read_only": getattr(f, "read_only", False),
 				"description": getattr(f, "description", "") or "",
+				"default": getattr(f, "default", None),
+				# Eval expressions for frontend conditional logic
+				"depends_on": getattr(f, "depends_on", None),
+				"mandatory_depends_on": getattr(f, "mandatory_depends_on", None),
+				"read_only_depends_on": getattr(f, "read_only_depends_on", None),
+				# Extract eval expression for easier frontend parsing
+				"depends_on_eval": extract_eval_expression(getattr(f, "depends_on", None)),
+				"mandatory_depends_on_eval": extract_eval_expression(getattr(f, "mandatory_depends_on", None)),
+				"read_only_depends_on_eval": extract_eval_expression(getattr(f, "read_only_depends_on", None)),
 			}
 		)
 
@@ -50,6 +75,8 @@ def get_reimbursement_fields(doc_name=None):
 						"hidden": getattr(cf, "hidden", False),
 						"read_only": getattr(cf, "read_only", False),
 						"in_list_view": getattr(cf, "in_list_view", False),
+						"depends_on": getattr(cf, "depends_on", None),
+						"depends_on_eval": extract_eval_expression(getattr(cf, "depends_on", None)),
 					})
 				# Append child fields to the parent field definition
 				fields[-1]["child_fields"] = child_fields

@@ -14,7 +14,7 @@ from frappe.utils import flt
 from frappe.utils.file_manager import save_file
 import base64
 import requests
-from rndopsapp.rndopsapp.kafka_sync import publish_project
+from rndopsapp.rndopsapp.kafka.producer import publish_project_registration as publish_project
 
 
 

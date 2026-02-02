@@ -5,15 +5,18 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "appplying_for_select",
+  "amended_from",
+  "applying_for_select",
   "section_applying_for",
   "advance_for_id",
   "advance_for_department",
   "advance_for_designation",
+  "other_applicant_category",
   "applicant_details",
   "applicant_webmail",
   "applicant_department",
   "applicant_designation",
+  "applicant_category",
   "bank_details_section",
   "bank_name",
   "account",
@@ -28,40 +31,49 @@
   "justification",
   "documents",
   "comments",
-  "declaration"
+  "section_break_hqxl",
+  "declaration_settlement",
+  "declaration_rate_contract"
  ],
  "fields": [
   {
    "fieldname": "advance_for_id",
-   "fieldtype": "Data",
-   "label": "Webmail Id"
+   "fieldtype": "Link",
+   "label": "Webmail Id",
+   "options": "User"
   },
   {
+   "fetch_from": "advance_for_id.department_name",
    "fieldname": "advance_for_department",
    "fieldtype": "Data",
    "label": "Department"
   },
   {
+   "fetch_from": "advance_for_id.designation_name",
    "fieldname": "advance_for_designation",
    "fieldtype": "Data",
    "label": "Designation "
   },
   {
+   "depends_on": "eval:doc.applying_for_select==\"No\"",
    "fieldname": "applicant_details",
    "fieldtype": "Section Break",
    "label": "Applicant Details"
   },
   {
    "fieldname": "applicant_webmail",
-   "fieldtype": "Data",
-   "label": "Webmail Id"
+   "fieldtype": "Link",
+   "label": "Webmail Id",
+   "options": "User"
   },
   {
+   "fetch_from": "applicant_webmail.department_name",
    "fieldname": "applicant_department",
    "fieldtype": "Data",
    "label": "Department"
   },
   {
+   "fetch_from": "applicant_webmail.designation_name",
    "fieldname": "applicant_designation",
    "fieldtype": "Data",
    "label": "Designation"
@@ -118,8 +130,9 @@
   },
   {
    "fieldname": "amount_in_words",
-   "fieldtype": "HTML",
-   "options": "<p> Amount in words </p>"
+   "fieldtype": "Data",
+   "label": "Amount in words",
+   "read_only": 1
   },
   {
    "fieldname": "justification",
@@ -137,28 +150,68 @@
    "label": "Comments"
   },
   {
+   "depends_on": "eval:doc.applying_for_select== \"Yes\"",
    "fieldname": "section_applying_for",
    "fieldtype": "Section Break",
    "label": "Applying For"
   },
   {
-   "fieldname": "appplying_for_select",
-   "fieldtype": "Select",
-   "label": "Are you applying this travel for someone?",
-   "options": "Yes\nNo"
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Temporary Advance",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   },
   {
-   "fieldname": "declaration",
-   "fieldtype": "HTML",
-   "label": "Declaration",
-   "options": "<li>I am aware of the rule that temporary advance should be settled with in 45 days from the date of advance amount is transferred. Here the penalty clause may be stated.</li>\n<li>I am aware of the rule that items which are available under rate contract shall not be purchase using temporary advance. Link (http://local.iitg.ernet.in/snp/node/7) for items under rate contract..</li>"
+   "default": "0",
+   "fieldname": "declaration_settlement",
+   "fieldtype": "Check",
+   "label": "I am aware of the rule that temporary advance should be settled within 45 days from the date the advance amount is transferred."
+  },
+  {
+   "bold": 1,
+   "fieldname": "section_break_hqxl",
+   "fieldtype": "Section Break",
+   "label": "Declarations"
+  },
+  {
+   "default": "0",
+   "description": "I am aware of the rule that items which are available under rate contract shall not be purchased using temporary advance. <a href=\"http://local.iitg.ernet.in/snp/node/7\" target=\"_blank\">Click here for items under rate contract</a>.",
+   "documentation_url": "http://local.iitg.ernet.in/snp/node/7",
+   "fieldname": "declaration_rate_contract",
+   "fieldtype": "Check",
+   "label": "Declaration Rate Contract",
+   "placeholder": "test placeholder check"
+  },
+  {
+   "fetch_from": "advance_for_id.empclass",
+   "fieldname": "other_applicant_category",
+   "fieldtype": "Data",
+   "label": "Other Applicant Category (Empclass)"
+  },
+  {
+   "fetch_from": "applicant_webmail.empclass",
+   "fieldname": "applicant_category",
+   "fieldtype": "Data",
+   "label": "Applicant Category (Empclass)"
+  },
+  {
+   "default": "No",
+   "fieldname": "applying_for_select",
+   "fieldtype": "Select",
+   "label": "Are you applying this travel for someone?",
+   "options": "\nYes\nNo"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-03 16:46:29.663075",
+ "modified": "2026-02-02 15:36:02.378173",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Temporary Advance",

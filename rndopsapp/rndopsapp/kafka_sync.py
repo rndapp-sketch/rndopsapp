@@ -348,17 +348,35 @@ def publish_project(doc, method=None):
 				d_link = getattr(row, "department", None)
 				d_id = get_dept_id(d_link)
 				if d_id:
-					dept_centres.append({"departmentId": d_id})
+					dept_centres.append(str(d_id))  # Simple string ID format
 		# Check if it's a single link
 		elif isinstance(imp_dept, str) and imp_dept:
 			d_id = get_dept_id(imp_dept)
 			if d_id:
-				dept_centres.append({"departmentId": d_id})
+				dept_centres.append(str(d_id))  # Simple string ID format
 
 		# Extract the primary department_id from the first department in the list
 		department_id = None
 		if dept_centres:
-			department_id = dept_centres[0].get("departmentId")
+			department_id = dept_centres[0]  # First ID from the list
+
+		# Helper to resolve funding_agency_id from linked fundingagency_ doctype
+		def get_funding_agency_id(funding_agen_link):
+			if not funding_agen_link:
+				return None
+			# Fetch funding_agency_id from the linked fundingagency_ document
+			return frappe.db.get_value("fundingagency_", funding_agen_link, "funding_agency_id")
+
+		# Get funding_agency_id - first try from doc, then fetch from linked doctype
+		funding_agency_id = getattr(doc, "funding_agency_id", None)
+		if not funding_agency_id:
+			funding_agen_link = getattr(doc, "funding_agen", None)
+			if funding_agen_link:
+				funding_agency_id = get_funding_agency_id(funding_agen_link)
+				if funding_agency_id:
+					print(f"✅ Fetched funding_agency_id: {funding_agency_id} from fundingagency_: {funding_agen_link}")
+				else:
+					print(f"⚠️ Could not find funding_agency_id for fundingagency_: {funding_agen_link}")
 
 		# Parse dates safely
 		start_date = doc.prj_start_date or doc.start_date
@@ -379,28 +397,82 @@ def publish_project(doc, method=None):
 		# Map GSTIN based on project type
 		gstin_number = doc.consultancy_gstin if is_consultancy and doc.consultancy_gstin else getattr(doc, 'gstin_number', '')
 
+		# Helper function to calculate budget amounts
+		def calculate_budget_amounts(total_budget_amount, overhead_amount, gst_amount):
+			"""
+			Calculate totalBudgetAmount and overHeadAmountPercentage.
+			
+			Args:
+				total_budget_amount: The original total budget amount from doc.total_budget_amount
+				overhead_amount: The overhead amount for the budget head
+				gst_amount: The GST amount for the budget head
+			
+			Returns:
+				tuple: (calculated_total_budget_amount, overhead_percentage)
+				- calculated_total_budget_amount = total_budget_amount - (overhead_amount + gst_amount)
+				- overhead_percentage = (overhead_amount / total_budget_amount) * 100 (if total_budget_amount > 0)
+			"""
+			# Calculate total budget amount excluding overhead and GST
+			calculated_total = total_budget_amount - (overhead_amount + gst_amount)
+			
+			# Calculate overhead percentage relative to total budget amount
+			if total_budget_amount > 0:
+				overhead_pct = (overhead_amount / total_budget_amount) * 100
+			else:
+				overhead_pct = 0.0
+			
+			return calculated_total, overhead_pct
+
+		# Get the base total budget amount from doc
+		base_total_budget = float(doc.total_budget_amount or 0)
+
 		# Map financial fields based on category
 		if is_category_d:
 			# Category D: Technology Transfer / Research Based
-			overhead_percentage = 0.0  # Category D doesn't use percentage
-			overhead_amount = float(getattr(doc, 'cat_d_total_overhead', 0))
-			gst_amount = float(getattr(doc, 'cat_d_gst_amt', 0))
-			grand_total = float(getattr(doc, 'cat_d_grand_total_calc', 0))
-			budget_with_overhead = float(getattr(doc, 'cat_d_project_cost_excl_gst', 0))
+			overhead_amount = float(getattr(doc, 'cat_d_total_overhead', 0) or 0)
+			gst_amount = float(getattr(doc, 'cat_d_gst_amt', 0) or 0)
+			grand_total = float(getattr(doc, 'cat_d_grand_total_calc', 0) or 0)
+			budget_with_overhead = float(getattr(doc, 'cat_d_project_cost_excl_gst', 0) or 0)
+			# Calculate total budget and overhead percentage
+			calculated_total_budget, overhead_percentage = calculate_budget_amounts(base_total_budget, overhead_amount, gst_amount)
 		elif is_category_ef:
 			# Category E/F: Non-routine / Testing
-			overhead_percentage = 0.0  # Category E/F doesn't have overhead
 			overhead_amount = 0.0
-			gst_amount = float(getattr(doc, 'cat_ef_gst', 0))
-			grand_total = float(getattr(doc, 'cat_ef_grand_total', 0))
-			budget_with_overhead = float(getattr(doc, 'cat_ef_total_amount', 0))
+			gst_amount = float(getattr(doc, 'cat_ef_gst', 0) or 0)
+			grand_total = float(getattr(doc, 'cat_ef_grand_total', 0) or 0)
+			budget_with_overhead = float(getattr(doc, 'cat_ef_total_amount', 0) or 0)
+			# Calculate total budget and overhead percentage (overhead is 0 for E/F)
+			calculated_total_budget, overhead_percentage = calculate_budget_amounts(base_total_budget, overhead_amount, gst_amount)
 		else:
 			# Research projects or other consultancy categories
-			overhead_percentage = float(doc.overhead_percentage_research or doc.overhead_percentage_consultancy or 0)
+			# First try document-level fields
 			overhead_amount = float(doc.overhead_research or doc.overhead_consultancy or 0)
 			gst_amount = float(doc.service_tax_research or doc.service_tax_consultancy or 0)
-			grand_total = float(doc.grand_total_research or doc.grand_total_consultancy or 0)
+			
+			# If document-level fields are 0, extract from proposed_budget_breakup child table
+			if overhead_amount == 0 or gst_amount == 0:
+				budget_breakup = getattr(doc, 'proposed_budget_breakup', []) or []
+				for row in budget_breakup:
+					account_head = getattr(row, 'account_head', '').strip().lower()
+					row_amount = float(getattr(row, 'total_proposal_of_heads', 0) or 0)
+					
+					if overhead_amount == 0 and account_head == 'overhead':
+						overhead_amount = row_amount
+						print(f"📋 [KAFKA] Extracted overhead from budget breakup: {overhead_amount}")
+					elif gst_amount == 0 and account_head == 'gst':
+						gst_amount = row_amount
+						print(f"📋 [KAFKA] Extracted GST from budget breakup: {gst_amount}")
+			
+			grand_total = float(doc.total_budget_amount or doc.grand_total_consultancy or 0)
 			budget_with_overhead = float(doc.budget_including_overhead_research or doc.budget_including_overhead_consultancy or 0)
+			
+			# If budget_with_overhead is 0, calculate as: sum of all budget heads - GST
+			if budget_with_overhead == 0:
+				budget_with_overhead = base_total_budget - gst_amount
+				print(f"📋 [KAFKA] Calculated budgetWithOverHeadAmount: {budget_with_overhead} (total: {base_total_budget} - GST: {gst_amount})")
+			
+			# Calculate total budget and overhead percentage
+			calculated_total_budget, overhead_percentage = calculate_budget_amounts(base_total_budget, overhead_amount, gst_amount)
 
 		# Build ProjectDataDTO
 		project_data = ProjectDataDTO(
@@ -408,11 +480,12 @@ def publish_project(doc, method=None):
 			empId=doc.pi_employee_id or "",
 			departmentId=department_id or "",
 			projectType=doc.project_type or "",
-			projectCategory=doc.consultancy_category,
+			projectCategory=doc.consultancy_category or doc.project_type or "",
 			fundingAgencyType=doc.funding_agency_type or "",
-			fundingAgencyId=doc.funding_agen or "",
+			#fundingAgencyId=doc.funding_agen or "",
+			fundingAgencyId=funding_agency_id or "",
 			projectScheme=doc.funding_agency_schemes or "",
-			totalBudgetAmount=float(doc.total_budget_amount or 0),
+			totalBudgetAmount=calculated_total_budget,
 			overHeadAmountPercentage=overhead_percentage,
 			overHeadAmount=overhead_amount,
 			budgetWithOverHeadAmount=budget_with_overhead,
@@ -420,11 +493,11 @@ def publish_project(doc, method=None):
 			grandTotal=grand_total,
 			startDate=start_date,
 			completionDate=completion_date,
-			durationMonths=doc.project_duration_months,
-			durationInDays=doc.project_duration_days,
-			gstinNumber=gstin_number,
-			projectImplementationLocation=getattr(doc, 'project_implementation_location', 'Guwahati,Assam'), 
-			verdictDate=verdict_date,
+			durationMonths=str(doc.project_duration_months) if doc.project_duration_months else "0",
+			durationInDays=str(doc.project_duration_days) if doc.project_duration_days else "0",
+			# gstinNumber=gstin_number,  # Not needed in Kafka
+			# projectImplementationLocation=getattr(doc, 'project_implementation_location', 'Guwahati,Assam'),  //MKY 27-01-2026
+			# verdictDate=verdict_date, //MKY 27-01-2026
 			status=doc.workflow_state or "",
 			applyDate=apply_date,
 			implementedDeptCentres=dept_centres
@@ -517,14 +590,27 @@ def publish_sanction(doc, method=None):
 					except Exception as e:
 						frappe.logger().warning(f"Failed to fetch Budget Head ID for {row.account_head}: {e}")
 
+				# Get year budgets
+				first_year = float(row.first_year_budget or 0)
+				second_year = float(row.second_year_budget or 0)
+				third_year = float(row.third_year_budget or 0)
+				fourth_year = float(row.fourth_year_budget or 0)
+				fifth_year = float(row.fifth_year_budget or 0)
+				
+				# Calculate accountHeadAmount: use total_proposal_of_heads if available, else sum of year budgets
+				account_head_amount = float(row.total_proposal_of_heads or 0)
+				if account_head_amount == 0:
+					account_head_amount = first_year + second_year + third_year + fourth_year + fifth_year
+					print(f"📋 [KAFKA] Calculated accountHeadAmount for {row.account_head}: {account_head_amount}")
+
 				budget_breakups.append({
 					"accountHeadId": account_head_id,
-					"accountHeadAmount": float(row.total_proposal_of_heads or 0),
-					"firstYearBudget": float(row.first_year_budget or 0),
-					"secondYearBudget": float(row.second_year_budget or 0),
-					"thirdYearBudget": float(row.third_year_budget or 0),
-					"fourthYearBudget": float(row.fourth_year_budget or 0),
-					"fifthYearBudget": float(row.fifth_year_budget or 0)
+					"accountHeadAmount": account_head_amount,
+					"firstYearBudget": first_year,
+					"secondYearBudget": second_year,
+					"thirdYearBudget": third_year,
+					"fourthYearBudget": fourth_year,
+					"fifthYearBudget": fifth_year
 				})
 		else:
 			print("📋 [KAFKA] No sanctioned_budget_breakup found on doc")

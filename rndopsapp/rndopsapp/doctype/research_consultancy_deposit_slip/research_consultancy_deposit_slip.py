@@ -6,7 +6,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
-from rndopsapp.rndopsapp.kafka_sync import publish_research_consultancy_deposit_slip
+from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip as publish_research_consultancy_deposit_slip
 
 def extract_eval_expression(expression):
 	"""Extracts the JavaScript expression from a Frappe 'eval:' string."""
@@ -296,7 +296,7 @@ def get_research_consultancy_deposit_slip_workflow_actions():
 	return actions
 
 
-from rndopsapp.rndopsapp.kafka_sync import publish_research_consultancy_deposit_slip
+# Import moved to top of file - using new kafka.producer module
 
 @frappe.whitelist()
 def perform_research_consultancy_deposit_slip_workflow_action(docname, action):

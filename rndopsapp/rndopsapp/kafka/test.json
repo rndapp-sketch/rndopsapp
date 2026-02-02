@@ -1,0 +1,88 @@
+{
+    "projectNumber": "2026010801MeiTy000215",
+    "fundReceivedRefNumber": 29,
+    "slipNumber": "SLIP_TEST_003",
+    "category": "RESEARCH",
+    "ecsAccountNo": "ACC123456789",
+    "bankName": "Priyam National Bank",
+    "bmrNumber": "BMR-TEST-001",
+    "amountReceived": 5500.00,raw amount
+    "amountInclusiveGst": 5500.00,
+    "gstType": "NOGST",
+    "finalGstAmount": 0.00,
+    "finalTotalAmount": 0.00, //grand total
+    "totalOverheadPercentage": 10.00,
+    "totalOverheadAmount": 500.00,
+    "netProjectAmount": 5000.00, after deduction of gst and overhead
+    "depositDate": "2025-11-18T10:00:00.000000",
+    "createdAt": "2025-11-18T09:00:00.000000",
+    "updatedAt": "2025-11-18T09:00:00.000000",
+    "createdBy": "ADMIN",
+    "updatedBy": "ADMIN",
+    "status": "APPROVED",
+    "ecsDates": [
+        "2025-11-20",
+        "2025-11-21"
+    ],
+    "creditDistributionSwf": {
+        "swfPercentage": 2.50,
+        "swfAmount": 500.00
+    },
+    "creditDistributionPdf": [
+        {
+            "employeeId": "2025PS0205",
+            "departmentId": 2,
+            "pdfPercentage": 25.00,
+            "pdfAmount": 250.00
+        },
+        {
+            "employeeId": "2025PS0001",
+            "departmentId": 3,
+            "pdfPercentage": 25.00,
+            "pdfAmount": 250.00
+        }
+    ],
+    "creditDistributionDpf": [
+        {
+            "departmentId": 2,
+            "dpfPercentage": 7.50,
+            "dpfAmount": 150.00
+        },
+        {
+            "departmentId": 2,
+            "dpfPercentage": 7.50,
+            "dpfAmount": 150.00
+        }
+    ],
+    "creditDistributionIdf": {
+        "idfPercentage": 5.00,
+        "idfAmount": 500.00
+    },
+    "creditDistributionStwf": {
+        "stwfPercentage": 10.00,
+        "stwfAmount": 100.00
+    }
+}
+
+
+
+  | DEBUG: Single candidate: Pending HoS Approval
+17:45:26 web.1         | DEBUG: Transitioning to HoS Approval. Data present: True
+17:45:26 web.1         | |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+17:45:26 web.1         | ||||||||||||||||||||||| Created Deposit slip  |||||||||||||||||||||||||
+17:45:26 web.1         | |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+17:45:26 web.1         | Creating Deposit Slip for FR: REC_240126336-prjreg_refnum
+17:45:26 web.1         | Selected Target Doctype: Research Consultancy Deposit Slip for Category:
+17:45:26 web.1         | Created Deposit Slip: RES-DS-2026-00033 with workflow_state: Pending HoS Approval
+17:45:26 web.1         | DEBUG: Updating workflow_state from 'Pending Misc. Staff Approval(Deposit Slip Pending)' to 'Pending HoS Approval'
+17:45:26 web.1         | DEBUG: Mapped Account Head ID 1 -> h1lhg99vfq
+17:45:26 web.1         | DEBUG: Mapped Account Head ID 4 -> gn92mb763g
+17:45:26 web.1         | DEBUG: Mapped Account Head ID 6 -> f91602nspa
+17:45:26 web.1         | DEBUG: Mapped Account Head ID 2 -> gu12bngg1u
+17:45:26 web.1         | DEBUG: Mapped Account Head ID 3 -> gqu3lqj4n5
+17:45:26 web.1         | DEBUG: Saving with ignore_validate=True. Next State: Pending HoS Approval
+17:45:26 web.1         | DEBUG: Reaching db_set. Next state: Pending HoS Approval
+17:45:26 web.1         | DEBUG: Reaching commit
+17:45:26 web.1         | DEBUG: Commit done
+17:45:26 web.1         | DEBUG: Saved doc. New state in obj: Pending HoS Approval
+17:45:26 web.1         | DEBUG: End of function success

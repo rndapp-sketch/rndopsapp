@@ -10,7 +10,7 @@ import requests
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, sanitize_html
-from rndopsapp.rndopsapp.kafka_sync import publish_fund_received
+from rndopsapp.rndopsapp.kafka.producer import publish_fund_received
 
 
 class FundReceived(Document):
@@ -344,13 +344,37 @@ def save_fund_received(doc_data, prjreg_title=None):
 					)
 
 		if "received_amt_breakup" in data:
+			# Build lookup map: budget_head label -> document name
+			try:
+				budget_heads = frappe.get_all("Budget Head", fields=["name", "budget_head"])
+				bh_label_to_name = {b.budget_head: b.name for b in budget_heads}
+				print(f"DEBUG: Budget Head label->name map: {bh_label_to_name}")
+			except Exception as e:
+				print(f"DEBUG: Error fetching Budget Head lookup: {e}")
+				bh_label_to_name = {}
+			
 			for breakup in data["received_amt_breakup"]:
 				# Only add rows that have at least account_head OR amount_received > 0
 				if breakup.get("account_head") not in [None, ""] or breakup.get("amount_received", 0) > 0:
+					raw_account_head = breakup.get("account_head") or ""
+					
+					# Resolve account_head label to Budget Head document name
+					account_head_name = raw_account_head
+					if raw_account_head in bh_label_to_name:
+						account_head_name = bh_label_to_name[raw_account_head]
+						print(f"DEBUG: Resolved account_head '{raw_account_head}' -> '{account_head_name}'")
+					else:
+						# Maybe already a valid doc name, or try case-insensitive match
+						for label, name in bh_label_to_name.items():
+							if label.lower() == raw_account_head.lower():
+								account_head_name = name
+								print(f"DEBUG: Case-insensitive match '{raw_account_head}' -> '{account_head_name}'")
+								break
+					
 					new_doc.append(
 						"received_amt_breakup",
 						{
-							"account_head": breakup.get("account_head") or "",
+							"account_head": account_head_name,
 							"amount_received": breakup.get("amount_received", 0),
 							"budget_year_funds_receive": breakup.get("budget_year_funds_receive", 1),
 							"remarks": breakup.get("remarks") or "",
@@ -664,7 +688,13 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 				if deposit_slip_data:
 					has_content = False
 					# Fields that indicate user intent to create a deposit slip
-					intent_fields = ["category", "bank", "amount_inclusive_of_gst", "client", "consultancy_event_title"]
+					# Includes both Research Consultancy and Research Deposit Slip fields
+					intent_fields = [
+						# Research Consultancy Deposit Slip fields
+						"category", "bank", "amount_inclusive_of_gst", "client", "consultancy_event_title",
+						# Research Deposit Slip fields
+						"deposit_date", "total_amount", "bank_name", "project_title", "overhead_amount"
+					]
 					for field in intent_fields:
 						val = deposit_slip_data.get(field)
 						if val and str(val).strip(): # Check for non-empty value
@@ -739,37 +769,18 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		print(f"DEBUG: Updating workflow_state from '{doc.workflow_state}' to '{next_state}'")
 		doc.workflow_state = next_state
 		
-		# Fix Account Head IDs map (Legacy Data Fix)
+		# Fix Account Head IDs map (Legacy Data Fix - for old data that stored IDs)
 		try:
-			budget_heads = frappe.get_all("Budget Head", fields=["id", "budget_head"])
-			id_map = {str(b.id): b.budget_head for b in budget_heads}
-			
-			# Normalization map based on Select Options vs Budget Head Table
-			# Valid Options: "Consumables", "Equipment", "Contingency", "Travel", "Manpower", "Overhead", "Other"
-			norm_map = {
-				"Consumable": "Consumables",
-				"Equipments": "Equipment",
-				"Travels": "Travel",
-				"Manpowers": "Manpower",
-				"Contingencies": "Contingency",
-				"Overheads": "Overhead",
-				"Others": "Other"
-			}
+			budget_heads = frappe.get_all("Budget Head", fields=["id", "budget_head", "name"])
+			id_map = {str(b.id): b.name for b in budget_heads}  # Map ID to Budget Head name
 			
 			for row in doc.received_amt_breakup:
 				val = str(row.account_head)
 				
-				# Case 1: Value is an ID (e.g. "5")
+				# If value is an ID (e.g. "5"), map to Budget Head document name
 				if val in id_map:
-					label = id_map[val]
-					# Normalize label
-					row.account_head = norm_map.get(label, label)
+					row.account_head = id_map[val]
 					print(f"DEBUG: Mapped Account Head ID {val} -> {row.account_head}")
-					
-				# Case 2: Value is a Label but needs normalization (e.g. "Consumable")
-				elif val in norm_map:
-					row.account_head = norm_map[val]
-					print(f"DEBUG: Normalized Account Head {val} -> {row.account_head}")
 
 		except Exception as e:
 			print(f"DEBUG: Error fixing account heads: {e}")
@@ -821,19 +832,32 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		if next_state == "Approved":
 			try:
 				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 				print("|||||||||||||||||||||||KAFKA|||||||||||||||||||||||||||||||||")
 				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 				
-				# Find linked Deposit Slip
-				ds_name = frappe.db.get_value("Research Consultancy Deposit Slip", {"fund_received_ref": doc.name}, "name")
-				if ds_name:
-					print(f"DEBUG: Found linked Deposit Slip {ds_name}. Auto-approving and Syncing...")
-					ds_doc = frappe.get_doc("Research Consultancy Deposit Slip", ds_name)
+				# List of potential Deposit Slip doctypes
+				deposit_doctypes = [
+					"Research Deposit Slip",
+					"Research Consultancy Deposit Slip", 
+					"D Consultancy Deposit Slip",
+					"E Non Routine Deposit Slip",
+					"Other Event Deposit Slip",
+					"T Testing Deposit Slip"
+				]
+
+				# Find linked Deposit Slip in any of the potential doctypes
+				ds_name = None
+				found_doctype = None
+				
+				for dt in deposit_doctypes:
+					ds_name = frappe.db.get_value(dt, {"fund_received_ref": doc.name}, "name")
+					if ds_name:
+						found_doctype = dt
+						break
+				
+				if ds_name and found_doctype:
+					print(f"DEBUG: Found linked Deposit Slip {ds_name} of type {found_doctype}. Auto-approving and Syncing...")
+					ds_doc = frappe.get_doc(found_doctype, ds_name)
 					
 					# Get current workflow_state (Data field, not Frappe workflow)
 					# Use get() for safe access since it's a Data field
@@ -855,9 +879,11 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 					
 					# Note: Kafka sync is handled by the on_update() hook in Research Consultancy Deposit Slip
 					# when save() is called with workflow_state = "Approved"
-					frappe.msgprint(_("Linked Deposit Slip Approved and Synced to Kafka."), indicator='green')
+					frappe.msgprint(_(f"Linked {found_doctype} Approved and Synced to Kafka."), indicator='green')
+				else:
+					print("DEBUG: No linked Deposit Slip found.")
+					
 				print("|||||||||||||||||||||||KAFKA end|||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 			except Exception as ds_err:
 				print(f"DEBUG: Error auto-processing Deposit Slip: {ds_err}")
 				print(frappe.get_traceback())
@@ -887,15 +913,17 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 	Reuse logic similar to save_deposit_slip but internal.
 	"""
 	import json
-	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
+	import traceback
+	from rndopsapp.rndopsapp.doctype.fund_received.deposit_logger import (
+		log_deposit_creation,
+		log_deposit_link,
+		log_deposit_error,
+		log_category_inference,
+		log_workflow_state
+	)
+	
 	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 	print("||||||||||||||||||||||| Created Deposit slip  |||||||||||||||||||||||||")
-	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 	print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 	
 	try:
@@ -906,35 +934,95 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 
 		print(f"Creating Deposit Slip for FR: {fund_received_doc.name}")
 
-		# Determine Doctype based on Category or Default to Research Consultancy
-		# User requirement implies "Research Consultancy Deposit Slip"
-		target_doctype = "Research Consultancy Deposit Slip" 
+		# Determine Doctype based on Category
+		category = data.get("category", "")
+		
+		# If category is empty, try to infer from Fund Received document
+		if not category:
+			# Try to get project type from the linked project registration
+			if fund_received_doc.prjreg_title:
+				try:
+					project_type = frappe.db.get_value(
+						"Project Registration", 
+						fund_received_doc.prjreg_title, 
+						"project_type"
+					)
+					if project_type:
+						project_type_upper = (project_type or "").upper()
+						if "RESEARCH" in project_type_upper and "CONSULTANCY" not in project_type_upper:
+							category = "RESEARCH"
+						elif "CONSULTANCY" in project_type_upper:
+							if "D" in project_type_upper or "D_CONSULTANCY" in project_type_upper:
+								category = "D_CONSULTANCY"
+							elif "E" in project_type_upper or "NON" in project_type_upper:
+								category = "E_NON_ROUTINE"
+							elif "T" in project_type_upper or "TEST" in project_type_upper:
+								category = "T_TESTING"
+							else:
+								category = "CONSULTANCY"
+						else:
+							category = "RESEARCH"  # Default to Research
+					else:
+						category = "RESEARCH"  # Default to Research
+				except Exception as e:
+					print(f"Warning: Could not get project type: {e}")
+					category = "RESEARCH"  # Default to Research
+			else:
+				category = "RESEARCH"  # Default to Research if no project linked
+			
+			print(f"Inferred category from project: {category}")
+			# Log category inference
+			log_category_inference(
+				fund_received_doc.name,
+				fund_received_doc.prjreg_title,
+				project_type if 'project_type' in dir() else None,
+				category
+			)
+		
+		# Simple mapping based on known categories
+		# Adjust keys as per exact frontend inputs
+		doctype_map = {
+			"RESEARCH": "Research Deposit Slip",
+			"Research": "Research Deposit Slip",
+			"CONSULTANCY": "Research Consultancy Deposit Slip", # Defaulting generic consultancy to Research Consultancy
+			"Research Consultancy": "Research Consultancy Deposit Slip",
+			"D_CONSULTANCY": "D Consultancy Deposit Slip",
+			"D Consultancy": "D Consultancy Deposit Slip",
+			"E_NON_ROUTINE": "E Non Routine Deposit Slip",
+			"E Non Routine": "E Non Routine Deposit Slip",
+			"OTHER_EVENT": "Other Event Deposit Slip",
+			"Other Event": "Other Event Deposit Slip",
+			"T_TESTING": "T Testing Deposit Slip",
+			"T Testing": "T Testing Deposit Slip"
+		}
+		
+		target_doctype = doctype_map.get(category, "Research Deposit Slip") # Changed fallback to Research
+		
+		print(f"Selected Target Doctype: {target_doctype} for Category: {category}")
 
 		new_doc = frappe.new_doc(target_doctype)
 		
 		# Map fields
-		# We use the same mapping logic as the save_deposit_slip API to be consistent
-		# Target Fields: Research Consultancy Deposit Slip
+		# We use the same generic mapping logic. Assuming fields are roughly consistent across deposit slips.
 		field_mapping = {
 			"category": "category",
 			# "fund_received_ref": "fund_received_ref", # Field missing in target
 			"project_title": "project_title",
 			"principal_investigator": "principal_investigator",
-			"consultancy_event_title": "consultancy_event_title", # Verify if this field exists or map to something else? 
-			# RC Deposit Slip has 'client', 'funding_agency' etc.
+			"consultancy_event_title": "consultancy_event_title", 
 			"client": "client",
 			"funding_agency": "funding_agency",
 			"gstin_of_funding_agency": "gstin_of_funding_agency",
 			"bank": "bank",
 			
-			# Mappings to new fieldnames
+			# Mappings to new fieldnames (Research Consultancy Deposit Slip)
 			"amount_inclusive_of_gst": "amount_inclusive_gst_capital",
 			"amount_inclusive_gst_capital": "amount_inclusive_gst_capital",
 			
 			"ecs_acc_no": "ecs_ac_no",
 			"ecs_ac_no": "ecs_ac_no",
 			
-			"igst_18": "igst_18", # Check if exists? RC Deposit Slip has total_gst, cgst_9, sgst_9. Not igst_18.
+			"igst_18": "igst_18",
 			"cgst_9": "cgst_9",
 			"sgst_9": "sgst_9",
 			
@@ -947,44 +1035,83 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			"total_budget": "total_budget",
 			"prj_amount": "prj_amount",
 			
-			# Specific distribution amounts
+			# Specific distribution amounts (shared)
 			"idf_amount": "idf_amount",
 			"dpf_cle_amount": "dpf_cle_amount",
 			"staff_welfare_amount": "staff_welfare_amount",
 			"student_welfare_amount": "student_welfare_amount",
+			
+			# Research Deposit Slip specific fields
+			"deposit_date": "deposit_date",
+			"total_amount": "total_amount",
+			"ecs_scheme_no": "ecs_scheme_no",
+			"bank_name": "bank_name",
+			"account_number": "account_number",
+			"dpf_amount": "dpf_amount",
+			"pdf_amount": "pdf_amount",
+			"student_welfare_fund": "student_welfare_fund",
+			"project_no": "project_no",
+			"project_account_balance": "project_account_balance",
+			"grand_total": "grand_total",
 		}
+		
+		# Fields to skip (can cause link validation errors)
+		skip_fields = ["funding_agency", "gstin_of_funding_agency"]
+		
+		# Handle date fields - convert "Today" string to actual date
+		date_fields = ["deposit_date"]
+		for date_field in date_fields:
+			if date_field in data:
+				val = data[date_field]
+				# Convert "Today" (case-insensitive) to actual current date
+				if isinstance(val, str) and val.lower() == "today":
+					data[date_field] = frappe.utils.today()
+					print(f"Converted {date_field} from 'Today' to {data[date_field]}")
 
 		for form_field, doctype_field in field_mapping.items():
+			if form_field in skip_fields:
+				continue
 			if form_field in data and data[form_field] not in [None, ""]:
-				# check if target field exists (simple safety specific for dynamic dicts)
-				new_doc.set(doctype_field, data[form_field])
+				try:
+					new_doc.set(doctype_field, data[form_field])
+				except Exception as e:
+					print(f"Warning: Could not set field {doctype_field}: {e}")
 
 		# Explicitly link to Fund Received
 		new_doc.fund_received_ref = fund_received_doc.name
 		
 		# If project_title is missing in data but exists in FR, try to populate?
-		if not new_doc.project_title and fund_received_doc.prjreg_title:
+		if not new_doc.get("project_title") and fund_received_doc.prjreg_title:
 			# Assuming prjreg_title in FR holds the project ID/Name that Deposit Slip expects
+			# Use set default to avoid errors if field doesn't exist on some doctypes
 			new_doc.project_title = fund_received_doc.prjreg_title
 
-		# Child table: ecs_dates
+		# Child table: ecs_date (singular for Research Deposit Slip) or ecs_dates (for others)
 		if "ecs_dates" in data:
-			for ecs_date in data["ecs_dates"]:
-				if ecs_date.get("ecs_date") or ecs_date.get("amount", 0) > 0:
-					new_doc.append(
-						"ecs_dates",
-						{
-							"ecs_date": ecs_date.get("ecs_date"),
-							"amount": ecs_date.get("amount", 0),
-						},
-					)
+			# Determine the correct child table name based on doctype
+			ecs_table_name = "ecs_date" if target_doctype == "Research Deposit Slip" else "ecs_dates"
+			for ecs_entry in data["ecs_dates"]:
+				if ecs_entry.get("ecs_date") or ecs_entry.get("date") or ecs_entry.get("amount", 0) > 0:
+					try:
+						new_doc.append(
+							ecs_table_name,
+							{
+								"ecs_date": ecs_entry.get("ecs_date") or ecs_entry.get("date"),
+								"amount": ecs_entry.get("amount", 0),
+							},
+						)
+					except Exception as e:
+						print(f"Warning: Could not append to {ecs_table_name}: {e}")
 
-		# Child table: credit_distribution
-		if "credit_distribution" in data:
+		# Child table: credit_distribution (not available in Research Deposit Slip)
+		if "credit_distribution" in data and target_doctype != "Research Deposit Slip":
 			for row in data["credit_distribution"]:
 				# Ensure row is a dict
 				if isinstance(row, dict):
-					new_doc.append("credit_distribution", row)
+					try:
+						new_doc.append("credit_distribution", row)
+					except Exception as e:
+						print(f"Warning: Could not append credit_distribution: {e}")
 
 		# Set initial workflow_state for the Deposit Slip
 		# Since this is created when FR moves to "Pending HoS Approval", 
@@ -995,10 +1122,41 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 		# Note: No commit here, as it's part of the larger transaction in perform_fund_received_action
 		
 		print(f"Created Deposit Slip: {new_doc.name} with workflow_state: {new_doc.workflow_state}")
+		
+		# Log successful deposit slip creation
+		log_deposit_creation(
+			fund_received_doc.name,
+			new_doc.name,
+			target_doctype,
+			data,
+			category
+		)
+		
+		# Log the linking
+		log_deposit_link(
+			fund_received_doc.name,
+			new_doc.name,
+			target_doctype
+		)
+		
+		# Log workflow state assignment
+		log_workflow_state(
+			fund_received_doc.name,
+			new_doc.name,
+			new_doc.workflow_state
+		)
+		
 		return new_doc
 
 	except Exception as e:
 		print(f"Error creating Deposit Slip: {e}")
+		# Log the error
+		log_deposit_error(
+			fund_received_doc.name if fund_received_doc else "UNKNOWN",
+			str(e),
+			data if 'data' in dir() else None,
+			traceback.format_exc()
+		)
 		raise e
 
 

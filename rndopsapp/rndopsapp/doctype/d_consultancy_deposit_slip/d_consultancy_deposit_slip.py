@@ -18,9 +18,31 @@ def extract_eval_expression(expression):
 	return expression
 
 
+from rndopsapp.rndopsapp.fund_deposits.consultancy import publish_consultancy_deposit_slip
+
 class DConsultancyDepositSlip(Document):
 	def autoname(self):
 		self.name = make_autoname("D-CONS-.YYYY.-.#####.")
+
+	def on_update(self):
+		"""
+		Trigger Kafka sync on workflow state change.
+		"""
+		try:
+			doc_before_save = self.get_doc_before_save()
+			old_state = doc_before_save.workflow_state if doc_before_save else None
+			new_state = self.workflow_state
+			target_states = ["Approved", "Verified", "Submitted"]
+			
+			if (new_state in target_states and old_state != new_state):
+				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (D-Cons) for state {new_state}")
+				publish_consultancy_deposit_slip(self)
+			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0):
+				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (D-Cons) for Submit")
+				publish_consultancy_deposit_slip(self)
+		except Exception as e:
+			frappe.log_error(f"Error in D Cons Deposit Slip on_update: {e}", "D Cons Deposit Slip Error")
+			pass
 
 
 @frappe.whitelist()

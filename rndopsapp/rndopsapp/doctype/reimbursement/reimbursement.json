@@ -93,13 +93,15 @@
    "fieldname": "applicant_department",
    "fieldtype": "Data",
    "label": "Department ",
-   "options": "Department_prornd"
+   "options": "Department_prornd",
+   "read_only": 1
   },
   {
    "fetch_from": "applicant_webmail.designation_name",
    "fieldname": "applicant_designation",
    "fieldtype": "Data",
-   "label": "Designation"
+   "label": "Designation",
+   "read_only": 1
   },
   {
    "fieldname": "project_and_item_details_section",
@@ -110,7 +112,8 @@
    "fieldname": "project_name",
    "fieldtype": "Link",
    "label": "Project Name",
-   "options": "Project Registration"
+   "options": "Project Registration",
+   "read_only": 1
   },
   {
    "fieldname": "declarations",
@@ -195,7 +198,8 @@
    "fieldname": "applicant_webmail",
    "fieldtype": "Link",
    "label": "Webmail Id",
-   "options": "User"
+   "options": "User",
+   "read_only": 1
   },
   {
    "fieldname": "bank_account_number",
@@ -218,7 +222,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-08 12:11:54.347151",
+ "modified": "2026-01-22 23:18:02.696465",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",

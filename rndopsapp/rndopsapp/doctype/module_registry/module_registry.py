@@ -9,212 +9,6 @@ class ModuleRegistry(Document):
 	pass
 
 
-# @frappe.whitelist()
-# def get_pending_task(page_name="pending-task", status_value="Pending Staff Approval"):
-# 	"""
-# 	Endpoint: /api/method/your_app.your_module.doctype.module_registry.module_registry.get_pending_task
-# 	Fetch all doctypes listed in the Module Registry doc (where page_name matches)
-# 	and return docs whose status/workflow field equals status_value.
-# 	"""
-
-# 	# --- 1) get parent Module Registry doc ---
-# 	parent = frappe.get_all(
-# 		"Module Registry", filters={"page_name": page_name}, fields=["name"], limit_page_length=1
-# 	)
-
-# 	if not parent:
-# 		return {"results": []}
-
-# 	parent_doc = frappe.get_doc("Module Registry", parent[0].name)
-# 	print("parent_doc:", parent_doc)
-
-# 	# --- 2) read child doctypes from child table `doctype_name` ---
-# 	child_rows = getattr(parent_doc, "doctype_name", []) or []
-# 	doctypes = [row.doctype_name for row in child_rows if row.doctype_name]
-# 	print("parent_doc:", doctypes)
-
-# 	results = []
-
-# 	# --- 3) iterate doctypes ---
-# 	for dt in doctypes:
-# 		# check doctype exists
-# 		if not frappe.db.exists("DocType", dt):
-# 			continue
-
-# 		# ensure user has read permission
-# 		if not frappe.has_permission(dt, "read"):
-# 			continue
-
-# 		meta = frappe.get_meta(dt)
-
-# 		# find the correct status/workflow field
-# 		status_field = None
-# 		for f in ("workflow_state", "status", "state"):
-# 			if meta.has_field(f):
-# 				status_field = f
-# 				break
-
-# 		if not status_field:
-# 			continue  # skip doctypes without status field
-
-# 		# pick title field for display
-# 		title_field = (
-# 			meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name")
-# 		)
-
-# 		# fetch matching docs
-# 		records = frappe.get_list(
-# 			dt,
-# 			filters={status_field: status_value},
-# 			fields=["name", title_field],
-# 			order_by="modified desc",
-# 			limit_page_length=100,
-# 		)
-
-# 		mapped = []
-# 		for r in records:
-# 			mapped.append({"name": r.get("name"), "title": r.get(title_field)})
-
-# 		if mapped:
-# 			results.append({"doctype": dt, "records": mapped})
-
-# 	return {"page": page_name, "status_value": status_value, "results": results}
-
-# @frappe.whitelist()
-# def get_pending_task(page_name):
-#     """
-#     Fetch docs where the CURRENT USER can EDIT or TRANSITION.
-#     Includes Debug Prints to find missing doctypes.
-#     """
-#     print(f"\n--- DEBUG: get_pending_task for '{page_name}' ---")
-
-#     # 1. Get User Roles
-#     current_user = frappe.session.user
-#     user_roles = frappe.get_roles(current_user)
-#     is_system_manager = "System Manager" in user_roles
-#     print(f"User: {current_user}, Roles: {user_roles}")
-
-#     # 2. Get Parent Module Registry
-#     parent = frappe.get_all("Module Registry", filters={"page_name": page_name}, fields=["name"], limit=1)
-#     if not parent:
-#         print("❌ No Module Registry found for this page_name.")
-#         return {"results": []}
-
-#     parent_doc = frappe.get_doc("Module Registry", parent[0].name)
-    
-#     # 3. Get child doctypes
-#     child_rows = getattr(parent_doc, "doctype_name", []) or []
-#     doctypes = [row.doctype_name for row in child_rows if row.doctype_name]
-#     print(f"Found Doctypes in Registry: {doctypes}")
-
-#     results = []
-
-#     # Helper function
-#     def has_common_role(allowed_role_config):
-#         if not allowed_role_config: return False
-#         if is_system_manager: return True
-        
-#         config_roles = []
-#         if isinstance(allowed_role_config, list):
-#             config_roles = [str(r).strip() for r in allowed_role_config]
-#         else:
-#             raw = str(allowed_role_config)
-#             for sep in [",", "\n", ";"]:
-#                 if sep in raw:
-#                     config_roles = [p.strip() for p in raw.split(sep) if p.strip()]
-#                     break
-#             if not config_roles:
-#                 config_roles = [raw.strip()]
-        
-#         # Intersection check
-#         return any(r in user_roles for r in config_roles)
-
-#     # --- LOOP ---
-#     for dt in doctypes:
-#         print(f"\nChecking Doctype: {dt}")
-
-#         if not frappe.db.exists("DocType", dt):
-#             print(f"  ❌ Skipped: Doctype {dt} does not exist.")
-#             continue
-
-#         if not frappe.has_permission(dt, "read"):
-#             print(f"  ❌ Skipped: No read permission for {dt}.")
-#             continue
-
-#         # Check Workflow
-#         wf_name = frappe.get_value("Workflow", {"document_type": dt, "is_active": 1}, "name")
-#         if not wf_name:
-#             print(f"  ❌ Skipped: No Active Workflow found for {dt}.")
-#             continue
-        
-#         print(f"  ✅ Workflow Found: {wf_name}")
-#         wf_doc = frappe.get_doc("Workflow", wf_name)
-#         status_field = wf_doc.workflow_state_field
-        
-#         # Calculate Actionable States
-#         actionable_states = set()
-
-#         # Check States (Allow Edit)
-#         for state_row in wf_doc.states:
-#             if has_common_role(state_row.allow_edit):
-#                 actionable_states.add(state_row.state)
-
-#         # Check Transitions (Allowed Action)
-#         for transition_row in wf_doc.transitions:
-#             if has_common_role(transition_row.allowed):
-#                 actionable_states.add(transition_row.state)
-
-#         if not actionable_states:
-#             print(f"  ❌ Skipped: User has no valid actions in ANY state for {dt}.")
-#             continue
-
-#         print(f"  ✅ Actionable States for User: {actionable_states}")
-
-#         # Fetch Documents
-#         records = frappe.get_list(
-#             dt,
-#             filters={status_field: ["in", list(actionable_states)]},
-#             fields=["name", "modified"], # Fetch minimal first to debug count
-#             limit_page_length=100
-#         )
-        
-#         print(f"  📄 Found {len(records)} documents in these states.")
-
-#         if not records:
-#             continue
-
-#         # If we have records, fetch details
-#         # (Re-fetching purely for constructing the result nicely, or use the list above)
-#         meta = frappe.get_meta(dt)
-#         title_field = (meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name"))
-        
-#         # Manual fetch to ensure we get the display fields
-#         full_records = frappe.get_list(
-#             dt,
-#             filters={"name": ["in", [r.name for r in records]]},
-#             fields=["name", title_field, status_field, "modified", "owner"],
-#             order_by="modified desc"
-#         )
-
-#         mapped = []
-#         for r in full_records:
-#             mapped.append({
-#                 "name": r.get("name"), 
-#                 "title": r.get(title_field),
-#                 "status": r.get(status_field),
-#                 "modified": r.get("modified"),
-#                 "owner": r.get("owner")
-#             })
-
-#         results.append({"doctype": dt, "records": mapped})
-
-#     return {
-#         "page": page_name, 
-#         "user": current_user,
-#         "results": results
-#     }
-
-
 
 # -=-=-=-=-=
 import frappe
@@ -350,3 +144,257 @@ def get_pending_task(page_name="pending-task"):
 			print("results:",results)
 
 	return {"page": page_name, "user": current_user, "results": results}
+
+
+@frappe.whitelist()
+def get_task_registry():
+	"""
+	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_task_registry
+	
+	Returns all documents that were processed/moved/approved by the current user.
+	Only accessible by roles: staff, hos, dean, adornd, head of department.
+	
+	This tracks documents where the user performed any workflow action
+	(forward, approve, reject, etc.) across all doctypes in the rndopsapp module.
+	"""
+	
+	# 1. Get Current User and Roles
+	current_user = frappe.session.user
+	user_roles = frappe.get_roles(current_user)
+	
+	# Define allowed roles based on system roles
+	allowed_roles = [
+		"staff, RnD",
+		"project staff",
+		"Hos, RnD (Head of Section, RnD)",
+		"Dean, RnD",
+		"Ado_RnD",
+		"HoD (Head of Department)",
+		"HoS (Head of School)",
+		"HoC (Head of Center)",
+		"head_department_center_school",
+		"Director",
+		"RnD Accounts",
+		"RnD Administration",
+		"RnD HR",
+		"RnD Purchase",
+		"System Manager"  # Always allow System Manager for admin access
+	]
+	
+	# Check if user has any of the allowed roles
+	has_allowed_role = any(role in allowed_roles for role in user_roles)
+	
+	if not has_allowed_role:
+		return {
+			"success": False,
+			"message": "Access denied. Only authorized RnD roles (staff, HoS, Dean, Ado_RnD, HoD, HoS, HoC, Director, RnD Accounts/Admin/HR/Purchase) can access this endpoint.",
+			"results": []
+		}
+	
+	print(f"\n--- DEBUG: get_task_registry for user '{current_user}' ---")
+	print(f"User Roles: {user_roles}")
+	
+	# 2. Get all doctypes from the rndopsapp module (case-insensitive)
+	rndops_doctypes = frappe.get_all(
+		"DocType",
+		filters=[["module", "like", "%rndopsapp%"]],
+		fields=["name", "module"]
+	)
+	
+	if not rndops_doctypes:
+		# Try exact match as fallback
+		rndops_doctypes = frappe.get_all(
+			"DocType",
+			filters={"module": "Rndopsapp"},
+			fields=["name", "module"]
+		)
+	
+	doctype_names = [dt.name for dt in rndops_doctypes]
+	print(f"Doctypes in Rndopsapp module ({len(doctype_names)}): {doctype_names}")
+	
+	skipped_info = []  # Track why doctypes are skipped
+	
+	results = []
+	
+	# 3. For each doctype, find documents modified by the current user 
+	# where workflow_state has been changed (meaning they performed an action)
+	for dt_name in doctype_names:
+		# Skip child tables and non-workflow doctypes
+		if not frappe.db.exists("DocType", dt_name):
+			continue
+			
+		meta = frappe.get_meta(dt_name)
+		
+		# Skip child tables
+		if meta.istable:
+			continue
+		
+		# Check read permission
+		if not frappe.has_permission(dt_name, "read"):
+			skipped_info.append({"doctype": dt_name, "reason": "no read permission"})
+			continue
+		
+		# Determine status field - can be workflow_state, status, or state
+		status_field = None
+		for field_name in ["workflow_state", "status", "state"]:
+			if meta.has_field(field_name):
+				status_field = field_name
+				break
+		
+		try:
+			# Method 1: Get documents modified by user (simple approach)
+			# This finds docs where the user was the last one to modify
+			fields_to_fetch = ["name", "modified", "owner", "creation", "docstatus"]
+			if status_field:
+				fields_to_fetch.append(status_field)
+			
+			modified_docs = frappe.get_list(
+				dt_name,
+				filters={
+					"modified_by": current_user,
+					"docstatus": ["<", 2]  # Exclude cancelled
+				},
+				fields=fields_to_fetch,
+				order_by="modified desc",
+				limit_page_length=50
+			)
+			
+			# Method 2: Also get docs from Version/Activity Log where user performed workflow action
+			# Query the Version doctype to find workflow state changes by this user
+			version_docs = []
+			try:
+				versions = frappe.get_all(
+					"Version",
+					filters={
+						"ref_doctype": dt_name,
+						"owner": current_user
+					},
+					fields=["docname", "creation", "data"],
+					order_by="creation desc",
+					limit_page_length=100
+				)
+				
+				# Filter versions that contain workflow_state changes
+				for v in versions:
+					if v.data and "workflow_state" in v.data:
+						if v.docname not in [d.name for d in modified_docs]:
+							# Get the document details
+							if frappe.db.exists(dt_name, v.docname):
+								doc_data = frappe.get_value(
+									dt_name, 
+									v.docname, 
+									fields_to_fetch,
+									as_dict=True
+								)
+								if doc_data and doc_data.docstatus < 2:
+									version_docs.append(doc_data)
+			except Exception as e:
+				print(f"Version query error for {dt_name}: {str(e)}")
+			
+			# Method 3: Get docs from Workflow Action (where user completed an action)
+			# This is crucial for doctypes without track_changes enabled (like Reimbursement)
+			wf_action_docs = []
+			try:
+				wf_actions = frappe.get_all(
+					"Workflow Action",
+					filters={
+						"reference_doctype": dt_name,
+						"status": "Completed",
+						"completed_by": current_user
+					},
+					fields=["reference_name", "creation"], # creation here is when action was requested/completed
+					order_by="creation desc",
+					limit_page_length=100
+				)
+				
+				processed_names = {w.reference_name for w in wf_actions}
+				
+				# Filter out docs we already found to avoid double fetching
+				existing_names = set(d.name for d in modified_docs)
+				# Note: version_docs aren't fully resolved to names yet in scope, but we check duplicates later
+				
+				# Fetch details for these docs
+				if processed_names:
+					# Batch fetch
+					placeholders = ", ".join(["%s"] * len(processed_names))
+					fetched_wf_docs = frappe.db.sql(f"""
+						SELECT {', '.join(fields_to_fetch)}
+						FROM `tab{dt_name}`
+						WHERE name IN ({placeholders}) AND docstatus < 2
+					""", tuple(processed_names), as_dict=True)
+					
+					wf_action_docs = fetched_wf_docs
+			except Exception as e:
+				print(f"Workflow Action query error for {dt_name}: {str(e)}")
+			
+			# Combine and deduplicate
+			all_doc_names = set()
+			combined_docs = []
+			
+			for doc in modified_docs:
+				if doc.name not in all_doc_names:
+					all_doc_names.add(doc.name)
+					combined_docs.append(doc)
+			
+			for doc in version_docs:
+				if doc.name not in all_doc_names:
+					all_doc_names.add(doc.name)
+					combined_docs.append(doc)
+
+			for doc in wf_action_docs:
+				if doc.name not in all_doc_names:
+					all_doc_names.add(doc.name)
+					combined_docs.append(doc)
+			
+			if not combined_docs:
+				continue
+			
+			# Get title field for better display
+			title_field = meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name")
+			
+			# Fetch full details for display
+			mapped = []
+			for doc in combined_docs:
+				# Get title value if different from name
+				title_value = doc.name
+				if title_field != "name":
+					title_value = frappe.get_value(dt_name, doc.name, title_field) or doc.name
+				
+				mapped.append({
+					"name": doc.name,
+					"title": title_value,
+					"status": doc.get(status_field) if status_field else None,
+					"creation": doc.creation,
+					"modified": doc.modified,
+					"owner": doc.owner,
+					"docstatus": doc.docstatus
+				})
+			
+			# Sort by modified date descending
+			mapped.sort(key=lambda x: x["modified"] if x["modified"] else "", reverse=True)
+			
+			if mapped:
+				results.append({
+					"doctype": dt_name,
+					"count": len(mapped),
+					"records": mapped
+				})
+				print(f"Found {len(mapped)} documents in {dt_name} processed by user")
+			
+		except Exception as e:
+			print(f"Error processing {dt_name}: {str(e)}")
+			continue
+	
+	# Sort results by doctype name for consistent ordering
+	results.sort(key=lambda x: x["doctype"])
+	
+	return {
+		"success": True,
+		"user": current_user,
+		"roles": user_roles,
+		"doctypes_in_module": len(doctype_names),
+		"total_doctypes_with_data": len(results),
+		"total_documents": sum(r["count"] for r in results),
+		"skipped": skipped_info,
+		"results": results
+	}

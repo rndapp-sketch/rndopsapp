@@ -62,6 +62,7 @@
   "origin_of_funding_agency",
   "funding_agency_ministry",
   "fund_agen_initials",
+  "funding_agency_id",
   "column_break_xgsj",
   "address_country",
   "address_street_village_locality",
@@ -1012,12 +1013,14 @@
   {
    "fieldname": "prj_start_date",
    "fieldtype": "Date",
-   "label": "Project Start Date"
+   "label": "Project Start Date",
+   "reqd": 1
   },
   {
    "fieldname": "prj_end_date",
    "fieldtype": "Date",
-   "label": "Project End Date"
+   "label": "Project End Date",
+   "reqd": 1
   },
   {
    "depends_on": "eval:doc.project_type == 'Consultancy'",
@@ -1171,13 +1174,19 @@
    "fieldname": "gstin_number",
    "fieldtype": "Data",
    "label": "GSTIN number"
+  },
+  {
+   "fetch_from": "funding_agen.funding_agency_id",
+   "fieldname": "funding_agency_id",
+   "fieldtype": "Data",
+   "label": "Funding agency id"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-19 16:33:32.958053",
+ "modified": "2026-01-27 15:17:14.875799",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
