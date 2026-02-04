@@ -329,7 +329,7 @@ def get_temporary_advance_workflow_actions(docname):
 	user_roles = frappe.get_roles(frappe.session.user)
 
 	# Fetch the workflow for this doctype
-	workflow_name = "Temporary_Advance_Workflow"
+	workflow_name = "Temp_adv_workflow"
 	
 	if not frappe.db.exists("Workflow", workflow_name):
 		return []
@@ -363,7 +363,7 @@ def perform_temporary_advance_action(docname, action):
 		current_state = doc.workflow_state or "Draft"
 
 		# Fetch the workflow for this doctype
-		workflow_name = "Temporary_Advance_Workflow"
+		workflow_name = "Temp_adv_workflow"
 		
 		if not frappe.db.exists("Workflow", workflow_name):
 			frappe.throw(f"Workflow '{workflow_name}' not found.")
@@ -372,7 +372,7 @@ def perform_temporary_advance_action(docname, action):
 
 		next_state = None
 		transition = None
-		
+		 
 		for t in workflow.transitions:
 			if t.state == current_state and t.action == action:
 				next_state = t.next_state

@@ -125,7 +125,7 @@
   },
   {
    "fieldname": "amount",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
    "label": "Amount"
   },
   {
@@ -203,7 +203,7 @@
    "default": "No",
    "fieldname": "applying_for_select",
    "fieldtype": "Select",
-   "label": "Are you applying this travel for someone?",
+   "label": "Are you applying this for someone?",
    "options": "\nYes\nNo"
   }
  ],
@@ -211,7 +211,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-02 15:36:02.378173",
+ "modified": "2026-02-04 13:31:05.016594",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Temporary Advance",
@@ -226,6 +226,58 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Independent Researcher",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "project staff",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Inspired Faculty",
    "share": 1,
    "submit": 1,
    "write": 1
