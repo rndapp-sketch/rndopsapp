@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{YYYY}{MM}{DD}{16}TRAV{######}",
+ "autoname": "format:{YYYY}{MM}{DD}7A{######}",
  "creation": "2025-11-26 16:08:04.021067",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -15,11 +15,13 @@
   "travel_leave_balance_html",
   "travel_supporting_documents",
   "section_break_lroa",
+  "column_break_tewx",
   "webmail_id_travel",
   "applicant_name_travel",
   "designation_travel",
   "department_travel",
   "section_break_lgbn",
+  "column_break_anji",
   "traveler_webmail_id",
   "other_traveler",
   "other_traveler_address",
@@ -38,14 +40,12 @@
   "to_date",
   "account_heads_section",
   "travel_financial_assistance",
-  "column_break_hnpp",
-  "travel_contribution",
-  "contingency_contribution",
-  "other_contribution",
+  "do_you_need_advance",
   "account_head_details_section",
   "contingency_head",
   "travel_head",
-  "other_account_head",
+  "other_acc_head",
+  "specify_other_acc_head",
   "bank_details_section",
   "bank_account_holder",
   "column_break_yzkt",
@@ -135,7 +135,7 @@
   {
    "fieldname": "details_travel",
    "fieldtype": "Section Break",
-   "label": "DETAILS OF THE JOURNEY FOR WHICH FINANCIAL ASSISTANCE IS SOUGHT"
+   "label": "Details of the Journey"
   },
   {
    "fieldname": "visit_type_travel",
@@ -154,6 +154,7 @@
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "other_traveler",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Name of the traveler",
    "options": "User"
   },
@@ -161,6 +162,7 @@
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "other_traveler_address",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Designation and full address of traveler"
   },
   {
@@ -227,30 +229,6 @@
    "fieldname": "contingency_head",
    "fieldtype": "Check",
    "label": "Contingency"
-  },
-  {
-   "fieldname": "travel_contribution",
-   "fieldtype": "Currency",
-   "label": "Contribution Amount (Travel)",
-   "placeholder": "Contribution"
-  },
-  {
-   "fieldname": "contingency_contribution",
-   "fieldtype": "Currency",
-   "label": "Contribution Amount (Contingency)",
-   "placeholder": "Contribution"
-  },
-  {
-   "fieldname": "other_account_head",
-   "fieldtype": "Data",
-   "label": "Specify Other Account Head",
-   "placeholder": "Specify other head"
-  },
-  {
-   "fieldname": "other_contribution",
-   "fieldtype": "Currency",
-   "label": "Contribution Amount (Other)",
-   "placeholder": "Contribution"
   },
   {
    "fetch_from": "travel_project_title.address_postal_code",
@@ -417,7 +395,7 @@
    "label": "Supporting Documents"
   },
   {
-   "depends_on": "eval:doc.travel_financial_assistance == \"Yes\"",
+   "depends_on": "eval:doc.do_you_need_advance == \"Yes\"",
    "fieldname": "bank_details_section",
    "fieldtype": "Section Break",
    "label": "Temporary Advance and Bank Details for this Travel"
@@ -438,10 +416,6 @@
    "label": "IFSC Code"
   },
   {
-   "fieldname": "column_break_hnpp",
-   "fieldtype": "Column Break"
-  },
-  {
    "fieldname": "est_travel_amt",
    "fieldtype": "Currency",
    "label": "Travel Estimate"
@@ -452,6 +426,7 @@
    "label": "Travel Attachment"
   },
   {
+   "depends_on": "eval:doc.travel_financial_assistance == \"Yes\";",
    "fieldname": "sec_break_est_2",
    "fieldtype": "Section Break",
    "label": "ESTIMATE OF FINANCIAL ASSISTANCE"
@@ -507,7 +482,8 @@
   },
   {
    "fieldname": "section_break_tfys",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Special Casual Leave"
   },
   {
    "fieldname": "column_break_xrfg",
@@ -525,18 +501,20 @@
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "traveler_webmail_id",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Traveler Webmail Id",
    "options": "User"
   },
   {
    "fieldname": "section_break_lroa",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Applicant Details"
   },
   {
    "fieldname": "section_break_lgbn",
    "fieldtype": "Section Break",
-   "label": "Traveller Details"
+   "hidden": 1
   },
   {
    "depends_on": "eval:doc.if_traveler == \"Self\";",
@@ -565,13 +543,43 @@
    "fieldname": "alternative_arrangement",
    "fieldtype": "Text",
    "label": "Alternative Arrangement"
+  },
+  {
+   "default": "0",
+   "fieldname": "other_acc_head",
+   "fieldtype": "Check",
+   "label": "Other"
+  },
+  {
+   "depends_on": "eval:doc.other_acc_head==1",
+   "fieldname": "specify_other_acc_head",
+   "fieldtype": "Data",
+   "label": "Specify that Other Account Head Detail"
+  },
+  {
+   "fieldname": "column_break_tewx",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_anji",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "depends_on": "eval:doc.travel_financial_assistance == \"Yes\"",
+   "fieldname": "do_you_need_advance",
+   "fieldtype": "Select",
+   "label": "Do you need Advance?",
+   "options": "\nYes\nNo",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-04 15:41:52.864081",
+ "modified": "2026-03-05 10:58:00.929381",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Travel",

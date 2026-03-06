@@ -428,11 +428,12 @@ def get_travel_workflow_actions(docname):
 	user_roles = frappe.get_roles(frappe.session.user)
 
 	# Fetch the workflow for this doctype
-	workflow_name = frappe.db.get_value(
-		"Workflow",
-		{"document_type": "Travel", "is_active": 1},
-		"name"
-	)
+	# workflow_name = frappe.db.get_value(
+	# 	"Workflow",
+	# 	{"document_type": "Travel", "is_active": 1},
+	# 	"name"
+	# )
+	workflow_name = "Travel_Workflow"
 
 	if not workflow_name:
 		return []
@@ -480,11 +481,23 @@ def perform_travel_action(docname, action):
 		next_state = None
 		transition = None
 
+		# Get current user roles
+		user_roles = frappe.get_roles(frappe.session.user)
+
 		for t in workflow.transitions:
 			if t.state == current_state and t.action == action:
-				next_state = t.next_state
-				transition = t
-				break
+				# Check if user has permission for this specific transition
+				allowed_roles = t.get("allowed") or []
+				if isinstance(allowed_roles, str):
+					allowed_roles = [allowed_roles]
+				
+				# If "System Manager" is in roles, they can usually do anything, 
+				# but strictly following workflow rules is safer for logic differentiation.
+				# However, standard practice is to allow if role matches.
+				if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
+					next_state = t.next_state
+					transition = t
+					break
 
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))

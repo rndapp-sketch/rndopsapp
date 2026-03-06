@@ -1,0 +1,199 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}6S{######}",
+ "creation": "2026-02-04 19:49:50.371084",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_sjmh",
+  "amended_from",
+  "section_break_bcsq",
+  "temporary_advance_application",
+  "project_name",
+  "project_code",
+  "account_head",
+  "amount",
+  "date_and_time_of_advance",
+  "bank_account_number",
+  "column_break_nfcd",
+  "bank_account_holders_name",
+  "please_note",
+  "section_break_fpdq",
+  "expenditure_details",
+  "section_break_jamt",
+  "total_amount",
+  "comment_section",
+  "comment_if_any",
+  "declaration_section",
+  "declare_1",
+  "declare_2",
+  "declare_3"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_sjmh",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Advance Settlement",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_bcsq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "project_name",
+   "fieldtype": "Link",
+   "label": "Project Name",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "project_code",
+   "fieldtype": "Data",
+   "label": "Project Code"
+  },
+  {
+   "fetch_from": "temporary_advance_application.amount",
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "date_and_time_of_advance",
+   "fieldtype": "Datetime",
+   "label": "Date and Time of Advance"
+  },
+  {
+   "fieldname": "temporary_advance_application",
+   "fieldtype": "Link",
+   "label": "Temporary Advance Application",
+   "options": "Temporary Advance"
+  },
+  {
+   "description": "*only SBI Account",
+   "fetch_from": "temporary_advance_application.bank_account_number",
+   "fieldname": "bank_account_number",
+   "fieldtype": "Data",
+   "label": "Bank Account Number"
+  },
+  {
+   "fetch_from": "temporary_advance_application.account_head",
+   "fieldname": "account_head",
+   "fieldtype": "Data",
+   "label": "Account Head"
+  },
+  {
+   "fetch_from": "temporary_advance_application.account",
+   "fieldname": "bank_account_holders_name",
+   "fieldtype": "Data",
+   "label": "Bank Account Holder's Name"
+  },
+  {
+   "fieldname": "section_break_jamt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount (Rs.)"
+  },
+  {
+   "fieldname": "comment_section",
+   "fieldtype": "Section Break",
+   "label": "Comment"
+  },
+  {
+   "fieldname": "comment_if_any",
+   "fieldtype": "Data",
+   "label": "Comment, If any"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Section Break",
+   "label": "DECLARATION"
+  },
+  {
+   "bold": 1,
+   "default": "0",
+   "description": "the original cash memo/ retail invoice/ money receipt initialed by the Drawer.",
+   "fieldname": "declare_1",
+   "fieldtype": "Check",
+   "label": "I have enclosed "
+  },
+  {
+   "bold": 1,
+   "default": "0",
+   "description": " the stock entry details on the reverse side of the cash memo/ retail invoice/money receipt of the Consumables/ Equipment purchased from this advance and have put my signature on Stock Entry.",
+   "fieldname": "declare_2",
+   "fieldtype": "Check",
+   "label": "I have mentioned "
+  },
+  {
+   "bold": 1,
+   "default": "0",
+   "description": "all the purchases made above Rs.1,000.00 or otherwise have enclosed at least three supporting quotations.",
+   "fieldname": "declare_3",
+   "fieldtype": "Check",
+   "label": "I have certified "
+  },
+  {
+   "fieldname": "column_break_nfcd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "please_note",
+   "fieldtype": "HTML",
+   "label": "Please Note",
+   "options": "<div class=\"right_body\" style=\"text-align: justify;height: 395px;\">\n    <p style=\"text-align: center;\"><b>Please Note</b></p>\n    1. The settlement against this advance should be submitted within a period of 45 days from the date of advance drawn.<br><br>\n    2. The purchase process as placed on the webpage of II&amp;SI section (Intranet) may be followed.<br><br>\n    3. The item is to be purchased from the local market. The total amount at the time of settlement under no circumstances should exceed the approved amount of advance.<br><br>\n    4. Make sure that all purchases are made after approval of advance.<br><br>\n\n    <div id=\"popDiv\" class=\"masterpopup\">\n        Form Data Saved\n    </div>\n</div>"
+  },
+  {
+   "fieldname": "section_break_fpdq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "expenditure_details",
+   "fieldtype": "Table",
+   "label": "Expenditure Details",
+   "options": "Expenditure Detail"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-02-06 15:10:41.107950",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Advance Settlement",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

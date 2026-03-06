@@ -223,7 +223,7 @@ class ProjectRegistrationMapper:
 
         # Build ProjectDataDTO
         return ProjectDataDTO(
-            projectNumber=doc.name,
+            projectNumber=doc.project_no or "",
             empId=doc.pi_employee_id or "",
             departmentId=department_id or "",
             projectType=doc.project_type or "",

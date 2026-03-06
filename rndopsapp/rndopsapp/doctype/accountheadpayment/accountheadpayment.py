@@ -7,28 +7,56 @@ from rndopsapp.rndopsapp.commitPayment import submit_payment_data
 
 
 class AccountHeadPayment(Document):
-	pass
+	def autoname(self):
+		from frappe.utils import today
+		import frappe
+		
+		if not self.project_ref_number:
+			return
+			
+		dt = today().split('-')
+		base_name = f"{dt[2]}{dt[1]}{dt[0]}{self.project_ref_number}"
+		
+		if not frappe.db.exists("AccountHeadPayment", base_name):
+			self.name = base_name
+		else:
+			count = 1
+			while frappe.db.exists("AccountHeadPayment", f"{base_name}-{count}"):
+				count += 1
+			self.name = f"{base_name}-{count}"
+
+
+def extract_eval_expression(expression):
+	"""
+	Extracts the JavaScript expression from a Frappe 'eval:' string.
+	Returns the expression without 'eval:' prefix for frontend evaluation.
+	"""
+	if not expression:
+		return None
+	
+	expression = str(expression).strip()
+	
+	if expression.startswith("eval:"):
+		return expression[5:].strip()
+	
+	return expression
 
 
 @frappe.whitelist()
 def get_account_head_payment_fields(doc_name=None):
 	"""
 	API to return AccountHeadPayment field metadata and prefill data.
-	
-	Args:
-		doc_name: Optional document name to fetch existing data for editing
-	
-	Returns:
-		dict: {
-			"fields": list of field metadata,
-			"prefill_data": dict of prefilled values (if doc_name provided),
-			"link_options": dict of dropdown options for Link fields
-		}
+	Includes eval expressions for frontend conditional logic.
+	Includes client scripts.
 	"""
-	account_head_payment_meta = frappe.get_meta("AccountHeadPayment")
+	doctype_name = "AccountHeadPayment"
+	meta = frappe.get_meta(doctype_name)
 	
-	fields = [
-		{
+	fields = []
+	link_fields = []
+	
+	for f in meta.get("fields"):
+		field_data = {
 			"fieldname": f.fieldname,
 			"label": f.label,
 			"fieldtype": f.fieldtype,
@@ -38,63 +66,84 @@ def get_account_head_payment_fields(doc_name=None):
 			"read_only": f.read_only,
 			"description": f.description,
 			"default": f.default,
+			"fetch_from": f.fetch_from,
+			"fetch_if_empty": f.fetch_if_empty,
+			# Eval expressions for frontend conditional logic
+			"depends_on": f.depends_on,
+			"mandatory_depends_on": f.mandatory_depends_on,
+			"read_only_depends_on": f.read_only_depends_on,
+			# Extract eval expression for easier frontend parsing
+			"depends_on_eval": extract_eval_expression(f.depends_on),
+			"mandatory_depends_on_eval": extract_eval_expression(f.mandatory_depends_on),
+			"read_only_depends_on_eval": extract_eval_expression(f.read_only_depends_on),
 		}
-		for f in account_head_payment_meta.get("fields")
-	]
-	
+		fields.append(field_data)
+
+		# Collect Link fields for dynamic options
+		if f.fieldtype == "Link" and f.options:
+			link_fields.append({"fieldname": f.fieldname, "options": f.options})
+
 	prefill_data = {}
+	link_options = {}
 	
 	if doc_name:
 		# Clean input
 		doc_name = str(doc_name).strip('"').strip("'")
 		
-		# Fetch existing AccountHeadPayment document
+		# Fetch existing document
+		if frappe.db.exists(doctype_name, doc_name):
+			doc = frappe.get_doc(doctype_name, doc_name)
+			prefill_data = doc.as_dict()
+
+	# ===== Link options for dropdowns =====
+	for link_field in link_fields:
+		fieldname = link_field["fieldname"]
+		linked_doctype = link_field["options"]
+
 		try:
-			doc = frappe.get_doc("AccountHeadPayment", doc_name)
-			prefill_data = {
-				"name": doc.name,
-				"project_ref_number": doc.project_ref_number,
-				"commit_id": doc.commit_id,
-				"budget_head": doc.budget_head,
-				"payment_date": doc.payment_date,
-				"payment_particular": doc.payment_particular,
-				"payment_reference_details": doc.payment_reference_details,
-				"payment_amount": doc.payment_amount,
-				"payment_bmr": doc.payment_bmr,
-				"payment_status": doc.payment_status,
-				"bank_transaction_number": doc.bank_transaction_number,
-				"bank_transaction_date": doc.bank_transaction_date,
-			}
-		except Exception as e:
-			frappe.log_error(f"Error fetching AccountHeadPayment {doc_name}: {str(e)}")
-	
-	# Link options for dropdowns
-	link_options = {}
-	
-	# Project Registration options
-	link_options["project_ref_number"] = frappe.get_all(
-		"Project Registration",
-		fields=["name as value", "project_title as label"],
-		limit=200
-	)
-	
-	# Budget Head options
-	link_options["budget_head"] = frappe.get_all(
-		"Budget Head",
-		fields=["name as value", "budget_head as label"],
-		limit=200
-	)
-	
-	# Payment Status options (from Select field)
-	link_options["payment_status"] = [
-		{"value": "PENDING", "label": "PENDING"},
-		{"value": "PAID", "label": "PAID"},
-		{"value": "REJECTED", "label": "REJECTED"},
-		{"value": "RECTIFICATION", "label": "RECTIFICATION"},
-	]
+			linked_meta = frappe.get_meta(linked_doctype)
+			title_field = linked_meta.title_field or "name"
+
+			if linked_doctype == "User":
+				link_options[fieldname] = frappe.get_all(
+					linked_doctype,
+					filters={"enabled": 1},
+					fields=["name as value", "full_name as label"],
+					limit_page_length=500
+				)
+			else:
+				link_options[fieldname] = frappe.get_all(
+					linked_doctype,
+					fields=["name as value", f"{title_field} as label"],
+					limit_page_length=500
+				)
+		except Exception:
+			link_options[fieldname] = frappe.get_all(
+				linked_doctype,
+				fields=["name as value", "name as label"],
+				limit_page_length=500
+			)
+
+	# Fetch Client Scripts
+	client_scripts = []
+	try:
+		scripts = frappe.get_all(
+			"Client Script",
+			filters={"dt": doctype_name, "enabled": 1},
+			fields=["name", "script", "view"]
+		)
+		for script in scripts:
+			client_scripts.append({
+				"name": script.name,
+				"script": script.script,
+				"view": script.view
+			})
+	except Exception:
+		pass
 	
 	return {
 		"fields": fields,
 		"prefill_data": prefill_data,
 		"link_options": link_options,
+		"client_scripts": client_scripts,
 	}

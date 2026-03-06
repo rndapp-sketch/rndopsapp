@@ -38,13 +38,16 @@ def get_pending_task(page_name="pending-task"):
 		return {"results": []}
 
 	parent_doc = frappe.get_doc("Module Registry", parent[0].name)
+	
 	child_rows = getattr(parent_doc, "doctype_name", []) or []
-	doctypes = [row.doctype_name for row in child_rows if row.doctype_name]
+	print("child_rows:",child_rows)
+	# Extract both doctype_name and mod_vis
+	doctype_data = [(row.doctype_name, row.mod_vis) for row in child_rows if row.doctype_name]
 
 	results = []
 
 	# --- 4. Iterate Doctypes ---
-	for dt in doctypes:
+	for dt, mod_vis in doctype_data:
 		if not frappe.db.exists("DocType", dt):
 			continue
 		if not frappe.has_permission(dt, "read"):
@@ -58,6 +61,41 @@ def get_pending_task(page_name="pending-task"):
 		else:
 			wf_name = frappe.get_value("Workflow", {"document_type": dt}, "name")
 
+		# --- DETERMINE ACTIONABLE STATES ---
+
+		# A) Special Case: Advance Settlement (No Workflow)
+		if dt == "Advance Settlement" and not wf_name:
+			# Fetch "Submitted" documents (docstatus=1)
+			records = frappe.get_list(
+				dt,
+				filters={"docstatus": 1},
+				fields=["name", "creation", "modified", "owner", "docstatus"],
+				order_by="modified desc",
+				limit_page_length=100
+			)
+			
+			mapped = []
+			for r in records:
+				mapped.append({
+					"name": r.name,
+					"title": r.name,
+					"status": "Submitted",
+					"creation": r.creation,
+					"modified": r.modified,
+					"owner": r.owner,
+					"docstatus": r.docstatus
+				})
+			
+			if mapped:
+				results.append({
+					"doctype": dt,
+					"mod_vis": mod_vis,
+					"records": mapped
+				})
+			
+			continue
+
+		# B) Standard Case: Workflow
 		if not wf_name or not frappe.db.exists("Workflow", wf_name):
 			continue
 
@@ -78,23 +116,15 @@ def get_pending_task(page_name="pending-task"):
 			raw_str = str(config_raw).strip()
 			
 			# STRATEGY 1: Check Exact Match (Handles "staff, RnD")
-			# If the config is exactly one role that the user has
-			if raw_str in user_roles:
-				return True
+			if raw_str in user_roles: return True
 
-			# STRATEGY 2: Check Newline Split (Standard for multiple roles)
-			# If config is "Role A\nRole B"
+			# STRATEGY 2: Check Newline Split
 			for part in raw_str.split('\n'):
-				if part.strip() in user_roles:
-					return True
+				if part.strip() in user_roles: return True
 
-			# STRATEGY 3: Check Comma Split (Legacy/CSV config)
-			# Only do this if Strategy 1 & 2 failed.
-			# Be careful: this breaks "staff, RnD" if "staff" isn't a role.
-			# But it is necessary if config is "Manager, Auditor"
+			# STRATEGY 3: Check Comma Split
 			for part in raw_str.split(','):
-				if part.strip() in user_roles:
-					return True
+				if part.strip() in user_roles: return True
 			
 			return False
 
@@ -107,6 +137,10 @@ def get_pending_task(page_name="pending-task"):
 		for transition_row in wf_doc.transitions:
 			if check_roles(transition_row.allowed):
 				actionable_states.add(transition_row.state)
+
+		# Explicitly exclude "Draft" state as requested
+		if "Draft" in actionable_states:
+			actionable_states.remove("Draft")
 
 		if not actionable_states:
 			continue
@@ -128,7 +162,7 @@ def get_pending_task(page_name="pending-task"):
 
 		mapped = []
 		for r in records:
-			print("r:",r)
+			# print("r:",r)
 			mapped.append({
 				"name": r.get("name"), 
 				"title": r.get(title_field),
@@ -140,8 +174,12 @@ def get_pending_task(page_name="pending-task"):
 			})
 
 		if mapped:
-			results.append({"doctype": dt, "records": mapped})
-			print("results:",results)
+			results.append({
+				"doctype": dt,
+				"mod_vis": mod_vis,  # Added mod_vis field
+				"records": mapped
+			})
+			# print("results:", results)
 
 	return {"page": page_name, "user": current_user, "results": results}
 

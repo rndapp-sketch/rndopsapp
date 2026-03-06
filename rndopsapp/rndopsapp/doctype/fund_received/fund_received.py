@@ -310,6 +310,9 @@ def save_fund_received(doc_data, prjreg_title=None):
 			if form_field in data and data[form_field] not in [None, ""]:
 				new_doc.set(doctype_field, data[form_field])
 
+		# INSERT DOC FIRST to generate a name for file attachments
+		new_doc.insert(ignore_permissions=True)
+
 		# Handle child tables - FILTER OUT EMPTY ROWS
 		if "fund_transactions" in data:
 			for transaction in data["fund_transactions"]:
@@ -327,7 +330,7 @@ def save_fund_received(doc_data, prjreg_title=None):
 							fname=transaction.get("file_name"),
 							content=transaction.get("file_data"),
 							dt="Fund Received",
-							dn=new_doc.name,
+							dn=new_doc.name, # Now valid
 							folder="Home/Attachments",
 						)
 						if file_doc:
@@ -381,8 +384,8 @@ def save_fund_received(doc_data, prjreg_title=None):
 						},
 					)
 
-		# Save the document
-		new_doc.insert(ignore_permissions=True)
+		# Save again to persist child tables
+		new_doc.save(ignore_permissions=True)
 		frappe.db.commit()
 
 		print(f"Successfully created Fund Received: {new_doc.name}")  # Debug log
@@ -662,6 +665,20 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 	try:
 		doc = frappe.get_doc("Fund Received", docname)
 		current_state = doc.workflow_state or "Draft"
+
+		# --- Data Sanitization / Fix for Legacy Data ---
+		# Check if prjreg_title is a valid link. If not, try to find it via project_no
+		if doc.prjreg_title and not frappe.db.exists("Project Registration", doc.prjreg_title):
+			print(f"DEBUG: prjreg_title '{doc.prjreg_title}' not found as ID. Searching by project_no...")
+			# Try to find the project by project_no
+			found_proj = frappe.db.get_value("Project Registration", {"project_no": doc.prjreg_title}, "name")
+			if found_proj:
+				print(f"DEBUG: Found Project Registration '{found_proj}' for project_no '{doc.prjreg_title}'. Fixing link.")
+				doc.prjreg_title = found_proj
+				# We don't save yet, we let the subsequent flow handle the save
+			else:
+				print(f"DEBUG: Could not resolve prjreg_title '{doc.prjreg_title}' to a valid Project Registration.")
+
 
 		# Fetch the workflow for this doctype
 		workflow_name = "fund_received_with_kafka"
@@ -1087,11 +1104,12 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			new_doc.project_title = fund_received_doc.prjreg_title
 
 		# Child table: ecs_date (singular for Research Deposit Slip) or ecs_dates (for others)
-		if "ecs_dates" in data:
+		ecs_data = data.get("ecs_dates") or data.get("ecs_date")
+		if ecs_data:
 			# Determine the correct child table name based on doctype
 			ecs_table_name = "ecs_date" if target_doctype == "Research Deposit Slip" else "ecs_dates"
-			for ecs_entry in data["ecs_dates"]:
-				if ecs_entry.get("ecs_date") or ecs_entry.get("date") or ecs_entry.get("amount", 0) > 0:
+			for ecs_entry in ecs_data:
+				if ecs_entry.get("ecs_date") or ecs_entry.get("date") or ecs_entry.get("amount"):
 					try:
 						new_doc.append(
 							ecs_table_name,
@@ -1112,6 +1130,24 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 						new_doc.append("credit_distribution", row)
 					except Exception as e:
 						print(f"Warning: Could not append credit_distribution: {e}")
+
+		# Child table: dpf_credit_distributions (Research Deposit Slip)
+		if "dpf_credit_distributions" in data:
+			for row in data["dpf_credit_distributions"]:
+				if isinstance(row, dict):
+					try:
+						new_doc.append("dpf_credit_distributions", row)
+					except Exception as e:
+						print(f"Warning: Could not append dpf_credit_distributions: {e}")
+
+		# Child table: pdf_credit_distribution (Research Deposit Slip)
+		if "pdf_credit_distribution" in data:
+			for row in data["pdf_credit_distribution"]:
+				if isinstance(row, dict):
+					try:
+						new_doc.append("pdf_credit_distribution", row)
+					except Exception as e:
+						print(f"Warning: Could not append pdf_credit_distribution: {e}")
 
 		# Set initial workflow_state for the Deposit Slip
 		# Since this is created when FR moves to "Pending HoS Approval", 

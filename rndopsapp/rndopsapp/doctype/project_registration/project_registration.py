@@ -20,7 +20,72 @@ from rndopsapp.rndopsapp.kafka.producer import publish_project_registration as p
 
 
 class ProjectRegistration(Document):
-	pass
+	def on_update(self):
+		# Automatically generate the Endorsement PDF if text is provided and state is early manually
+		if self.text_editor_zwfu and self.workflow_state in ["Draft", "Endorsement Draft", "Pending Dean Approval", "Endorsement Approved"]:
+			self.generate_endorsement_pdf(self.text_editor_zwfu)
+
+	def generate_endorsement_pdf(self, html_content=None):
+		from frappe.utils.pdf import get_pdf
+		import os
+
+		# Avoid recursion if saving within this function
+		if getattr(self.flags, "in_pdf_generation", False):
+			return
+		self.flags.in_pdf_generation = True
+
+		try:
+			site_path = frappe.get_site_path()
+			endorsement_dir = os.path.join(site_path, "private", "files", "Endorsement")
+			os.makedirs(endorsement_dir, exist_ok=True)
+			
+			html_filename = f"{self.name}-Endorsement.html"
+			html_filepath = os.path.join(endorsement_dir, html_filename)
+			
+			pdf_filename = f"{self.name}-Endorsement.pdf"
+			pdf_filepath = os.path.join(endorsement_dir, pdf_filename)
+			
+			if not html_content:
+				html_content = self.text_editor_zwfu
+				
+			if not html_content:
+				return # Nothing to generate
+			
+			# Save HTML
+			with open(html_filepath, "w", encoding="utf-8") as f:
+				f.write(html_content)
+			
+			# Ensure HTML file is attached
+			html_url = f"/private/files/Endorsement/{html_filename}"
+			if not frappe.db.exists("File", {"attached_to_name": self.name, "file_url": html_url}):
+				doc = frappe.new_doc("File")
+				doc.file_name = html_filename
+				doc.file_url = html_url
+				doc.attached_to_doctype = self.doctype
+				doc.attached_to_name = self.name
+				doc.is_private = 1
+				doc.save(ignore_permissions=True)
+
+			# Save PDF
+			pdf_content = get_pdf(html_content)
+			with open(pdf_filepath, "wb") as f:
+				f.write(pdf_content)
+				
+			# Ensure PDF file is attached
+			pdf_url = f"/private/files/Endorsement/{pdf_filename}"
+			if not frappe.db.exists("File", {"attached_to_name": self.name, "file_url": pdf_url}):
+				doc = frappe.new_doc("File")
+				doc.file_name = pdf_filename
+				doc.file_url = pdf_url
+				doc.attached_to_doctype = self.doctype
+				doc.attached_to_name = self.name
+				doc.is_private = 1
+				doc.save(ignore_permissions=True)
+				
+		except Exception as e:
+			frappe.log_error(frappe.get_traceback(), f"Endorsement PDF Generation Failed for {self.name}")
+		finally:
+			self.flags.in_pdf_generation = False
 
 
 # ==============================================================================
@@ -250,7 +315,7 @@ def log_available_workflow_actions(docname):
 
 # /home/prornd/project/frappe_dev/prornd/apps/rndopsapp/rndopsapp/rndopsapp/doctype/project_registration/project_registration.py
 @frappe.whitelist()
-def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
+def handle_dynamic_workflow_action(doctype, docname, action, comment=None, endorsement=False):
 	doc = frappe.get_doc(doctype, docname)
 
 	# --- FIX: Initialize workflow_state ---
@@ -262,6 +327,46 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 		# Reload the document to get the latest timestamp and avoid conflicts
 		doc = frappe.get_doc(doctype, docname)
 		current_state = doc.workflow_state
+
+	# --- Endorsement Approved: register project and move to next workflow state ---
+	if current_state == "Endorsement Approved":
+		# Resolve department head (same as submit_project_registration)
+		dept_link = doc.get("implementation_department")
+		if dept_link:
+			dept_doc = frappe.get_doc("Department_prornd", dept_link)
+			doc.department_head = dept_doc.dept_head
+			doc.head_approver = dept_doc.dept_head
+
+		# Resolve the correct next state from EmployeeClass workflow
+		applicant_type = doc.applicant_type
+		emp_class_doc_id = None
+		if applicant_type:
+			if frappe.db.exists("EmployeeClass_prornd", applicant_type):
+				emp_class_doc_id = applicant_type
+			else:
+				emp_class_doc_id = frappe.db.get_value(
+					"EmployeeClass_prornd", {"empclass_name": applicant_type}, "name"
+				)
+
+		next_state = "Pending Head Approval"  # sensible default
+		if emp_class_doc_id:
+			wf_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
+			if wf_path and frappe.db.exists("Workflow", wf_path):
+				wf_doc = frappe.get_doc("Workflow", wf_path)
+				for t in wf_doc.transitions:
+					if t.state == "Draft":
+						next_state = t.next_state
+						break
+
+		doc.workflow_state = next_state
+		doc.flags.ignore_mandatory = True
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		frappe.msgprint(
+			_(f"Project registered. Workflow updated to: {next_state}"),
+			indicator="green",
+		)
+		return next_state
 
 	user = frappe.session.user
 	user_roles = frappe.get_roles(user)
@@ -283,10 +388,11 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 		None,
 	)
 
-	if not transition:
+	next_state = None
+	if transition:
+		next_state = transition.get("next_state")
+	else:
 		frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
-
-	next_state = transition.get("next_state")
 
 	# Step 3: Optional comment
 	if comment:
@@ -297,6 +403,8 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 	
 	if action.lower() == "reject":
 		doc.cancel()
+		
+
 
 	if next_state and doc.docstatus != 2:
 		doc.workflow_state = next_state
@@ -310,6 +418,7 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 		
 		# If the state requires doc_status = 1 (Submitted) and doc is currently draft
 		if next_state_config and next_state_config.get("doc_status") == "1" and doc.docstatus == 0:
+			doc.flags.ignore_mandatory = True
 			doc.submit()
 		else:
 			# Skip mandatory validation for workflow transitions
@@ -317,7 +426,7 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None):
 			doc.save(ignore_permissions=True)
 	
 	# --- Integration with External API (Kafka) ---
-	if doc.workflow_state == "Approved" and doc.docstatus == 1:
+	if not endorsement and doc.workflow_state == "Approved" and doc.docstatus == 1 :
 		# print("doc inside: ", doc.as_dict())
 		try:
 			success = publish_project(doc)
@@ -480,6 +589,13 @@ def get_available_workflow_actions(docname):
 		# User can perform action if they have allowed role
 		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
 			allowed_actions.append(transition.action)
+
+	# --- Inject "Register Project" for Endorsement Approved state ---
+	# This state has no Frappe workflow transition, so we inject the action manually.
+	# handle_dynamic_workflow_action already handles the actual transition logic.
+	if current_state == "Endorsement Approved":
+		if doc.owner == frappe.session.user or "System Manager" in user_roles:
+			allowed_actions.append("Register Project")
 
 	# Remove duplicates
 	allowed_actions = list(dict.fromkeys(allowed_actions))
@@ -828,7 +944,8 @@ def save_project_data(doc, html_content=None):
 				
 				# Get the site path and create Endorsement folder if not exists
 				site_path = frappe.get_site_path()
-				endorsement_dir = os.path.join(site_path, "private", "files", "Endorsement")
+				# CHANGED: Save to public files instead of private
+				endorsement_dir = os.path.join(site_path, "public", "files", "Endorsement")
 				os.makedirs(endorsement_dir, exist_ok=True)
 				
 				# Save HTML file directly to filesystem
@@ -838,13 +955,13 @@ def save_project_data(doc, html_content=None):
 					f.write(html_content)
 				
 				# Create File record for HTML
-				html_file_url = f"/private/files/Endorsement/{html_filename}"
+				html_file_url = f"/files/Endorsement/{html_filename}"
 				html_file_doc = frappe.new_doc("File")
 				html_file_doc.file_name = html_filename
 				html_file_doc.file_url = html_file_url
 				html_file_doc.attached_to_doctype = new_project.doctype
 				html_file_doc.attached_to_name = new_project.name
-				html_file_doc.is_private = 1
+				html_file_doc.is_private = 0 # Explicitly public
 				html_file_doc.save(ignore_permissions=True)
 				frappe.db.commit()
 				frappe.logger().info(f"HTML file saved: {html_filepath}")
@@ -857,13 +974,13 @@ def save_project_data(doc, html_content=None):
 					f.write(pdf_content)
 				
 				# Create File record for PDF
-				pdf_file_url = f"/private/files/Endorsement/{pdf_filename}"
+				pdf_file_url = f"/files/Endorsement/{pdf_filename}"
 				pdf_file_doc = frappe.new_doc("File")
 				pdf_file_doc.file_name = pdf_filename
 				pdf_file_doc.file_url = pdf_file_url
 				pdf_file_doc.attached_to_doctype = new_project.doctype
 				pdf_file_doc.attached_to_name = new_project.name
-				pdf_file_doc.is_private = 1
+				pdf_file_doc.is_private = 0 # Explicitly public
 				pdf_file_doc.save(ignore_permissions=True)
 				frappe.db.commit()
 				
@@ -874,6 +991,30 @@ def save_project_data(doc, html_content=None):
 					f"save_project_data: PDF conversion/save error for {new_project.name}",
 				)
 				# Don't throw, just log the error so the main save succeeds
+
+		# --- Make all attachments public ---
+		try:
+			attached_files = frappe.get_all(
+				"File",
+				filters={
+					"attached_to_doctype": new_project.doctype,
+					"attached_to_name": new_project.name,
+					"is_private": 1
+				},
+				fields=["name"]
+			)
+			
+			for file_data in attached_files:
+				file_doc = frappe.get_doc("File", file_data.name)
+				file_doc.is_private = 0
+				file_doc.save(ignore_permissions=True)
+			
+			if attached_files:
+				frappe.db.commit()
+				frappe.logger().info(f"Converted {len(attached_files)} attachments to public for {new_project.name}")
+
+		except Exception as e:
+			frappe.log_error(f"Error making files public for {new_project.name}: {str(e)}")
 
 		# Return the name of the newly created document to the frontend
 		return {
@@ -980,7 +1121,7 @@ def _format_phone_number(phone_string):
 
 
 @frappe.whitelist()
-def save_project_draft(doc_data, html_content=None, files=None):
+def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 	"""
 	Saves or updates a Project Registration document as a draft (docstatus=0).
 	Optionally receives HTML content and saves it as {doc.name}.html file.
@@ -989,6 +1130,9 @@ def save_project_draft(doc_data, html_content=None, files=None):
 		doc_data: The document data as JSON string or dictionary
 		html_content: Optional HTML content to save as a file
 		files: Optional list of files to attach (if sent as separate argument)
+		docname: Optional document name. If provided and exists, updates that document.
+			If provided but doesn't exist, creates a new document.
+			If not provided, falls back to data.get("name") or creates new.
 	"""
 	print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
 	
@@ -1029,11 +1173,23 @@ def save_project_draft(doc_data, html_content=None, files=None):
 		if files_payload:
 			frappe.logger().warning(f"Jimmy Logging Debug first file: {files_payload[0] if len(files_payload) > 0 else 'None'}")
 
-		docname = data.get("name")
+		# --- Resolve docname: explicit arg > data["name"] > duplicate check > new ---
+		resolved_docname = docname or data.get("name")
+		
+		# --- Duplicate Check Fix for React Frontend missing 'name' param logic ---
+		if not resolved_docname and data.get("project_title") and data.get("pi_webmail"):
+			existing_drafts = frappe.get_all("Project Registration", 
+				filters={"project_title": data.get("project_title"), "pi_webmail": data.get("pi_webmail"), "owner": frappe.session.user, "docstatus": 0},
+				order_by="modified desc", limit=1)
+			if existing_drafts:
+				resolved_docname = existing_drafts[0].name
+				frappe.logger().info(f"Duplicate prevented: Found existing draft {resolved_docname} for {data.get('project_title')}")
 
-		if docname:
-			doc = frappe.get_doc("Project Registration", docname)
-			if doc.owner != frappe.session.user:
+		if resolved_docname and frappe.db.exists("Project Registration", resolved_docname):
+			doc = frappe.get_doc("Project Registration", resolved_docname)
+			if doc.owner != frappe.session.user and "System Manager" not in frappe.get_roles(frappe.session.user):
+				pass # Allow System Manager to edit, or fall back to standard permission checks
+			elif doc.owner != frappe.session.user:
 				frappe.throw(_("You do not have permission to edit this draft."))
 			if doc.docstatus != 0:
 				frappe.throw(_("Cannot save draft. The project has already been submitted."))
@@ -1258,6 +1414,14 @@ def save_project_draft(doc_data, html_content=None, files=None):
 				
 				frappe.logger().info(f"PDF file saved: {pdf_filepath}")
 				print(f"DEBUG: PDF File record created: {pdf_file_doc.name}")
+				
+				# CRITICAL FIX: Make sure the edited text from the popup is saved back to the database
+				# so that it remembers the edits and doesn't get overwritten on the next standard Save.
+				doc.text_editor_zwfu = html_content
+				doc.flags.ignore_mandatory = True
+				doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				
 			except Exception as pdf_error:
 				print(f"DEBUG ERROR: PDF conversion/save error: {str(pdf_error)}")
 				frappe.log_error(
@@ -1273,6 +1437,35 @@ def save_project_draft(doc_data, html_content=None, files=None):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Project Draft Save Error")
 		frappe.throw(_("An error occurred while saving the draft: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def save_endorsement_draft(doc_data, html_content=None, files=None, endorsement=False):
+	"""
+	Saves or updates a Project Registration document specifically as an Endorsement Draft.
+	Reuses the main `save_project_draft` function but modifies the initial workflow_state.
+	"""
+	# Leverage the existing save_project_draft function
+	result = save_project_draft(doc_data, html_content, files)
+	
+	if result and result.get("docname"):
+		docname = result["docname"]
+		# Fetch and explicitly update the workflow state for Endorsement Draft
+		doc = frappe.get_doc("Project Registration", docname)
+		if doc.workflow_state == "Draft" or not doc.workflow_state:
+			doc.workflow_state = "Endorsement Pending at Dean"
+			doc.docstatus = 1
+			
+			# Ensure signature is completely cleared during drafting
+			if doc.meta.has_field("signature_of_the_head_of_institute"):
+				doc.signature_of_the_head_of_institute = None
+			
+			doc.flags.ignore_mandatory = True
+			doc.flags.ignore_validate = True
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+			
+	return result
 
 
 @frappe.whitelist()

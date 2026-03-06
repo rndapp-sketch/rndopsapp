@@ -6,9 +6,13 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_e3vp",
+  "column_break_mlei",
   "amended_from",
   "upfa_appointment_section",
   "upfa_appointment_type",
+  "section_break_kbuv",
+  "webmail_id",
+  "head",
   "upfa_project_section",
   "upfa_project_title",
   "upfa_project_code",
@@ -40,10 +44,10 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
-   "options": "Unified Proforma for Filling up Project Positions",
-   "print_hide": 1,
+   "options": "Recruitment Adhoc Contractual",
    "read_only": 1,
    "search_index": 1
   },
@@ -68,25 +72,30 @@
   {
    "fieldname": "upfa_project_title",
    "fieldtype": "Data",
-   "label": "Project Title"
+   "label": "Project Title",
+   "read_only": 1
   },
   {
    "fieldname": "upfa_project_code",
    "fieldtype": "Data",
-   "label": "Project Code"
+   "label": "Project Code",
+   "read_only": 1
   },
   {
    "fieldname": "upfa_department",
    "fieldtype": "Link",
    "label": "Department",
-   "options": "Department_prornd"
+   "options": "Department_prornd",
+   "read_only": 1
   },
   {
    "fieldname": "upfa_project_duration",
    "fieldtype": "Data",
-   "label": "Project Duration"
+   "label": "Project Duration",
+   "read_only": 1
   },
   {
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
    "fieldname": "upfa_financial_section",
    "fieldtype": "Section Break",
    "label": "Financial & Interview Details"
@@ -132,6 +141,7 @@
    "options": "Unified Project Post Details"
   },
   {
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
    "fieldname": "upfa_selection_committee_section",
    "fieldtype": "Section Break",
    "label": "Selection Committee"
@@ -171,16 +181,37 @@
    "fieldname": "upfa_declaration_advertisement",
    "fieldtype": "Check",
    "label": "Advertisement cost required for this recruitment shall be incurred from project as selected by me in this application"
+  },
+  {
+   "fieldname": "column_break_mlei",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "section_break_kbuv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "webmail_id.piheadmentor_user_id",
+   "fieldname": "head",
+   "fieldtype": "Data",
+   "label": "Head"
+  },
+  {
+   "fieldname": "webmail_id",
+   "fieldtype": "Link",
+   "label": "Webmail ID",
+   "options": "User"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-30 17:24:58.821756",
+ "modified": "2026-03-06 09:43:22.420127",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
- "name": "Unified Proforma for Filling up Project Positions",
+ "name": "Recruitment Adhoc Contractual",
  "owner": "Administrator",
  "permissions": [
   {
@@ -192,6 +223,79 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Ado_RnD",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Dean, RnD",
    "share": 1,
    "submit": 1,
    "write": 1

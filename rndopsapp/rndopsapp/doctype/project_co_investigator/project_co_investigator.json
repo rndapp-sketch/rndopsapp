@@ -49,6 +49,7 @@
   {
    "default": "+91-",
    "fetch_from": "copi_email.mobile_no",
+   "fetch_if_empty": 1,
    "fieldname": "copi_contact",
    "fieldtype": "Data",
    "label": "Contact Number",
@@ -67,7 +68,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-01-16 09:46:30.204739",
+ "modified": "2026-02-24 12:23:23.588730",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Co-Investigator",

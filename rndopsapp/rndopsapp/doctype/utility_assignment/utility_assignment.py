@@ -58,7 +58,7 @@ def get_all_available_utilities():
 		{"utility_name": "My Project", "utility_key": "my_project"},
 		{"utility_name": "NOC Generation", "utility_key": "noc_generation"},
 		{"utility_name": "No Objection Certificate", "utility_key": "no_objection_certificate"},
-		{"utility_name": "One Time Assistantship", "utility_key": "one_time_assistantship"},
+		# {"utility_name": "One Time Assistantship", "utility_key": "one_time_assistantship"},
 		{"utility_name": "Pending Form Status", "utility_key": "pending_form_status"},
 		{"utility_name": "Pending TA", "utility_key": "pending_ta"},
 		{"utility_name": "Profile", "utility_key": "profile"},

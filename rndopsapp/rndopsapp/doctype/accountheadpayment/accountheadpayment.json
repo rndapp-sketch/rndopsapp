@@ -82,19 +82,23 @@
    "label": "BMR"
   },
   {
+   "default": "PENDING",
    "fieldname": "payment_status",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Payment Status",
    "options": "PENDING\nPAID\nREJECTED\nRECTIFICATION"
   },
   {
    "fieldname": "bank_transaction_number",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Bank Transaction Number"
   },
   {
    "fieldname": "bank_transaction_date",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Bank Transaction Date"
   },
   {
@@ -107,7 +111,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-28 17:36:25.051884",
+ "modified": "2026-02-24 11:31:51.590126",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "AccountHeadPayment",

@@ -686,6 +686,11 @@ frappe.ui.form.on("Project Registration", {
 
             // Show the workflow state indicator on form load immediately
             show_workflow_indicator(frm);
+
+            // Handle Endorsement visibility logic unconditionally on load
+            if (frm.doc.workflow_state === "Endorsement Draft" || frm.doc.workflow_state === "Pending Dean Approval") {
+                frm.set_df_property("signature_of_the_head_of_institute", "hidden", 1);
+            }
         }
     },
 
@@ -702,6 +707,24 @@ frappe.ui.form.on("Project Registration", {
 
         // Show workflow state indicator (refresh indicator if state changed)
         show_workflow_indicator(frm);
+
+        // Handle Endorsement visibility logic
+        if (frm.doc.workflow_state === "Endorsement Draft" || frm.doc.workflow_state === "Pending Dean Approval") {
+            frm.set_df_property("signature_of_the_head_of_institute", "hidden", 1);
+
+            // If it's pending approval, lock the form for non-approvers
+            if (frm.doc.workflow_state === "Pending Dean Approval") {
+                if (!frappe.user_roles.includes("System Manager") && frappe.session.user !== "dornd@iitg.ac.in" && !frappe.user_roles.includes("All_ProRnd_User")) {
+                    frm.disable_form();
+                }
+            }
+        } else {
+            frm.set_df_property("signature_of_the_head_of_institute", "hidden", 0);
+
+            if (frm.doc.workflow_state === "Endorsement Approved" && frm.doc.owner === frappe.session.user) {
+                frm.enable_form();
+            }
+        }
 
         // Load available workflow actions dynamically from backend
         frappe.call({
@@ -800,12 +823,16 @@ function get_color(workflow_state) {
     switch (workflow_state) {
         case "Approved":
             return "green";
+        case "Endorsement Approved":
+            return "green";
         case "Rejected":
             return "red";
         case "Pending HoD Approval":
+        case "Pending Dean Approval":
             return "orange";
         case "Pending Staff Approval":
             return "blue";
+        case "Endorsement Draft":
         case "Draft":
             return "gray";
         default:
@@ -838,6 +865,16 @@ frappe.listview_settings["Project Registration"] = {
                 "blue",
                 "workflow_state,=,Pending Staff Approval",
             ];
+        } else if (doc.workflow_state === "Endorsement Approved") {
+            return [__("Endorsement Approved"), "green", "workflow_state,=,Endorsement Approved"];
+        } else if (doc.workflow_state === "Pending Dean Approval") {
+            return [
+                __("Pending Dean"),
+                "purple",
+                "workflow_state,=,Pending Dean Approval",
+            ];
+        } else if (doc.workflow_state === "Endorsement Draft") {
+            return [__("Endorsement Draft"), "gray", "workflow_state,=,Endorsement Draft"];
         } else if (!doc.workflow_state) {
             return [__("Draft"), "gray", "workflow_state,is,empty"];
         } else {

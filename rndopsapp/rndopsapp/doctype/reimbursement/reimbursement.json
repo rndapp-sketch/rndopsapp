@@ -24,8 +24,8 @@
   "bank_account_number",
   "ifsc_code",
   "project_and_item_details_section",
-  "project_number",
   "project_name",
+  "project_number",
   "account_head",
   "other_head",
   "comment",
@@ -55,9 +55,10 @@
   },
   {
    "fieldname": "project_number",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "label": "Project Number",
-   "options": "PDF\nxyz\nxyx"
+   "options": "Project Registration",
+   "read_only": 1
   },
   {
    "fieldname": "account_head",
@@ -112,8 +113,7 @@
    "fieldname": "project_name",
    "fieldtype": "Link",
    "label": "Project Name",
-   "options": "Project Registration",
-   "read_only": 1
+   "options": "Project Registration"
   },
   {
    "fieldname": "declarations",
@@ -222,7 +222,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-22 23:18:02.696465",
+ "modified": "2026-02-18 18:18:49.455381",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",

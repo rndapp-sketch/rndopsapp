@@ -35,10 +35,15 @@ def get_ta_da_settlement_fields(doc_name=None, travel_ref=None):
 	Includes eval expressions for frontend conditional logic.
 	Can prefill from a Travel reference.
 	"""
-	ta_da_meta = frappe.get_meta("TA DA Settlement")
+	doctype_name = "TA DA Settlement"
+	ta_da_meta = frappe.get_meta(doctype_name)
 
-	fields = [
-		{
+	fields = []
+	link_fields = []
+	child_table_meta = {}
+
+	for f in ta_da_meta.get("fields"):
+		field_data = {
 			"fieldname": f.fieldname,
 			"label": f.label,
 			"fieldtype": f.fieldtype,
@@ -48,6 +53,8 @@ def get_ta_da_settlement_fields(doc_name=None, travel_ref=None):
 			"read_only": f.read_only,
 			"description": f.description,
 			"default": f.default,
+			"fetch_from": f.fetch_from,
+			"fetch_if_empty": f.fetch_if_empty,
 			# Eval expressions for frontend conditional logic
 			"depends_on": f.depends_on,
 			"mandatory_depends_on": f.mandatory_depends_on,
@@ -57,80 +64,148 @@ def get_ta_da_settlement_fields(doc_name=None, travel_ref=None):
 			"mandatory_depends_on_eval": extract_eval_expression(f.mandatory_depends_on),
 			"read_only_depends_on_eval": extract_eval_expression(f.read_only_depends_on),
 		}
-		for f in ta_da_meta.get("fields")
-	]
+		fields.append(field_data)
+
+		# Collect Link fields for dynamic options
+		if f.fieldtype == "Link" and f.options:
+			link_fields.append({"fieldname": f.fieldname, "options": f.options})
+
+		# Fetch child table metadata for Table fields
+		if f.fieldtype == "Table" and f.options:
+			try:
+				child_meta = frappe.get_meta(f.options)
+				child_fields = []
+				for cf in child_meta.get("fields"):
+					child_fields.append({
+						"fieldname": cf.fieldname,
+						"label": cf.label,
+						"fieldtype": cf.fieldtype,
+						"options": cf.options,
+						"mandatory": cf.reqd,
+						"hidden": cf.hidden,
+						"read_only": cf.read_only,
+						"description": cf.description,
+						"default": cf.default,
+						"fetch_from": cf.fetch_from,
+						"in_list_view": cf.in_list_view,
+						"columns": cf.columns,
+						"depends_on": cf.depends_on,
+						"depends_on_eval": extract_eval_expression(cf.depends_on),
+					})
+				child_table_meta[f.fieldname] = {
+					"doctype": f.options,
+					"fields": child_fields,
+				}
+			except Exception:
+				pass
 
 	prefill_data = {}
 	link_options = {}
 	related_data = {}
-	child_table_fields = {}
-
-	# Get child table field metadata for 'ta_da_other_expenses_p'
-	other_expense_meta = frappe.get_meta("TA DA Other Expense")
-	child_table_fields["ta_da_other_expenses_p"] = [
-		{
-			"fieldname": f.fieldname,
-			"label": f.label,
-			"fieldtype": f.fieldtype,
-			"options": f.options,
-			"mandatory": f.reqd,
-			"in_list_view": f.in_list_view,
-			"read_only": f.read_only,
-		}
-		for f in other_expense_meta.get("fields")
-	]
 
 	if doc_name:
 		# Clean input
 		doc_name = str(doc_name).strip('"').strip("'")
 
 		# Fetch existing TA DA Settlement document for editing
-		doc = frappe.get_doc("TA DA Settlement", doc_name)
-		if doc:
+		if frappe.db.exists(doctype_name, doc_name):
+			doc = frappe.get_doc(doctype_name, doc_name)
 			related_data = doc.as_dict()
-			# Copy fields for prefill
-			for field in fields:
-				if hasattr(doc, field["fieldname"]):
-					prefill_data[field["fieldname"]] = getattr(doc, field["fieldname"])
-			# Include child table data
-			prefill_data["ta_da_other_expenses_p"] = [row.as_dict() for row in doc.get("ta_da_other_expenses_p", [])]
+			prefill_data = doc.as_dict()
 
 	# Prefill from Travel reference
 	if travel_ref:
 		travel_ref = str(travel_ref).strip('"').strip("'")
-		travel_doc = frappe.db.get_value(
-			"Travel",
-			travel_ref,
-			["name", "applicant_name_travel", "designation_travel", "department_travel", "travel_project_number"],
-			as_dict=True,
-		)
-		if travel_doc:
+
+		if frappe.db.exists("Travel", travel_ref):
+			travel_doc = frappe.get_doc("Travel", travel_ref)
+
+			# --- Field mapping: Travel field -> TA DA Settlement field ---
 			prefill_data["ta_da_travel_application"] = travel_doc.name
 			prefill_data["ta_da_name"] = travel_doc.applicant_name_travel
 			prefill_data["ta_da_designation"] = travel_doc.designation_travel
 			prefill_data["ta_da_department_section"] = travel_doc.department_travel
 			prefill_data["ta_da_project_code"] = travel_doc.travel_project_number
+			prefill_data["webmail_id"] = travel_doc.webmail_id_travel
 
-	# Link options for dropdowns
-	link_options["ta_da_travel_application"] = frappe.get_all(
-		"Travel", fields=["name as value", "name as label"], limit=200
-	)
-	link_options["amended_from"] = frappe.get_all(
-		"TA DA Settlement", fields=["name as value", "name as label"], limit=200
-	)
+			# Employee ID from User doctype
+			if travel_doc.webmail_id_travel:
+				emp_id = frappe.db.get_value("User", travel_doc.webmail_id_travel, "employee_id")
+				if emp_id:
+					prefill_data["ta_da_employee_number"] = emp_id
+
+			# Bank details
+			prefill_data["ta_da_bank_account_holder"] = travel_doc.bank_account_holder
+			prefill_data["ta_da_bank_account_number"] = travel_doc.bank_account_number
+			prefill_data["ta_da_ifsc_code"] = travel_doc.ifsc_code
+
+			# Purpose of journey from Travel's purpose_of_visit
+			prefill_data["ta_da_purpose_of_journey"] = travel_doc.purpose_of_visit
+
+			# Advance taken from Travel's total_estimate
+			if travel_doc.total_estimate:
+				prefill_data["ta_da_advance_taken"] = travel_doc.total_estimate
+
+	# ===== Link options for dropdowns =====
+	for link_field in link_fields:
+		fieldname = link_field["fieldname"]
+		linked_doctype = link_field["options"]
+
+		try:
+			linked_meta = frappe.get_meta(linked_doctype)
+			title_field = linked_meta.title_field or "name"
+
+			if linked_doctype == "User":
+				link_options[fieldname] = frappe.get_all(
+					linked_doctype,
+					filters={"enabled": 1},
+					fields=["name as value", "full_name as label"],
+					limit_page_length=500,
+				)
+			else:
+				link_options[fieldname] = frappe.get_all(
+					linked_doctype,
+					fields=["name as value", f"{title_field} as label"],
+					limit_page_length=500,
+				)
+		except Exception:
+			link_options[fieldname] = frappe.get_all(
+				linked_doctype,
+				fields=["name as value", "name as label"],
+				limit_page_length=500,
+			)
+
+	# Fetch Client Scripts from Frappe (stored in database)
+	client_scripts = []
+	try:
+		scripts = frappe.get_all(
+			"Client Script",
+			filters={"dt": doctype_name, "enabled": 1},
+			fields=["name", "script", "view"],
+		)
+		for script in scripts:
+			client_scripts.append({
+				"name": script.name,
+				"script": script.script,
+				"view": script.view,
+			})
+	except Exception:
+		pass
 
 	return {
 		"fields": fields,
 		"prefill_data": prefill_data,
 		"link_options": link_options,
 		"related_data": related_data,
-		"child_table_fields": child_table_fields,
+		"child_table_meta": child_table_meta,
+		"client_scripts": client_scripts,
 	}
 
 
 @frappe.whitelist()
 def save_ta_da_settlement(doc_data):
 	"""Saves or updates the TA DA Settlement data from the React form."""
+	print("save_ta_da_settlement: execution started")
 	try:
 		data = json.loads(doc_data) if isinstance(doc_data, str) else doc_data
 		print("Received data for TA DA Settlement:", data)  # Debug log
@@ -140,18 +215,20 @@ def save_ta_da_settlement(doc_data):
 		if doc_name:
 			doc = frappe.get_doc("TA DA Settlement", doc_name)
 			if doc.docstatus != 0:
-				frappe.throw(_("Cannot edit a submitted or cancelled document."))
+				print("Document is already submitted. Skipping save.")
+				return {"status": "info", "message": "Cannot edit a submitted or cancelled document."}
 		else:
 			doc = frappe.new_doc("TA DA Settlement")
 
 		# Field mapping for TA DA Settlement
+		# Maps form_key -> doctype_fieldname
 		field_mapping = {
 			"ta_da_travel_application": "ta_da_travel_application",
 			"ta_da_name": "ta_da_name",
 			"ta_da_designation": "ta_da_designation",
 			"ta_da_department_section": "ta_da_department_section",
 			"ta_da_employee_number": "ta_da_employee_number",
-			"ta_da_project_code": "ta_da_project_code",
+			"ta_da_project_code": "project_no",
 			"ta_da_contact": "ta_da_contact",
 			"ta_da_ifsc_code": "ta_da_ifsc_code",
 			"ta_da_scale_of_pay": "ta_da_scale_of_pay",
@@ -169,8 +246,12 @@ def save_ta_da_settlement(doc_data):
 			"ta_da_entitled_class": "ta_da_entitled_class",
 			"ta_da_shortest_route": "ta_da_shortest_route",
 			"ta_da_not_paid_elsewhere": "ta_da_not_paid_elsewhere",
-			"ta_da_boarding_lodging_status": "ta_da_boarding_lodging_status",
+			"ta_da_boarding_lodging_status": "boarding_and_lodging_status",
+			"boarding_and_lodging_status": "boarding_and_lodging_status",
 			"ta_da_free_transport": "ta_da_free_transport",
+			# Direct doctype fieldname fallbacks
+			"webmail_id": "webmail_id",
+			"project_no": "project_no",
 		}
 
 		# Update document with mapped data
@@ -179,9 +260,10 @@ def save_ta_da_settlement(doc_data):
 				doc.set(doctype_field, data[form_field])
 
 		# Handle child table - ta_da_other_expenses_p
-		if "ta_da_other_expenses_p" in data:
+		other_expenses = data.get("ta_da_other_expenses_p")
+		if isinstance(other_expenses, list):
 			doc.set("ta_da_other_expenses_p", [])  # Clear existing
-			for expense in data["ta_da_other_expenses_p"]:
+			for expense in other_expenses:
 				if expense.get("ta_da_expense_type_other_expense") or expense.get("ta_da_amount_other_expense"):
 					doc.append(
 						"ta_da_other_expenses_p",
@@ -204,6 +286,7 @@ def save_ta_da_settlement(doc_data):
 		return {"status": "success", "docname": doc.name}
 
 	except Exception as e:
+		print(f"[ERROR][save_ta_da_settlement]: {str(e)}")
 		frappe.log_error(frappe.get_traceback(), "TA DA Settlement Save Error")
 		frappe.db.rollback()
 		frappe.throw(f"Failed to save TA DA Settlement: {str(e)}")
@@ -214,12 +297,17 @@ def submit_ta_da_settlement(docname):
 	"""
 	Submit a TA DA Settlement document.
 	"""
+	print("submit_ta_da_settlement: execution started")
+	print("Payload received:", docname)
 	try:
+		print("Processing TA/DA settlement...")
 		doc = frappe.get_doc("TA DA Settlement", docname)
 		
 		if doc.docstatus == 0:
+			doc.flags.ignore_permissions = True
 			doc.submit()
 			frappe.db.commit()
+			print("Settlement created successfully")
 			return {
 				"status": "success",
 				"message": f"TA DA Settlement '{docname}' submitted successfully.",
@@ -227,6 +315,7 @@ def submit_ta_da_settlement(docname):
 				"docstatus": doc.docstatus,
 			}
 		elif doc.docstatus == 1:
+			print("Settlement already submitted")
 			return {
 				"status": "info",
 				"message": f"TA DA Settlement '{docname}' is already submitted.",
@@ -234,6 +323,7 @@ def submit_ta_da_settlement(docname):
 				"docstatus": doc.docstatus,
 			}
 		else:
+			print("Settlement cancelled")
 			return {
 				"status": "error",
 				"message": f"TA DA Settlement '{docname}' is cancelled and cannot be submitted.",
@@ -242,6 +332,128 @@ def submit_ta_da_settlement(docname):
 			}
 
 	except Exception as e:
+		import traceback
+		tb = traceback.format_exc()
+		print(f"[ERROR][submit_ta_da_settlement]: {str(e)}")
+		print(f"[ERROR][submit_ta_da_settlement] Traceback:\n{tb}")
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "TA DA Settlement Submit Error")
-		return {"status": "error", "message": str(e)}
+		return {"status": "error", "message": str(e) or tb}
+
+
+@frappe.whitelist()
+def get_ta_da_settlement_workflow_actions(docname):
+	"""
+	Get available workflow actions for the current user based on document state.
+	"""
+	doc = frappe.get_doc("TA DA Settlement", docname)
+	current_state = doc.workflow_state or "Draft"
+	user_roles = frappe.get_roles(frappe.session.user)
+
+	# Fetch the active workflow for this doctype
+	workflow_name = frappe.db.get_value(
+		"Workflow",
+		{"document_type": "TA DA Settlement", "is_active": 1},
+		"name"
+	)
+
+	if not workflow_name:
+		return []
+
+	workflow = frappe.get_doc("Workflow", workflow_name)
+	allowed_actions = []
+
+	for transition in workflow.get("transitions", []):
+		if transition.state != current_state:
+			continue
+
+		# Check roles on the transition
+		transition_roles = transition.get("allowed") or []
+		if isinstance(transition_roles, str):
+			transition_roles = [transition_roles]
+
+		# User can perform action if they have allowed role
+		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
+			allowed_actions.append(transition.action)
+
+	return list(dict.fromkeys(allowed_actions))
+
+
+@frappe.whitelist()
+def perform_ta_da_settlement_action(docname, action):
+	"""
+	Executes the selected workflow action and updates the document state.
+	"""
+	try:
+		doc = frappe.get_doc("TA DA Settlement", docname)
+		current_state = doc.workflow_state or "Draft"
+
+		# Fetch the active workflow for this doctype
+		workflow_name = frappe.db.get_value(
+			"Workflow",
+			{"document_type": "TA DA Settlement", "is_active": 1},
+			"name"
+		)
+
+		if not workflow_name:
+			frappe.throw(_("No active workflow found for TA DA Settlement."))
+
+		workflow = frappe.get_doc("Workflow", workflow_name)
+
+		next_state = None
+		transition = None
+
+		# Get current user roles
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		for t in workflow.transitions:
+			if t.state == current_state and t.action == action:
+				# Check if user has permission for this specific transition
+				allowed_roles = t.get("allowed") or []
+				if isinstance(allowed_roles, str):
+					allowed_roles = [allowed_roles]
+				
+				# System Manager check and role check
+				if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
+					next_state = t.next_state
+					transition = t
+					break
+
+		if not next_state:
+			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
+
+		# Update workflow state
+		doc.workflow_state = next_state
+
+		# Check if next state requires submission (docstatus=1)
+		state_doc = next((s for s in workflow.states if s.state == next_state), None)
+
+		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
+			doc.flags.ignore_permissions = True
+			doc.flags.ignore_workflow_validation = True
+			doc.submit()
+		elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
+			doc.flags.ignore_permissions = True
+			doc.flags.ignore_workflow_validation = True
+			doc.cancel()
+		else:
+			doc.flags.ignore_workflow_validation = True
+			doc.save(ignore_permissions=True)
+
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"message": f"Action '{action}' completed. New State: {next_state}",
+			"docname": docname,
+			"workflow_state": next_state,
+			"next_actions": get_ta_da_settlement_workflow_actions(docname)
+		}
+
+	except Exception as e:
+		frappe.db.rollback()
+		import traceback
+		tb = traceback.format_exc()
+		print(f"[ERROR][perform_ta_da_settlement_action] Traceback:\n{tb}")
+		frappe.log_error(frappe.get_traceback(), "TA DA Settlement Action Error")
+		return {"status": "error", "message": str(e) or tb}

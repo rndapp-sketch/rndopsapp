@@ -1,0 +1,120 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YY}{category}{project_no}{dept_initial}{project_type}{emp_id}{emp_initial}",
+ "creation": "2026-02-09 10:54:19.277272",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "current_year1",
+  "category",
+  "project_no",
+  "select_department",
+  "dept_initial",
+  "project_type",
+  "emp_id",
+  "emp_initial"
+ ],
+ "fields": [
+  {
+   "fetch_from": "select_department.dept_initials",
+   "fieldname": "dept_initial",
+   "fieldtype": "Data",
+   "label": "Dept Initial",
+   "length": 4,
+   "placeholder": "CSE"
+  },
+  {
+   "description": "C - Consultancy, \nR - Research, \nO - Others",
+   "fieldname": "category",
+   "fieldtype": "Select",
+   "label": "Category",
+   "length": 3,
+   "options": "\nC\nR\nO",
+   "placeholder": "C"
+  },
+  {
+   "fieldname": "emp_id",
+   "fieldtype": "Data",
+   "label": "Emp Id",
+   "length": 5,
+   "placeholder": "1245"
+  },
+  {
+   "fieldname": "emp_initial",
+   "fieldtype": "Data",
+   "label": "Emp Initial",
+   "length": 4,
+   "placeholder": "AD"
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project No.",
+   "length": 4,
+   "placeholder": "1"
+  },
+  {
+   "fieldname": "current_year1",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Current Year",
+   "length": 2,
+   "options": "YY"
+  },
+  {
+   "fieldname": "project_type",
+   "fieldtype": "Select",
+   "label": "Project Type",
+   "length": 2,
+   "options": "\nSP\nCN\nOT\nPD\nTT",
+   "placeholder": "SP"
+  },
+  {
+   "fieldname": "select_department",
+   "fieldtype": "Link",
+   "label": "Select Department",
+   "options": "Department_prornd",
+   "placeholder": "CSE"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-02-09 18:16:05.136287",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Project Number Generation",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

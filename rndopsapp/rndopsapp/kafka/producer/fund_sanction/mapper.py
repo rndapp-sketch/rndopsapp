@@ -64,6 +64,35 @@ class FundSanctionMapper:
 
         return budget_breakups
 
+    @staticmethod
+    def get_project_number(doc) -> str:
+        """
+        Get project number from linked Project Registration.
+
+        Args:
+            doc: Fund Sanction document
+
+        Returns:
+            str: Project number
+        """
+        project_number = ""
+        project_ref = doc.refnum_prj_num or doc.project_proposal
+        
+        if project_ref:
+            try:
+                # Check if it is a link to Project Registration
+                # by trying to fetch project_no from it
+                project_number = frappe.db.get_value(
+                    "Project Registration", 
+                    project_ref, 
+                    "project_no"
+                ) or ""
+            except Exception:
+                # If fetch fails, return empty string
+                project_number = ""
+        
+        return project_number
+
     @classmethod
     def map_to_dto(cls, doc) -> FundSanctionDTO:
         """
@@ -76,14 +105,14 @@ class FundSanctionMapper:
             FundSanctionDTO: Mapped DTO ready for validation and publishing
         """
         # Get project number
-        project_number = doc.refnum_prj_num or doc.project_proposal
+        project_number = cls.get_project_number(doc)
         sanction_letter_no = doc.sanctioned_letter_no
 
         # Map budget breakups
         budget_breakups = cls.map_budget_breakups(doc)
 
         return FundSanctionDTO(
-            projectNumber=project_number or "",
+            projectNumber=project_number,
             sanctionLetterNo=sanction_letter_no,
             sanctionLetterDate=str(doc.sanctioned_letter_date) if doc.sanctioned_letter_date else None,
             totalSanctionAmount=float(doc.total_sanctioned_amount or 0),

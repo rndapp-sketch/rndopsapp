@@ -47,49 +47,72 @@ class ResearchDepositSlipConsumerMapper:
     def apply_updates(cls, doc_name: str, doctype: str, dto: ResearchDepositSlipUpdateDTO) -> bool:
         """
         Apply DTO updates to Frappe document.
-
-        Args:
-            doc_name: Document name
-            doctype: Document type
-            dto: ResearchDepositSlipUpdateDTO with update data
-
-        Returns:
-            bool: True if successful
+        Handles field name differences between DocTypes.
         """
         try:
+            # Map DTO fields to DocType-specific field names
+            # Default to Research Deposit Slip names
+            f_map = {
+                'amount': 'total_amount',
+                'overhead': 'overhead_amount',
+                'balance': 'project_account_balance',
+                'gst': None, # Not present in Research DS
+                'ecs': 'account_number',
+                'bank': 'bank_name',
+                'bmr': 'bmr_number', # Assuming this field might exist or will be added
+                'cgst': None,
+                'sgst': None,
+                'ref': 'fund_received_ref'
+            }
+
+            if doctype == "Research Consultancy Deposit Slip":
+                f_map.update({
+                    'amount': 'amount_inclusive_gst_capital',
+                    'overhead': 'overhead_amount',
+                    'balance': 'project_balance_after_gst',
+                    'gst': 'total_gst',
+                    'ecs': 'ecs_ac_no',
+                    'bank': 'bank',
+                    'cgst': 'cgst_9',
+                    'sgst': 'sgst_9',
+                    'ref': 'fund_received_ref'
+                })
+
             # Update amount fields
-            if dto.amountReceived:
-                frappe.db.set_value(doctype, doc_name, 'amount_inclusive_gst_capital', dto.amountReceived)
+            if dto.amountReceived and f_map['amount']:
+                frappe.db.set_value(doctype, doc_name, f_map['amount'], dto.amountReceived)
 
-            if dto.totalOverheadAmount:
-                frappe.db.set_value(doctype, doc_name, 'overhead_amount', dto.totalOverheadAmount)
+            if dto.totalOverheadAmount and f_map['overhead']:
+                frappe.db.set_value(doctype, doc_name, f_map['overhead'], dto.totalOverheadAmount)
 
-            if dto.netProjectAmount:
-                frappe.db.set_value(doctype, doc_name, 'project_balance_after_gst', dto.netProjectAmount)
+            if dto.netProjectAmount and f_map['balance']:
+                frappe.db.set_value(doctype, doc_name, f_map['balance'], dto.netProjectAmount)
 
-            if dto.finalGstAmount:
-                frappe.db.set_value(doctype, doc_name, 'total_gst', dto.finalGstAmount)
+            if dto.finalGstAmount and f_map['gst']:
+                frappe.db.set_value(doctype, doc_name, f_map['gst'], dto.finalGstAmount)
 
             # Update bank info
-            if dto.ecsAccountNo:
-                frappe.db.set_value(doctype, doc_name, 'ecs_ac_no', dto.ecsAccountNo)
+            if dto.ecsAccountNo and f_map['ecs']:
+                frappe.db.set_value(doctype, doc_name, f_map['ecs'], dto.ecsAccountNo)
 
-            if dto.bankName:
-                frappe.db.set_value(doctype, doc_name, 'bank', dto.bankName)
+            if dto.bankName and f_map['bank']:
+                frappe.db.set_value(doctype, doc_name, f_map['bank'], dto.bankName)
 
-            if dto.bmrNumber:
-                frappe.db.set_value(doctype, doc_name, 'bmr_number', dto.bmrNumber)
+            if dto.bmrNumber and f_map.get('bmr'):
+                # Only set if field exists to avoid errors on DocTypes without it
+                if frappe.get_meta(doctype).has_field(f_map['bmr']):
+                     frappe.db.set_value(doctype, doc_name, f_map['bmr'], dto.bmrNumber)
 
-            # Update GST details (using typed DTO)
+            # Update GST details
             if dto.gstDetails:
-                if dto.gstDetails.cgstAmount:
-                    frappe.db.set_value(doctype, doc_name, 'cgst_9', dto.gstDetails.cgstAmount)
-                if dto.gstDetails.sgstAmount:
-                    frappe.db.set_value(doctype, doc_name, 'sgst_9', dto.gstDetails.sgstAmount)
+                if dto.gstDetails.cgstAmount and f_map['cgst']:
+                    frappe.db.set_value(doctype, doc_name, f_map['cgst'], dto.gstDetails.cgstAmount)
+                if dto.gstDetails.sgstAmount and f_map['sgst']:
+                    frappe.db.set_value(doctype, doc_name, f_map['sgst'], dto.gstDetails.sgstAmount)
 
             # Update fund received ref number
-            if dto.fundReceivedRefNumber:
-                frappe.db.set_value(doctype, doc_name, 'fund_received_ref_number', dto.fundReceivedRefNumber)
+            if dto.fundReceivedRefNumber and f_map['ref']:
+                frappe.db.set_value(doctype, doc_name, f_map['ref'], dto.fundReceivedRefNumber)
 
             return True
 
@@ -104,31 +127,41 @@ class ResearchDepositSlipConsumerMapper:
     def update_credit_distributions(cls, doc_name: str, doctype: str, dto: ResearchDepositSlipUpdateDTO) -> bool:
         """
         Update credit distribution child table.
-
-        Args:
-            doc_name: Document name
-            doctype: Document type
-            dto: ResearchDepositSlipUpdateDTO with credit distribution data
-
-        Returns:
-            bool: True if successful
+        Handles field name differences.
         """
         try:
+            # Field mapping
+            # Default to Research Deposit Slip
+            f_map = {
+                'swf': 'staff_welfare_amount', # Exists in both?
+                # Research: staff_welfare_amount (field 143) - YES
+                # Consultancy: staff_welfare_amount (field 179) - YES
+
+                'idf': 'idf_amount',
+                # Research: idf_amount (field 124) - YES
+                # Consultancy: idf_amount (field 167) - YES
+
+                'stwf': 'student_welfare_fund' # Research fieldname
+            }
+
+            if doctype == "Research Consultancy Deposit Slip":
+                f_map['stwf'] = 'student_welfare_amount'
+
             # Update static fields using typed DTOs
             if dto.creditDistributionSwf:
                 swf_amount = dto.creditDistributionSwf.swfAmount
-                if swf_amount:
-                    frappe.db.set_value(doctype, doc_name, 'staff_welfare_amount', swf_amount)
+                if swf_amount and f_map['swf']:
+                    frappe.db.set_value(doctype, doc_name, f_map['swf'], swf_amount)
 
             if dto.creditDistributionIdf:
                 idf_amount = dto.creditDistributionIdf.idfAmount
-                if idf_amount:
-                    frappe.db.set_value(doctype, doc_name, 'idf_amount', idf_amount)
+                if idf_amount and f_map['idf']:
+                    frappe.db.set_value(doctype, doc_name, f_map['idf'], idf_amount)
 
             if dto.creditDistributionStwf:
                 stwf_amount = dto.creditDistributionStwf.stwfAmount
-                if stwf_amount:
-                    frappe.db.set_value(doctype, doc_name, 'student_welfare_amount', stwf_amount)
+                if stwf_amount and f_map['stwf']:
+                    frappe.db.set_value(doctype, doc_name, f_map['stwf'], stwf_amount)
 
             return True
 

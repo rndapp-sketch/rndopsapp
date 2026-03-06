@@ -218,12 +218,12 @@ class ResearchDepositSlipUpdateDTO:
 
         # Parse PDF list
         pdf_list = []
-        for pdf_data in data.get('creditDistributionPdf', []):
+        for pdf_data in (data.get('creditDistributionPdf') or []):
             pdf_list.append(CreditDistributionPdfDTO.from_dict(pdf_data))
 
         # Parse DPF list
         dpf_list = []
-        for dpf_data in data.get('creditDistributionDpf', []):
+        for dpf_data in (data.get('creditDistributionDpf') or []):
             dpf_list.append(CreditDistributionDpfDTO.from_dict(dpf_data))
 
         return cls(
@@ -249,7 +249,7 @@ class ResearchDepositSlipUpdateDTO:
             depositDate=data.get('depositDate'),
             createdAt=data.get('createdAt'),
             updatedAt=data.get('updatedAt'),
-            ecsDates=data.get('ecsDates', []),
+            ecsDates=(data.get('ecsDates') or []),
             gstDetails=gst_details,
             creditDistributionSwf=credit_swf,
             creditDistributionPdf=pdf_list,

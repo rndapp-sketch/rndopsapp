@@ -142,10 +142,10 @@ class ConsultancyDepositSlipMapper:
                 project_number = frappe.db.get_value(
                     "Project Registration",
                     doc.project_title,
-                    "name"
-                ) or doc.project_title
+                    "project_no"
+                ) or ""
             except Exception:
-                project_number = doc.project_title or ""
+                project_number = ""
 
         return project_number
 

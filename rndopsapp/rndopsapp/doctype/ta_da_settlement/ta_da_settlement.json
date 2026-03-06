@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}7S{######}",
  "creation": "2025-12-22 11:56:43.350445",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -15,7 +16,7 @@
   "ta_da_designation",
   "ta_da_department_section",
   "ta_da_employee_number",
-  "ta_da_project_code",
+  "project_no",
   "ta_da_contact",
   "ta_da_ifsc_code",
   "ta_da_scale_of_pay",
@@ -51,6 +52,7 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "TA DA Settlement",
@@ -76,30 +78,28 @@
    "fetch_from": "ta_da_travel_application.applicant_name_travel",
    "fieldname": "ta_da_name",
    "fieldtype": "Data",
-   "label": "Name"
+   "label": "Name",
+   "read_only": 1
   },
   {
    "fetch_from": "ta_da_travel_application.designation_travel",
    "fieldname": "ta_da_designation",
    "fieldtype": "Data",
-   "label": "Designation"
+   "label": "Designation",
+   "read_only": 1
   },
   {
    "fetch_from": "ta_da_travel_application.department_travel",
    "fieldname": "ta_da_department_section",
    "fieldtype": "Data",
-   "label": "Department/Section"
+   "label": "Department/Section",
+   "read_only": 1
   },
   {
    "fieldname": "ta_da_employee_number",
    "fieldtype": "Data",
-   "label": "Employee Number"
-  },
-  {
-   "fetch_from": "ta_da_travel_application.travel_project_number",
-   "fieldname": "ta_da_project_code",
-   "fieldtype": "Data",
-   "label": "Project Code"
+   "label": "Employee Number",
+   "read_only": 1
   },
   {
    "fieldname": "ta_da_contact",
@@ -239,7 +239,8 @@
    "fetch_from": "ta_da_travel_application.webmail_id_travel",
    "fieldname": "webmail_id",
    "fieldtype": "Data",
-   "label": "Webmail Id"
+   "label": "Webmail Id",
+   "read_only": 1
   },
   {
    "description": "Please Choose Appropriate option among 4 options",
@@ -247,18 +248,27 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Boarding and Lodging Status",
+   "length": 500,
    "options": "\nI was treated as a guest of a Government / an Institution and was allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.\nI was treated as a guest of a Government / an Institution and was allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.\nI was not treated as a guest of a Government / an Institution and was allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.\nI was not treated as a guest of a Govemment / an Institution and was not allowed free boarding and / or lodging at the expenses of that Government/ the Institution visited.",
    "reqd": 1
+  },
+  {
+   "fetch_from": "ta_da_travel_application.travel_project_number",
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-23 10:16:04.744794",
+ "modified": "2026-03-05 14:56:27.081675",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "TA DA Settlement",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -270,6 +280,45 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Administrator",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
    "share": 1,
    "submit": 1,
    "write": 1

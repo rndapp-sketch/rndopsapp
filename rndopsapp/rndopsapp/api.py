@@ -1,5 +1,6 @@
 import frappe
 from frappe.utils import sanitize_html
+from frappe.utils.file_manager import save_file
 import json
 import os
 from frappe import _
@@ -514,3 +515,25 @@ def get_user_details(user_email):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), _("Error fetching user details"))
 		frappe.throw(_("An error occurred while fetching user details."))
+
+
+@frappe.whitelist()
+def get_recruitment_adhoc_contractual_by_webmail(webmail_id):
+	"""
+	Get all Recruitment Adhoc Contractual documents for a specific webmail ID.
+	"""
+	try:
+		doc_names = frappe.get_all(
+			"Recruitment Adhoc Contractual",
+			filters={"webmail_id": webmail_id},
+			pluck="name"
+		)
+		
+		docs = [frappe.get_doc("Recruitment Adhoc Contractual", name).as_dict() for name in doc_names]
+			
+		return {
+			"status": "success",
+			"data": docs
+		}
+	except Exception as e:
+		return {"status": "error", "message": str(e)}

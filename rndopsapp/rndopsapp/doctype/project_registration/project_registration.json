@@ -44,14 +44,10 @@
   "executive_summary",
   "upload_proj_prop",
   "my_projects",
-  "id_generation_section",
-  "dept_initial",
-  "category",
-  "funding_agency_code",
-  "column_break_voab",
-  "emp_id",
-  "emp_initial",
+  "for_office_use_only_section",
   "project_no",
+  "section_break_vwve",
+  "add_new_funding_agency_details",
   "section_break_sqjc",
   "funding_agen",
   "add_funding_agency_button",
@@ -942,56 +938,13 @@
    "read_only": 1
   },
   {
-   "fieldname": "id_generation_section",
-   "fieldtype": "Section Break",
-   "hidden": 1,
-   "label": "Section for Project ID Generation"
-  },
-  {
-   "fieldname": "dept_initial",
-   "fieldtype": "Data",
-   "label": "Dept Initial",
-   "length": 4,
-   "placeholder": "xxCE"
-  },
-  {
-   "fieldname": "category",
-   "fieldtype": "Data",
-   "label": "Category",
-   "length": 3,
-   "placeholder": "ICN"
-  },
-  {
-   "fieldname": "funding_agency_code",
-   "fieldtype": "Data",
-   "label": "Funding Agency Code",
-   "length": 4,
-   "placeholder": "NERM"
-  },
-  {
-   "fieldname": "column_break_voab",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "emp_id",
-   "fieldtype": "Data",
-   "label": "Emp Id",
-   "length": 5,
-   "placeholder": "00222"
-  },
-  {
-   "fieldname": "emp_initial",
-   "fieldtype": "Data",
-   "label": "Emp Initial",
-   "length": 4,
-   "placeholder": "xxAD"
-  },
-  {
+   "description": "* For Office Use Only",
    "fieldname": "project_no",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Project No.",
-   "length": 3,
-   "placeholder": "927"
+   "length": 22,
+   "read_only": 1
   },
   {
    "fieldname": "my_projects",
@@ -1180,13 +1133,28 @@
    "fieldname": "funding_agency_id",
    "fieldtype": "Data",
    "label": "Funding agency id"
+  },
+  {
+   "fieldname": "for_office_use_only_section",
+   "fieldtype": "Section Break",
+   "label": "For office use only "
+  },
+  {
+   "fieldname": "section_break_vwve",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "add_new_funding_agency_details",
+   "fieldtype": "Button",
+   "label": "Add New Funding Agency",
+   "options": "fundingagency_"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-27 15:17:14.875799",
+ "modified": "2026-03-02 16:12:30.495857",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

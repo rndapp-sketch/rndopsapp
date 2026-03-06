@@ -1,0 +1,217 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-05 16:22:33.176784",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_6sgc",
+  "amended_from",
+  "project_no",
+  "project_ref",
+  "proprietary_itemss_purchase_details_section",
+  "pp_manufacturer_name",
+  "table_qanf",
+  "pp_estimated_basic_value",
+  "pp_pack_and_forward",
+  "pp_freight",
+  "pp_other_charges",
+  "pp_grand_total",
+  "terms_and_conditions",
+  "pp_mode_of_payment",
+  "pp_delivery_period",
+  "pp_warranty",
+  "pp_supplier_details",
+  "pp_supplier_email",
+  "pp_indenter_contact_number",
+  "pp_sanctioned_by_funding_agency",
+  "file_upload_section_section",
+  "pp_proprietary_certificate",
+  "pp_upload_quotation",
+  "declaration_section",
+  "pp_dec_1",
+  "pp_dec_2",
+  "pp_dec_3",
+  "html_tfhk"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_6sgc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "proprietary_purchase",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "project_no"
+  },
+  {
+   "fieldname": "project_ref",
+   "fieldtype": "Data",
+   "label": "project_ref"
+  },
+  {
+   "fieldname": "proprietary_itemss_purchase_details_section",
+   "fieldtype": "Section Break",
+   "label": "Proprietary Items(s) Purchase Details"
+  },
+  {
+   "fieldname": "pp_manufacturer_name",
+   "fieldtype": "Data",
+   "label": "Manufacturer Name"
+  },
+  {
+   "fieldname": "table_qanf",
+   "fieldtype": "Table",
+   "label": "Details of Items to be purchased:",
+   "options": "ICSS Indent Cum Sanction Sheet Item"
+  },
+  {
+   "fieldname": "pp_estimated_basic_value",
+   "fieldtype": "Data",
+   "label": "Total Estimated Basic Value"
+  },
+  {
+   "fieldname": "pp_pack_and_forward",
+   "fieldtype": "Data",
+   "label": "Add: Packing and Forwarding"
+  },
+  {
+   "fieldname": "pp_freight",
+   "fieldtype": "Data",
+   "label": "Add: Freight"
+  },
+  {
+   "fieldname": "pp_other_charges",
+   "fieldtype": "Data",
+   "label": "Add: Other Charges"
+  },
+  {
+   "fieldname": "pp_grand_total",
+   "fieldtype": "Data",
+   "label": "Grand Total"
+  },
+  {
+   "fieldname": "terms_and_conditions",
+   "fieldtype": "Section Break",
+   "label": "Terms and Conditions"
+  },
+  {
+   "fieldname": "pp_mode_of_payment",
+   "fieldtype": "Data",
+   "label": "Mode of Payment"
+  },
+  {
+   "fieldname": "pp_delivery_period",
+   "fieldtype": "Data",
+   "label": "Delivery Period"
+  },
+  {
+   "fieldname": "pp_warranty",
+   "fieldtype": "Data",
+   "label": "Warranty"
+  },
+  {
+   "fieldname": "pp_supplier_details",
+   "fieldtype": "Data",
+   "label": "Supplier Name & Address"
+  },
+  {
+   "fieldname": "pp_supplier_email",
+   "fieldtype": "Data",
+   "label": "Supplier Email Id"
+  },
+  {
+   "fieldname": "pp_indenter_contact_number",
+   "fieldtype": "Data",
+   "label": "Indenter Contact Number"
+  },
+  {
+   "fieldname": "pp_sanctioned_by_funding_agency",
+   "fieldtype": "Select",
+   "label": "Were the above items sanctioned by the Funding Agency?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "file_upload_section_section",
+   "fieldtype": "Section Break",
+   "label": "File Upload Section"
+  },
+  {
+   "fieldname": "pp_proprietary_certificate",
+   "fieldtype": "Attach",
+   "label": "Upload Proprietary Certificate"
+  },
+  {
+   "fieldname": "pp_upload_quotation",
+   "fieldtype": "Attach",
+   "label": "Upload Quotation"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Section Break",
+   "label": "Declaration"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.pp_sanctioned_by_funding_agency == \"No\";",
+   "fieldname": "pp_dec_1",
+   "fieldtype": "Check",
+   "label": " For non sanctioned item, the PI will be responsible for any financial obligations that may arise."
+  },
+  {
+   "default": "0",
+   "fieldname": "pp_dec_2",
+   "fieldtype": "Check",
+   "label": " All prices/ amounts mentioned in the form are in India Rupee (INR)."
+  },
+  {
+   "default": "0",
+   "fieldname": "pp_dec_3",
+   "fieldtype": "Check",
+   "label": " Proprietary Item(s)"
+  },
+  {
+   "fieldname": "html_tfhk",
+   "fieldtype": "HTML",
+   "options": "<p>Certified that to the best of our knowledge, the item indented is the proprietary item of M/s ______________  and is marketed by them/ their only authorized distributor M/s _______________  in India. To the best of our knowledge there is no other product available in the market that meets the specifications of this item. We shall be held responsible in case the certificate is found to be incorrect. </p><p></p>"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-05 18:45:14.331873",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "proprietary_purchase",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

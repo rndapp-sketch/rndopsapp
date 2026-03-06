@@ -8,13 +8,16 @@
   "section_break_lysy",
   "amended_from",
   "icss_purchase_indent_cum_sanction_sheet_form",
-  "icss_webmail_id",
-  "icss_indenter_designation",
-  "icss_indenter",
-  "icss_employee_code",
-  "icss_department__centre__section",
+  "icss_applicant_webmail_id",
+  "icss_applicant_name",
+  "icss_applicant_department__centre__section",
+  "icss_applicant_designation",
+  "applying_for_section",
+  "icss_applying_for_mail",
+  "icss_applying_for_name",
+  "icss_applying_for_department_centre_section",
+  "icss_applying_for_designation",
   "icss_project_details_section",
-  "icss_project_title",
   "icss_account_head",
   "icss_other_account_head",
   "section_break_mibz",
@@ -126,36 +129,7 @@
   {
    "fieldname": "icss_purchase_indent_cum_sanction_sheet_form",
    "fieldtype": "Section Break",
-   "label": "Purchase Indent-cum-Sanction Sheet Form"
-  },
-  {
-   "fetch_from": "icss_webmail_id.designation_name",
-   "fieldname": "icss_indenter_designation",
-   "fieldtype": "Link",
-   "label": "Indenter Designation",
-   "options": "Designation_prornd"
-  },
-  {
-   "fetch_from": "icss_indenter.username",
-   "fieldname": "icss_webmail_id",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Webmail ID",
-   "options": "User",
-   "reqd": 1
-  },
-  {
-   "fetch_from": "icss_webmail_id.full_name",
-   "fieldname": "icss_indenter",
-   "fieldtype": "Data",
-   "label": "Indenter"
-  },
-  {
-   "fetch_from": "icss_webmail_id.department_name",
-   "fieldname": "icss_department__centre__section",
-   "fieldtype": "Link",
-   "label": "Department / Centre / Section",
-   "options": "Department_prornd"
+   "label": "Applicant Details"
   },
   {
    "fieldname": "icss_project_details_section",
@@ -178,14 +152,6 @@
    "placeholder": "Mention the other head"
   },
   {
-   "fieldname": "icss_project_title",
-   "fieldtype": "Link",
-   "label": "Project Title",
-   "options": "Project Registration",
-   "placeholder": "Select the Project Title",
-   "reqd": 1
-  },
-  {
    "fieldname": "section_break_mibz",
    "fieldtype": "Section Break"
   },
@@ -193,7 +159,7 @@
    "fieldname": "icss_indent_type",
    "fieldtype": "Select",
    "label": "Indent Type",
-   "options": "\nGeneral Purpose\nRepair / Replacement\nAMC"
+   "options": "\nProprietary Purchase with Proprietary certificate from the OEM\nStanderdised/ Emergent Purchase\nRepair/ Repleacement\nAnnual Maintenance Contract\nRate Contract Purchase"
   },
   {
    "fieldname": "icss_picssg",
@@ -667,17 +633,76 @@
    "label": "Declaration"
   },
   {
-   "fetch_from": "icss_webmail_id.employee_id",
-   "fieldname": "icss_employee_code",
+   "fetch_from": "icss_indenter.username",
+   "fieldname": "icss_applicant_webmail_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Webmail ID",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "icss_indenter.username",
+   "fieldname": "icss_applicant_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Applicant Name",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "icss_webmail_id.department_name",
+   "fieldname": "icss_applicant_department__centre__section",
+   "fieldtype": "Link",
+   "label": "Applicant Department / Centre / Section",
+   "options": "Department_prornd"
+  },
+  {
+   "fieldname": "icss_applicant_designation",
    "fieldtype": "Data",
-   "label": "Employee Code"
+   "label": "Applicant Designation"
+  },
+  {
+   "fieldname": "applying_for_section",
+   "fieldtype": "Section Break",
+   "label": "Applying For"
+  },
+  {
+   "fetch_from": "icss_indenter.username",
+   "fieldname": "icss_applying_for_mail",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Applying for Webmail ID",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "icss_indenter.username",
+   "fieldname": "icss_applying_for_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Applying for Name",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "icss_webmail_id.department_name",
+   "fieldname": "icss_applying_for_department_centre_section",
+   "fieldtype": "Link",
+   "label": "Appplying For Department / Centre / Section",
+   "options": "Department_prornd"
+  },
+  {
+   "fieldname": "icss_applying_for_designation",
+   "fieldtype": "Data",
+   "label": "Applying For Designation"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-13 15:12:56.183738",
+ "modified": "2026-03-05 11:52:20.450438",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Indent Cum Sanction Sheet",

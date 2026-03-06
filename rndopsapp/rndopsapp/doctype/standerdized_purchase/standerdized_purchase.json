@@ -1,0 +1,222 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-05 18:22:15.593289",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_imwr",
+  "amended_from",
+  "project_no",
+  "project_ref",
+  "standardized_item_details",
+  "sp_manufacturer_name",
+  "sp_reasons_not_accept",
+  "details_of_items_to_be_purchased",
+  "sp_total_basic_value",
+  "sp_pack_and_frwd",
+  "sp_freight",
+  "sp_other_charges",
+  "sp_grand_total",
+  "terms_and_conditions",
+  "sp_mode_of_payment",
+  "sp_delivery_period",
+  "sp_warranty",
+  "sp_supplier_name_address",
+  "sp_supplier_email",
+  "sp_contact_number",
+  "were_the_above_items_sanctioned_by_the_funding_agency",
+  "file_upload_section",
+  "sp_original_puchase_order",
+  "attach_ykvy",
+  "sp_deaclaration",
+  "sp_dec_1",
+  "sp_dec_2",
+  "sp_dec_3",
+  "sp_dec_4"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_imwr",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "standerdized_purchase",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "project_no"
+  },
+  {
+   "fieldname": "project_ref",
+   "fieldtype": "Data",
+   "label": "project_ref"
+  },
+  {
+   "fieldname": "standardized_item_details",
+   "fieldtype": "Section Break",
+   "label": "Standardized Item(s) Purchase Details"
+  },
+  {
+   "fieldname": "sp_manufacturer_name",
+   "fieldtype": "Data",
+   "label": "Manufacturer Name"
+  },
+  {
+   "fieldname": "sp_reasons_not_accept",
+   "fieldtype": "Small Text",
+   "label": "Reasons for not accepting other make or model"
+  },
+  {
+   "fieldname": "details_of_items_to_be_purchased",
+   "fieldtype": "Table",
+   "label": "Details of Items to be purchased",
+   "options": "ICSS Indent Cum Sanction Sheet Item"
+  },
+  {
+   "fieldname": "sp_total_basic_value",
+   "fieldtype": "Data",
+   "label": "Total Estd. Basic Value"
+  },
+  {
+   "fieldname": "sp_pack_and_frwd",
+   "fieldtype": "Data",
+   "label": "Add: Packing and Forwarding"
+  },
+  {
+   "fieldname": "sp_freight",
+   "fieldtype": "Data",
+   "label": "Add: Freight"
+  },
+  {
+   "fieldname": "sp_other_charges",
+   "fieldtype": "Data",
+   "label": "Add: Other Charges"
+  },
+  {
+   "fieldname": "sp_grand_total",
+   "fieldtype": "Data",
+   "label": "Grand Total"
+  },
+  {
+   "fieldname": "terms_and_conditions",
+   "fieldtype": "Section Break",
+   "label": "Terms and Conditions"
+  },
+  {
+   "fieldname": "sp_mode_of_payment",
+   "fieldtype": "Data",
+   "label": "Mode of Payment"
+  },
+  {
+   "fieldname": "sp_delivery_period",
+   "fieldtype": "Data",
+   "label": "Delivery Period"
+  },
+  {
+   "fieldname": "sp_warranty",
+   "fieldtype": "Data",
+   "label": "Warranty"
+  },
+  {
+   "fieldname": "sp_supplier_name_address",
+   "fieldtype": "Data",
+   "label": "Supplier Name & Address"
+  },
+  {
+   "fieldname": "sp_supplier_email",
+   "fieldtype": "Data",
+   "label": "Supplier Email Id"
+  },
+  {
+   "fieldname": "sp_contact_number",
+   "fieldtype": "Data",
+   "label": "Intender Contact Number"
+  },
+  {
+   "fieldname": "were_the_above_items_sanctioned_by_the_funding_agency",
+   "fieldtype": "Select",
+   "label": "Were the above items sanctioned by the funding agency",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "file_upload_section",
+   "fieldtype": "Section Break",
+   "label": "File Upload Section"
+  },
+  {
+   "fieldname": "sp_original_puchase_order",
+   "fieldtype": "Attach",
+   "label": "Upload Original Purchase Order(s)"
+  },
+  {
+   "fieldname": "attach_ykvy",
+   "fieldtype": "Attach"
+  },
+  {
+   "fieldname": "sp_deaclaration",
+   "fieldtype": "Section Break",
+   "label": "Declaration"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.were_the_above_items_sanctioned_by_the_funding_agency == \"No\";",
+   "fieldname": "sp_dec_1",
+   "fieldtype": "Check",
+   "label": " For non sanctioned item, the PI will be responsible for any financial obligations that may arise."
+  },
+  {
+   "default": "0",
+   "fieldname": "sp_dec_2",
+   "fieldtype": "Check",
+   "label": " All prices/ amounts mentioned in the form are in India Rupee (INR)."
+  },
+  {
+   "default": "0",
+   "fieldname": "sp_dec_3",
+   "fieldtype": "Check",
+   "label": "Standerdised Item(s)"
+  },
+  {
+   "fieldname": "sp_dec_4",
+   "fieldtype": "HTML",
+   "options": "<p>Certified that the items indented are standardized items/spare parts found to be compatible to the existing sets of equipment. Hence, the required item is to be purchased only from M/s   No other make or Model is acceptable for the following reasons:\n1.  \n2.  \n3.  \nWe shall be held responsible in case the certificate is found to be incorrect.</p>"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-05 18:43:15.939666",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "standerdized_purchase",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

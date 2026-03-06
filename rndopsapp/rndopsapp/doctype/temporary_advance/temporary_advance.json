@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}6A{DD}{####}",
  "creation": "2025-11-08 14:57:26.761241",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -17,6 +18,8 @@
   "applicant_department",
   "applicant_designation",
   "applicant_category",
+  "section_break_ueiu",
+  "pi_mentor_user",
   "bank_details_section",
   "bank_name",
   "account",
@@ -46,13 +49,15 @@
    "fetch_from": "advance_for_id.department_name",
    "fieldname": "advance_for_department",
    "fieldtype": "Data",
-   "label": "Department"
+   "label": "Department",
+   "read_only": 1
   },
   {
    "fetch_from": "advance_for_id.designation_name",
    "fieldname": "advance_for_designation",
    "fieldtype": "Data",
-   "label": "Designation "
+   "label": "Designation ",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.applying_for_select==\"No\"",
@@ -70,13 +75,15 @@
    "fetch_from": "applicant_webmail.department_name",
    "fieldname": "applicant_department",
    "fieldtype": "Data",
-   "label": "Department"
+   "label": "Department",
+   "read_only": 1
   },
   {
    "fetch_from": "applicant_webmail.designation_name",
    "fieldname": "applicant_designation",
    "fieldtype": "Data",
-   "label": "Designation"
+   "label": "Designation",
+   "read_only": 1
   },
   {
    "fieldname": "bank_details_section",
@@ -111,17 +118,21 @@
   {
    "fieldname": "project_code",
    "fieldtype": "Data",
-   "label": "Project Code"
+   "label": "Project Code",
+   "read_only": 1
   },
   {
    "fieldname": "project_name",
    "fieldtype": "Data",
-   "label": "Project Name"
+   "label": "Project Name",
+   "read_only": 1
   },
   {
    "fieldname": "account_head",
    "fieldtype": "Data",
-   "label": "Account Head"
+   "in_list_view": 1,
+   "label": "Account Head",
+   "reqd": 1
   },
   {
    "fieldname": "amount",
@@ -131,8 +142,7 @@
   {
    "fieldname": "amount_in_words",
    "fieldtype": "Data",
-   "label": "Amount in words",
-   "read_only": 1
+   "label": "Amount in words"
   },
   {
    "fieldname": "justification",
@@ -191,13 +201,15 @@
    "fetch_from": "advance_for_id.empclass",
    "fieldname": "other_applicant_category",
    "fieldtype": "Data",
-   "label": "Other Applicant Category (Empclass)"
+   "label": "Other Applicant Category (Empclass)",
+   "read_only": 1
   },
   {
    "fetch_from": "applicant_webmail.empclass",
    "fieldname": "applicant_category",
    "fieldtype": "Data",
-   "label": "Applicant Category (Empclass)"
+   "label": "Applicant Category (Empclass)",
+   "read_only": 1
   },
   {
    "default": "No",
@@ -205,16 +217,29 @@
    "fieldtype": "Select",
    "label": "Are you applying this for someone?",
    "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "section_break_ueiu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "pi_mentor_user",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "PI/Mentor User",
+   "options": "User",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-04 13:31:05.016594",
+ "modified": "2026-02-22 20:37:29.066380",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Temporary Advance",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -278,6 +303,19 @@
    "read": 1,
    "report": 1,
    "role": "Inspired Faculty",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Ado_RnD",
    "share": 1,
    "submit": 1,
    "write": 1

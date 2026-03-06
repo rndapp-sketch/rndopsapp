@@ -1,9 +1,9 @@
-# Copyright (c) 2025, rndops and contributors
+# Copyright (c) 2026, rndops and contributors
 # For license information, please see license.txt
 
 # import frappe
 from frappe.model.document import Document
 
 
-class UnifiedProformaforFillingupProjectPositions(Document):
+class proprietary_purchase(Document):
 	pass

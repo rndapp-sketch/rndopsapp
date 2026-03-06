@@ -6,7 +6,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "sl_no",
   "itemname",
   "itemdesciption",
   "justification",
@@ -16,39 +15,39 @@
  ],
  "fields": [
   {
-   "fieldname": "sl_no",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Serial Number"
-  },
-  {
    "fieldname": "itemname",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Item Name"
   },
   {
    "fieldname": "itemdesciption",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Item Description"
   },
   {
    "fieldname": "justification",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Justification"
   },
   {
    "fieldname": "quantity",
-   "fieldtype": "Data",
+   "fieldtype": "Int",
+   "in_list_view": 1,
    "label": "Quantity"
   },
   {
    "fieldname": "estimatedprice",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
    "label": "Estimated Rate (price / item in Rs.)"
   },
   {
    "fieldname": "estimated_amount_total_price_in_rs",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
    "label": "Estimated Amount (total price in Rs.)"
   }
  ],
@@ -56,7 +55,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-31 15:48:27.552883",
+ "modified": "2026-02-22 14:59:55.131573",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Items to be purchased",

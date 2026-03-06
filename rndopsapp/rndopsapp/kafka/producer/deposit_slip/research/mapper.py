@@ -139,10 +139,10 @@ class ResearchDepositSlipMapper:
                 project_number = frappe.db.get_value(
                     "Project Registration",
                     doc.project_title,
-                    "name"
-                ) or doc.project_title
+                    "project_no"
+                ) or ""
             except Exception:
-                project_number = doc.project_title or ""
+                project_number = ""
         return project_number
 
     @staticmethod
@@ -321,6 +321,7 @@ class ResearchDepositSlipMapper:
             projectNumber=project_number,
             fundReceivedRefNumber=fund_received_ref_number,
             slipNumber=doc.name,
+            depositSlipRefNumFab=doc.name,  # Frappe deposit slip document name
             category="RESEARCH",
             ecsAccountNo=getattr(doc, 'ecs_scheme_no', '') or getattr(doc, 'ecs_ac_no', '') or "",
             bankName=getattr(doc, 'bank_name', '') or "",

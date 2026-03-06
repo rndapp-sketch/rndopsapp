@@ -53,7 +53,10 @@ SCHEMA_VERSION_SANCTION = '1.0'
 SCHEMA_VERSION_FUND_RECEIVED = '1.0'
 
 # Retry Configuration
-MAX_RETRIES = 3
+# NOTE: KafkaProducer already has internal retries=3 at the protocol level.
+# Application-level retries cause duplicate messages when broker ack times out
+# but message was already written. Set to 1 (no retry) to prevent duplicates.
+MAX_RETRIES = 1
 RETRY_DELAY_SECONDS = 1  # Exponential backoff base
 
 # Singleton Producer Instance

@@ -5,5 +5,5 @@
 from frappe.tests.utils import FrappeTestCase
 
 
-class TestUnifiedProformaforFillingupProjectPositions(FrappeTestCase):
+class TestRecruitmentAdhocContractual(FrappeTestCase):
 	pass

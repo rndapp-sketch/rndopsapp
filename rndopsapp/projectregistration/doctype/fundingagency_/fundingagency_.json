@@ -152,7 +152,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-27 10:34:46.857001",
+ "modified": "2026-03-02 12:57:24.580690",
  "modified_by": "Administrator",
  "module": "projectRegistration",
  "name": "fundingagency_",
@@ -168,6 +168,18 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Administrator",
    "share": 1,
    "write": 1
   }

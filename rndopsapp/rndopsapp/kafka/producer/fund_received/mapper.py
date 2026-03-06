@@ -148,6 +148,35 @@ class FundReceivedMapper:
 
         return None, None
 
+    @staticmethod
+    def get_project_number(doc) -> str:
+        """
+        Get project number from linked Project Registration.
+
+        Args:
+            doc: Fund Received document
+
+        Returns:
+            str: Project number
+        """
+        project_number = ""
+        prjreg_title = getattr(doc, 'prjreg_title', None)
+        
+        if prjreg_title:
+            try:
+                # Check if prjreg_title is a link to Project Registration
+                # by trying to fetch project_no from it
+                project_number = frappe.db.get_value(
+                    "Project Registration", 
+                    prjreg_title, 
+                    "project_no"
+                ) or ""
+            except Exception:
+                # If fetch fails, return empty string
+                project_number = ""
+        
+        return project_number
+
     @classmethod
     def map_to_dto(cls, doc) -> FundReceivedDTO:
         """
@@ -162,6 +191,9 @@ class FundReceivedMapper:
         # Get sanction details
         sanction_ref = getattr(doc, 'sanction_ref_no', None)
         sanction_letter_no = cls.get_sanction_letter_no(doc)
+        
+        # Get project number
+        project_number = cls.get_project_number(doc)
 
         # Map child tables
         budget_breakups = cls.map_budget_breakups(doc)
@@ -178,7 +210,7 @@ class FundReceivedMapper:
             fundReceivedRefNumberFap=doc.name,
             sanctionNumber=sanction_ref,
             sanctionLetterNo=sanction_letter_no,
-            projectNumber=doc.prjreg_title or "",
+            projectNumber=project_number,
             amountReceived=float(getattr(doc, 'fund_received_amt', 0) or 0),
             iitgAccountNumber=getattr(doc, 'bank_account', None) or "",
             depositSlipStatus=has_deposit_slip,
