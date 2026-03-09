@@ -1209,7 +1209,79 @@ Fetches user details (name, department, designation) for auto-populating Purchas
 
 ---
 
-### 4.29 Other Doctypes
+### 4.29 Indent Cum Sanction Sheet
+
+**Base path**: `rndopsapp.rndopsapp.doctype.indent_cum_sanction_sheet.indent_cum_sanction_sheet`
+
+| API Method | Parameters | Description |
+|---|---|---|
+| `get_icss_indent_types` | None | Fetches all available options for the `icss_indent_type` dropdown (e.g., Proprietary Purchase, Repair, AMC). |
+| `get_icss_fields` | `doc_name` (optional) | Returns form metadata (fields, child tables, link options, and prefill data). Includes computation rules. |
+| `save_icss_data` | `data` (JSON string/dict) | Generic save method. Creates/updates an ICSS document. |
+| `save_icss_proprietary_purchase_data` | `data` | Specific save method for Proprietary Indents. |
+| `save_icss_standardized_purchase_data` | `data` | Specific save method for Standardized Indents. |
+| `save_icss_repair_replacement_data` | `data` | Specific save method for Repair/Replacement. |
+| `get_icss_workflow_actions` | `docname` | Returns available workflow actions based on document state. |
+| `perform_icss_action` | `docname`, `action` | Executes a workflow transition. |
+| `submit_icss` | `docname` | Shortcut helper that executes "Submit". |
+| `get_user_details_icss` | `user_email` | Returns auto-fill details for a given webmail ID. |
+
+---
+
+### 4.30 Proprietary Purchase
+
+**Base path**: `rndopsapp.rndopsapp.doctype.proprietary_purchase.proprietary_purchase`
+
+| API Method | Parameters | Description |
+|---|---|---|
+| `get_proprietary_purchase_fields` | `doc_name` (optional) | Returns metadata, link options, prefill data, and computation rules. |
+| `save_proprietary_purchase_data` | `data` | Creates/updates a proprietary purchase doc. Include `project_no` and `project_ref`. |
+| `get_proprietary_purchase_workflow_actions` | `docname` | Returns available workflow actions. |
+| `perform_proprietary_purchase_action` | `docname`, `action` | Executes a workflow transition. |
+| `submit_proprietary_purchase` | `docname` | Shortcut to submit the proprietary purchase document. |
+
+---
+
+### 4.31 Standardized Purchase
+
+**Base path**: `rndopsapp.rndopsapp.doctype.standerdized_purchase.standerdized_purchase`
+
+| API Method | Parameters | Description |
+|---|---|---|
+| `get_standerdized_purchase_fields` | `doc_name` (optional) | Returns metadata, link options, prefill data, and computation rules. |
+| `save_standerdized_purchase_data` | `data` | Creates/updates a standardized purchase doc. Include `project_no` and `project_ref`. |
+| `get_standerdized_purchase_workflow_actions`| `docname` | Returns available workflow actions. |
+| `perform_standerdized_purchase_action` | `docname`, `action` | Executes a workflow transition. |
+| `submit_standerdized_purchase` | `docname` | Shortcut to submit the standardized purchase document. |
+
+---
+
+### 4.32 Repair / Replacement
+
+**Base path**: `rndopsapp.rndopsapp.doctype.repair_replacement.repair_replacement`
+
+| API Method | Parameters | Description |
+|---|---|---|
+| `get_repair_replacement_fields` | `doc_name` (optional) | Returns metadata, link options, prefill data, and computation rules. |
+| `save_repair_replacement_data` | `data` | Creates/updates a repair document. Include `project_no` and `project_ref`. |
+| `get_repair_replacement_workflow_actions` | `docname` | Returns available workflow actions. |
+| `perform_repair_replacement_action` | `docname`, `action` | Executes a workflow transition. |
+| `submit_repair_replacement` | `docname` | Shortcut to submit the repair/replacement document. |
+
+---
+
+### 4.33 Universal User
+
+**Base path**: `rndopsapp.rndopsapp.doctype.universal_user__.universal_user__`
+
+| API Method | Parameters | Description |
+|---|---|---|
+| `get_universal_user___fields` | `doc_name` (optional) | Returns metadata, link options, and prefill data for the Universal User__ document. |
+| `save_universal_user___data` | `data` (JSON string/dict) | Creates/updates a Universal User__ doc. Auto-formats `mobile_number_u_r` to include `+91`. |
+
+---
+
+### 4.34 Other Doctypes
 
 The following doctypes are primarily for data storage or configuration and do not expose custom API endpoints. They are accessed via standard Frappe CRUD APIs.
 

@@ -26,37 +26,25 @@ def extract_eval_expression(expression):
 	return expression
 
 
-DOCTYPE = "standerdized_purchase"
-DOCTYPE_LABEL = "Standardized Purchase"
+DOCTYPE = "repair_replacement"
+DOCTYPE_LABEL = "Repair / Replacement"
 
 
 # =============================================================================
 # DOCUMENT CONTROLLER
 # =============================================================================
 
-class standerdized_purchase(Document):
+class repair_replacement(Document):
 
 	def validate(self):
-		"""Server-side calculations: row amounts and grand total."""
+		"""Server-side calculations: repair grand total."""
 		self.calculate_totals()
 
 	def calculate_totals(self):
-		"""Calculate row amounts for the items table and overall totals."""
-		total_basic = 0
-		for row in self.get("details_of_items_to_be_purchased", []):
-			base = flt(row.icss_qty) * flt(row.icss_rate)
-			discount = base * flt(row.icss_discount_percent) / 100
-			gst = (base - discount) * flt(row.icss_gst_percent) / 100
-			row.icss_amount = base - discount + gst
-			total_basic += flt(row.icss_amount)
-
-		self.sp_total_basic_value = total_basic
-		self.sp_grand_total = (
-			flt(self.sp_total_basic_value)
-			+ flt(self.sp_pack_and_frwd)
-			+ flt(self.sp_freight)
-			+ flt(self.sp_other_charges)
-		)
+		"""Calculate repair grand total = repair expenditure + other charges."""
+		# rr_other_charges is a Column Break (layout only), not a data field.
+		# Grand total is sum of repair expenditure (no addable other-charges field).
+		self.rr_grand_total = flt(self.rr_repair_expenditure)
 
 
 # =============================================================================
@@ -65,9 +53,9 @@ class standerdized_purchase(Document):
 
 
 @frappe.whitelist()
-def get_standerdized_purchase_fields(doc_name=None):
+def get_repair_replacement_fields(doc_name=None):
 	"""
-	API to return Standardized Purchase field metadata, prefill data,
+	API to return Repair / Replacement field metadata, prefill data,
 	link options, child table metadata, client scripts, and computation rules.
 
 	Args:
@@ -103,7 +91,8 @@ def get_standerdized_purchase_fields(doc_name=None):
 			"read_only_depends_on_eval": extract_eval_expression(f.read_only_depends_on),
 		}
 
-		# Child Tables: include child field metadata
+		# Child Tables: include child field metadata (repair_replacement has none,
+		# but keeping for consistency in case child tables are added later)
 		if f.fieldtype == "Table" and f.options:
 			child_meta = frappe.get_meta(f.options)
 			child_fields_list = []
@@ -137,10 +126,8 @@ def get_standerdized_purchase_fields(doc_name=None):
 		except Exception:
 			pass
 
-	# Declaration checkboxes default to unchecked
-	prefill_data.setdefault("sp_dec_1", 0)
-	prefill_data.setdefault("sp_dec_2", 0)
-	prefill_data.setdefault("sp_dec_3", 0)
+	# Declaration checkbox default to unchecked
+	prefill_data.setdefault("rr_dec_1", 0)
 
 	# ---- Client Scripts ----
 	client_scripts = []
@@ -161,35 +148,12 @@ def get_standerdized_purchase_fields(doc_name=None):
 
 	# ---- Computation Rules ----
 	computation_rules = {
-		"row_calculations": [
-			{
-				"table_fieldname": "details_of_items_to_be_purchased",
-				"target_field": "icss_amount",
-				"formula": "(icss_qty * icss_rate) - ((icss_qty * icss_rate) * icss_discount_percent / 100) + (((icss_qty * icss_rate) - ((icss_qty * icss_rate) * icss_discount_percent / 100)) * icss_gst_percent / 100)",
-				"trigger_fields": ["icss_qty", "icss_rate", "icss_discount_percent", "icss_gst_percent"],
-				"description": "Row amount = (Qty × Rate) - Discount% + GST%",
-			}
-		],
-		"aggregations": [
-			{
-				"target_field": "sp_total_basic_value",
-				"source_table": "details_of_items_to_be_purchased",
-				"source_field": "icss_amount",
-				"operation": "sum",
-				"description": "Total basic value = sum of all item amounts",
-			}
-		],
 		"computed_fields": [
 			{
-				"target_field": "sp_grand_total",
-				"formula": "sp_total_basic_value + sp_pack_and_frwd + sp_freight + sp_other_charges",
-				"trigger_fields": [
-					"sp_total_basic_value",
-					"sp_pack_and_frwd",
-					"sp_freight",
-					"sp_other_charges",
-				],
-				"description": "Grand total = Basic Value + Packing + Freight + Other Charges",
+				"target_field": "rr_grand_total",
+				"formula": "rr_repair_expenditure",
+				"trigger_fields": ["rr_repair_expenditure"],
+				"description": "Grand total = Repair Expenditure",
 			},
 		],
 	}
@@ -208,11 +172,10 @@ def get_standerdized_purchase_fields(doc_name=None):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def save_standerdized_purchase_data(data):
+def save_repair_replacement_data(data):
 	"""
-	Creates or updates a Standardized Purchase document.
-	Handles child tables (``details_of_items_to_be_purchased``)
-	and file uploads (Attach fields).
+	Creates or updates a Repair / Replacement document.
+	Handles file uploads (Attach fields).
 
 	Args:
 		data (str | dict): JSON payload with document field values.
@@ -243,7 +206,7 @@ def save_standerdized_purchase_data(data):
 
 		meta = frappe.get_meta(DOCTYPE)
 
-		# 2. First Pass: Set standard fields (skip files and tables)
+		# 2. First Pass: Set standard fields (skip files)
 		deferred_fields = []
 
 		for fieldname, value in data.items():
@@ -269,7 +232,7 @@ def save_standerdized_purchase_data(data):
 		else:
 			doc.save(ignore_permissions=True)
 
-		# 4. Second Pass: Process Files and Child Tables
+		# 4. Second Pass: Process Files
 		for fieldname, value in deferred_fields:
 			df = meta.get_field(fieldname)
 
@@ -297,8 +260,8 @@ def save_standerdized_purchase_data(data):
 									row_dict[cf.fieldname] = saved_file.file_url
 								except Exception as e:
 									frappe.log_error(
-										f"SP Child File Error ({cf.fieldname}): {e}",
-										"Standardized Purchase Save Error",
+										f"RR Child File Error ({cf.fieldname}): {e}",
+										"Repair Replacement Save Error",
 									)
 
 					doc.append(fieldname, row_dict)
@@ -318,8 +281,8 @@ def save_standerdized_purchase_data(data):
 						doc.set(fieldname, saved_file.file_url)
 					except Exception as e:
 						frappe.log_error(
-							f"SP File Upload Error ({fieldname}): {str(e)}",
-							"Standardized Purchase Save Error",
+							f"RR File Upload Error ({fieldname}): {str(e)}",
+							"Repair Replacement Save Error",
 						)
 				elif isinstance(value, str):
 					doc.set(fieldname, value)
@@ -332,8 +295,8 @@ def save_standerdized_purchase_data(data):
 
 	except Exception as e:
 		frappe.db.rollback()
-		frappe.log_error(frappe.get_traceback(), "Standardized Purchase Save Error")
-		frappe.throw(_("Failed to save Standardized Purchase: {0}").format(str(e)))
+		frappe.log_error(frappe.get_traceback(), "Repair Replacement Save Error")
+		frappe.throw(_("Failed to save Repair / Replacement: {0}").format(str(e)))
 
 
 # ---------------------------------------------------------------------------
@@ -341,12 +304,12 @@ def save_standerdized_purchase_data(data):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def get_standerdized_purchase_workflow_actions(docname):
+def get_repair_replacement_workflow_actions(docname):
 	"""
 	Get available workflow actions for the current user based on document state.
 
 	Args:
-		docname (str): Name of the Standardized Purchase document.
+		docname (str): Name of the Repair / Replacement document.
 
 	Returns:
 		list[str]: Available action names (de-duplicated).
@@ -392,12 +355,12 @@ def get_standerdized_purchase_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_standerdized_purchase_action(docname, action):
+def perform_repair_replacement_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.
 
 	Args:
-		docname (str): Name of the Standardized Purchase document.
+		docname (str): Name of the Repair / Replacement document.
 		action  (str): Workflow action to perform.
 
 	Returns:
@@ -442,8 +405,8 @@ def perform_standerdized_purchase_action(docname, action):
 							continue
 					except Exception as e:
 						frappe.log_error(
-							f"SP Workflow condition error: {str(e)}",
-							"Standardized Purchase Workflow Error",
+							f"RR Workflow condition error: {str(e)}",
+							"Repair Replacement Workflow Error",
 						)
 						continue
 
@@ -476,27 +439,27 @@ def perform_standerdized_purchase_action(docname, action):
 			"message": f"Action '{action}' completed. New State: {next_state}",
 			"docname": docname,
 			"workflow_state": next_state,
-			"next_actions": get_standerdized_purchase_workflow_actions(docname),
+			"next_actions": get_repair_replacement_workflow_actions(docname),
 		}
 
 	except Exception as e:
 		frappe.db.rollback()
-		frappe.log_error(frappe.get_traceback(), "Standardized Purchase Action Error")
+		frappe.log_error(frappe.get_traceback(), "Repair Replacement Action Error")
 		return {"status": "error", "message": str(e)}
 
 
 @frappe.whitelist()
-def submit_standerdized_purchase(docname):
+def submit_repair_replacement(docname):
 	"""
-	Submit a Standardized Purchase document using Workflow transitions.
+	Submit a Repair / Replacement document using Workflow transitions.
 
 	Args:
 		docname (str): Name of the document to submit.
 
 	Returns:
-		dict: Result from ``perform_standerdized_purchase_action``.
+		dict: Result from ``perform_repair_replacement_action``.
 
 	Authentication:
 		Requires logged-in user (``@frappe.whitelist``).
 	"""
-	return perform_standerdized_purchase_action(docname, "Submit")
+	return perform_repair_replacement_action(docname, "Submit")

@@ -59,3 +59,108 @@ class UniversalUser__(Document):
 		
 		if not self.last_login_at_u_r or self.last_login_at_u_r == '0' or self.last_login_at_u_r == 0:
 			self.last_login_at_u_r = None
+
+
+@frappe.whitelist(allow_guest=True)
+def get_universal_user___fields(doc_name=None):
+	"""Returns field metadata and client scripts for Universal User__"""
+	meta = frappe.get_meta('Universal User__')
+	fields = []
+	
+	for f in meta.fields:
+		field_data = {
+			'fieldname': f.fieldname,
+			'label': f.label,
+			'fieldtype': f.fieldtype,
+			'options': f.options,
+			'mandatory': f.reqd,
+			'read_only': f.read_only,
+			'depends_on': f.depends_on,
+			'depends_on_eval': f.depends_on.replace('eval:', '') if f.depends_on and str(f.depends_on).startswith('eval:') else None
+		}
+		
+		if f.fieldtype == 'Table':
+			child_meta = frappe.get_meta(f.options)
+			field_data['child_fields'] = [{
+				'fieldname': cf.fieldname,
+				'label': cf.label,
+				'fieldtype': cf.fieldtype,
+				'options': cf.options,
+				'in_list_view': cf.in_list_view
+			} for cf in child_meta.fields]
+			
+		fields.append(field_data)
+		
+	prefill_data = {}
+	link_options = {}
+
+	if doc_name:
+		try:
+			doc = frappe.get_doc('Universal User__', doc_name)
+			prefill_data = doc.as_dict()
+		except frappe.DoesNotExistError:
+			pass
+
+	client_scripts = []
+	try:
+		scripts = frappe.get_all('Client Script', filters={'dt': 'Universal User__', 'enabled': 1}, fields=['name', 'script', 'view'])
+		for script in scripts:
+			client_scripts.append({
+				'name': script.name,
+				'script': script.script,
+				'view': script.view
+			})
+	except Exception:
+		pass
+
+	return {
+		'fields': fields,
+		'prefill_data': prefill_data,
+		'link_options': link_options,
+		'client_scripts': client_scripts
+	}
+
+
+@frappe.whitelist(allow_guest=True)
+def save_universal_user___data(data):
+	"""
+	Saves Universal User data.
+	Handles Phone number formatting (+91)
+	"""
+	import json
+	
+	if isinstance(data, str):
+		data = json.loads(data)
+		
+	doc_name = data.get('name')
+	
+	if doc_name:
+		doc = frappe.get_doc('Universal User__', doc_name)
+	else:
+		doc = frappe.new_doc('Universal User__')
+	
+	for key, value in data.items():
+		if key not in ['name', 'doctype', 'owner', 'creation', 'modified', 'modified_by', 'idx']:
+			if hasattr(doc, key):
+				setattr(doc, key, value)
+	
+	# Phone number formatting (+91)
+	if getattr(doc, 'mobile_number_u_r', None):
+		mobile = str(doc.mobile_number_u_r).strip()
+		# If user didn't provide standard country code
+		if not mobile.startswith('+'):
+			# E.g. 919876543210 -> +919876543210
+			if mobile.startswith('91') and len(mobile) == 12:
+				doc.mobile_number_u_r = '+' + mobile
+			else:
+				# E.g. 9876543210 -> +919876543210
+				doc.mobile_number_u_r = '+91' + mobile.lstrip('0')
+				
+	# Save the document independently of standard permission validations (it might be guest signup)
+	doc.flags.ignore_permissions = True
+	doc.save()
+	
+	return {
+		'status': 'success',
+		'docname': doc.name
+	}

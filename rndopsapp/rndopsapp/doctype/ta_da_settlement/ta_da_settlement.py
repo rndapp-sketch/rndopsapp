@@ -259,6 +259,17 @@ def save_ta_da_settlement(doc_data):
 			if form_field in data and data[form_field] not in [None, ""]:
 				doc.set(doctype_field, data[form_field])
 
+		# Fetch and set applicant_category for workflow evaluations
+		if doc.webmail_id:
+			try:
+				empclass_id = frappe.db.get_value("User", doc.webmail_id, "empclass")
+				if empclass_id:
+					empclass_name = frappe.db.get_value("EmployeeClass_prornd", empclass_id, "empclass_name")
+					if empclass_name:
+						doc.applicant_category = empclass_name
+			except Exception as e:
+				print(f"Error fetching applicant category for user {doc.webmail_id}: {e}")
+
 		# Handle child table - ta_da_other_expenses_p
 		other_expenses = data.get("ta_da_other_expenses_p")
 		if isinstance(other_expenses, list):
@@ -296,40 +307,36 @@ def save_ta_da_settlement(doc_data):
 def submit_ta_da_settlement(docname):
 	"""
 	Submit a TA DA Settlement document.
+	Uses the workflow 'Submit' action to properly transition from Draft
+	to the next workflow state (e.g. Pending Staff Approval), instead of
+	calling doc.submit() which would set docstatus=1 and incorrectly
+	match the 'Rejected' workflow state.
 	"""
 	print("submit_ta_da_settlement: execution started")
 	print("Payload received:", docname)
 	try:
 		print("Processing TA/DA settlement...")
 		doc = frappe.get_doc("TA DA Settlement", docname)
-		
-		if doc.docstatus == 0:
-			doc.flags.ignore_permissions = True
-			doc.submit()
-			frappe.db.commit()
-			print("Settlement created successfully")
-			return {
-				"status": "success",
-				"message": f"TA DA Settlement '{docname}' submitted successfully.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		elif doc.docstatus == 1:
-			print("Settlement already submitted")
+
+		current_state = doc.workflow_state or "Draft"
+		print(f"Current workflow state: {current_state}, docstatus: {doc.docstatus}")
+
+		if current_state != "Draft":
 			return {
 				"status": "info",
-				"message": f"TA DA Settlement '{docname}' is already submitted.",
+				"message": f"TA DA Settlement '{docname}' is already in state '{current_state}'.",
 				"docname": docname,
-				"docstatus": doc.docstatus,
+				"workflow_state": current_state,
 			}
+
+		# Use the workflow action to transition properly
+		result = perform_ta_da_settlement_action(docname, "Submit")
+		if result.get("status") == "success":
+			print(f"Settlement submitted successfully via workflow. New state: {result.get('workflow_state')}")
 		else:
-			print("Settlement cancelled")
-			return {
-				"status": "error",
-				"message": f"TA DA Settlement '{docname}' is cancelled and cannot be submitted.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
+			print(f"Settlement submission failed: {result.get('message')}")
+
+		return result
 
 	except Exception as e:
 		import traceback
@@ -403,6 +410,17 @@ def perform_ta_da_settlement_action(docname, action):
 		next_state = None
 		transition = None
 
+		# Make sure applicant_category is set on the document for condition checking
+		if getattr(doc, "webmail_id", None) and not getattr(doc, "applicant_category", None):
+			try:
+				empclass_id = frappe.db.get_value("User", doc.webmail_id, "empclass")
+				if empclass_id:
+					empclass_name = frappe.db.get_value("EmployeeClass_prornd", empclass_id, "empclass_name")
+					if empclass_name:
+						doc.applicant_category = empclass_name
+			except Exception as e:
+				print(f"Error fetching applicant category for user {doc.webmail_id}: {e}")
+
 		# Get current user roles
 		user_roles = frappe.get_roles(frappe.session.user)
 
@@ -430,15 +448,17 @@ def perform_ta_da_settlement_action(docname, action):
 
 		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
 			doc.flags.ignore_permissions = True
-			doc.flags.ignore_workflow_validation = True
 			doc.submit()
 		elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
 			doc.flags.ignore_permissions = True
-			doc.flags.ignore_workflow_validation = True
 			doc.cancel()
 		else:
-			doc.flags.ignore_workflow_validation = True
-			doc.save(ignore_permissions=True)
+			# Use db_set to bypass Frappe's internal validate_workflow(),
+			# which re-checks transition roles against the session user
+			# and fails. Our code above already validates roles + conditions.
+			doc.db_set("workflow_state", next_state, update_modified=True)
+			if getattr(doc, "applicant_category", None):
+				doc.db_set("applicant_category", doc.applicant_category, update_modified=False)
 
 		frappe.db.commit()
 

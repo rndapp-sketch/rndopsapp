@@ -181,7 +181,6 @@
   {
    "fieldname": "icss_proprietary_manufacturer",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Manufacturer Name"
   },
   {
@@ -198,7 +197,6 @@
   {
    "fieldname": "icss_standardized_reasons",
    "fieldtype": "Table",
-   "hidden": 1,
    "label": "Reasons for not accepting other make/model",
    "options": "ICSS Standardized Reason Item"
   },
@@ -702,7 +700,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-05 11:52:20.450438",
+ "modified": "2026-03-08 23:36:03.452301",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Indent Cum Sanction Sheet",

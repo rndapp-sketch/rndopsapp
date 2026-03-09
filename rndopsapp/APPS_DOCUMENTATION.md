@@ -35,6 +35,10 @@ The following DocTypes currently implement this pattern:
 | **Rate Contract** | `get_rate_contract_fields` |
 | **Deposit Slips** | `get_research_deposit_slip_fields`, `get_consultancy_deposit_slip_fields`, etc. |
 | **Recruitment Adhoc Contractual** | `get_recruitment_adhoc_contractual_fields`, `save_recruitment_adhoc_contractual_data`, `perform_recruitment_adhoc_contractual_action`, `submit_recruitment_adhoc_contractual`, `get_recruitment_adhoc_contractual_workflow_actions` |
+| **Indent Cum Sanction Sheet** | `get_icss_indent_types`, `get_icss_fields`, `save_icss_data`, `save_icss_proprietary_purchase_data`, `save_icss_standardized_purchase_data`, `save_icss_repair_replacement_data`, `get_icss_workflow_actions`, `perform_icss_action`, `submit_icss`, `get_user_details_icss` |
+| **Proprietary Purchase** | `get_proprietary_purchase_fields`, `save_proprietary_purchase_data`, `get_proprietary_purchase_workflow_actions`, `perform_proprietary_purchase_action`, `submit_proprietary_purchase` |
+| **Standardized Purchase** | `get_standerdized_purchase_fields`, `save_standerdized_purchase_data`, `get_standerdized_purchase_workflow_actions`, `perform_standerdized_purchase_action`, `submit_standerdized_purchase` |
+| **Repair / Replacement** | `get_repair_replacement_fields`, `save_repair_replacement_data`, `get_repair_replacement_workflow_actions`, `perform_repair_replacement_action`, `submit_repair_replacement` |
 
 *(Note: exact function names may vary slightly, e.g., `_workflow_action` vs `_action`)*
 
