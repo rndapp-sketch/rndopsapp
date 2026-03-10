@@ -1,0 +1,44 @@
+# Copyright (c) 2025, rndops and contributors
+# Kafka Consumer Master Handler - Routes messages to topic-specific handlers
+
+import frappe
+from .fund_received import handle_fund_received_update
+from .deposit_slip import handle_deposit_slip_update
+from ..config import TOPIC_ACCOUNTS_FUND_RECEIVED, TOPIC_DEPOSIT_SLIP_UPDATE
+
+
+# Topic to Handler Mapping
+TOPIC_HANDLERS = {
+    TOPIC_ACCOUNTS_FUND_RECEIVED: handle_fund_received_update,
+    TOPIC_DEPOSIT_SLIP_UPDATE: handle_deposit_slip_update,
+}
+
+
+def process_message(topic: str, message_payload: dict) -> bool:
+    """
+    Routes a message to its appropriate handler based on topic.
+
+    Args:
+        topic: The Kafka topic the message came from
+        message_payload: The deserialized message payload (dict)
+
+    Returns:
+        bool: True if processed successfully, False otherwise
+    """
+    handler = TOPIC_HANDLERS.get(topic)
+    if handler:
+        try:
+            return handler(message_payload)
+        except Exception as e:
+            frappe.log_error(
+                f"Error in handler for topic {topic}: {str(e)}",
+                "Kafka Consumer Handler Execution Error"
+            )
+            return False
+    else:
+        # This shouldn't happen if topics are correctly subscribed
+        frappe.log_error(
+            f"No handler found for topic: {topic}",
+            "Kafka Consumer Unknown Topic"
+        )
+        return False

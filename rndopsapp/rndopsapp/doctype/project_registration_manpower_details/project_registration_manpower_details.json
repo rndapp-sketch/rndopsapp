@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-08 16:16:24.458481",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "designation_name",
+  "vacancies",
+  "manpower_salary"
+ ],
+ "fields": [
+  {
+   "fieldname": "designation_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Designation Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vacancies",
+   "fieldtype": "Data",
+   "label": "Number of Posts"
+  },
+  {
+   "fieldname": "manpower_salary",
+   "fieldtype": "Currency",
+   "label": "Salary"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-10-16 14:42:23.208876",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "project_registration_manpower_details",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

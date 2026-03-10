@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-11-04 16:02:47.195418",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "particulars_of_items_section",
+  "r_date",
+  "vendors_name",
+  "particulars",
+  "amount",
+  "uploads"
+ ],
+ "fields": [
+  {
+   "fieldname": "particulars_of_items_section",
+   "fieldtype": "Section Break",
+   "label": "Particulars of Items"
+  },
+  {
+   "fieldname": "r_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date"
+  },
+  {
+   "fieldname": "vendors_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Vendor's Name"
+  },
+  {
+   "fieldname": "particulars",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Particulars"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Amount"
+  },
+  {
+   "fieldname": "uploads",
+   "fieldtype": "Attach",
+   "in_list_view": 1,
+   "label": "Uploads"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-11-25 23:11:43.558929",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Particulars of Items Reimbursement",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

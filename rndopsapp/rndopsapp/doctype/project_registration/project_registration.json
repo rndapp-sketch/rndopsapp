@@ -1,0 +1,1304 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}{01}{fund_agen_initials}{######}",
+ "creation": "2025-07-30 18:07:10.046447",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_description",
+  "pi_webmail",
+  "project_type",
+  "other_project_type_name",
+  "consultancy_category",
+  "consultancy_calc_section",
+  "consultancy_gstin",
+  "consultancy_gst_rate",
+  "sec_cat_d_inputs",
+  "category_d_note",
+  "cat_d_grand_total_input",
+  "cat_d_project_cost_excl_gst",
+  "cat_d_consultancy_fee_input",
+  "operational_expense_input_inc_10_oh",
+  "sec_cat_d_breakup",
+  "cat_d_cf_base",
+  "cat_d_oe_base",
+  "cat_d_total_overhead",
+  "cat_d_institute_share",
+  "cat_d_gst_amt",
+  "cat_d_grand_total_calc",
+  "sec_cat_ef_breakup",
+  "category_e_note",
+  "category_t_note",
+  "cat_ef_total_amount",
+  "col_break_ef",
+  "cat_ef_honorarium",
+  "cat_ef_institute_share",
+  "cat_ef_gst",
+  "cat_ef_grand_total",
+  "proj_details",
+  "column_break_lufi",
+  "project_title",
+  "project_objective",
+  "project_deliverables",
+  "executive_summary",
+  "upload_proj_prop",
+  "my_projects",
+  "for_office_use_only_section",
+  "project_no",
+  "section_break_vwve",
+  "add_new_funding_agency_details",
+  "section_break_sqjc",
+  "funding_agen",
+  "add_funding_agency_button",
+  "funding_agency_schemes",
+  "gstin_number",
+  "column_break_gtum",
+  "funding_agency_type",
+  "origin_of_funding_agency",
+  "funding_agency_ministry",
+  "fund_agen_initials",
+  "funding_agency_id",
+  "column_break_xgsj",
+  "address_country",
+  "address_street_village_locality",
+  "address_state",
+  "address_postal_code",
+  "section_break_lqfe",
+  "funding_agency_type_other",
+  "nature_funding_agency_non_govt",
+  "select_funding_agency",
+  "funding_agency_other",
+  "multi_department_section",
+  "implementation_department",
+  "involves_international_travel",
+  "prj_start_date",
+  "project_duration_months",
+  "project_duration_days",
+  "prj_end_date",
+  "collaborators",
+  "section_break_nlcs",
+  "column_break_xjtz",
+  "amended_from",
+  "applicant_type",
+  "applicant_type_label",
+  "section_break_ncjw",
+  "pi_employee_id",
+  "principal_investigator_name",
+  "designation",
+  "applicant_department",
+  "pi_userid",
+  "department_head",
+  "head_approver",
+  "column_break_oxoo",
+  "is_additional_pi",
+  "additional_pi_table",
+  "has_co_pi",
+  "co_investigator_table",
+  "proposed_budget",
+  "budget_proposal_details_section",
+  "proposed_budget_breakup",
+  "section_break_zalt",
+  "total_first_year_budget",
+  "column_break_mmop",
+  "total_second_year_budget",
+  "column_break_rqyu",
+  "total_third_year_budget",
+  "column_break_wygt",
+  "total_fourth_year_budget",
+  "column_break_nesv",
+  "total_fifth_year_budget",
+  "column_break_guud",
+  "grand_total_proposal",
+  "section_break_ufyb",
+  "total_budget_amount",
+  "section_break_qtll",
+  "check_project_heads",
+  "equipment_checkbox",
+  "manpower_checkbox",
+  "proposed_equipment_details",
+  "proposed_manpower_details",
+  "research_fields_section",
+  "overhead_percentage_research",
+  "overhead_research",
+  "budget_including_overhead_research",
+  "service_tax_research",
+  "grand_total_research",
+  "committee_clearance",
+  "needs_committee_clearance",
+  "clearance_section",
+  "committees",
+  "other_committee_specify",
+  "ethics_committee_details",
+  "ethics_other_details",
+  "biosafety_category",
+  "declaration_html",
+  "endorsement_prj",
+  "need_endorsement_copy",
+  "have_sanction_details",
+  "text_editor_zwfu",
+  "sanction_detail_tab",
+  "sanction_details",
+  "total_sanctioned_amount",
+  "sanctioned_letter_no",
+  "sanctioned_letter_date",
+  "sanctioned_budget_breakup",
+  "section_break_uure",
+  "total_first_year_budget_1",
+  "column_break_dxvf",
+  "total_second_year_budget_1",
+  "column_break_jnms",
+  "total_third_year_budget_1",
+  "column_break_mvpo",
+  "total_fourth_year_budget_1",
+  "column_break_nodq",
+  "total_fifth_year_budget_1",
+  "column_break_eezb",
+  "grand_total_proposal_1",
+  "section_break_oexx",
+  "sanction_related_files",
+  "have_fund_details",
+  "fund_received_tab",
+  "fund_received_section",
+  "is_gst_invoice_issued",
+  "invoice_details",
+  "amount_received",
+  "fund_transactions",
+  "iitg_bank_account_number",
+  "received_amount_breakup"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_nlcs",
+   "fieldtype": "Section Break",
+   "label": "Collaborators"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Project Registration",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "collaborators",
+   "fieldtype": "Tab Break",
+   "label": "Collaborators"
+  },
+  {
+   "fieldname": "section_break_ncjw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "pi_webmail",
+   "fieldtype": "Link",
+   "label": "If you are registering this project on behalf of other, please enter the email Id of the Principal Investigator",
+   "options": "User",
+   "placeholder": "example@iitg.ac.in"
+  },
+  {
+   "fetch_from": "pi_webmail.employee_id",
+   "fieldname": "pi_employee_id",
+   "fieldtype": "Data",
+   "label": "Employee ID of Principal Investigator :",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "pi_webmail.full_name",
+   "fieldname": "principal_investigator_name",
+   "fieldtype": "Data",
+   "label": "Name of the Principal Investigator :",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_description",
+   "fieldtype": "Tab Break",
+   "label": "Project Description"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Project Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "project_objective",
+   "fieldtype": "Text",
+   "label": "Objective of the Project"
+  },
+  {
+   "fieldname": "project_deliverables",
+   "fieldtype": "Text",
+   "label": "Deliverables of the Project"
+  },
+  {
+   "fieldname": "executive_summary",
+   "fieldtype": "Text",
+   "label": "Executive Summary"
+  },
+  {
+   "fieldname": "implementation_department",
+   "fieldtype": "Link",
+   "label": "Department/Centre where the project will be implemented",
+   "options": "Department_prornd",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Research' || doc.project_type == 'Consultancy' || doc.project_type == 'Other'",
+   "fieldname": "multi_department_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "project_type",
+   "fieldtype": "Select",
+   "label": "Project Type",
+   "options": "\nResearch\nConsultancy\nOther",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Consultancy'",
+   "fieldname": "consultancy_category",
+   "fieldtype": "Select",
+   "label": "Consultancy Category",
+   "options": "\nCategory D : Technology Transfer / Research Based\nCategory T : Routine / Testing\nCategory E : Non-Routine"
+  },
+  {
+   "fieldname": "proposed_budget",
+   "fieldtype": "Tab Break",
+   "label": "Proposed Budget"
+  },
+  {
+   "fetch_from": "funding_agen.funding_agency_type_1",
+   "fieldname": "funding_agency_type",
+   "fieldtype": "Data",
+   "label": "Select Type of Funding Agency",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.funding_agency_type == 'Other'",
+   "fieldname": "funding_agency_type_other",
+   "fieldtype": "Data",
+   "label": "Please specify the Other type of funding agency"
+  },
+  {
+   "fieldname": "committee_clearance",
+   "fieldtype": "Tab Break",
+   "label": "Committee Clearance"
+  },
+  {
+   "fieldname": "needs_committee_clearance",
+   "fieldtype": "Select",
+   "label": "Does this project need clearance from any committee?",
+   "options": "Yes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.needs_committee_clearance == 'Yes'",
+   "fieldname": "clearance_section",
+   "fieldtype": "Section Break",
+   "label": "Clearance Section"
+  },
+  {
+   "fieldname": "committees",
+   "fieldtype": "Select",
+   "label": "Select Committees:",
+   "options": "\nEthics Committee\nBiosafety Committee\nAnimal Ethics Committee\nOther"
+  },
+  {
+   "depends_on": "eval:doc.committees == 'Other'",
+   "fieldname": "other_committee_specify",
+   "fieldtype": "Data",
+   "placeholder": "Please specify other committee"
+  },
+  {
+   "fieldname": "need_endorsement_copy",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Do you need endorsement copy?",
+   "options": "Yes\nNo"
+  },
+  {
+   "default": "No",
+   "fieldname": "have_sanction_details",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Do you have Sanctioned Details? (if you have ,Which will allow you to go next step of Project Registration)",
+   "options": "Yes\nNo"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.have_sanction_details == \"Yes\"",
+   "fieldname": "sanction_details",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_sanctioned_amount",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Total sanctioned Amount (\u20b9)",
+   "mandatory_depends_on": "eval:doc.have_sanction_details == \"Yes\"",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "sanctioned_budget_breakup",
+   "fieldtype": "Table",
+   "hidden": 1,
+   "label": "Total Budget Break-up",
+   "options": "Project Sanctioned Budget"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval:doc.have_fund_details == \"Yes\"",
+   "fieldname": "fund_received_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Consultancy'",
+   "fieldname": "is_gst_invoice_issued",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "is GST Invoice Issued?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Consultancy'",
+   "fieldname": "invoice_details",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Invoice Details :",
+   "placeholder": "Enter invoice number or details"
+  },
+  {
+   "fieldname": "amount_received",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Amount Received (\u20b9) :"
+  },
+  {
+   "fieldname": "fund_transactions",
+   "fieldtype": "Table",
+   "hidden": 1,
+   "label": "Sanction Transactions Details",
+   "options": "Project Fund Transaction"
+  },
+  {
+   "fieldname": "iitg_bank_account_number",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "IITG Bank Account Number where amount has been transfered :"
+  },
+  {
+   "fieldname": "received_amount_breakup",
+   "fieldtype": "Table",
+   "label": "Budget Breakup of the Received Amount ",
+   "options": "Project Received Budget"
+  },
+  {
+   "fetch_from": "pi_webmail.designation_name",
+   "fieldname": "designation",
+   "fieldtype": "Data",
+   "label": "Designation",
+   "options": "User"
+  },
+  {
+   "depends_on": "eval:doc.is_additional_pi == \"Yes\"",
+   "fieldname": "additional_pi_table",
+   "fieldtype": "Table",
+   "label": "Details of Additional Principal Investigator(s)",
+   "mandatory_depends_on": "eval:doc.is_additional_pi == \"Yes\"",
+   "options": "Project Additional PI"
+  },
+  {
+   "default": "No",
+   "fieldname": "has_co_pi",
+   "fieldtype": "Select",
+   "label": "Does this project has Co-PI?",
+   "options": "Yes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.has_co_pi == 'Yes'",
+   "fieldname": "co_investigator_table",
+   "fieldtype": "Table",
+   "label": "Details of Additional Co-Principal Investigator(s)",
+   "mandatory_depends_on": "eval:doc.has_co_pi == 'Yes'",
+   "options": "Project Co-Investigator"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Other'",
+   "fieldname": "other_project_type_name",
+   "fieldtype": "Data",
+   "label": "*Mention the (Other Project Type)"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Research'",
+   "fieldname": "project_duration_months",
+   "fieldtype": "Int",
+   "label": "Duration of the Project (in Months)",
+   "mandatory_depends_on": "eval:doc.project_type == 'Research'",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Consultancy'",
+   "fieldname": "project_duration_days",
+   "fieldtype": "Int",
+   "label": "Number of Days",
+   "mandatory_depends_on": "eval:doc.project_type == 'Consultancy'",
+   "non_negative": 1
+  },
+  {
+   "default": "No",
+   "fieldname": "involves_international_travel",
+   "fieldtype": "Select",
+   "label": "Does this project involve international travel?",
+   "mandatory_depends_on": "eval:doc.project_type == 'Consultancy'",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.funding_agency == 'Other'",
+   "fieldname": "funding_agency_other",
+   "fieldtype": "Data",
+   "label": "Please specify the Other funding agency"
+  },
+  {
+   "fieldname": "total_budget_amount",
+   "fieldtype": "Currency",
+   "label": "Total budget amount",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.committees == 'Biosafety Committee'",
+   "fieldname": "biosafety_category",
+   "fieldtype": "Select",
+   "label": "Biosafety Category:",
+   "options": "Category I\nCategory II\nCategory III"
+  },
+  {
+   "fieldname": "sanctioned_letter_no",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Sanctioned Letter No.",
+   "mandatory_depends_on": "eval:doc.have_fund_details == \"Yes\""
+  },
+  {
+   "fieldname": "sanctioned_letter_date",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Date of Sanctioned Letter",
+   "mandatory_depends_on": "eval:doc.have_fund_details == \"Yes\""
+  },
+  {
+   "fieldname": "sanction_related_files",
+   "fieldtype": "Table",
+   "hidden": 1,
+   "label": "Upload Sanction Related Files",
+   "options": "Project Sanction File"
+  },
+  {
+   "default": "No",
+   "depends_on": "eval:doc.have_sanction_details == \"Yes\"",
+   "fieldname": "have_fund_details",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Have You Received Fund? (if you have received fund ,Which will allow you to go next step of Project Registration.)",
+   "options": "Yes\nNo"
+  },
+  {
+   "fetch_from": "pi_webmail.empclass",
+   "fieldname": "applicant_type",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Applicant Type Id",
+   "options": "EmployeeClass_prornd"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Research'",
+   "fieldname": "research_fields_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Research Calculations"
+  },
+  {
+   "fieldname": "overhead_research",
+   "fieldtype": "Currency",
+   "label": "Overhead (15% of the gross amount)"
+  },
+  {
+   "fieldname": "budget_including_overhead_research",
+   "fieldtype": "Currency",
+   "label": "Budget including overhead (in Rupees)"
+  },
+  {
+   "fieldname": "service_tax_research",
+   "fieldtype": "Currency",
+   "label": "Goods & Service Tax"
+  },
+  {
+   "fieldname": "grand_total_research",
+   "fieldtype": "Currency",
+   "label": "Grand Total"
+  },
+  {
+   "default": "15",
+   "fieldname": "overhead_percentage_research",
+   "fieldtype": "Percent",
+   "label": "Overhead Percentage (%)"
+  },
+  {
+   "depends_on": "eval:doc.committees == 'Ethics Committee'",
+   "fieldname": "ethics_committee_details",
+   "fieldtype": "Select",
+   "label": "Select Ethics Committee Clearance(s)",
+   "options": "rDNA\nGMO\nTransgenic Plants\nOther"
+  },
+  {
+   "depends_on": "eval:doc.ethics_committee_details == 'Other'",
+   "fieldname": "ethics_other_details",
+   "fieldtype": "Data",
+   "label": "Specify Other Ethics Details",
+   "placeholder": "Please specify other committee"
+  },
+  {
+   "fieldname": "column_break_xjtz",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.committees == 'Biosafety Committee'",
+   "description": "<div style=\"background-color: #f9f9f9; padding: 15px; border: 1px solid #ccc; border-radius: 5px;\">\n              <p><strong>Biosafety Category</strong></p>\n              <ul style=\"margin-left: 20px;\">\n                <li>\n                  <strong>Category I:</strong> Experiments involving self-cloning, using strains and also inter-species cloning belonging to organisms in the same exchanger group etc. are exempt for the purpose of intimation and approval.\n                </li>\n                <li>\n                  <strong>Category II:</strong> Experiments falling under containment levels II, III and IV, large-scale use of recombinants made of self-cloning in systems belonging to exempt category etc. require prior intimation to IBSC.\n                </li>\n                <li>\n                  <strong>Category III:</strong> Experiments involving toxin gene cloning, cloning of genes for vaccine production, use of infectious animal and plant viruses, self-fusion experiments, field testing and release of GMOs etc. require review and approval of IBSC before commencement.\n                </li>\n              </ul>\n              <p>In case of a multi-department/centre project, from an administrative point of view, the project will be registered in the name of the PI.</p>\n            </div>",
+   "fieldname": "declaration_html",
+   "fieldtype": "Check",
+   "label": "I Accept the above Declaration"
+  },
+  {
+   "fieldname": "endorsement_prj",
+   "fieldtype": "Tab Break",
+   "label": "Endorsement"
+  },
+  {
+   "fieldname": "applicant_department",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Department of Applicant",
+   "options": "Department_prornd",
+   "read_only": 1
+  },
+  {
+   "description": "*The Head of the effective department (Applicant or Implementation) who will approve this application.\n",
+   "fieldname": "department_head",
+   "fieldtype": "Link",
+   "label": "Department Head",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "Hidden field used by the workflow to dynamically assign the Head approval task.",
+   "fieldname": "head_approver",
+   "fieldtype": "Link",
+   "label": "Head Approver",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applicant_type_label",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Applicant type Name"
+  },
+  {
+   "fieldname": "column_break_oxoo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.have_sanction_details == 'Yes'",
+   "fieldname": "sanction_detail_tab",
+   "fieldtype": "Tab Break",
+   "hidden": 1,
+   "label": "Sanction Details"
+  },
+  {
+   "depends_on": "eval:doc.have_sanction_details == \"Yes\" && doc.have_fund_details !== \"No\"",
+   "fieldname": "fund_received_tab",
+   "fieldtype": "Tab Break",
+   "hidden": 1,
+   "label": "Fund Received"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Research' || doc.project_type == 'Consultancy' || doc.project_type == 'Other'",
+   "fieldname": "section_break_lqfe",
+   "fieldtype": "Section Break",
+   "label": "Funding Agency Details"
+  },
+  {
+   "fieldname": "upload_proj_prop",
+   "fieldtype": "Attach",
+   "label": "Upload Project Proposal"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Research' || doc.project_type == 'Consultancy' || doc.project_type == 'Other'",
+   "fieldname": "proj_details",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
+  },
+  {
+   "fieldname": "column_break_lufi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "budget_proposal_details_section",
+   "fieldtype": "Section Break",
+   "label": "Budget Details"
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "fieldname": "proposed_budget_breakup",
+   "fieldtype": "Table",
+   "label": "Proposed Budget Break-up",
+   "options": "Project Sanctioned Budget"
+  },
+  {
+   "fieldname": "check_project_heads",
+   "fieldtype": "Heading",
+   "label": "Select the check box to fill the details of project heads"
+  },
+  {
+   "default": "0",
+   "fieldname": "equipment_checkbox",
+   "fieldtype": "Check",
+   "label": "Equipment"
+  },
+  {
+   "default": "0",
+   "fieldname": "manpower_checkbox",
+   "fieldtype": "Check",
+   "label": "Manpower"
+  },
+  {
+   "depends_on": "eval:doc.equipment_checkbox == 1\r\n",
+   "fieldname": "proposed_equipment_details",
+   "fieldtype": "Table",
+   "label": "Equipment Details",
+   "options": "project_registration_equipment_details"
+  },
+  {
+   "depends_on": "eval:doc.manpower_checkbox == 1\r\n",
+   "fieldname": "proposed_manpower_details",
+   "fieldtype": "Table",
+   "label": "Manpower Details",
+   "options": "project_registration_manpower_details"
+  },
+  {
+   "depends_on": "eval:doc.funding_agency_type == \"Non-Government\"",
+   "fieldname": "nature_funding_agency_non_govt",
+   "fieldtype": "Select",
+   "label": "Nature of Funding Agency",
+   "options": "\nReliance\nAirtel\nTCS"
+  },
+  {
+   "default": "No",
+   "fieldname": "is_additional_pi",
+   "fieldtype": "Select",
+   "label": "Does this project has additional PI?",
+   "options": "Yes\nNo",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.funding_agency_type == \"Government\" && doc.nature_funding_agency == \"National\"",
+   "fieldname": "select_funding_agency",
+   "fieldtype": "Select",
+   "label": "Select Funding Agency",
+   "options": "\nDST\nDBT\nCSIR\nICMR\nSERB\nUGC\nDRDO\nISRO\nAICTE"
+  },
+  {
+   "fieldname": "total_first_year_budget",
+   "fieldtype": "Currency",
+   "label": "Total 1st year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_second_year_budget",
+   "fieldtype": "Currency",
+   "label": "Total 2nd year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_third_year_budget",
+   "fieldtype": "Currency",
+   "label": "Total 3rd year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_fourth_year_budget",
+   "fieldtype": "Currency",
+   "label": "Total 4th year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_fifth_year_budget",
+   "fieldtype": "Currency",
+   "label": "Total 5th year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grand_total_proposal",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Grand Total"
+  },
+  {
+   "fieldname": "section_break_zalt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_mmop",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_rqyu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_wygt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_nesv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_qtll",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_ufyb",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_guud",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "text_editor_zwfu",
+   "fieldtype": "Text Editor",
+   "label": "Create your Endorsement"
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Research' || doc.project_type == 'Consultancy' || doc.project_type == 'Other'",
+   "fieldname": "section_break_sqjc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "funding_agen",
+   "fieldtype": "Link",
+   "label": "Select Funding Agency",
+   "options": "fundingagency_"
+  },
+  {
+   "fieldname": "funding_agency_schemes",
+   "fieldtype": "Small Text",
+   "label": "Name of the Research Scheme if applicable"
+  },
+  {
+   "fieldname": "column_break_xgsj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_uure",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_first_year_budget_1",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Total 1st year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_dxvf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_second_year_budget_1",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Total 2nd year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_jnms",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_third_year_budget_1",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Total 3rd year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_mvpo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_fourth_year_budget_1",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Total 4th year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_nodq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_fifth_year_budget_1",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Total 5th year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_eezb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "grand_total_proposal_1",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Grand Total"
+  },
+  {
+   "fieldname": "section_break_oexx",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "funding_agen.origin_of_funding_agency",
+   "fieldname": "origin_of_funding_agency",
+   "fieldtype": "Data",
+   "label": "Origin of Funding",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "funding_agen.fundingagency_country",
+   "fieldname": "address_country",
+   "fieldtype": "Data",
+   "label": "Country",
+   "options": "Country",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "funding_agen.fundingagency_address",
+   "fieldname": "address_street_village_locality",
+   "fieldtype": "Data",
+   "label": "Street/Locality Address",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "funding_agen.fundingagency_state",
+   "fieldname": "address_state",
+   "fieldtype": "Data",
+   "label": "State",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "funding_agen.fundingagency_postalcode",
+   "fieldname": "address_postal_code",
+   "fieldtype": "Data",
+   "label": "Postal Code",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.funding_agency_type == \"Government\"",
+   "fetch_from": "funding_agen.ministry_funding_agency",
+   "fieldname": "funding_agency_ministry",
+   "fieldtype": "Data",
+   "label": "Ministry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_gtum",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "add_funding_agency_button",
+   "fieldtype": "Button",
+   "hidden": 1,
+   "label": "Add New FundingAgency"
+  },
+  {
+   "fieldname": "pi_userid",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Webmail of PI",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "description": "* For Office Use Only",
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Project No.",
+   "length": 22,
+   "read_only": 1
+  },
+  {
+   "fieldname": "my_projects",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "MyProjects",
+   "options": "myProjects",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.funding_agency_type == \"Government\"",
+   "fetch_from": "funding_agen.funding_agency_initials",
+   "fieldname": "fund_agen_initials",
+   "fieldtype": "Data",
+   "label": "Funding Agency Initials",
+   "read_only": 1
+  },
+  {
+   "fieldname": "prj_start_date",
+   "fieldtype": "Date",
+   "label": "Project Start Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "prj_end_date",
+   "fieldtype": "Date",
+   "label": "Project End Date",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.project_type == 'Consultancy'",
+   "fieldname": "consultancy_calc_section",
+   "fieldtype": "Section Break",
+   "label": "Consultancy Calculations"
+  },
+  {
+   "fieldname": "consultancy_gstin",
+   "fieldtype": "Data",
+   "label": "GSTIN Number"
+  },
+  {
+   "default": "18",
+   "fieldname": "consultancy_gst_rate",
+   "fieldtype": "Float",
+   "label": "GST @ % *",
+   "non_negative": 1
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category D : Technology Transfer / Research Based')",
+   "fieldname": "sec_cat_d_inputs",
+   "fieldtype": "Section Break",
+   "label": "Category D (Technology Transfer/Research)"
+  },
+  {
+   "fieldname": "cat_d_grand_total_input",
+   "fieldtype": "Currency",
+   "label": "Grand Total Amount (Inclusive of GST) *"
+  },
+  {
+   "fieldname": "cat_d_project_cost_excl_gst",
+   "fieldtype": "Currency",
+   "label": "Total Project Cost (Excluding GST)",
+   "read_only": 1
+  },
+  {
+   "description": " (Inc. 10% OverHead & 20% Institute Share)",
+   "fieldname": "cat_d_consultancy_fee_input",
+   "fieldtype": "Currency",
+   "label": "Consultancy Fee/ Honorarium/ Chair Professorship Input *",
+   "placeholder": "N.B.: Consultancy fee should be less than 30% of total project cost"
+  },
+  {
+   "description": "(Inc. 10% OverHead.)",
+   "fieldname": "operational_expense_input_inc_10_oh",
+   "fieldtype": "Currency",
+   "label": "Operational Expense Input (Contingency/Consumable/Equipment/Travel/Manpower, etc) "
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category D : Technology Transfer / Research Based')",
+   "fieldname": "sec_cat_d_breakup",
+   "fieldtype": "Section Break",
+   "label": "Category D Budget Break-up"
+  },
+  {
+   "fieldname": "cat_d_cf_base",
+   "fieldtype": "Currency",
+   "label": "Consultancy Fee/Honorarium (Base)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_oe_base",
+   "fieldtype": "Currency",
+   "label": "Operational Expenses (Base)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_total_overhead",
+   "fieldtype": "Currency",
+   "label": "Total Overhead",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_institute_share",
+   "fieldtype": "Currency",
+   "label": "Institute Share",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_gst_amt",
+   "fieldtype": "Currency",
+   "label": "GST Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_d_grand_total_calc",
+   "fieldtype": "Currency",
+   "label": "Grand Total (Calculated)",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && !doc.consultancy_category.startsWith('Category D : Technology Transfer / Research Based')",
+   "fieldname": "sec_cat_ef_breakup",
+   "fieldtype": "Section Break",
+   "label": "Category T/E Breakdown"
+  },
+  {
+   "fieldname": "cat_ef_total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount (Excluding GST) *"
+  },
+  {
+   "fieldname": "col_break_ef",
+   "fieldtype": "Column Break",
+   "label": "Breakup Details"
+  },
+  {
+   "fieldname": "cat_ef_honorarium",
+   "fieldtype": "Currency",
+   "label": "Honorarium (0.3 * TE)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_ef_institute_share",
+   "fieldtype": "Currency",
+   "label": "Institute Share (0.7 * TE)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_ef_gst",
+   "fieldtype": "Currency",
+   "label": "GST Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cat_ef_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "category_d_note",
+   "fieldtype": "HTML",
+   "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category D: Technology Transfer</b><br>\n                                        The project is Research Based Consultancy and the minimum duration is 1 year (12 months). The consultancy fee should be less than 30% of the total project cost.\n                                        </div>"
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category E : Non-Routine')",
+   "fieldname": "category_e_note",
+   "fieldtype": "HTML",
+   "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category E: Non-routine</b><br>\n                                        The project requires expert advertise and there is no restriction on consultancy fee.<br>\n                                        </div>"
+  },
+  {
+   "depends_on": "eval:doc.consultancy_category && doc.consultancy_category.startsWith('Category T : Routine / Testing')",
+   "fieldname": "category_t_note",
+   "fieldtype": "HTML",
+   "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category T: Routine/Testing</b><br>\n                                        The project is category T based.<br>\n                                        </div>"
+  },
+  {
+   "fetch_from": "funding_agen.gstin_of_funding_agency",
+   "fieldname": "gstin_number",
+   "fieldtype": "Data",
+   "label": "GSTIN number"
+  },
+  {
+   "fetch_from": "funding_agen.funding_agency_id",
+   "fieldname": "funding_agency_id",
+   "fieldtype": "Data",
+   "label": "Funding agency id"
+  },
+  {
+   "fieldname": "for_office_use_only_section",
+   "fieldtype": "Section Break",
+   "label": "For office use only "
+  },
+  {
+   "fieldname": "section_break_vwve",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "add_new_funding_agency_details",
+   "fieldtype": "Button",
+   "label": "Add New Funding Agency",
+   "options": "fundingagency_"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-02 16:12:30.495857",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Project Registration",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Independent Researcher",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "if_owner": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "project staff",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Dean, RnD",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Senior Staff",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Director",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "project_title",
+ "track_changes": 1
+}
