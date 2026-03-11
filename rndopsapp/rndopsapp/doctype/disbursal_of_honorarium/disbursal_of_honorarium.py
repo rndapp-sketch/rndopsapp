@@ -148,6 +148,7 @@ def save_disbursal_of_honorarium_data(data):
 	Save Disbursal of Honorarium data.
 	Expects 'data' as a JSON string or dict.
 	"""
+	print("dATA==================================================",data)
 	if isinstance(data, str):
 		data = json.loads(data)
 	
@@ -158,15 +159,40 @@ def save_disbursal_of_honorarium_data(data):
 		else:
 			doc = frappe.new_doc("Disbursal of Honorarium")
 		
+		# Auto-resolve Project Name (Link: Project Registration) which expects 'name' (primary key)
+		if data.get("project_name") and not frappe.db.exists("Project Registration", data["project_name"]):
+			# Frontend might send 'testing full cycle' (project_title), look it up
+			pr = frappe.db.get_value("Project Registration", {"project_title": data["project_name"]}, ["name", "project_no"], as_dict=1)
+			if pr:
+				data["project_name"] = pr.name
+				# Update project_number to the correct project_no
+				data["project_number"] = pr.project_no
+		
+		# In case project_name was already the primary key, but project_number is still the title
+		elif data.get("project_name") and data.get("project_number") and data["project_name"] == data["project_number"]:
+			pr_no = frappe.db.get_value("Project Registration", data["project_name"], "project_no")
+			if pr_no:
+				data["project_number"] = pr_no
+		elif data.get("project_number") and not frappe.db.exists("Project Registration", data["project_number"]):
+			pr_num = frappe.db.get_value("Project Registration", {"project_no": data["project_number"]}, "project_no")
+			if pr_num:
+				data["project_number"] = pr_num
+
 		# Map Fields
 		simple_fields = [
 			"amended_from",
 			"reference_application_number",
 			"applying_for_self_or_other",
+			"project_name",
+			"project_number",
 			"webmail_id",
 			"name_of_applicant",
 			"designation_of_applicant",
-			"department",
+			"applicant_department",
+			"webmail_id_for",
+			"name_of_applicant_for",
+			"designation_of_applicant_for",
+			"department_for",
 			"account_head",
 			"approval_comp_authority",
 			"total_amount",
@@ -315,3 +341,47 @@ def get_disbursal_of_honorarium_workflow_actions(docname):
 			allowed_actions.append(transition.action)
 
 	return list(dict.fromkeys(allowed_actions))
+
+
+@frappe.whitelist()
+def submit_disbursal_of_honorarium(docname):
+	"""
+	Submit a Disbursal of Honorarium document.
+	Uses the workflow 'Submit' action to properly transition from Draft
+	to the next workflow state (e.g. Pending Approval), instead of
+	calling doc.submit() which would set docstatus=1 and incorrectly
+	match the 'Rejected' workflow state.
+	"""
+	print("submit_disbursal_of_honorarium: execution started")
+	print("Payload received:", docname)
+	try:
+		doc = frappe.get_doc("Disbursal of Honorarium", docname)
+
+		current_state = doc.workflow_state or "Draft"
+		print(f"Current workflow state: {current_state}, docstatus: {doc.docstatus}")
+
+		if current_state != "Draft":
+			return {
+				"status": "info",
+				"message": f"Disbursal of Honorarium '{docname}' is already in state '{current_state}'.",
+				"docname": docname,
+				"workflow_state": current_state,
+			}
+
+		# Use the workflow action to transition properly
+		result = perform_disbursal_of_honorarium_action(docname, "Submit")
+		if result.get("status") == "success":
+			print(f"Disbursal submitted successfully via workflow. New state: {result.get('workflow_state')}")
+		else:
+			print(f"Disbursal submission failed: {result.get('message')}")
+
+		return result
+
+	except Exception as e:
+		import traceback
+		tb = traceback.format_exc()
+		print(f"[ERROR][submit_disbursal_of_honorarium]: {str(e)}")
+		print(f"[ERROR][submit_disbursal_of_honorarium] Traceback:\n{tb}")
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Disbursal of Honorarium Submit Error")
+		return {"status": "error", "message": str(e) or tb}

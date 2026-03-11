@@ -10,7 +10,8 @@
   "amended_from",
   "reference_application_number",
   "applying_for_self_or_other",
-  "project_no",
+  "project_name",
+  "project_number",
   "applicant_details_section",
   "webmail_id",
   "name_of_applicant",
@@ -169,24 +170,31 @@
    "label": "Department"
   },
   {
-   "fieldname": "project_no",
-   "fieldtype": "Data",
-   "label": "Project Number",
-   "read_only": 1
-  },
-  {
    "fetch_from": "webmail_id.department_name",
    "fieldname": "applicant_department",
    "fieldtype": "Data",
    "label": "Department",
    "read_only": 1
+  },
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "project_name",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Project Name",
+   "options": "Project Registration"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-06 15:20:43.489364",
+ "modified": "2026-03-11 17:21:31.648883",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Honorarium",
