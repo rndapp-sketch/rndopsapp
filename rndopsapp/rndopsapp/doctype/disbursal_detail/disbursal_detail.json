@@ -9,6 +9,7 @@
   "name_as_per_in_back_account",
   "disbursal_employee_student",
   "designation",
+  "designation_select",
   "disbursal_employee_number_or_role_no",
   "disbursal_pdf_no_or_bank_account_no",
   "disbursal_amount",
@@ -31,8 +32,9 @@
   {
    "fieldname": "designation",
    "fieldtype": "Link",
-   "label": "Designation",
-   "options": "Designation_prornd"
+   "hidden": 1,
+   "label": "Designation Link",
+   "options": "User"
   },
   {
    "fieldname": "disbursal_employee_number_or_role_no",
@@ -60,19 +62,26 @@
    "fieldtype": "Currency",
    "label": "Institute's Share (30%)(Rs.)",
    "read_only": 1
+  },
+  {
+   "fieldname": "designation_select",
+   "fieldtype": "Link",
+   "label": "Designation",
+   "options": "Designation_prornd"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-23 16:00:36.321603",
+ "modified": "2026-03-11 17:23:27.390852",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal Detail",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

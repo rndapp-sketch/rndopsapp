@@ -8,9 +8,11 @@
   "section_break_tvd4",
   "amended_from",
   "section_break_mtlg",
+  "webmail_id_link",
   "webmail_id",
   "pi_name",
   "employee_id",
+  "employee_class",
   "section_break_garo",
   "disbursal_project_number",
   "project_title",
@@ -44,6 +46,7 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "Disbursal of Consultancy",
@@ -60,12 +63,6 @@
    "fieldname": "pi_name",
    "fieldtype": "Data",
    "label": "PI Name"
-  },
-  {
-   "fieldname": "webmail_id",
-   "fieldtype": "Link",
-   "label": "Webmail ID",
-   "options": "User"
   },
   {
    "fetch_from": "webmail_id.employee_id",
@@ -196,13 +193,32 @@
    "fieldtype": "Currency",
    "label": "Student Welfare Fund (5%)",
    "read_only": 1
+  },
+  {
+   "fieldname": "webmail_id_link",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Webmail ID Link",
+   "options": "User"
+  },
+  {
+   "fetch_from": "webmail_id_link.username",
+   "fieldname": "webmail_id",
+   "fieldtype": "Data",
+   "label": "Webmail ID"
+  },
+  {
+   "fieldname": "employee_class",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Employee Class"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-23 16:21:26.365865",
+ "modified": "2026-03-12 17:08:57.098633",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Consultancy",
@@ -220,9 +236,23 @@
    "share": 1,
    "submit": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
