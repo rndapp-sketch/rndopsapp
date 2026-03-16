@@ -353,6 +353,7 @@
   {
    "fieldname": "universal_user_u_r",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Universal User",
    "options": "Universal User__"
   },
@@ -367,7 +368,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-25 16:34:44.266239",
+ "modified": "2026-03-16 13:01:10.247878",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Universal Registration__",
