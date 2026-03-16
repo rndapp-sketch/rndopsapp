@@ -195,8 +195,7 @@ def save_disbursal_of_honorarium_data(data):
 			"department_for",
 			"account_head",
 			"approval_comp_authority",
-			"total_amount",
-			"workflow_state" # Just in case it's passed, though usually handled by perform_action
+			"total_amount"
 		]
 
 		for field in simple_fields:
@@ -282,6 +281,7 @@ def perform_disbursal_of_honorarium_action(docname, action):
 
 		# Update workflow state
 		doc.workflow_state = next_state
+		doc.workflow_action = action
 		
 		# Check if next state requires submission (docstatus=1)
 		# We check the 'states' table in Workflow to see if doc_status should be 1
@@ -293,6 +293,52 @@ def perform_disbursal_of_honorarium_action(docname, action):
 			doc.cancel()
 		else:
 			doc.save(ignore_permissions=True)
+
+		# --- Data Pipeline Integration ---
+		# Check if the document was just fully approved ("Approved by Dean(RnD)")
+		# And if so, publish the cached commitment to Kafka
+		if next_state == "Approved by Dean(RnD)":
+			try:
+				from rndopsapp.rndopsapp.commitToJsonFrappe import read_json_data, write_json_data
+				from rndopsapp.rndopsapp.kafka_sync import publish_message
+				import datetime
+
+				commits = read_json_data()
+				# Look for the commit matching this docname
+				commit_index = next((index for (index, d) in enumerate(commits) if d.get("frapAppId") == docname), None)
+				
+				if commit_index is not None:
+					commit_payload = commits.pop(commit_index)
+					
+					# Wrap payload as expected by Kafka producer
+					wrapped_payload = {
+						"schemaVersion": "1.0",
+						"eventType": "ACCOUNT_HEAD_COMMIT",
+						"timestamp": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
+						"data": commit_payload
+					}
+
+					TOPIC_COMMIT = 'account-head-commit-events'
+					TOPIC_COMMIT_DLQ = 'account-head-commit-events-dlq'
+					
+					# Publish to Kafka
+					success = publish_message(
+						TOPIC_COMMIT, 
+						wrapped_payload, 
+						doc.name, 
+						TOPIC_COMMIT_DLQ, 
+						key=commit_payload.get("projectNumber")
+					)
+
+					if success:
+						frappe.logger().info(f"Successfully published delayed commitment for {docname} to Kafka.")
+						# Only write back if publish succeeds, effectively deleting it from the pending cache
+						write_json_data(commits)
+					else:
+						frappe.log_error(f"Failed to publish delayed commitment for {docname} to Kafka.", "Kafka Publish Error")
+			except Exception as e:
+				frappe.log_error(f"Error processing delayed commitment for {docname}: {str(e)}", "Data Pipeline Error")
+		# -------------------------------
 
 		frappe.db.commit()
 
@@ -385,3 +431,48 @@ def submit_disbursal_of_honorarium(docname):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Disbursal of Honorarium Submit Error")
 		return {"status": "error", "message": str(e) or tb}
+
+
+@frappe.whitelist()
+def get_disbursal_of_honorarium_by_project(project_code: str = "", limit: int = 200, start: int = 0):
+	"""
+	Returns Disbursal of Honorarium docs for a given project_code.
+	"""
+	from frappe.utils import cint
+
+	limit = int(cint(limit) or 200)
+	start = int(cint(start) or 0)
+	project_code = (project_code or "").strip()
+
+	if not project_code:
+		return {"message": []}
+
+	results = []
+	try:
+		# Use project_number as that's what stores the project_no in Disbursal of Honorarium
+		names = frappe.get_all(
+			"Disbursal of Honorarium",
+			filters={"project_number": project_code},
+			fields=["name"],
+			limit_start=start,
+			limit_page_length=limit,
+			order_by="modified desc",
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_disbursal_of_honorarium_by_project: failed to query")
+		return {"message": []}
+
+	if not names:
+		return {"message": []}
+
+	for row in names:
+		name = row.get("name")
+		try:
+			doc = frappe.get_doc("Disbursal of Honorarium", name)
+			doc_dict = doc.as_dict()
+			results.append(doc_dict)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"get_disbursal_of_honorarium_by_project: error loading {name}")
+			continue
+
+	return {"message": results}
