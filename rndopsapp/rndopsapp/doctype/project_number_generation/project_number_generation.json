@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{YY}{category}{project_no}{dept_initial}{project_type}{emp_id}{emp_initial}",
+ "autoname": "format:{YY}{category}{dept_initial}{project_type}{emp_id}{emp_initial}{project_no}",
  "creation": "2026-02-09 10:54:19.277272",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -51,7 +51,7 @@
    "fieldname": "project_no",
    "fieldtype": "Data",
    "label": "Project No.",
-   "length": 4,
+   "length": 23,
    "placeholder": "1"
   },
   {
@@ -75,13 +75,14 @@
    "fieldtype": "Link",
    "label": "Select Department",
    "options": "Department_prornd",
-   "placeholder": "CSE"
+   "placeholder": "CSE",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-09 18:16:05.136287",
+ "modified": "2026-03-17 13:06:40.129366",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Number Generation",
@@ -114,6 +115,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

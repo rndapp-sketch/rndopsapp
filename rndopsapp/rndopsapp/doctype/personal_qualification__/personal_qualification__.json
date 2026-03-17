@@ -22,24 +22,21 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Level ",
-   "options": "\n10th\n12th\nDiploma\nBachelor\nMaster\nPhD",
-   "reqd": 1
+   "options": "\n10th\n12th\nDiploma\nBachelor\nMaster\nPhD"
   },
   {
    "fieldname": "course_name_u_r",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Course Name",
-   "placeholder": "e.g., B.Tech, MBA",
-   "reqd": 1
+   "placeholder": "e.g., B.Tech, MBA"
   },
   {
    "fieldname": "specialization_u_r",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": " Specialization",
-   "placeholder": "e.g., Civil, Computer Science",
-   "reqd": 1
+   "placeholder": "e.g., Civil, Computer Science"
   },
   {
    "fieldname": "institution_u_r",
@@ -85,7 +82,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-02-05 17:55:36.346300",
+ "modified": "2026-03-16 17:20:56.514444",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Personal Qualification__",

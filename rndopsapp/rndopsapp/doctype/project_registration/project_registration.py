@@ -790,6 +790,8 @@ def get_user_details_for_pi(user_email):
 			"principal_investigator_name": user_doc.full_name,
 			"designation": user_doc.get("designation_name"),
 			"applicant_department": dept_dict["dept_name"],
+			"copi_address": user_doc.get("inst_name_address"),
+			"copi_contact": user_doc.get("mobile_no")
 		}
 		# frappe.logger().warning(f"Jimmy Logging Debug get_user_details_for_pi: {user_dict}")
 		return data

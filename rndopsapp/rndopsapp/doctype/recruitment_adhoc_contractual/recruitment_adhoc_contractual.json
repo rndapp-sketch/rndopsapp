@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}0A{#####}",
  "creation": "2025-12-30 14:56:31.519909",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -23,6 +24,7 @@
   "upfa_funds_received",
   "upfa_interview_date",
   "upfa_interview_time",
+  "mode_of_interview",
   "upfa_interview_venue",
   "upfa_pi_contact",
   "details_of_posts_section",
@@ -95,7 +97,6 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
    "fieldname": "upfa_financial_section",
    "fieldtype": "Section Break",
    "label": "Financial & Interview Details"
@@ -111,16 +112,19 @@
    "label": "Funds Received for Staff"
   },
   {
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
    "fieldname": "upfa_interview_date",
    "fieldtype": "Date",
    "label": "Date of Interview"
   },
   {
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
    "fieldname": "upfa_interview_time",
    "fieldtype": "Time",
    "label": "Time of Interview"
   },
   {
+   "depends_on": "eval:doc.mode_of_interview!=\"Online\"",
    "fieldname": "upfa_interview_venue",
    "fieldtype": "Data",
    "label": "Venue"
@@ -202,16 +206,23 @@
    "fieldtype": "Link",
    "label": "Webmail ID",
    "options": "User"
+  },
+  {
+   "fieldname": "mode_of_interview",
+   "fieldtype": "Select",
+   "label": "Mode of Interview",
+   "options": "\nOnline\nOffline\nHybrid"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-06 09:43:22.420127",
+ "modified": "2026-03-17 13:01:27.803485",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
