@@ -7,8 +7,22 @@ class ProjectNumberGeneration(Document):
     def before_insert(self):
         # If project_no is empty or just '0', get the next serial number
         if not self.project_no or self.project_no == "0":
-            # This generates a serial: 1, 2, 3...
-            self.project_no = make_autoname('.####')
+            # 1. Get Year (2 digits)
+            year = str(self.current_year1 or frappe.utils.nowdate()[:4])[-2:]
+            
+            # 2. Get Emp ID (4 digits, padded)
+            eid = str(self.emp_id or "0").zfill(4)[-4:]
+            
+            # 3. Independent naming series per employee and year
+            # format: PRJ-EID-YY-.#### ensures unique sequence in tabSeries
+            series_key = f"PRJ-{eid}-{year}-.####"
+            
+            # make_autoname handles concurrency safely via database locks
+            generated_name = make_autoname(series_key)
+            
+            # 4. Extract the serial number part (last 4 digits) and pad it
+            # generated_name will be e.g. "PRJ-0391-26-0001"
+            self.project_no = generated_name.split('-')[-1].zfill(4)
 
     def autoname(self):
         # 1. Year (2)
@@ -27,7 +41,7 @@ class ProjectNumberGeneration(Document):
         einit = str(self.emp_initial or "").upper().rjust(4, 'x')[:4]
 
         # Total: 2+1+4+4+2+4+4 = 21
-        self.name = f"{year}{cat}{proj}{dept}{ptype}{eid}{einit}"
+        self.name = f"{year}{cat}{dept}{ptype}{eid}{einit}{proj}"
 
 @frappe.whitelist()
 def get_project_number_generation_fields(doc_name=None):
