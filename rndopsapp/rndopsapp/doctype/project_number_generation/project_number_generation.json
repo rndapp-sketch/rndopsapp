@@ -51,7 +51,7 @@
    "fieldname": "project_no",
    "fieldtype": "Data",
    "label": "Project No.",
-   "length": 4,
+   "length": 23,
    "placeholder": "1"
   },
   {
@@ -75,13 +75,14 @@
    "fieldtype": "Link",
    "label": "Select Department",
    "options": "Department_prornd",
-   "placeholder": "CSE"
+   "placeholder": "CSE",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-09 18:16:05.136287",
+ "modified": "2026-03-16 18:08:56.661520",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Number Generation",
@@ -114,6 +115,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
