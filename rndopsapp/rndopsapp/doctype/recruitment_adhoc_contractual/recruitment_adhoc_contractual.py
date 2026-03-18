@@ -4,7 +4,7 @@
 import frappe
 import json
 from frappe.model.document import Document
-
+from frappe.model.workflow import get_transitions
 
 class RecruitmentAdhocContractual(Document):
 	pass
@@ -115,7 +115,7 @@ def get_recruitment_adhoc_contractual_workflow_actions(docname):
     Utilizes standard Frappe workflow transition logic to ensure conditions and roles 
     are handled consistently with the desk view.
     """
-    from frappe.model.workflow import get_transitions
+    
     
     doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
     transitions = get_transitions(doc)

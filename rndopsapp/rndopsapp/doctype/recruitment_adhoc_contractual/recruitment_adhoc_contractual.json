@@ -29,6 +29,9 @@
   "upfa_pi_contact",
   "details_of_posts_section",
   "upfa_post_details",
+  "section_break_izok",
+  "chairperson_webmail_id",
+  "chairperson",
   "upfa_selection_committee_section",
   "upfa_selection_committee",
   "upfa_declaration_section",
@@ -212,13 +215,31 @@
    "fieldtype": "Select",
    "label": "Mode of Interview",
    "options": "\nOnline\nOffline\nHybrid"
+  },
+  {
+   "fieldname": "section_break_izok",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "webmail_id.full_name",
+   "fieldname": "chairperson",
+   "fieldtype": "Data",
+   "label": "Chairperson"
+  },
+  {
+   "depends_on": "eval:frappe.session.user==\"dornd\" && doc.upfa_appointment_type==\"Contractual\"",
+   "fetch_from": "webmail_id.piheadmentor_user_id",
+   "fieldname": "chairperson_webmail_id",
+   "fieldtype": "Data",
+   "label": "Chairperson Webmail ID",
+   "options": "User"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-17 13:01:27.803485",
+ "modified": "2026-03-17 17:21:20.986049",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",
