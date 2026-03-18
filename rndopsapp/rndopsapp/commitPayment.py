@@ -12,9 +12,9 @@ from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
 )
 
 # External API endpoints
-LEDGER_API_BASE_URL = "http://172.16.135.27:18083/api/commit-payment-transactions"
-ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.135.27:18083/api/account-head-payments"
-ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.135.27:18083/api/account-head-commit"
+LEDGER_API_BASE_URL = "http://172.16.134.81:18080/api/commit-payment-transactions"
+ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.134.81:18080/api/account-head-payments"
+ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.134.81:18080/api/account-head-commit"
 
 # Valid commit statuses
 VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]

@@ -4,7 +4,7 @@
 import frappe
 import json
 from frappe.model.document import Document
-
+from frappe.model.workflow import get_transitions
 
 class RecruitmentAdhocContractual(Document):
 	pass
@@ -112,107 +112,48 @@ def save_recruitment_adhoc_contractual_data(data):
 def get_recruitment_adhoc_contractual_workflow_actions(docname):
     """
     Get available workflow actions for the current user based on document state.
+    Utilizes standard Frappe workflow transition logic to ensure conditions and roles 
+    are handled consistently with the desk view.
     """
+    
+    
     doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
-    current_state = doc.workflow_state or "Draft"
-    user_roles = frappe.get_roles(frappe.session.user)
-
-    workflow_name = frappe.db.get_value(
-        "Workflow",
-        {"document_type": "Recruitment Adhoc Contractual", "is_active": 1},
-        "name"
-    )
-
-    if not workflow_name:
-        return []
-
-    workflow = frappe.get_doc("Workflow", workflow_name)
-    allowed_actions = []
-
-    for transition in workflow.get("transitions", []):
-        if transition.state != current_state:
-            continue
-
-        transition_roles = transition.get("allowed") or []
-        if isinstance(transition_roles, str):
-            transition_roles = [transition_roles]
-
-        if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
-            if transition.condition:
-                try:
-                    if not frappe.safe_eval(transition.condition, None, {"doc": doc}):
-                        continue
-                except Exception:
-                    continue
-
-            allowed_actions.append(transition.action)
-
-    return list(dict.fromkeys(allowed_actions))
+    transitions = get_transitions(doc)
+    
+    # Extract unique action names
+    actions = list(dict.fromkeys([t.get("action") for t in transitions]))
+    
+    return actions
 
 
 @frappe.whitelist()
 def perform_recruitment_adhoc_contractual_action(docname, action):
+    """
+    Perform a workflow action on the document.
+    Uses Frappe's built-in workflow engine for robust transition handling.
+    """
     try:
-        # 1. Get Workflow
-        wf_name = frappe.db.get_value("Workflow", {"document_type": "Recruitment Adhoc Contractual", "is_active": 1}, "name")
-        if not wf_name:
-             frappe.throw("No active workflow found for Recruitment Adhoc Contractual")
-             
-        wf = frappe.get_doc("Workflow", wf_name)
+        from frappe.model.workflow import apply_workflow
         
         doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
-        current_state = doc.workflow_state or "Draft"
-        user_roles = frappe.get_roles(frappe.session.user)
         
-        # 2. Find Next State
-        next_state = None
-        transition = None
-        for t in wf.transitions:
-            if t.state == current_state and t.action == action:
-                allowed_roles = t.get("allowed") or []
-                if isinstance(allowed_roles, str):
-                    allowed_roles = [allowed_roles]
-
-                if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
-                    continue
-
-                if t.condition:
-                    try:
-                        if not frappe.safe_eval(t.condition, None, {"doc": doc}):
-                            continue
-                    except Exception as e:
-                        frappe.log_error(f"Workflow condition error: {str(e)}", "Workflow Error")
-                        continue
-
-                next_state = t.next_state
-                transition = t
-                break
-                
-        if not next_state:
-            frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}' matching your role and conditions.")
-
-        # 3. Update & Save
-        doc.workflow_state = next_state
-        state_doc = next((s for s in wf.states if s.state == next_state), None)
-
-        if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
-            doc.submit()
-        elif state_doc and state_doc.doc_status == "2" and doc.docstatus != 2:
-            doc.cancel()
-        else:
-            doc.save(ignore_permissions=True)
-            
+        # apply_workflow handles transitions, permissions, and status updates
+        updated_doc = apply_workflow(doc, action)
+        
         frappe.db.commit()
+        
+        new_state = updated_doc.workflow_state
         
         return {
             "status": "success",
-            "message": f"Action '{action}' completed. New State: {next_state}",
+            "message": f"Action '{action}' completed. New State: {new_state}",
             "docname": docname,
-            "workflow_state": next_state,
+            "workflow_state": new_state,
             "next_actions": get_recruitment_adhoc_contractual_workflow_actions(docname)
         }
     except Exception as e:
         frappe.db.rollback()
+        # Provide a more user-friendly error message if it's a known workflow error
         return {"status": "error", "message": str(e)}
 
 
