@@ -12,47 +12,151 @@ class RecruitmentAdhocContractual(Document):
 
 @frappe.whitelist()
 def get_recruitment_adhoc_contractual_fields(doc_name=None):
+    """
+    Returns field metadata, prefill data, and link options for the
+    Recruitment Adhoc Contractual form (follows APPS_DOCUMENTATION.md pattern).
+    """
+
     # 1. Fetch Metadata
     meta = frappe.get_meta("Recruitment Adhoc Contractual")
     fields = []
     for f in meta.fields:
+        depends_on = getattr(f, "depends_on", None) or ""
+        mandatory_depends_on = getattr(f, "mandatory_depends_on", None) or ""
+        read_only_depends_on = getattr(f, "read_only_depends_on", None) or ""
+
         field_data = {
             "fieldname": f.fieldname,
             "label": f.label,
             "fieldtype": f.fieldtype,
-            "options": f.options,
+            "options": getattr(f, "options", None),
             "mandatory": f.reqd,
             "read_only": f.read_only,
-            "depends_on": f.depends_on, # For frontend logic
-            "depends_on_eval": f.depends_on.replace("eval:", "") if f.depends_on and f.depends_on.startswith("eval:") else None
+            "hidden": getattr(f, "hidden", 0),
+            "description": getattr(f, "description", "") or "",
+            "default": getattr(f, "default", None),
+            "in_list_view": getattr(f, "in_list_view", 0),
+            # Conditional logic for frontend
+            "depends_on": depends_on,
+            "depends_on_eval": depends_on.replace("eval:", "").strip() if depends_on.startswith("eval:") else None,
+            "mandatory_depends_on": mandatory_depends_on,
+            "mandatory_depends_on_eval": mandatory_depends_on.replace("eval:", "").strip() if mandatory_depends_on.startswith("eval:") else None,
+            "read_only_depends_on": read_only_depends_on,
+            "read_only_depends_on_eval": read_only_depends_on.replace("eval:", "").strip() if read_only_depends_on.startswith("eval:") else None,
         }
-        
-        # Handle Child Tables: Fetch child fields metadata
-        if f.fieldtype == "Table":
-            child_meta = frappe.get_meta(f.options)
-            field_data["child_fields"] = [{
-                "fieldname": cf.fieldname,
-                "label": cf.label,
-                "fieldtype": cf.fieldtype,
-                "options": cf.options,
-                "in_list_view": cf.in_list_view
-            } for cf in child_meta.fields]
-            
+
+        # Handle Child Tables: fetch child fields metadata
+        if f.fieldtype == "Table" and f.options:
+            try:
+                child_meta = frappe.get_meta(f.options)
+                field_data["child_fields"] = [{
+                    "fieldname": cf.fieldname,
+                    "label": cf.label,
+                    "fieldtype": cf.fieldtype,
+                    "options": getattr(cf, "options", None),
+                    "mandatory": cf.reqd,
+                    "hidden": getattr(cf, "hidden", 0),
+                    "read_only": cf.read_only,
+                    "in_list_view": getattr(cf, "in_list_view", 0),
+                    "depends_on": getattr(cf, "depends_on", None),
+                } for cf in child_meta.fields]
+            except Exception:
+                pass
+
         fields.append(field_data)
-    
+
     # 2. Prepare Containers
     prefill_data = {}
     link_options = {}
 
-    # 3. Fetch Data (if doc_name provided)
+    # 3. Fetch Data (if doc_name provided) or set new-doc defaults
     if doc_name:
-        doc = frappe.get_doc("Recruitment Adhoc Contractual", doc_name)
-        prefill_data = doc.as_dict()
-    
-    # 5. Client Scripts (CRITICAL: Fetch enabled client scripts for frontend logic)
+        try:
+            doc = frappe.get_doc("Recruitment Adhoc Contractual", doc_name)
+            prefill_data = doc.as_dict()
+        except Exception:
+            pass
+    else:
+        # New-doc defaults: auto-fill the logged-in user's info
+        try:
+            current_user = frappe.session.user
+            if current_user and current_user not in ["Administrator", "Guest"]:
+                prefill_data["webmail_id"] = current_user
+
+                # Try fetching PI head/mentor from the User record
+                user_doc = frappe.get_doc("User", current_user)
+                head = getattr(user_doc, "piheadmentor_user_id", None)
+                if head:
+                    prefill_data["head"] = head
+        except Exception:
+            pass
+
+    # 4. Populate Link Options
+
+    # webmail_id → User (enabled, non-guest)
+    try:
+        users = frappe.get_all(
+            "User",
+            filters={"enabled": 1, "user_type": "System User"},
+            fields=["name as value", "full_name as label"],
+            limit_page_length=500,
+        )
+        link_options["webmail_id"] = users
+        link_options["chairperson_webmail_id"] = users
+    except Exception:
+        pass
+
+    # upfa_department → Department_prornd
+    try:
+        departments = frappe.get_all(
+            "Department_prornd",
+            fields=["name as value", "name as label"],
+            limit_page_length=200,
+        )
+        link_options["upfa_department"] = departments
+    except Exception:
+        pass
+
+    # amended_from → Recruitment Adhoc Contractual
+    try:
+        amended_docs = frappe.get_all(
+            "Recruitment Adhoc Contractual",
+            fields=["name as value", "name as label"],
+            limit_page_length=200,
+        )
+        link_options["amended_from"] = amended_docs
+    except Exception:
+        pass
+
+    # Project options: fetch projects linked to current user (as PI)
+    try:
+        current_user = frappe.session.user
+        projects = frappe.get_all(
+            "Project Registration",
+            filters={"pi_webmail_id": current_user},
+            fields=[
+                "name as value",
+                "project_title as label",
+                "project_title",
+                "project_no",
+                "department",
+                "project_duration",
+            ],
+            limit_page_length=200,
+            order_by="modified desc",
+        )
+        link_options["project_registration"] = projects
+    except Exception:
+        pass
+
+    # 5. Client Scripts
     client_scripts = []
     try:
-        scripts = frappe.get_all("Client Script", filters={"dt": "Recruitment Adhoc Contractual", "enabled": 1}, fields=["name", "script", "view"])
+        scripts = frappe.get_all(
+            "Client Script",
+            filters={"dt": "Recruitment Adhoc Contractual", "enabled": 1},
+            fields=["name", "script", "view"],
+        )
         for script in scripts:
             client_scripts.append({"name": script.name, "script": script.script, "view": script.view})
     except Exception:
@@ -62,8 +166,9 @@ def get_recruitment_adhoc_contractual_fields(doc_name=None):
         "fields": fields,
         "prefill_data": prefill_data,
         "link_options": link_options,
-        "client_scripts": client_scripts # Return scripts to frontend
+        "client_scripts": client_scripts,
     }
+
 
 
 @frappe.whitelist()
