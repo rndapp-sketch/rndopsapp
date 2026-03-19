@@ -85,7 +85,7 @@
    "fieldname": "funding_agency_type_1",
    "fieldtype": "Select",
    "label": "Type of Funding Agency",
-   "options": "\nGovernment\nIndustry"
+   "options": "\nGovernment\nIndustry\nInternational\nOthers"
   },
   {
    "depends_on": "eval:doc.funding_agency_type_1 == \"Government\"",
@@ -152,7 +152,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-02 12:57:24.580690",
+ "modified": "2026-03-19 13:22:38.166140",
  "modified_by": "Administrator",
  "module": "projectRegistration",
  "name": "fundingagency_",
@@ -185,6 +185,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
