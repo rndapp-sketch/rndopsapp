@@ -27,6 +27,8 @@
   "mode_of_interview",
   "upfa_interview_venue",
   "upfa_pi_contact",
+  "last_date_of_appllication",
+  "walk_in",
   "details_of_posts_section",
   "upfa_post_details",
   "section_break_izok",
@@ -230,13 +232,25 @@
    "fieldname": "chairperson_name",
    "fieldtype": "Data",
    "label": "Chairperson"
+  },
+  {
+   "fieldname": "last_date_of_appllication",
+   "fieldtype": "Date",
+   "hidden": 1,
+   "label": "Last Date of Appllication"
+  },
+  {
+   "fieldname": "walk_in",
+   "fieldtype": "Select",
+   "label": "Walk In",
+   "options": "\nYes\nNo"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-18 13:42:17.763582",
+ "modified": "2026-03-20 12:40:04.553535",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",

@@ -248,7 +248,7 @@ def migrate_file(file_url, doctype, docname, fieldname=None):
     Public API to manually migrate a file to MinIO.
 
     Usage:
-        frappe.call('rndopsapp.rndopsapp.file_handler.migrate_file', {
+        frappe.call('rndopsapp.file_handler.migrate_file', {
             file_url: '/files/file.pdf',
             doctype: 'Project Registration',
             docname: '2026031901MeiTy000636',

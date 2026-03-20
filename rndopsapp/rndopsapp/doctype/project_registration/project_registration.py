@@ -15,8 +15,8 @@ from frappe.utils.file_manager import save_file
 import base64
 import requests
 from rndopsapp.rndopsapp.kafka.producer import publish_project_registration as publish_project
-
-
+from rndopsapp.minio import get_rnd_file_service
+from rndopsapp.file_handler import get_file_category_for_doctype
 
 
 class ProjectRegistration(Document):
@@ -25,9 +25,63 @@ class ProjectRegistration(Document):
 		if self.text_editor_zwfu and self.workflow_state in ["Draft", "Endorsement Draft", "Pending Dean Approval", "Endorsement Approved"]:
 			self.generate_endorsement_pdf(self.text_editor_zwfu)
 
+	def validate(self):
+		"""
+		Intercept file uploads from Frappe UI and upload to MinIO instead of local filesystem.
+		"""
+		self._process_attach_fields()
+		self._process_child_attach_fields()
+
+	def _process_attach_fields(self):
+		meta = frappe.get_meta(self.doctype)
+		for df in meta.fields:
+			if df.fieldtype == "Attach":
+				fieldname = df.fieldname
+				file_url = self.get(fieldname)
+				if file_url and (file_url.startswith("/files/") or file_url.startswith("/private/files/")):
+					self._migrate_file_to_minio(fieldname, file_url)
+
+	def _process_child_attach_fields(self):
+		meta = frappe.get_meta(self.doctype)
+		for df in meta.fields:
+			if df.fieldtype == "Table":
+				child_meta = frappe.get_meta(df.options)
+				for child_row in self.get(df.fieldname) or []:
+					for child_field in child_meta.fields:
+						if child_field.fieldtype == "Attach":
+							fieldname = child_field.fieldname
+							file_url = child_row.get(fieldname)
+							if file_url and (file_url.startswith("/files/") or file_url.startswith("/private/files/")):
+								self._migrate_child_file_to_minio(child_row, fieldname, file_url)
+
+	def _migrate_file_to_minio(self, fieldname, file_url):
+		try:
+			from rndopsapp.file_handler import migrate_local_file_to_minio
+			result = migrate_local_file_to_minio(
+				file_url=file_url, doctype=self.doctype, docname=self.name, fieldname=fieldname
+			)
+			if result.get("status"):
+				self.set(fieldname, result.get("file_url"))
+			else:
+				frappe.log_error(result.get("message"), f"MinIO Migration Error for {fieldname}")
+		except Exception as e:
+			frappe.log_error(frappe.get_traceback(), f"MinIO Migration Error for {fieldname}")
+
+	def _migrate_child_file_to_minio(self, child_row, fieldname, file_url):
+		try:
+			from rndopsapp.file_handler import migrate_local_file_to_minio
+			result = migrate_local_file_to_minio(
+				file_url=file_url, doctype=self.doctype, docname=self.name, fieldname=fieldname
+			)
+			if result.get("status"):
+				child_row.set(fieldname, result.get("file_url"))
+			else:
+				frappe.log_error(result.get("message"), f"Child MinIO Migration Error for {fieldname}")
+		except Exception as e:
+			frappe.log_error(frappe.get_traceback(), f"Child MinIO Migration Error for {fieldname}")
+
 	def generate_endorsement_pdf(self, html_content=None):
 		from frappe.utils.pdf import get_pdf
-		import os
 
 		# Avoid recursion if saving within this function
 		if getattr(self.flags, "in_pdf_generation", False):
@@ -35,53 +89,50 @@ class ProjectRegistration(Document):
 		self.flags.in_pdf_generation = True
 
 		try:
-			site_path = frappe.get_site_path()
-			endorsement_dir = os.path.join(site_path, "private", "files", "Endorsement")
-			os.makedirs(endorsement_dir, exist_ok=True)
-			
-			html_filename = f"{self.name}-Endorsement.html"
-			html_filepath = os.path.join(endorsement_dir, html_filename)
-			
-			pdf_filename = f"{self.name}-Endorsement.pdf"
-			pdf_filepath = os.path.join(endorsement_dir, pdf_filename)
-			
 			if not html_content:
 				html_content = self.text_editor_zwfu
 				
 			if not html_content:
 				return # Nothing to generate
 			
-			# Save HTML
-			with open(html_filepath, "w", encoding="utf-8") as f:
-				f.write(html_content)
-			
-			# Ensure HTML file is attached
-			html_url = f"/private/files/Endorsement/{html_filename}"
-			if not frappe.db.exists("File", {"attached_to_name": self.name, "file_url": html_url}):
-				doc = frappe.new_doc("File")
-				doc.file_name = html_filename
-				doc.file_url = html_url
-				doc.attached_to_doctype = self.doctype
-				doc.attached_to_name = self.name
-				doc.is_private = 1
-				doc.save(ignore_permissions=True)
+			# Get MinIO file service
+			file_service = get_rnd_file_service()
 
-			# Save PDF
+			# Prepare filenames
+			html_filename = f"{self.name}-Endorsement.html"
+			pdf_filename = f"{self.name}-Endorsement.pdf"
+
+			# Generate PDF content in memory
 			pdf_content = get_pdf(html_content)
-			with open(pdf_filepath, "wb") as f:
-				f.write(pdf_content)
-				
-			# Ensure PDF file is attached
-			pdf_url = f"/private/files/Endorsement/{pdf_filename}"
-			if not frappe.db.exists("File", {"attached_to_name": self.name, "file_url": pdf_url}):
-				doc = frappe.new_doc("File")
-				doc.file_name = pdf_filename
-				doc.file_url = pdf_url
-				doc.attached_to_doctype = self.doctype
-				doc.attached_to_name = self.name
-				doc.is_private = 1
-				doc.save(ignore_permissions=True)
-				
+
+			# Save HTML to MinIO
+			html_result = file_service.save_file(
+				filename=html_filename,
+				content=html_content,
+				is_private=True,
+				doctype=self.doctype,
+				docname=self.name,
+				folder=get_file_category_for_doctype(self.doctype, "endorsement_html")
+			)
+
+			if not html_result.get("status"):
+				frappe.log_error(f"HTML upload failed: {html_result.get('message')}",
+					f"Endorsement HTML Upload Failed for {self.name}")
+
+			# Save PDF to MinIO
+			pdf_result = file_service.save_file(
+				filename=pdf_filename,
+				content=pdf_content,
+				is_private=True,
+				doctype=self.doctype,
+				docname=self.name,
+				folder=get_file_category_for_doctype(self.doctype, "endorsement_pdf")
+			)
+
+			if not pdf_result.get("status"):
+				frappe.log_error(f"PDF upload failed: {pdf_result.get('message')}",
+					f"Endorsement PDF Upload Failed for {self.name}")
+
 		except Exception as e:
 			frappe.log_error(frappe.get_traceback(), f"Endorsement PDF Generation Failed for {self.name}")
 		finally:
@@ -649,58 +700,78 @@ def get_project_form_data(docname=None):
 		# Fetch metadata of the "Project Registration" doctype
 		meta = frappe.get_meta(doctype_name)
 
+		def _get_field_dict(field):
+			return {
+				"fieldname": field.fieldname,
+				"label": _(field.label) if field.label else None,
+				"fieldtype": field.fieldtype,
+				"default": field.default,
+				"mandatory": bool(field.reqd),
+				"read_only": bool(field.read_only),
+				"hidden": bool(field.hidden),
+				"description": _(field.description) if field.description else None,
+				"options": field.options,
+				# Eval expressions for frontend conditional logic
+				"depends_on": field.depends_on,
+				"mandatory_depends_on": field.mandatory_depends_on,
+				"read_only_depends_on": field.read_only_depends_on,
+				# Extract eval expression for easier frontend parsing
+				"depends_on_eval": extract_eval_expression(field.depends_on),
+				"mandatory_depends_on_eval": extract_eval_expression(field.mandatory_depends_on),
+				"read_only_depends_on_eval": extract_eval_expression(field.read_only_depends_on),
+			}
+
 		# 1. Get Field Definitions (your existing logic, slightly refined)
 		fields = []
 		for field in meta.fields:
 			# Skip non-input fields like Section Break, Button, etc.
 			if field.fieldtype in ["Section Break", "Column Break", "Tab Break", "Button", "Heading"]:
 				continue
-			fields.append(
-				{
-					"fieldname": field.fieldname,
-					"label": _(field.label),
-					"fieldtype": field.fieldtype,
-					"default": field.default,
-					"mandatory": bool(field.reqd),
-					"read_only": bool(field.read_only),
-					"hidden": bool(field.hidden),
-					"description": _(field.description) if field.description else None,
-					"options": field.options,
-					# Eval expressions for frontend conditional logic
-					"depends_on": field.depends_on,
-					"mandatory_depends_on": field.mandatory_depends_on,
-					"read_only_depends_on": field.read_only_depends_on,
-					# Extract eval expression for easier frontend parsing
-					"depends_on_eval": extract_eval_expression(field.depends_on),
-					"mandatory_depends_on_eval": extract_eval_expression(field.mandatory_depends_on),
-					"read_only_depends_on_eval": extract_eval_expression(field.read_only_depends_on),
-				}
-			)
+			
+			field_dict = _get_field_dict(field)
+			
+			# Identify child table fields and recursively extract them
+			if field.fieldtype == "Table" and field.options:
+				child_meta = frappe.get_meta(field.options)
+				child_fields = []
+				for c_field in child_meta.fields:
+					if c_field.fieldtype in ["Section Break", "Column Break", "Tab Break", "Button", "Heading"]:
+						continue
+					child_fields.append(_get_field_dict(c_field))
+				field_dict["fields"] = child_fields
+				
+			fields.append(field_dict)
 
 		# 2. Get Options for Link and Select Fields
 		link_options = {}
-		for field in fields:
-			if field["fieldtype"] == "Link" and field["options"]:
-				try:
-					# Fetch 'name' and a common title field like 'title' or 'full_name'
-					linked_doctype = field["options"]
-					linked_meta = frappe.get_meta(linked_doctype)
-					title_field = linked_meta.get_title_field()  # Best way to get the display field
 
-					options_list = frappe.get_list(
-						linked_doctype,
-						fields=["name", title_field],
-						limit_page_length=1000,  # Increase limit if you have many options
-					)
+		def _fetch_link_options(f_list):
+			for field in f_list:
+				if field.get("fieldtype") == "Table" and "fields" in field:
+					_fetch_link_options(field["fields"])
+				elif field.get("fieldtype") == "Link" and field.get("options"):
+					try:
+						# Fetch 'name' and a common title field like 'title' or 'full_name'
+						linked_doctype = field["options"]
+						linked_meta = frappe.get_meta(linked_doctype)
+						title_field = linked_meta.get_title_field()  # Best way to get the display field
 
-					# Format for easy use in frontend: [{ value: '...', label: '...' }]
-					link_options[field["fieldname"]] = [
-						{"value": item["name"], "label": item.get(title_field, item["name"])}
-						for item in options_list
-					]
-				except Exception as e:
-					# If fetching fails, provide an empty list
-					link_options[field["fieldname"]] = []
+						options_list = frappe.get_list(
+							linked_doctype,
+							fields=["name", title_field],
+							limit_page_length=1000,  # Increase limit if you have many options
+						)
+
+						# Format for easy use in frontend: [{ value: '...', label: '...' }]
+						link_options[field["fieldname"]] = [
+							{"value": item["name"], "label": item.get(title_field, item["name"])}
+							for item in options_list
+						]
+					except Exception as e:
+						# If fetching fails, provide an empty list
+						link_options[field["fieldname"]] = []
+		
+		_fetch_link_options(fields)
 
 		# 3. Get Pre-fill data for the current user
 		prefill_data = {}
@@ -914,13 +985,32 @@ def save_project_data(doc, html_content=None):
 					new_project.append(fieldname, child_row)
 
 			# Handle Attach fields (value is a Base64 data URI string)
-			# Frappe's ORM automatically handles Base64 strings for Attach fields
-			# during the .insert() call.
 			elif df.fieldtype == "Attach" and value:
-				# The value should include the filename for Frappe to process it correctly.
 				# Format: { "file_name": "my_proposal.pdf", "file_data": "data:application/pdf;base64,..." }
 				if isinstance(value, dict) and value.get("file_name") and value.get("file_data"):
-					new_project.set(fieldname, value)
+					# Decode Base64 and upload to MinIO
+					file_data_uri = value.get("file_data")
+					if file_data_uri.startswith("data:"):
+						file_data_uri = file_data_uri.split(",", 1)[1]
+
+					file_bytes = base64.b64decode(file_data_uri)
+					file_service = get_rnd_file_service()
+
+					upload_result = file_service.save_file(
+						filename=value.get("file_name"),
+						content=file_bytes,
+						is_private=True,
+						doctype=new_project.doctype,
+						docname=new_project.name,
+						folder=get_file_category_for_doctype(new_project.doctype, fieldname)
+					)
+
+					if upload_result.get("status"):
+						# Set the field to the MinIO file URL instead of the Base64 dict
+						new_project.set(fieldname, upload_result.get("data", {}).get("file_url"))
+					else:
+						frappe.log_error(f"File upload failed: {upload_result.get('message')}",
+							f"Attach Field Upload Failed for {fieldname}")
 				else:
 					# Handle cases where only the base64 string is sent (less ideal)
 					new_project.set(fieldname, value)
@@ -939,54 +1029,53 @@ def save_project_data(doc, html_content=None):
 		# Commit the transaction
 		frappe.db.commit()
 
-		# --- Handle HTML content - Convert to PDF and save ---
+		# --- Handle HTML content - Convert to PDF and save to MinIO ---
 		if html_content:
 			try:
 				from frappe.utils.pdf import get_pdf
-				
-				# Get the site path and create Endorsement folder if not exists
-				site_path = frappe.get_site_path()
-				# CHANGED: Save to public files instead of private
-				endorsement_dir = os.path.join(site_path, "public", "files", "Endorsement")
-				os.makedirs(endorsement_dir, exist_ok=True)
-				
-				# Save HTML file directly to filesystem
+
+				# Get MinIO file service
+				file_service = get_rnd_file_service()
+
+				# Prepare filenames
 				html_filename = f"{new_project.name}.html"
-				html_filepath = os.path.join(endorsement_dir, html_filename)
-				with open(html_filepath, "w", encoding="utf-8") as f:
-					f.write(html_content)
-				
-				# Create File record for HTML
-				html_file_url = f"/files/Endorsement/{html_filename}"
-				html_file_doc = frappe.new_doc("File")
-				html_file_doc.file_name = html_filename
-				html_file_doc.file_url = html_file_url
-				html_file_doc.attached_to_doctype = new_project.doctype
-				html_file_doc.attached_to_name = new_project.name
-				html_file_doc.is_private = 0 # Explicitly public
-				html_file_doc.save(ignore_permissions=True)
-				frappe.db.commit()
-				frappe.logger().info(f"HTML file saved: {html_filepath}")
-				
-				# Convert HTML to PDF and save directly to filesystem
 				pdf_filename = f"{new_project.name}.pdf"
-				pdf_filepath = os.path.join(endorsement_dir, pdf_filename)
+
+				# Generate PDF content in memory
 				pdf_content = get_pdf(html_content)
-				with open(pdf_filepath, "wb") as f:
-					f.write(pdf_content)
-				
-				# Create File record for PDF
-				pdf_file_url = f"/files/Endorsement/{pdf_filename}"
-				pdf_file_doc = frappe.new_doc("File")
-				pdf_file_doc.file_name = pdf_filename
-				pdf_file_doc.file_url = pdf_file_url
-				pdf_file_doc.attached_to_doctype = new_project.doctype
-				pdf_file_doc.attached_to_name = new_project.name
-				pdf_file_doc.is_private = 0 # Explicitly public
-				pdf_file_doc.save(ignore_permissions=True)
-				frappe.db.commit()
-				
-				frappe.logger().info(f"PDF file saved: {pdf_filepath}")
+
+				# Save HTML to MinIO (public)
+				html_result = file_service.save_file(
+					filename=html_filename,
+					content=html_content,
+					is_private=False,
+					doctype=new_project.doctype,
+					docname=new_project.name,
+					folder=get_file_category_for_doctype(new_project.doctype, "endorsement_html")
+				)
+
+				if html_result.get("status"):
+					frappe.logger().info(f"HTML file saved to MinIO: {html_result.get('data', {}).get('file_url')}")
+				else:
+					frappe.log_error(f"HTML upload failed: {html_result.get('message')}",
+						f"save_project_data: HTML Upload Failed for {new_project.name}")
+
+				# Save PDF to MinIO (public)
+				pdf_result = file_service.save_file(
+					filename=pdf_filename,
+					content=pdf_content,
+					is_private=False,
+					doctype=new_project.doctype,
+					docname=new_project.name,
+					folder=get_file_category_for_doctype(new_project.doctype, "endorsement_pdf")
+				)
+
+				if pdf_result.get("status"):
+					frappe.logger().info(f"PDF file saved to MinIO: {pdf_result.get('data', {}).get('file_url')}")
+				else:
+					frappe.log_error(f"PDF upload failed: {pdf_result.get('message')}",
+						f"save_project_data: PDF Upload Failed for {new_project.name}")
+
 			except Exception as pdf_error:
 				frappe.log_error(
 					frappe.get_traceback(),
@@ -1341,17 +1430,22 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 					# Decode base64 content
 					file_content = base64.b64decode(content_b64)
 
-					# Use save_file utility to properly save file to disk and create File record
-					file_doc = save_file(
-						fname=filename,
+					# Upload to MinIO using RNDFileService
+					file_service = get_rnd_file_service()
+					upload_result = file_service.save_file(
+						filename=filename,
 						content=file_content,
-						dt=doc.doctype,
-						dn=doc.name,
 						is_private=is_private,
-						decode=False  # Already decoded above
+						doctype=doc.doctype,
+						docname=doc.name,
+						folder=get_file_category_for_doctype(doc.doctype, f.get("fieldname") or f.get("file_name") or filename)
 					)
-					
-					frappe.logger().info(f"File saved successfully: {filename} -> {file_doc.file_url}")
+
+					if upload_result.get("status"):
+						frappe.logger().info(f"File uploaded to MinIO: {filename} -> {upload_result.get('data', {}).get('file_url')}")
+					else:
+						frappe.log_error(f"MinIO upload failed: {upload_result.get('message')}",
+							f"save_project_draft: file upload error for {filename}")
 
 				except Exception as fe:
 						frappe.log_error(
@@ -1362,61 +1456,53 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 
 		frappe.db.commit()
 
-		# --- Handle HTML content - Convert to PDF and save ---
+		# --- Handle HTML content - Convert to PDF and save to MinIO ---
 		if html_content:
-			# print(f"DEBUG: html_content received, length={len(html_content)}")
 			try:
-				import os
 				from frappe.utils.pdf import get_pdf
-				
-				# Get the site path and create Endorsement folder if not exists
-				site_path = frappe.get_site_path()
-				endorsement_dir = os.path.join(site_path, "private", "files", "Endorsement")
-				os.makedirs(endorsement_dir, exist_ok=True)
-				print(f"DEBUG: endorsement_dir={endorsement_dir}")
-				
-				# Save HTML file directly to filesystem
+
+				# Get MinIO file service
+				file_service = get_rnd_file_service()
+
+				# Prepare filenames
 				html_filename = f"{doc.name}.html"
-				html_filepath = os.path.join(endorsement_dir, html_filename)
-				with open(html_filepath, "w", encoding="utf-8") as f:
-					f.write(html_content)
-				print(f"DEBUG: HTML file written to {html_filepath}")
-				
-				# Create File record for HTML
-				html_file_url = f"/private/files/Endorsement/{html_filename}"
-				html_file_doc = frappe.new_doc("File")
-				html_file_doc.file_name = html_filename
-				html_file_doc.file_url = html_file_url
-				html_file_doc.attached_to_doctype = doc.doctype
-				html_file_doc.attached_to_name = doc.name
-				html_file_doc.is_private = 1
-				html_file_doc.save(ignore_permissions=True)
-				frappe.db.commit()
-				frappe.logger().info(f"HTML file saved: {html_filepath}")
-				# print(f"DEBUG: HTML File record created: {html_file_doc.name}")
-				
-				# Convert HTML to PDF and save directly to filesystem
 				pdf_filename = f"{doc.name}.pdf"
-				pdf_filepath = os.path.join(endorsement_dir, pdf_filename)
+
+				# Generate PDF content in memory
 				pdf_content = get_pdf(html_content)
-				with open(pdf_filepath, "wb") as f:
-					f.write(pdf_content)
-				# print(f"DEBUG: PDF file written to {pdf_filepath}")
-				
-				# Create File record for PDF
-				pdf_file_url = f"/private/files/Endorsement/{pdf_filename}"
-				pdf_file_doc = frappe.new_doc("File")
-				pdf_file_doc.file_name = pdf_filename
-				pdf_file_doc.file_url = pdf_file_url
-				pdf_file_doc.attached_to_doctype = doc.doctype
-				pdf_file_doc.attached_to_name = doc.name
-				pdf_file_doc.is_private = 1
-				pdf_file_doc.save(ignore_permissions=True)
-				frappe.db.commit()
-				
-				frappe.logger().info(f"PDF file saved: {pdf_filepath}")
-				print(f"DEBUG: PDF File record created: {pdf_file_doc.name}")
-				
+
+				# Save HTML to MinIO (private)
+				html_result = file_service.save_file(
+					filename=html_filename,
+					content=html_content,
+					is_private=True,
+					doctype=doc.doctype,
+					docname=doc.name,
+					folder=get_file_category_for_doctype(doc.doctype, "endorsement_html")
+				)
+
+				if html_result.get("status"):
+					frappe.logger().info(f"HTML file saved to MinIO: {html_result.get('data', {}).get('file_url')}")
+				else:
+					frappe.log_error(f"HTML upload failed: {html_result.get('message')}",
+						f"save_project_draft: HTML Upload Failed for {doc.name}")
+
+				# Save PDF to MinIO (private)
+				pdf_result = file_service.save_file(
+					filename=pdf_filename,
+					content=pdf_content,
+					is_private=True,
+					doctype=doc.doctype,
+					docname=doc.name,
+					folder=get_file_category_for_doctype(doc.doctype, "endorsement_pdf")
+				)
+
+				if pdf_result.get("status"):
+					frappe.logger().info(f"PDF file saved to MinIO: {pdf_result.get('data', {}).get('file_url')}")
+				else:
+					frappe.log_error(f"PDF upload failed: {pdf_result.get('message')}",
+						f"save_project_draft: PDF Upload Failed for {doc.name}")
+
 				# CRITICAL FIX: Make sure the edited text from the popup is saved back to the database
 				# so that it remembers the edits and doesn't get overwritten on the next standard Save.
 				doc.text_editor_zwfu = html_content
