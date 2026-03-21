@@ -9,6 +9,9 @@
   "amended_from",
   "the_purchase_committe_recommends_purchase_of_the_items_from_ms",
   "quotation_recieved_for_purchase_of_the__items_from_ms",
+  "project_no",
+  "app_id",
+  "workflow_status",
   "details_of_the_items_to_be_purchased_section",
   "currency",
   "table_hsrb",
@@ -28,6 +31,7 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "P_11 Form",
@@ -52,8 +56,9 @@
   },
   {
    "fieldname": "currency",
-   "fieldtype": "Data",
-   "label": "Quoted price in Currency"
+   "fieldtype": "Select",
+   "label": "Quoted price in Currency",
+   "options": "USD \u2014 United States Dollar\nEUR \u2014 Euro\nGBP \u2014 British Pound Sterling\nINR \u2014 Indian Rupee\nJPY \u2014 Japanese Yen\nCNY \u2014 Chinese Yuan Renminbi\nAUD \u2014 Australian Dollar\nCAD \u2014 Canadian Dollar\nCHF \u2014 Swiss Franc\nHKD \u2014 Hong Kong Dollar\nSGD \u2014 Singapore Dollar\nNZD \u2014 New Zealand Dollar\nSEK \u2014 Swedish Krona\nNOK \u2014 Norwegian Krone\nDKK \u2014 Danish Krone\nRUB \u2014 Russian Ruble\nBRL \u2014 Brazilian Real\nMXN \u2014 Mexican Peso\nZAR \u2014 South African Rand\nAED \u2014 UAE Dirham\nSAR \u2014 Saudi Riyal\nTRY \u2014 Turkish Lira\nKRW \u2014 South Korean Won\nIDR \u2014 Indonesian Rupiah\nMYR \u2014 Malaysian Ringgit\nTHB \u2014 Thai Baht\nBDT \u2014 Bangladeshi Taka\nLKR \u2014 Sri Lankan Rupee\nNPR \u2014 Nepalese Rupee"
   },
   {
    "fieldname": "table_hsrb",
@@ -94,13 +99,29 @@
    "fieldname": "declaration",
    "fieldtype": "Check",
    "label": "Certified that we the undersigned, members of the purchase committee are jointly."
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project No"
+  },
+  {
+   "fieldname": "app_id",
+   "fieldtype": "Data",
+   "label": "App ID"
+  },
+  {
+   "fieldname": "workflow_status",
+   "fieldtype": "Data",
+   "label": "Workflow Status",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-26 11:31:07.291003",
+ "modified": "2026-03-21 10:24:15.606645",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "P_11 Form",

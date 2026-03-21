@@ -115,6 +115,8 @@ def save_p_11_form_data(data):
 	try:
 		if isinstance(data, str):
 			data = json.loads(data)
+		
+		print("P_11 :",data)
 
 		doc_name = data.get("name")
 		is_new = False
@@ -144,6 +146,9 @@ def save_p_11_form_data(data):
 				if value not in [None, ""]:
 					doc.set(fieldname, value)
 
+		# Explicitly set workflow_status as requested
+		doc.workflow_status = "Pending Staff Approval"
+
 		doc.flags.ignore_permissions = True
 		if is_new:
 			doc.insert(ignore_mandatory=True)
@@ -158,6 +163,15 @@ def save_p_11_form_data(data):
 				child_meta = frappe.get_meta(df.options)
 				for child_row in value:
 					row_dict = child_row.copy()
+					
+					# Remove 'name' for new rows to allow Frappe to auto-generate proper names
+					if row_dict.get("name") and str(row_dict.get("name")).startswith("new-"):
+						del row_dict["name"]
+
+					# Remove internal properties not needed for appending
+					for k in ["creation", "modified", "owner", "modified_by", "docstatus", "parent", "parentfield", "parenttype"]:
+						row_dict.pop(k, None)
+
 					for cf in child_meta.fields:
 						if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
 							f_val = row_dict[cf.fieldname]
