@@ -90,10 +90,10 @@ class RNDFileService:
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
 
-    def _path(self, filename, file_hash, private, doctype=None, docname=None, folder=None):
+    def _path(self, filename, file_hash, private, doctype=None, docname=None, folder=None, use_hash=False):
         """
         Generate clean MinIO file path: {doctype}/{project_id}/{document_type}/{filename}
-
+        
         Example: Project_Registration/2026031901MeiTy000635/proposal/6c76f7bd_project_proposal.pdf
 
         Args:
@@ -124,7 +124,10 @@ class RNDFileService:
 
         # Add filename with hash prefix to ensure uniqueness
         # Format: {hash[:8]}_{original_filename}
-        unique_filename = f"{file_hash[:8]}_{filename}"
+        if use_hash:
+            unique_filename = f"{file_hash[:8]}_{filename}"
+        else:
+            unique_filename = filename
         parts.append(unique_filename)
 
         return "/".join(parts)
@@ -139,7 +142,7 @@ class RNDFileService:
     # CORE OPERATIONS
     # -------------------------
 
-    def save_file(self, filename, content, is_private=True, doctype=None, docname=None, folder=None):
+    def save_file(self, filename, content, is_private=True, doctype=None, docname=None, folder=None, use_hash=False):
         try:
             data = self._bytes(content)
             file_hash = self._hash(data)
@@ -152,7 +155,7 @@ class RNDFileService:
                     "hash": file_hash
                 })
 
-            path = self._path(filename, file_hash, is_private, doctype, docname, folder)
+            path = self._path(filename, file_hash, is_private, doctype, docname, folder, use_hash=use_hash)
             mime = self._mime(filename)
 
             # Upload to MinIO

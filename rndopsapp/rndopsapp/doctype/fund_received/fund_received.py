@@ -274,7 +274,7 @@ def get_fund_received_by_prjreg(prjreg_title: str = "", limit: int = 200, start:
 
 
 @frappe.whitelist()
-def save_fund_received(doc_data, prjreg_title=None):
+def save_fund_received(doc_data, prjreg_title=None, project_reg=None):
 	"""Saves the Fund Received data from the React form and forwards to external API (no DB writes for API response)."""
 	try:
 		data = json.loads(doc_data)
@@ -324,17 +324,28 @@ def save_fund_received(doc_data, prjreg_title=None):
 					# Handle file attachment if present
 					attachment_data = {}
 					if transaction.get("file_data") and transaction.get("file_name"):
-						# Save the file and get the file URL
-						# save_file must exist in your environment (frappe.utils.file or similar)
-						file_doc = save_file(
-							fname=transaction.get("file_name"),
-							content=transaction.get("file_data"),
-							dt="Fund Received",
-							dn=new_doc.name, # Now valid
-							folder="Home/Attachments",
+						# Save the file to MinIO
+						from rndopsapp.minio import get_rnd_file_service
+						import base64
+						
+						file_data_uri = transaction.get("file_data")
+						if file_data_uri.startswith("data:"):
+							file_data_uri = file_data_uri.split(",", 1)[1]
+						file_bytes = base64.b64decode(file_data_uri)
+						
+						upload_result = get_rnd_file_service().save_file(
+							filename=transaction.get("file_name"),
+							content=file_bytes,
+							is_private=True,
+							doctype="Project Registration",
+							docname=project_reg or new_doc.prjreg_title,
+							folder="fundreceived"
 						)
-						if file_doc:
-							attachment_data["attachment"] = file_doc.file_url
+						
+						if upload_result.get("status"):
+							attachment_data["attachment"] = upload_result.get("data", {}).get("file_url")
+						else:
+							frappe.log_error(f"File upload failed: {upload_result.get('message')}", "Fund Received File Upload")
 
 					new_doc.append(
 						"fund_transactions",
@@ -1197,8 +1208,21 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 
 
 @frappe.whitelist()
-def submit_fund_received(docname):
+def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=None, project_reg=None, project_no=None):
 	"""
 	Submit a Fund Received document using Workflow transitions.
+	If save is True, it first saves the document using the provided data.
 	"""
+	if save in [True, "true", "True", "1", 1]:
+		if not doc_data:
+			frappe.throw("doc_data is required when save=True")
+		res = save_fund_received(doc_data, prjreg_title, project_reg)
+		if isinstance(res, dict) and res.get("status") == "success":
+			docname = res.get("docname")
+		else:
+			return res
+
+	if not docname:
+		frappe.throw("Document name is required to submit.")
+
 	return perform_fund_received_action(docname, "Submit")

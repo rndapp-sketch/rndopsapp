@@ -421,6 +421,10 @@ def save_fund_sanction_data(files=None, **data):
 		print(f"\nIncoming Fund Sanction save request. Keys: {list(data.keys())}")
 		print(f"Budget rows: {len(budget_data)}, File rows: {len(files_data)}")
 
+		# Extract project_reg if present
+		project_reg = data.pop("project_reg", None)
+		data.pop("project_no", None)
+
 		# Create or fetch the main Fund Sanction document
 		if data.get("name"):
 			# Logic for updating an existing document
@@ -490,20 +494,26 @@ def save_fund_sanction_data(files=None, **data):
 
 					file_content = base64.b64decode(content_b64)
 
-					file_doc = frappe.new_doc("File")
-					file_doc.file_name = filename
-					file_doc.attached_to_doctype = doc.doctype
-					file_doc.attached_to_name = doc.name
-					file_doc.is_private = is_private
-					file_doc.content = file_content
-					file_doc.save(ignore_permissions=True)
+					from rndopsapp.minio import get_rnd_file_service
 					
-					# Also add to sanction_related_files child table if needed
-					# Assuming sanction_related_files has 'sanction_file' field which expects a URL
-					doc.append("sanction_related_files", {
-						"description": filename,
-						"sanction_file": file_doc.file_url
-					})
+					upload_result = get_rnd_file_service().save_file(
+						filename=filename,
+						content=file_content,
+						is_private=bool(is_private),
+						doctype="Project Registration",
+						docname=project_reg or doc.project_proposal,
+						folder="sanction"
+					)
+
+					if upload_result.get("status"):
+						file_url = upload_result.get("data", {}).get("file_url")
+						# Also add to sanction_related_files child table if needed
+						doc.append("sanction_related_files", {
+							"description": filename,
+							"sanction_file": file_url
+						})
+					else:
+						frappe.log_error(f"File upload failed: {upload_result.get('message')}", "Fund Sanction File Upload")
 
 				except Exception as fe:
 					frappe.log_error(
@@ -705,8 +715,24 @@ def perform_fund_sanction_action(docname, action):
 
 
 @frappe.whitelist()
-def submit_fund_sanction(sanction_name):
+def submit_fund_sanction(sanction_name=None, save=None, files=None, project_reg=None, project_no=None, **data):
 	"""
 	Submit a Fund Sanction document using Workflow transitions.
+	If save is True, it first saves the document using the provided data.
 	"""
+	if save in [True, "true", "True", "1", 1]:
+		# Pass explicit parameters back into data for save_fund_sanction_data
+		if project_reg is not None:
+			data["project_reg"] = project_reg
+		if project_no is not None:
+			data["project_no"] = project_no
+		res = save_fund_sanction_data(files, **data)
+		if isinstance(res, dict) and res.get("status") == "success":
+			sanction_name = res.get("docname") or res.get("name")
+		else:
+			return res
+
+	if not sanction_name:
+		frappe.throw("Sanction name is required to submit.")
+
 	return perform_fund_sanction_action(sanction_name, "Submit")

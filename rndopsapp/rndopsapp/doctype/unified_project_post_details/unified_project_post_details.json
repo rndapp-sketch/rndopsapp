@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YY}{MM}{###}{####}",
  "creation": "2025-12-30 17:02:58.274079",
  "doctype": "DocType",
  "editable_grid": 1,
@@ -12,6 +13,7 @@
   "upfa_hra_percent",
   "upfa_medical_required",
   "upfa_total_amount",
+  "month_days",
   "upfa_duration_months",
   "upfa_qualification",
   "upfa_justification"
@@ -19,8 +21,9 @@
  "fields": [
   {
    "fieldname": "upfa_designation",
-   "fieldtype": "Data",
-   "label": "Project Staff Designation"
+   "fieldtype": "Link",
+   "label": "Project Staff Designation",
+   "options": "Designation_prornd"
   },
   {
    "fieldname": "upfa_vacancies",
@@ -52,7 +55,7 @@
   {
    "fieldname": "upfa_duration_months",
    "fieldtype": "Int",
-   "label": "Duration (Months)"
+   "label": "Duration "
   },
   {
    "fieldname": "upfa_qualification",
@@ -63,19 +66,27 @@
    "fieldname": "upfa_justification",
    "fieldtype": "Small Text",
    "label": "Justification"
+  },
+  {
+   "fieldname": "month_days",
+   "fieldtype": "Select",
+   "label": "Month or Days",
+   "options": "\nMonth\nDays"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-30 17:06:18.934822",
+ "modified": "2026-03-23 11:54:03.911503",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Unified Project Post Details",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

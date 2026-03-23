@@ -1002,7 +1002,8 @@ def save_project_data(doc, html_content=None):
 						is_private=True,
 						doctype=new_project.doctype,
 						docname=new_project.name,
-						folder=get_file_category_for_doctype(new_project.doctype, fieldname)
+						folder=get_file_category_for_doctype(new_project.doctype, fieldname),
+						use_hash=False
 					)
 
 					if upload_result.get("status"):
@@ -1051,7 +1052,8 @@ def save_project_data(doc, html_content=None):
 					is_private=False,
 					doctype=new_project.doctype,
 					docname=new_project.name,
-					folder=get_file_category_for_doctype(new_project.doctype, "endorsement_html")
+					folder=get_file_category_for_doctype(new_project.doctype, "endorsement_html"),
+					use_hash=False
 				)
 
 				if html_result.get("status"):
@@ -1067,7 +1069,8 @@ def save_project_data(doc, html_content=None):
 					is_private=False,
 					doctype=new_project.doctype,
 					docname=new_project.name,
-					folder=get_file_category_for_doctype(new_project.doctype, "endorsement_pdf")
+					folder=get_file_category_for_doctype(new_project.doctype, "endorsement_pdf"),
+					use_hash=False
 				)
 
 				if pdf_result.get("status"):
@@ -1727,4 +1730,62 @@ def download_endorsement_file(docname, file_type="pdf"):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Error downloading endorsement file")
 		frappe.throw(_("An error occurred while downloading the file: {0}").format(str(e)))
+
+
+@frappe.whitelist()
+def get_projects_by_pi(pi_id=None):
+	"""
+	Returns a list of Project Registration documents for a given PI.
+	
+	Args:
+		pi_id (str): The User ID (email) of the PI. Discovers current user if blank.
+	"""
+	if not pi_id:
+		pi_id = frappe.session.user
+
+	if pi_id == "Guest":
+		return []
+
+	projects = frappe.get_all(
+		"Project Registration",
+		filters={"pi_webmail": pi_id},
+		fields=["name", "project_title", "workflow_state", "creation"],
+		order_by="creation desc",
+		ignore_permissions=True
+	)
+	
+	# Mapping workflow_state to status manually to avoid alias bugs
+	for p in projects:
+		p["status"] = p.get("workflow_state")
+	
+	return projects
+
+@frappe.whitelist()
+def update_project_fields(docname, is_the_account_type_pfms=None, enter_scheme_number=None, scheme_name=None, account_number=None, bank_name=None):
+	"""
+	Manually update PFMS fields and corresponding account/scheme details in the database
+	for a specific Project Registration.
+	Bypasses standard document save validation to avoid UpdateAfterSubmitError.
+	"""
+	if not frappe.db.exists("Project Registration", docname):
+		frappe.throw(_("Project Registration {0} not found").format(docname))
+
+	update_dict = {}
+	if is_the_account_type_pfms is not None:
+		update_dict["is_the_account_type_pfms"] = is_the_account_type_pfms
+	if enter_scheme_number is not None:
+		update_dict["enter_scheme_number"] = enter_scheme_number
+	if scheme_name is not None:
+		update_dict["scheme_name"] = scheme_name
+	if account_number is not None:
+		update_dict["account_number"] = account_number
+	if bank_name is not None:
+		update_dict["bank_name"] = bank_name
+
+	if update_dict:
+		frappe.db.set_value("Project Registration", docname, update_dict, update_modified=False)
+		frappe.db.commit()
+		return {"status": "success", "message": _("Database manually updated for fields: {0}").format(", ".join(update_dict.keys()))}
+	else:
+		return {"status": "failed", "message": _("No fields provided for update")}
 

@@ -290,3 +290,139 @@ def get_director_dashboard_data():
     ]
 
     return data
+
+
+@frappe.whitelist()
+def get_pi_dashboard_data(user=None):
+    """
+    PI Dashboard — Backend API
+    Returns overview stats, active staff count, financial totals, and recent updates.
+    """
+    if not user:
+        user = frappe.session.user
+
+    if user == "Guest":
+        return {}
+
+    from frappe.utils import flt
+    data = {}
+
+    # 1. Project Overview
+    projects = frappe.get_all(
+        "Project Registration",
+        filters={"pi_webmail": user},
+        fields=["name", "workflow_state", "docstatus"],
+        ignore_permissions=True
+    )
+    
+    total_projects = len(projects)
+    draft_projects = 0
+    pending_review = 0
+    completed_projects = 0
+    
+    draft_states = ["Draft", "Endorsement Draft"]
+    
+    for p in projects:
+        if p.docstatus == 0 and p.workflow_state in draft_states:
+            draft_projects += 1
+        elif p.docstatus == 1:
+            completed_projects += 1
+        else:
+            if p.workflow_state not in draft_states and p.workflow_state != 'Rejected':
+                pending_review += 1
+    
+    completion_rate = int((completed_projects / total_projects) * 100) if total_projects > 0 else 0
+    
+    # Active Staff (count rows in manpower_details across all PI projects)
+    active_staff = 0
+    if total_projects > 0:
+        project_names = [p.name for p in projects]
+        active_staff = frappe.db.count("project_registration_manpower_details", filters={"parent": ["in", project_names]})
+    
+    data["project_overview"] = {
+        "total_projects": total_projects,
+        "draft_projects": draft_projects,
+        "completion_rate": completion_rate,
+        "pending_review": pending_review,
+        "active_staff": active_staff
+    }
+
+    # 2. Financial Summary
+    total_allocation = 0.0
+    utilized = 0.0
+    
+    if total_projects > 0 and frappe.db.exists("DocType", "Fund Sanction"):
+        fund_sanctions = frappe.get_all(
+            "Fund Sanction",
+            filters={"project_proposal": ["in", project_names], "docstatus": 1},
+            fields=["total_sanctioned_amount", "amount_received"],
+            ignore_permissions=True
+        )
+        for fs in fund_sanctions:
+            total_allocation += flt(fs.total_sanctioned_amount or 0)
+            utilized += flt(fs.amount_received or 0)
+        
+    available = total_allocation - utilized
+    utilization_rate = int((utilized / total_allocation) * 100) if total_allocation > 0 else 0
+    
+    # Pending requests
+    pending_requests_amount = 0.0
+    financial_doctypes = ["Reimbursement", "Temporary Advance", "Direct Purchase"]
+    for dt in financial_doctypes:
+        if frappe.db.exists("DocType", dt):
+            meta = frappe.get_meta(dt)
+            amt_field = None
+            for f in ["total_amount", "grand_total", "amount", "net_amount", "total"]:
+                if meta.has_field(f):
+                    amt_field = f
+                    break
+            
+            if amt_field:
+                try:
+                    rs = frappe.db.sql(f"SELECT IFNULL(SUM({amt_field}), 0) FROM `tab{dt}` WHERE docstatus=0 AND owner=%s", (user,))
+                    if rs and rs[0][0]:
+                        pending_requests_amount += flt(rs[0][0])
+                except Exception as e:
+                    frappe.log_error(f"Error summing pending requests for {dt}: {e}")
+    # Try to grab current fiscal year string safely
+    try:
+        fiscal_year = frappe.utils.get_fiscal_year(frappe.utils.today())[0]
+    except Exception:
+        fiscal_year = "2023-24"
+
+    data["financial_summary"] = {
+        "total_allocation": total_allocation,
+        "utilized": utilized,
+        "available": available,
+        "pending_requests": pending_requests_amount,
+        "financial_year": fiscal_year,
+        "utilization_rate": utilization_rate
+    }
+    
+    # 3. Recent Updates
+    recent_updates = []
+    if frappe.db.exists("DocType", "Activity Log"):
+        logs = frappe.get_all("Activity Log", 
+            filters={"user": user}, 
+            fields=["subject", "creation"], 
+            order_by="creation desc", 
+            limit=3
+        )
+        for log in logs:
+            recent_updates.append({
+                "title": log.subject,
+                "meta": str(log.creation)[:10],
+                "type": "system"
+            })
+            
+    # Fallback if no updates
+    if not recent_updates:
+        recent_updates = [
+            {"title": "Welcome to your Dashboard", "meta": str(frappe.utils.today()), "type": "system"},
+            {"title": "Please complete your profile", "meta": str(frappe.utils.today()), "type": "announcement"}
+        ]
+        
+    data["recent_updates"] = recent_updates
+    
+    return data
+
