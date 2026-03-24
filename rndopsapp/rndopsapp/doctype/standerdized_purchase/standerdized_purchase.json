@@ -7,8 +7,11 @@
  "field_order": [
   "section_break_imwr",
   "amended_from",
+  "indent_cum_sanction_sheet_id",
   "project_no",
   "project_ref",
+  "indent_type",
+  "workflow_state",
   "standardized_item_details",
   "sp_manufacturer_name",
   "sp_reasons_not_accept",
@@ -51,14 +54,39 @@
    "search_index": 1
   },
   {
+   "fieldname": "indent_cum_sanction_sheet_id",
+   "fieldtype": "Link",
+   "label": "Indent Cum Sanction Sheet ID",
+   "options": "Indent Cum Sanction Sheet",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
    "fieldname": "project_no",
    "fieldtype": "Data",
-   "label": "project_no"
+   "label": "Project Number",
+   "read_only": 1
   },
   {
    "fieldname": "project_ref",
+   "fieldtype": "Link",
+   "label": "Project Reference",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "indent_type",
    "fieldtype": "Data",
-   "label": "project_ref"
+   "label": "Indent Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Link",
+   "label": "Workflow State",
+   "options": "Workflow State",
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "standardized_item_details",

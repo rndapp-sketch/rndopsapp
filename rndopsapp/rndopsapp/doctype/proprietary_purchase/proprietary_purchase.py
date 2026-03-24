@@ -38,7 +38,19 @@ class proprietary_purchase(Document):
 
 	def validate(self):
 		"""Server-side calculations: row amounts and grand total."""
+		self._validate_parent_linkage()
 		self.calculate_totals()
+
+	def _validate_parent_linkage(self):
+		"""
+		CORE DESIGN RULE: Ensure this sub-doctype is linked to a parent.
+		Sub-doctypes must NOT be created independently.
+		"""
+		if not self.indent_cum_sanction_sheet_id:
+			frappe.throw(
+				_("Proprietary Purchase cannot be created directly. "
+				  "Please use Indent Cum Sanction Sheet to create this record.")
+			)
 
 	def calculate_totals(self):
 		"""Calculate row amounts for the items table and overall totals."""
@@ -204,11 +216,13 @@ def get_proprietary_purchase_fields(doc_name=None):
 
 
 # ---------------------------------------------------------------------------
-# SAVE DATA
+# SAVE DATA (DEPRECATED - Use parent Indent Cum Sanction Sheet instead)
 # ---------------------------------------------------------------------------
+# CORE DESIGN RULE: Sub-doctypes must NOT expose independent save endpoints.
+# All save operations must be handled through the parent controller.
 
-@frappe.whitelist()
-def save_proprietary_purchase_data(data):
+# @frappe.whitelist()
+def _deprecated_save_proprietary_purchase_data(data):
 	"""
 	Creates or updates a Proprietary Purchase document.
 	Handles child tables (``table_qanf``) and file uploads (Attach fields).
@@ -336,11 +350,13 @@ def save_proprietary_purchase_data(data):
 
 
 # ---------------------------------------------------------------------------
-# WORKFLOW ACTIONS
+# WORKFLOW ACTIONS (DEPRECATED - Use parent Indent Cum Sanction Sheet instead)
 # ---------------------------------------------------------------------------
+# CORE DESIGN RULE: Sub-doctypes must NOT expose independent workflow endpoints.
+# All workflow operations must be handled through the parent controller.
 
-@frappe.whitelist()
-def get_proprietary_purchase_workflow_actions(docname):
+# @frappe.whitelist()
+def _deprecated_get_proprietary_purchase_workflow_actions(docname):
 	"""
 	Get available workflow actions for the current user based on document state.
 
@@ -390,8 +406,8 @@ def get_proprietary_purchase_workflow_actions(docname):
 	return list(dict.fromkeys(allowed_actions))
 
 
-@frappe.whitelist()
-def perform_proprietary_purchase_action(docname, action):
+# @frappe.whitelist()
+def _deprecated_perform_proprietary_purchase_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.
 
@@ -475,7 +491,7 @@ def perform_proprietary_purchase_action(docname, action):
 			"message": f"Action '{action}' completed. New State: {next_state}",
 			"docname": docname,
 			"workflow_state": next_state,
-			"next_actions": get_proprietary_purchase_workflow_actions(docname),
+			"next_actions": _deprecated_get_proprietary_purchase_workflow_actions(docname),
 		}
 
 	except Exception as e:
@@ -484,18 +500,19 @@ def perform_proprietary_purchase_action(docname, action):
 		return {"status": "error", "message": str(e)}
 
 
-@frappe.whitelist()
-def submit_proprietary_purchase(docname):
+# @frappe.whitelist()
+def _deprecated_submit_proprietary_purchase(docname):
 	"""
 	Submit a Proprietary Purchase document using Workflow transitions.
+	DEPRECATED: Use parent Indent Cum Sanction Sheet controller instead.
 
 	Args:
 		docname (str): Name of the document to submit.
 
 	Returns:
-		dict: Result from ``perform_proprietary_purchase_action``.
+		dict: Result from ``_deprecated_perform_proprietary_purchase_action``.
 
 	Authentication:
 		Requires logged-in user (``@frappe.whitelist``).
 	"""
-	return perform_proprietary_purchase_action(docname, "Submit")
+	return _deprecated_perform_proprietary_purchase_action(docname, "Submit")

@@ -46,6 +46,24 @@ INDENT_TYPES = [
 
 DOCTYPE = "Indent Cum Sanction Sheet"
 
+# Sub-DocType Mapping
+SUB_DOCTYPE_MAP = {
+	INDENT_TYPE_PROPRIETARY: "proprietary_purchase",
+	INDENT_TYPE_STANDARDIZED: "standerdized_purchase",
+	INDENT_TYPE_REPAIR: "Repair Replacement",
+	INDENT_TYPE_AMC: "Annual Maintenance Contract",
+	INDENT_TYPE_RATE_CONTRACT: "Rate Contract",
+}
+
+# Workflow Mapping
+WORKFLOW_MAP = {
+	INDENT_TYPE_PROPRIETARY: "Proprietary Purchase Workflow",
+	INDENT_TYPE_STANDARDIZED: "Standardized Purchase Workflow",
+	INDENT_TYPE_REPAIR: "Repair Replacement Workflow",
+	INDENT_TYPE_AMC: "AMC Workflow",
+	INDENT_TYPE_RATE_CONTRACT: "Rate Contract Workflow",
+}
+
 
 # =============================================================================
 # DOCUMENT CONTROLLER
@@ -53,11 +71,243 @@ DOCTYPE = "Indent Cum Sanction Sheet"
 
 class IndentCumSanctionSheet(Document):
 
+	def before_insert(self):
+		"""Hook before document insertion."""
+		self._validate_indent_type()
+
 	def validate(self):
 		"""Server-side validations: calculate totals and type-specific checks."""
+		self._validate_indent_type()
+		self._validate_indent_type_change()
 		self.calculate_item_totals()
 		self.calculate_repair_total()
 		self.calculate_amc_total()
+
+	def before_save(self):
+		"""Hook before saving - create or update sub-doctype."""
+		if self.icss_indent_type:
+			self._sync_sub_doctype()
+
+	def on_submit(self):
+		"""Hook on document submission - trigger sub-doctype workflow."""
+		if self.sub_doctype_reference and self.icss_indent_type:
+			self._perform_sub_doctype_workflow_action("Submit")
+
+	def on_update_after_submit(self):
+		"""Hook after update on submitted document."""
+		if self.sub_doctype_reference and self.icss_indent_type:
+			self._sync_sub_doctype_after_submit()
+
+	# -------------------------------------------------------------------------
+	# CORE DESIGN RULE: CENTRALIZED SUB-DOCTYPE MANAGEMENT
+	# -------------------------------------------------------------------------
+
+	def _validate_indent_type(self):
+		"""Validate that indent_type is set and valid."""
+		if not self.icss_indent_type:
+			return
+
+		if self.icss_indent_type not in INDENT_TYPES:
+			frappe.throw(_("Invalid Indent Type: {0}").format(self.icss_indent_type))
+
+	def _validate_indent_type_change(self):
+		"""Block indent_type changes after submission."""
+		if self.docstatus > 0 and self.has_value_changed("icss_indent_type"):
+			frappe.throw(_("Cannot change Indent Type after submission."))
+
+	def _sync_sub_doctype(self):
+		"""
+		Create or update the sub-doctype record automatically.
+		This is the single controller method for all sub-doctype operations.
+		"""
+		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.icss_indent_type)
+
+		if not sub_doctype_name:
+			frappe.log_error(
+				f"No sub-doctype mapping found for indent type: {self.icss_indent_type}",
+				"ICSS Sub-DocType Sync Error"
+			)
+			return
+
+		# Check if sub-doctype record already exists
+		if self.sub_doctype_reference:
+			try:
+				sub_doc = frappe.get_doc(sub_doctype_name, self.sub_doctype_reference)
+			except frappe.DoesNotExistError:
+				sub_doc = None
+		else:
+			sub_doc = None
+
+		# Create new sub-doctype record if it doesn't exist
+		if not sub_doc:
+			sub_doc = self._create_sub_doctype_record(sub_doctype_name)
+		else:
+			# Update existing sub-doctype record
+			self._map_parent_data_to_subdoctype(sub_doc)
+
+		# Save sub-doctype
+		self._save_sub_doctype(sub_doc)
+
+		# Update parent reference
+		if not self.sub_doctype_reference:
+			self.db_set("sub_doctype_reference", sub_doc.name, update_modified=False)
+
+	def _create_sub_doctype_record(self, sub_doctype_name):
+		"""
+		Internal method: Create a new sub-doctype record.
+		Must be called only from parent controller.
+		"""
+		sub_doc = frappe.new_doc(sub_doctype_name)
+
+		# Assign mandatory linkage fields
+		sub_doc.indent_cum_sanction_sheet_id = self.name
+		sub_doc.project_ref = self.project_ref
+		sub_doc.project_no = self.project_no
+		sub_doc.indent_type = self.icss_indent_type
+
+		# Map parent data to sub-doctype
+		self._map_parent_data_to_subdoctype(sub_doc)
+
+		frappe.logger().info(
+			f"ICSS: Created sub-doctype {sub_doctype_name} for parent {self.name}"
+		)
+
+		return sub_doc
+
+	def _map_parent_data_to_subdoctype(self, sub_doc):
+		"""
+		Internal method: Map relevant parent fields into the sub-doctype.
+		Field mapping logic based on indent type.
+		"""
+		# Common fields mapping
+		if hasattr(sub_doc, "project_ref"):
+			sub_doc.project_ref = self.project_ref
+		if hasattr(sub_doc, "project_no"):
+			sub_doc.project_no = self.project_no
+		if hasattr(sub_doc, "indent_cum_sanction_sheet_id"):
+			sub_doc.indent_cum_sanction_sheet_id = self.name
+		if hasattr(sub_doc, "indent_type"):
+			sub_doc.indent_type = self.icss_indent_type
+
+		frappe.logger().info(
+			f"ICSS: Mapped parent data to sub-doctype {sub_doc.doctype} - {sub_doc.name}"
+		)
+
+	def _save_sub_doctype(self, sub_doc):
+		"""
+		Internal method: Save the sub-doctype record.
+		Must be called only from parent controller.
+		"""
+		try:
+			sub_doc.flags.ignore_permissions = True
+			if sub_doc.is_new():
+				sub_doc.insert(ignore_permissions=True)
+			else:
+				sub_doc.save(ignore_permissions=True)
+
+			frappe.logger().info(
+				f"ICSS: Saved sub-doctype {sub_doc.doctype} - {sub_doc.name}"
+			)
+		except Exception as e:
+			frappe.log_error(
+				f"Error saving sub-doctype {sub_doc.doctype}: {str(e)}\n{frappe.get_traceback()}",
+				"ICSS Sub-DocType Save Error"
+			)
+			frappe.throw(_("Failed to save sub-doctype record: {0}").format(str(e)))
+
+	def _perform_sub_doctype_workflow_action(self, action):
+		"""
+		Internal method: Trigger workflow transition on the sub-doctype.
+		Must be called only from parent controller.
+		"""
+		if not self.sub_doctype_reference:
+			return
+
+		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.icss_indent_type)
+		if not sub_doctype_name:
+			return
+
+		try:
+			sub_doc = frappe.get_doc(sub_doctype_name, self.sub_doctype_reference)
+
+			# Get workflow for the sub-doctype
+			workflow_name = WORKFLOW_MAP.get(self.icss_indent_type)
+			if not workflow_name:
+				frappe.logger().info(
+					f"ICSS: No workflow mapping found for indent type: {self.icss_indent_type}"
+				)
+				return
+
+			# Check if workflow exists
+			if not frappe.db.exists("Workflow", {"document_type": sub_doctype_name, "is_active": 1}):
+				frappe.logger().info(
+					f"ICSS: No active workflow found for {sub_doctype_name}"
+				)
+				return
+
+			# Apply workflow action
+			workflow = frappe.get_doc("Workflow", {"document_type": sub_doctype_name, "is_active": 1})
+			current_state = sub_doc.workflow_state or "Draft"
+
+			# Find matching transition
+			for transition in workflow.transitions:
+				if transition.state == current_state and transition.action == action:
+					sub_doc.workflow_state = transition.next_state
+
+					# Handle docstatus transitions
+					state_doc = next((s for s in workflow.states if s.state == transition.next_state), None)
+					if state_doc and state_doc.doc_status == "1" and sub_doc.docstatus == 0:
+						sub_doc.submit()
+					elif state_doc and state_doc.doc_status == "2" and sub_doc.docstatus != 2:
+						sub_doc.cancel()
+					else:
+						sub_doc.save(ignore_permissions=True)
+
+					break
+
+			frappe.logger().info(
+				f"ICSS: Performed workflow action '{action}' on sub-doctype {sub_doc.doctype} - {sub_doc.name}"
+			)
+
+		except Exception as e:
+			frappe.log_error(
+				f"Error performing workflow action on sub-doctype: {str(e)}\n{frappe.get_traceback()}",
+				"ICSS Sub-DocType Workflow Error"
+			)
+
+	def _sync_sub_doctype_after_submit(self):
+		"""
+		Internal method: Sync sub-doctype after parent update.
+		Must be called only from parent controller.
+		"""
+		if not self.sub_doctype_reference:
+			return
+
+		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.icss_indent_type)
+		if not sub_doctype_name:
+			return
+
+		try:
+			sub_doc = frappe.get_doc(sub_doctype_name, self.sub_doctype_reference)
+			self._map_parent_data_to_subdoctype(sub_doc)
+
+			# Update without changing docstatus
+			sub_doc.flags.ignore_permissions = True
+			sub_doc.save(ignore_permissions=True)
+
+			frappe.logger().info(
+				f"ICSS: Synced sub-doctype after submit {sub_doc.doctype} - {sub_doc.name}"
+			)
+
+		except Exception as e:
+			frappe.log_error(
+				f"Error syncing sub-doctype after submit: {str(e)}\n{frappe.get_traceback()}",
+				"ICSS Sub-DocType Sync Error"
+			)
+
+	# -------------------------------------------------------------------------
+	# CALCULATION METHODS (Existing)
+	# -------------------------------------------------------------------------
 
 	def calculate_item_totals(self):
 		"""Calculate row amounts for the items table and overall basic value."""
