@@ -485,19 +485,15 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None, endor
 				frappe.msgprint(_(f"Workflow updated to: {doc.workflow_state}"), indicator="blue")
 				frappe.msgprint(_("Project data synced successfully to external system."), indicator="green")
 			else:
-				# Reload document before rollback to avoid timestamp conflicts
-				doc = frappe.get_doc(doctype, docname)
-				doc.workflow_state = previous_state
-				doc.flags.ignore_mandatory = True
-				doc.save(ignore_permissions=True)
+				# Bypassing document validations for emergency DB rollback
+				frappe.db.set_value(doctype, docname, "workflow_state", previous_state, update_modified=False)
+				frappe.db.commit()
 				frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
 				frappe.log_error(f"Kafka sync failed for {docname}, rolled back workflow state", "Kafka Rollback")
 		except Exception as e:
-			# Reload document before rollback to avoid timestamp conflicts
-			doc = frappe.get_doc(doctype, docname)
-			doc.workflow_state = previous_state
-			doc.flags.ignore_mandatory = True
-			doc.save(ignore_permissions=True)
+			# Bypassing document validations for emergency DB rollback
+			frappe.db.set_value(doctype, docname, "workflow_state", previous_state, update_modified=False)
+			frappe.db.commit()
 			frappe.log_error(frappe.get_traceback(), f"Project Registration Kafka Sync Failed: {docname}")
 			frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
 	else:
