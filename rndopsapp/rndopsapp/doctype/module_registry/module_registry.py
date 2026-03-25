@@ -147,6 +147,11 @@ def get_pending_task(page_name="pending-task"):
 
 		# --- DATA FETCHING ---
 		meta = frappe.get_meta(dt)
+		
+		# Safeguard constraint: The doctype MUST have the status_field in its schema
+		if not meta.has_field(status_field):
+			continue
+
 		title_field = (meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name"))
 
 		records = frappe.get_list(
