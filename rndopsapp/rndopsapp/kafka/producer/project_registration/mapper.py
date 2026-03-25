@@ -142,8 +142,8 @@ class ProjectRegistrationMapper:
             Tuple: (overhead_amount, gst_amount, grand_total, budget_with_overhead)
         """
         # First try document-level fields
-        overhead_amount = float(doc.overhead_research or doc.overhead_consultancy or 0)
-        gst_amount = float(doc.service_tax_research or doc.service_tax_consultancy or 0)
+        overhead_amount = float(getattr(doc, 'overhead_research', 0) or getattr(doc, 'overhead_consultancy', 0) or 0)
+        gst_amount = float(getattr(doc, 'service_tax_research', 0) or getattr(doc, 'service_tax_consultancy', 0) or 0)
 
         # If document-level fields are 0, extract from proposed_budget_breakup
         if overhead_amount == 0 or gst_amount == 0:
@@ -157,10 +157,10 @@ class ProjectRegistrationMapper:
                 elif gst_amount == 0 and account_head == 'gst':
                     gst_amount = row_amount
 
-        grand_total = float(doc.total_budget_amount or doc.grand_total_consultancy or 0)
+        grand_total = float(getattr(doc, 'total_budget_amount', 0) or getattr(doc, 'grand_total_consultancy', 0) or 0)
         budget_with_overhead = float(
-            doc.budget_including_overhead_research or
-            doc.budget_including_overhead_consultancy or 0
+            getattr(doc, 'budget_including_overhead_research', 0) or
+            getattr(doc, 'budget_including_overhead_consultancy', 0) or 0
         )
 
         # If budget_with_overhead is 0, calculate as: sum - GST
