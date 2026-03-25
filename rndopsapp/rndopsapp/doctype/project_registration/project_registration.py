@@ -756,10 +756,10 @@ def get_project_form_data(docname=None):
 						linked_meta = frappe.get_meta(linked_doctype)
 						title_field = linked_meta.get_title_field()  # Best way to get the display field
 
-						options_list = frappe.get_list(
+						options_list = frappe.get_all(
 							linked_doctype,
 							fields=["name", title_field],
-							limit_page_length=1000,  # Increase limit if you have many options
+							limit=0,  # 0 usually means fetch all without limit
 						)
 
 						# Format for easy use in frontend: [{ value: '...', label: '...' }]
