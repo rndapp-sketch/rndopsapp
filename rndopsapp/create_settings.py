@@ -1,4 +1,5 @@
 import frappe
+from frappe.permissions import add_permission
 
 def execute():
     doctype_name = "ProRnd Workflow Settings"
@@ -25,6 +26,11 @@ def execute():
         
         doc.insert(ignore_permissions=True)
         frappe.db.commit()
+        
+        # Grant permissions to System Manager so it can be accessed in Desk UI
+        add_permission(doctype_name, "System Manager", 0)
+        frappe.db.commit()
+        
         print(f"✅ Created {doctype_name} Single Doctype.")
         
         # Set default values just in case
