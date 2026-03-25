@@ -1,214 +1,221 @@
 {
-    "actions": [],
-    "allow_rename": 1,
-    "autoname": "format:{YYYY}{MM}{DD}2A{######}",
-    "creation": "2026-02-11 16:13:10.506240",
-    "doctype": "DocType",
-    "engine": "InnoDB",
-    "field_order": [
-        "section_break_n74s",
-        "amended_from",
-        "reference_application_number",
-        "applying_for_self_or_other",
-        "project_no",
-        "applicant_details_section",
-        "webmail_id",
-        "name_of_applicant",
-        "designation_of_applicant",
-        "applicant_department",
-        "applying_for_section",
-        "webmail_id_for",
-        "name_of_applicant_for",
-        "designation_of_applicant_for",
-        "department_for",
-        "section_break_jlmp",
-        "account_head",
-        "section_break_wgvl",
-        "table_weoy",
-        "total_amount",
-        "approval_comp_authority",
-        "rules_and_conditions_section",
-        "rules",
-        "attached_approvals",
-        "additional_documents"
-    ],
-    "fields": [
-        {
-            "fieldname": "section_break_n74s",
-            "fieldtype": "Section Break"
-        },
-        {
-            "fieldname": "amended_from",
-            "fieldtype": "Data",
-            "hidden": 1,
-            "label": "Amended From",
-            "no_copy": 1,
-            "print_hide": 1,
-            "read_only": 1,
-            "search_index": 1
-        },
-        {
-            "fieldname": "applying_for_self_or_other",
-            "fieldtype": "Select",
-            "label": "Applying for self or other",
-            "options": "\nSelf\nOther"
-        },
-        {
-            "fieldname": "applicant_details_section",
-            "fieldtype": "Section Break",
-            "label": "Applicant Details"
-        },
-        {
-            "fieldname": "webmail_id",
-            "fieldtype": "Link",
-            "label": "Webmail Id",
-            "options": "User",
-            "read_only": 1
-        },
-        {
-            "fetch_from": "webmail_id.full_name",
-            "fieldname": "name_of_applicant",
-            "fieldtype": "Data",
-            "label": "Name of Applicant",
-            "read_only": 1
-        },
-        {
-            "fetch_from": "webmail_id.designation_name",
-            "fieldname": "designation_of_applicant",
-            "fieldtype": "Data",
-            "label": "Designation of Applicant",
-            "read_only": 1
-        },
-        {
-            "fieldname": "section_break_jlmp",
-            "fieldtype": "Section Break"
-        },
-        {
-            "fieldname": "account_head",
-            "fieldtype": "Link",
-            "label": "Account Head",
-            "options": "Budget Head"
-        },
-        {
-            "fieldname": "section_break_wgvl",
-            "fieldtype": "Section Break"
-        },
-        {
-            "columns": 15,
-            "fieldname": "table_weoy",
-            "fieldtype": "Table",
-            "label": "Details of Honorarium",
-            "options": "honorarium_table"
-        },
-        {
-            "fieldname": "approval_comp_authority",
-            "fieldtype": "Select",
-            "label": "If Approval of competent authority attached for each beneficiary",
-            "options": "\nYes\nNo"
-        },
-        {
-            "fieldname": "total_amount",
-            "fieldtype": "Data",
-            "label": "Total Amount",
-            "read_only": 1
-        },
-        {
-            "fieldname": "rules_and_conditions_section",
-            "fieldtype": "Section Break",
-            "label": "Rules and Conditions"
-        },
-        {
-            "fieldname": "rules",
-            "fieldtype": "HTML",
-            "options": "<span style=\"color: #006600;\">\n                                    1. For payment of honorarium to PhD students availing institute fellowship approval of the <strong>Dean of Academic Affairs</strong> is required.\n                                    <br>\n                                    2. For payment of honorarium to staff other than facilities and outsider from the institute the approval of the <strong>Competent Authority</strong> is required.\n                                    <br>\n                                    3. The honorarium is disbursed at the request of the Project Investigator. However, if there is any objection from the funding agency the full amount is to be refunded by PI.\n                                </span>"
-        },
-        {
-            "fieldname": "attached_approvals",
-            "fieldtype": "Attach",
-            "label": "Please attach merged copy of all approvals"
-        },
-        {
-            "fieldname": "additional_documents",
-            "fieldtype": "Attach",
-            "label": "Additional Documents"
-        },
-        {
-            "fieldname": "reference_application_number",
-            "fieldtype": "Data",
-            "hidden": 1,
-            "label": "Reference Application Number"
-        },
-        {
-            "depends_on": "eval:doc.applying_for_self_or_other == \"Other\";",
-            "fieldname": "applying_for_section",
-            "fieldtype": "Section Break",
-            "label": "Applying For"
-        },
-        {
-            "fieldname": "webmail_id_for",
-            "fieldtype": "Link",
-            "label": "Webmail Id",
-            "options": "User"
-        },
-        {
-            "fetch_from": "webmail_id_for.full_name",
-            "fieldname": "name_of_applicant_for",
-            "fieldtype": "Data",
-            "label": "Name of Applicant"
-        },
-        {
-            "fetch_from": "webmail_id_for.designation_name",
-            "fieldname": "designation_of_applicant_for",
-            "fieldtype": "Data",
-            "label": "Designation of Applicant"
-        },
-        {
-            "fetch_from": "webmail_id_for.department_name",
-            "fieldname": "department_for",
-            "fieldtype": "Data",
-            "label": "Department"
-        },
-        {
-            "fieldname": "project_no",
-            "fieldtype": "Data",
-            "label": "Project Number",
-            "read_only": 1
-        },
-        {
-            "fetch_from": "webmail_id.department_name",
-            "fieldname": "applicant_department",
-            "fieldtype": "Data",
-            "label": "Department",
-            "read_only": 1
-        }
-    ],
-    "grid_page_length": 50,
-    "index_web_pages_for_search": 1,
-    "is_submittable": 1,
-    "links": [],
-    "modified": "2026-03-06 15:20:43.489364",
-    "modified_by": "Administrator",
-    "module": "Rndopsapp",
-    "name": "Disbursal of Honorarium",
-    "naming_rule": "Expression",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "submit": 1,
-            "write": 1
-        }
-    ],
-    "row_format": "Dynamic",
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}2A{######}",
+ "creation": "2026-02-11 16:13:10.506240",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_n74s",
+  "amended_from",
+  "reference_application_number",
+  "applying_for_self_or_other",
+  "project_no",
+  "project_name",
+  "applicant_details_section",
+  "webmail_id",
+  "name_of_applicant",
+  "designation_of_applicant",
+  "applicant_department",
+  "applying_for_section",
+  "webmail_id_for",
+  "name_of_applicant_for",
+  "designation_of_applicant_for",
+  "department_for",
+  "section_break_jlmp",
+  "account_head",
+  "section_break_wgvl",
+  "table_weoy",
+  "total_amount",
+  "approval_comp_authority",
+  "rules_and_conditions_section",
+  "rules",
+  "attached_approvals",
+  "additional_documents"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_n74s",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "applying_for_self_or_other",
+   "fieldtype": "Select",
+   "label": "Applying for self or other",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "fieldname": "applicant_details_section",
+   "fieldtype": "Section Break",
+   "label": "Applicant Details"
+  },
+  {
+   "fieldname": "webmail_id",
+   "fieldtype": "Link",
+   "label": "Webmail Id",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "webmail_id.full_name",
+   "fieldname": "name_of_applicant",
+   "fieldtype": "Data",
+   "label": "Name of Applicant",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "webmail_id.designation_name",
+   "fieldname": "designation_of_applicant",
+   "fieldtype": "Data",
+   "label": "Designation of Applicant",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_jlmp",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head"
+  },
+  {
+   "fieldname": "section_break_wgvl",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 15,
+   "fieldname": "table_weoy",
+   "fieldtype": "Table",
+   "label": "Details of Honorarium",
+   "options": "honorarium_table"
+  },
+  {
+   "fieldname": "approval_comp_authority",
+   "fieldtype": "Select",
+   "label": "If Approval of competent authority attached for each beneficiary",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "total_amount",
+   "fieldtype": "Data",
+   "label": "Total Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rules_and_conditions_section",
+   "fieldtype": "Section Break",
+   "label": "Rules and Conditions"
+  },
+  {
+   "fieldname": "rules",
+   "fieldtype": "HTML",
+   "options": "<span style=\"color: #006600;\">\n                                    1. For payment of honorarium to PhD students availing institute fellowship approval of the <strong>Dean of Academic Affairs</strong> is required.\n                                    <br>\n                                    2. For payment of honorarium to staff other than facilities and outsider from the institute the approval of the <strong>Competent Authority</strong> is required.\n                                    <br>\n                                    3. The honorarium is disbursed at the request of the Project Investigator. However, if there is any objection from the funding agency the full amount is to be refunded by PI.\n                                </span>"
+  },
+  {
+   "fieldname": "attached_approvals",
+   "fieldtype": "Attach",
+   "label": "Please attach merged copy of all approvals"
+  },
+  {
+   "fieldname": "additional_documents",
+   "fieldtype": "Attach",
+   "label": "Additional Documents"
+  },
+  {
+   "fieldname": "reference_application_number",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Reference Application Number"
+  },
+  {
+   "depends_on": "eval:doc.applying_for_self_or_other == \"Other\";",
+   "fieldname": "applying_for_section",
+   "fieldtype": "Section Break",
+   "label": "Applying For"
+  },
+  {
+   "fieldname": "webmail_id_for",
+   "fieldtype": "Link",
+   "label": "Webmail Id",
+   "options": "User"
+  },
+  {
+   "fetch_from": "webmail_id_for.full_name",
+   "fieldname": "name_of_applicant_for",
+   "fieldtype": "Data",
+   "label": "Name of Applicant"
+  },
+  {
+   "fetch_from": "webmail_id_for.designation_name",
+   "fieldname": "designation_of_applicant_for",
+   "fieldtype": "Data",
+   "label": "Designation of Applicant"
+  },
+  {
+   "fetch_from": "webmail_id_for.department_name",
+   "fieldname": "department_for",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "webmail_id.department_name",
+   "fieldname": "applicant_department",
+   "fieldtype": "Data",
+   "label": "Department",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_name",
+   "fieldtype": "Data",
+   "label": "Project Name"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-25 14:47:30.410285",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Disbursal of Honorarium",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

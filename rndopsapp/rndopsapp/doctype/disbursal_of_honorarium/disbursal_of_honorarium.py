@@ -165,18 +165,18 @@ def save_disbursal_of_honorarium_data(data):
 			pr = frappe.db.get_value("Project Registration", {"project_title": data["project_name"]}, ["name", "project_no"], as_dict=1)
 			if pr:
 				data["project_name"] = pr.name
-				# Update project_number to the correct project_no
-				data["project_number"] = pr.project_no
+				# Update project_no to the correct project_no
+				data["project_no"] = pr.project_no
 		
-		# In case project_name was already the primary key, but project_number is still the title
-		elif data.get("project_name") and data.get("project_number") and data["project_name"] == data["project_number"]:
+		# In case project_name was already the primary key, but project_no is still the title
+		elif data.get("project_name") and data.get("project_no") and data["project_name"] == data["project_no"]:
 			pr_no = frappe.db.get_value("Project Registration", data["project_name"], "project_no")
 			if pr_no:
-				data["project_number"] = pr_no
-		elif data.get("project_number") and not frappe.db.exists("Project Registration", data["project_number"]):
-			pr_num = frappe.db.get_value("Project Registration", {"project_no": data["project_number"]}, "project_no")
+				data["project_no"] = pr_no
+		elif data.get("project_no") and not frappe.db.exists("Project Registration", data["project_no"]):
+			pr_num = frappe.db.get_value("Project Registration", {"project_no": data["project_no"]}, "project_no")
 			if pr_num:
-				data["project_number"] = pr_num
+				data["project_no"] = pr_num
 
 		# Map Fields
 		simple_fields = [
@@ -184,7 +184,7 @@ def save_disbursal_of_honorarium_data(data):
 			"reference_application_number",
 			"applying_for_self_or_other",
 			"project_name",
-			"project_number",
+			"project_no",
 			"webmail_id",
 			"name_of_applicant",
 			"designation_of_applicant",
@@ -449,10 +449,10 @@ def get_disbursal_of_honorarium_by_project(project_code: str = "", limit: int = 
 
 	results = []
 	try:
-		# Use project_number as that's what stores the project_no in Disbursal of Honorarium
+		# Use project_no as that's what stores the project_no in Disbursal of Honorarium
 		names = frappe.get_all(
 			"Disbursal of Honorarium",
-			filters={"project_number": project_code},
+			filters={"project_no": project_code},
 			fields=["name"],
 			limit_start=start,
 			limit_page_length=limit,
