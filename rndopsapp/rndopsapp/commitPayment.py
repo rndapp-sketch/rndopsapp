@@ -1,5 +1,6 @@
 import frappe
 import requests
+import json
 from frappe.utils import today, flt
 from datetime import datetime
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
@@ -487,32 +488,119 @@ def get_commits_by_account_head_and_status(account_head_id, status):
 @frappe.whitelist()
 def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None):
     """
-    Submit commit data using new Kafka producer with module information.
-    Works for Reimbursement, Travel, Temporary Advance, Advance Settlement.
-    Automatically includes moduleName and moduleId.
+    Submit commit data by staging it in Kafka Commit Staging. 
+    It will be published to Kafka later upon workflow reaching 'Approved' (Dean Approval).
+    Works for Reimbursement, Travel, Temporary Advance, Advance Settlement, etc.
     """
     try:
-        doc = frappe.get_doc(doctype, name)
-        print("doc:==============================",doc)
-        success = kafka_publish_commit(
-            doc=doc,
-            commit_amount=flt(commit_amount),
-            budget_head=budget_head,
-            project_name=project_name,
-            bmr=bmr,
-            bill_amount=flt(bill_amount) if bill_amount else None,
-            frap_app_id=frapAppId,
-            ref_details=refDetails
-        )
+        # Basic validation
+        if not frappe.db.exists(doctype, name):
+             return {"status": "error", "message": f"Document {doctype} {name} not found"}
+             
+        # Create Payload
+        payload = {
+            "commit_amount": flt(commit_amount),
+            "budget_head": budget_head,
+            "project_name": project_name,
+            "bmr": bmr,
+            "bill_amount": flt(bill_amount) if bill_amount else None,
+            "frap_app_id": frapAppId,
+            "ref_details": refDetails
+        }
 
-        if success:
-            return {"status": "success", "message": "Commit published to Kafka"}
+        # Check if a staging doc already exists for this reference
+        existing_staging = frappe.get_all("Kafka Commit Staging", filters={
+            "reference_doctype": doctype,
+            "reference_name": name,
+            "status": "PENDING_APPROVAL"
+        }, limit=1)
+
+        if existing_staging:
+            staging_doc = frappe.get_doc("Kafka Commit Staging", existing_staging[0].name)
+            staging_doc.payload = json.dumps(payload)
+            staging_doc.save(ignore_permissions=True)
         else:
-            return {"status": "error", "message": "Failed to publish commit"}
+            staging_doc = frappe.get_doc({
+                "doctype": "Kafka Commit Staging",
+                "reference_doctype": doctype,
+                "reference_name": name,
+                "payload": json.dumps(payload),
+                "status": "PENDING_APPROVAL"
+            })
+            staging_doc.insert(ignore_permissions=True)
+
+        return {"status": "success", "message": "Commit payload staged for Kafka publishing upon approval"}
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Submit Commit Data Error")
         return {"status": "error", "message": str(e)}
+
+
+def check_workflow_and_publish(doc, method=None):
+    """
+    Centralized workflow hook to publish staged commit data when approved by Dean (state: Approved).
+    Triggered on_update of documents.
+    """
+    applicable_doctypes = [
+        "Reimbursement", 
+        "Temporary Advance", 
+        "Disbursal of Honorarium", 
+        "Direct Purchase", 
+        "Advance Settlement", 
+        "Travel", 
+        "TA DA Settlement"
+    ]
+    
+    if doc.doctype not in applicable_doctypes:
+        return
+
+    # Check if workflow_state changed to exactly "Approved"
+    current_state = doc.get("workflow_state")
+    if current_state != "Approved":
+        return
+
+    # To ensure idempotency (only publish once when transitioning TO Approved)
+    doc_before = doc.get_doc_before_save()
+    if doc_before and doc_before.get("workflow_state") == "Approved":
+        return
+
+    # Look for pending staging docs
+    staging_docs = frappe.get_all("Kafka Commit Staging", filters={
+        "reference_doctype": doc.doctype,
+        "reference_name": doc.name,
+        "status": ["in", ["PENDING_APPROVAL", "FAILED"]]
+    })
+
+    if not staging_docs:
+        return
+
+    for st in staging_docs:
+        staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
+        try:
+            payload = json.loads(staging_doc.payload)
+            
+            # Publish to Kafka
+            success = kafka_publish_commit(
+                doc=doc,
+                commit_amount=payload.get("commit_amount"),
+                budget_head=payload.get("budget_head"),
+                project_name=payload.get("project_name"),
+                bmr=payload.get("bmr"),
+                bill_amount=payload.get("bill_amount"),
+                frap_app_id=payload.get("frap_app_id"),
+                ref_details=payload.get("ref_details")
+            )
+
+            if success:
+                staging_doc.db_set("status", "PUBLISHED")
+            else:
+                staging_doc.db_set("status", "FAILED")
+                staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+
+        except Exception as e:
+            frappe.log_error(frappe.get_traceback(), "Process Staged Commit Error")
+            staging_doc.db_set("status", "FAILED")
+            staging_doc.db_set("error_message", str(e))
 
 
 @frappe.whitelist()

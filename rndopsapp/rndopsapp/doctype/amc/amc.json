@@ -1,0 +1,253 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-25 17:15:32.554680",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_qwzc",
+  "amended_from",
+  "form_heading",
+  "amc_po_number",
+  "amc_date",
+  "basic_value_bv_of_the_po",
+  "section_break_rxja",
+  "sub_heading",
+  "amc_name_of_equipments",
+  "amc_model_no",
+  "amc_date_of_installation",
+  "amc_duration",
+  "amc_value",
+  "amc_other_charges",
+  "amc_gst",
+  "amc_grand_total",
+  "grand_total_in_words",
+  "section_break_gruc",
+  "html_ugvp",
+  "amc_proposal_no",
+  "amc_quotation_dated",
+  "amc_service_provider",
+  "amc_contact_service",
+  "amc_email_service",
+  "amc_indenter_contact",
+  "term_of_payment",
+  "amc_services",
+  "section_break_ziyk",
+  "amc_sub_heading_2",
+  "amc_upload_estimate",
+  "amc_proposal",
+  "amc_upload",
+  "section_break_lstc",
+  "amc_subheadin_3",
+  "amc_declaration_1"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_qwzc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "AMC",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "form_heading",
+   "fieldtype": "Section Break",
+   "label": "PURCHASE INDENT-CUM-SANCTION SHEET AMC"
+  },
+  {
+   "fieldname": "amc_po_number",
+   "fieldtype": "Data",
+   "label": "Original P.O. Number/ reference"
+  },
+  {
+   "fieldname": "amc_date",
+   "fieldtype": "Date",
+   "label": "Dated"
+  },
+  {
+   "fieldname": "basic_value_bv_of_the_po",
+   "fieldtype": "Data",
+   "label": "Basic Value (BV) of the PO"
+  },
+  {
+   "fieldname": "section_break_rxja",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "sub_heading",
+   "fieldtype": "HTML",
+   "options": "<p><b>Details of Equipments to be serviced:</b></p>"
+  },
+  {
+   "fieldname": "amc_name_of_equipments",
+   "fieldtype": "Data",
+   "label": "Name of the Equipments"
+  },
+  {
+   "fieldname": "amc_model_no",
+   "fieldtype": "Data",
+   "label": "Model No./ Sl. No"
+  },
+  {
+   "fieldname": "amc_date_of_installation",
+   "fieldtype": "Data",
+   "label": "Date of Installation"
+  },
+  {
+   "fieldname": "amc_duration",
+   "fieldtype": "Data",
+   "label": "Duration of AMC (in No. of Years)"
+  },
+  {
+   "description": "@___________ % of BV",
+   "fieldname": "amc_value",
+   "fieldtype": "Data",
+   "label": "Value of the AMC"
+  },
+  {
+   "fieldname": "amc_other_charges",
+   "fieldtype": "Data",
+   "label": "Add: Other Charges (Rs)"
+  },
+  {
+   "description": "@ _______ %",
+   "fieldname": "amc_gst",
+   "fieldtype": "Data",
+   "label": "Add: GST"
+  },
+  {
+   "fieldname": "amc_grand_total",
+   "fieldtype": "Data",
+   "label": "Grand Total"
+  },
+  {
+   "fieldname": "grand_total_in_words",
+   "fieldtype": "Data"
+  },
+  {
+   "fieldname": "section_break_gruc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "html_ugvp",
+   "fieldtype": "HTML",
+   "options": "<p><b>For AMC from Service Provider</b></p>"
+  },
+  {
+   "fieldname": "amc_proposal_no",
+   "fieldtype": "Data",
+   "label": "Proposal/Quotation No :"
+  },
+  {
+   "fieldname": "amc_quotation_dated",
+   "fieldtype": "Date",
+   "label": "Dated"
+  },
+  {
+   "fieldname": "amc_service_provider",
+   "fieldtype": "Data",
+   "label": "Name of Service Provider"
+  },
+  {
+   "fieldname": "amc_contact_service",
+   "fieldtype": "Data",
+   "label": "Contact Number of Service Provider"
+  },
+  {
+   "fieldname": "amc_email_service",
+   "fieldtype": "Data",
+   "label": "Email of Service Provider"
+  },
+  {
+   "fieldname": "amc_indenter_contact",
+   "fieldtype": "Data",
+   "label": "Indenter Contact Number (10 digits only)"
+  },
+  {
+   "fieldname": "term_of_payment",
+   "fieldtype": "Select",
+   "label": "Term of payment",
+   "options": "After Completion of Work\nAdvance"
+  },
+  {
+   "fieldname": "amc_services",
+   "fieldtype": "Small Text",
+   "label": "Whether the services rendered during the previous year have been satisfactory or not"
+  },
+  {
+   "fieldname": "section_break_ziyk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amc_sub_heading_2",
+   "fieldtype": "HTML",
+   "options": "<p><b>File Upload Section</b></p>"
+  },
+  {
+   "fieldname": "amc_upload_estimate",
+   "fieldtype": "Attach",
+   "label": "Upload Estimate"
+  },
+  {
+   "fieldname": "amc_proposal",
+   "fieldtype": "Attach",
+   "label": "Upload Proposal"
+  },
+  {
+   "fieldname": "amc_upload",
+   "fieldtype": "Attach",
+   "label": "Upload Original Purchase Order"
+  },
+  {
+   "fieldname": "section_break_lstc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amc_subheadin_3",
+   "fieldtype": "HTML",
+   "options": "<p><b>Declaration</b></p>"
+  },
+  {
+   "default": "0",
+   "fieldname": "amc_declaration_1",
+   "fieldtype": "Check",
+   "label": "All prices/ amounts mentioned in the form are in India Rupee (INR)."
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-25 18:09:00.878531",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "AMC",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
