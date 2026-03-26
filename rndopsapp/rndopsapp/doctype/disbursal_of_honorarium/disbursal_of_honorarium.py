@@ -279,65 +279,107 @@ def perform_disbursal_of_honorarium_action(docname, action):
 		if not next_state:
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
 
-		# Update workflow state
-		doc.workflow_state = next_state
-		doc.workflow_action = action
-		
-		# Check if next state requires submission (docstatus=1)
-		# We check the 'states' table in Workflow to see if doc_status should be 1
-		state_doc = next((s for s in workflow.states if s.state == next_state), None)
-		
-		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
-			doc.submit()
-		elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
-			doc.cancel()
-		else:
-			doc.save(ignore_permissions=True)
+		# -------------------------------------------------------------------
+		# WHY frappe.db.set_value instead of doc.save() / doc.submit():
+		#
+		# doc.save()   → calls _validate() → validate_workflow()
+		# doc.submit() → also calls validate_workflow()
+		#
+		# validate_workflow() filters transitions by the CALLER'S roles.
+		# API callers lack the desk roles (e.g. "RnD Staff", "Dean") assigned
+		# in the workflow definition, so get_transitions() returns [] and
+		# Frappe throws "transition not allowed from X to Draft" (it resets
+		# to Draft as the default allowed state).
+		#
+		# Solution: write workflow_state + docstatus directly to the DB,
+		# which completely bypasses validate_workflow().
+		# -------------------------------------------------------------------
+
+		# Find the next state config (docstatus / update_field)
+		next_state_row = next(
+			(s for s in workflow.states if s.state == next_state), None
+		)
+		new_docstatus = int(next_state_row.doc_status or 0) if next_state_row else 0
+
+		workflow_field = workflow.workflow_state_field or "workflow_state"
+		update_fields = {workflow_field: next_state}
+
+		# Include docstatus only when it changes (e.g. Approved=1, Rejected=2)
+		if new_docstatus != int(doc.docstatus):
+			update_fields["docstatus"] = new_docstatus
+
+		# Handle any extra field the workflow state row wants updated
+		# IMPORTANT: Skip if update_field is the workflow_state_field itself
+		# (all states in this workflow have update_field="workflow_state" with
+		# update_value=NULL, which would overwrite the correct state with None)
+		if (
+			next_state_row
+			and getattr(next_state_row, "update_field", None)
+			and next_state_row.update_field != workflow_field
+			and next_state_row.update_value is not None
+		):
+			update_fields[next_state_row.update_field] = next_state_row.update_value
+
+		# Write directly to DB — bypasses validate_workflow completely
+		frappe.db.set_value(
+			"Disbursal of Honorarium",
+			docname,
+			update_fields,
+			update_modified=True,
+		)
+
+		# Add a workflow comment so the timeline reflects the transition
+		doc.reload()
+		doc.add_comment("Workflow", _(next_state))
 
 		# --- Data Pipeline Integration ---
-		# Check if the document was just fully approved ("Approved by Dean(RnD)")
-		# And if so, publish the cached commitment to Kafka
-		if next_state == "Approved by Dean(RnD)":
+		# When the document reaches "Approved" (by either Ado_RnD or Dean),
+		# publish any pending staged commit payloads to Kafka.
+		# NOTE: Since perform_action uses frappe.db.set_value (bypasses ORM),
+		# the on_update hook (check_workflow_and_publish) does NOT fire.
+		# We must publish staged commits explicitly here.
+		if next_state == "Approved":
 			try:
-				from rndopsapp.rndopsapp.commitToJsonFrappe import read_json_data, write_json_data
-				from rndopsapp.rndopsapp.kafka_sync import publish_message
-				import datetime
+				from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit as kafka_publish_commit
 
-				commits = read_json_data()
-				# Look for the commit matching this docname
-				commit_index = next((index for (index, d) in enumerate(commits) if d.get("frapAppId") == docname), None)
-				
-				if commit_index is not None:
-					commit_payload = commits.pop(commit_index)
-					
-					# Wrap payload as expected by Kafka producer
-					wrapped_payload = {
-						"schemaVersion": "1.0",
-						"eventType": "ACCOUNT_HEAD_COMMIT",
-						"timestamp": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f"),
-						"data": commit_payload
-					}
+				staging_docs = frappe.get_all("Kafka Commit Staging", filters={
+					"reference_doctype": "Disbursal of Honorarium",
+					"reference_name": docname,
+					"status": ["in", ["PENDING_APPROVAL", "FAILED"]]
+				})
 
-					TOPIC_COMMIT = 'account-head-commit-events'
-					TOPIC_COMMIT_DLQ = 'account-head-commit-events-dlq'
-					
-					# Publish to Kafka
-					success = publish_message(
-						TOPIC_COMMIT, 
-						wrapped_payload, 
-						doc.name, 
-						TOPIC_COMMIT_DLQ, 
-						key=commit_payload.get("projectNumber")
-					)
+				for st in staging_docs:
+					staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
+					try:
+						import json as _json
+						payload = _json.loads(staging_doc.payload)
 
-					if success:
-						frappe.logger().info(f"Successfully published delayed commitment for {docname} to Kafka.")
-						# Only write back if publish succeeds, effectively deleting it from the pending cache
-						write_json_data(commits)
-					else:
-						frappe.log_error(f"Failed to publish delayed commitment for {docname} to Kafka.", "Kafka Publish Error")
+						success = kafka_publish_commit(
+							doc=doc,
+							commit_amount=payload.get("commit_amount"),
+							budget_head=payload.get("budget_head"),
+							project_name=payload.get("project_name"),
+							bmr=payload.get("bmr"),
+							bill_amount=payload.get("bill_amount"),
+							frap_app_id=payload.get("frap_app_id"),
+							ref_details=payload.get("ref_details")
+						)
+
+						if success:
+							staging_doc.db_set("status", "PUBLISHED")
+							frappe.logger().info(f"Published staged commit for {docname} to Kafka.")
+						else:
+							staging_doc.db_set("status", "FAILED")
+							staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+							frappe.log_error(f"Failed to publish staged commit for {docname}.", "Kafka Publish Error")
+
+					except Exception as e:
+						frappe.log_error(frappe.get_traceback(), "Process Staged Commit Error")
+						staging_doc.db_set("status", "FAILED")
+						staging_doc.db_set("error_message", str(e))
+
 			except Exception as e:
-				frappe.log_error(f"Error processing delayed commitment for {docname}: {str(e)}", "Data Pipeline Error")
+				frappe.log_error(f"Error processing staged commits for {docname}: {str(e)}", "Data Pipeline Error")
 		# -------------------------------
 
 		frappe.db.commit()
@@ -362,31 +404,24 @@ def get_disbursal_of_honorarium_workflow_actions(docname):
 	"""
 	doc = frappe.get_doc("Disbursal of Honorarium", docname)
 	current_state = doc.workflow_state or "Draft"
-	user_roles = frappe.get_roles(frappe.session.user)
-
 	# Fetch the workflow for this doctype
 	workflow_name = frappe.get_value("Workflow", {"document_type": "Disbursal of Honorarium"}, "name")
-	
+
 	if not workflow_name:
 		return []
 
 	workflow = frappe.get_doc("Workflow", workflow_name)
-	allowed_actions = []
 
-	for transition in workflow.get("transitions", []):
-		if transition.state != current_state:
-			continue
+	# Filter actions by the current user's roles so each user
+	# only sees the action buttons they are allowed to perform.
+	user_roles = frappe.get_roles(frappe.session.user)
 
-		# Check roles on the transition
-		transition_roles = transition.get("allowed") or []
-		if isinstance(transition_roles, str):
-			transition_roles = [transition_roles]
-
-		# User can perform action if they have allowed role
-		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
-			allowed_actions.append(transition.action)
-
-	return list(dict.fromkeys(allowed_actions))
+	actions = [
+		t.action
+		for t in workflow.transitions
+		if t.state == current_state and t.allowed in user_roles
+	]
+	return list(dict.fromkeys(actions))
 
 
 @frappe.whitelist()

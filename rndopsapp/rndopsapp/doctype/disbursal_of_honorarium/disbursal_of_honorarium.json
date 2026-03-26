@@ -12,6 +12,7 @@
   "applying_for_self_or_other",
   "project_no",
   "project_name",
+  "workflow_state",
   "applicant_details_section",
   "webmail_id",
   "name_of_applicant",
@@ -186,13 +187,19 @@
    "fieldname": "project_name",
    "fieldtype": "Data",
    "label": "Project Name"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-25 14:47:30.410285",
+ "modified": "2026-03-26 16:42:49.590027",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Honorarium",
