@@ -6,10 +6,11 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "name_as_per_in_back_account",
+  "web_mail_id",
+  "name1",
   "disbursal_employee_student",
   "designation",
-  "disbursal_employee_number_or_role_no",
+  "emp_id",
   "disbursal_pdf_no_or_bank_account_no",
   "disbursal_amount",
   "disbursal_personal_share",
@@ -17,27 +18,17 @@
  ],
  "fields": [
   {
-   "fieldname": "name_as_per_in_back_account",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Name as per in bank account"
-  },
-  {
    "fieldname": "disbursal_employee_student",
    "fieldtype": "Select",
    "label": "Employee/Student",
    "options": "Employee\nStudent"
   },
   {
+   "fetch_from": "web_mail_id.designation_name",
    "fieldname": "designation",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Designation",
    "options": "Designation_prornd"
-  },
-  {
-   "fieldname": "disbursal_employee_number_or_role_no",
-   "fieldtype": "Data",
-   "label": "Emp. No./Role No"
   },
   {
    "fieldname": "disbursal_pdf_no_or_bank_account_no",
@@ -60,19 +51,40 @@
    "fieldtype": "Currency",
    "label": "Institute's Share (30%)(Rs.)",
    "read_only": 1
+  },
+  {
+   "fieldname": "web_mail_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Webmail id",
+   "options": "User"
+  },
+  {
+   "fetch_from": "web_mail_id.full_name",
+   "fieldname": "name1",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Name as per in bank account"
+  },
+  {
+   "fetch_from": "web_mail_id.employee_id",
+   "fieldname": "emp_id",
+   "fieldtype": "Data",
+   "label": "Emp. No./Roll No"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-12-23 16:00:36.321603",
+ "modified": "2026-03-27 11:11:02.209568",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal Detail",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

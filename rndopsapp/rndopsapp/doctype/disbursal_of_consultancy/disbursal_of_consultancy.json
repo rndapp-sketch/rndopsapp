@@ -1,11 +1,13 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}1C{######}",
  "creation": "2025-12-22 09:57:55.727081",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_tvd4",
+  "column_break_aecs",
   "amended_from",
   "section_break_mtlg",
   "webmail_id",
@@ -39,7 +41,8 @@
  "fields": [
   {
    "fieldname": "section_break_tvd4",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "hidden": 1
   },
   {
    "fieldname": "amended_from",
@@ -107,11 +110,11 @@
    "label": "Current Balance"
   },
   {
-   "default": "PDF",
    "fieldname": "disbursal_project_number",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "label": "Project Number",
-   "options": "Select\nPDF"
+   "options": "Select\nPDF",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_vaha",
@@ -196,16 +199,22 @@
    "fieldtype": "Currency",
    "label": "Student Welfare Fund (5%)",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_aecs",
+   "fieldtype": "Column Break",
+   "hidden": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-23 16:21:26.365865",
+ "modified": "2026-03-27 16:10:36.432734",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Consultancy",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -223,6 +232,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

@@ -542,12 +542,13 @@ def check_workflow_and_publish(doc, method=None):
     Triggered on_update of documents.
     """
     applicable_doctypes = [
-        "Reimbursement", 
-        "Temporary Advance", 
-        "Disbursal of Honorarium", 
-        "Direct Purchase", 
-        "Advance Settlement", 
-        "Travel", 
+        "Reimbursement",
+        "Temporary Advance",
+        "Disbursal of Honorarium",
+        "Disbursal of Consultancy",
+        "Direct Purchase",
+        "Advance Settlement",
+        "Travel",
         "TA DA Settlement"
     ]
     

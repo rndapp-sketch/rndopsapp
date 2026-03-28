@@ -361,35 +361,140 @@ def perform_disbursal_of_consultancy_action(docname, action):
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.get_value("Workflow", {"document_type": "Disbursal of Consultancy"}, "name")
-		
+
 		if not workflow_name:
 			frappe.throw("Workflow not found for Disbursal of Consultancy.")
 
 		workflow = frappe.get_doc("Workflow", workflow_name)
-		
+
 		next_state = None
-		
+
 		for t in workflow.transitions:
 			if t.state == current_state and t.action == action:
 				next_state = t.next_state
 				break
-		
+
 		if not next_state:
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
 
-		# Update workflow state
-		doc.workflow_state = next_state
-		
-		# Check if next state requires submission (docstatus=1)
-		# We check the 'states' table in Workflow to see if doc_status should be 1
-		state_doc = next((s for s in workflow.states if s.state == next_state), None)
-		
-		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
-			doc.submit()
-		elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
-			doc.cancel()
-		else:
-			doc.save(ignore_permissions=True)
+		# -------------------------------------------------------------------
+		# WHY frappe.db.set_value instead of doc.save() / doc.submit():
+		#
+		# doc.save()   → calls _validate() → validate_workflow()
+		# doc.submit() → also calls validate_workflow()
+		#
+		# validate_workflow() filters transitions by the CALLER'S roles.
+		# API callers lack the desk roles assigned in the workflow definition,
+		# so get_transitions() returns [] and Frappe throws "transition not
+		# allowed from X to Draft". Writing directly to DB bypasses this.
+		# -------------------------------------------------------------------
+
+		next_state_row = next(
+			(s for s in workflow.states if s.state == next_state), None
+		)
+		new_docstatus = int(next_state_row.doc_status or 0) if next_state_row else 0
+
+		workflow_field = workflow.workflow_state_field or "workflow_state"
+		update_fields = {workflow_field: next_state}
+
+		if new_docstatus != int(doc.docstatus):
+			update_fields["docstatus"] = new_docstatus
+
+		if (
+			next_state_row
+			and getattr(next_state_row, "update_field", None)
+			and next_state_row.update_field != workflow_field
+			and next_state_row.update_value is not None
+		):
+			update_fields[next_state_row.update_field] = next_state_row.update_value
+
+		# Write directly to DB — bypasses validate_workflow completely
+		frappe.db.set_value(
+			"Disbursal of Consultancy",
+			docname,
+			update_fields,
+			update_modified=True,
+		)
+
+		# Add a workflow comment so the timeline reflects the transition
+		doc.reload()
+		doc.add_comment("Workflow", _(next_state))
+
+		# --- Data Pipeline Integration ---
+		# When the document reaches "Approved", publish any pending staged commit
+		# payloads to Kafka.
+		# NOTE: Since perform_action uses frappe.db.set_value (bypasses ORM),
+		# the on_update hook (check_workflow_and_publish) does NOT fire.
+		# We must publish staged commits explicitly here.
+		if next_state == "Approved":
+			frappe.logger().info(f"[Consultancy Kafka] Approval triggered for {docname}. Searching for staged commits.")
+			try:
+				from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit as kafka_publish_commit
+
+				staging_docs = frappe.get_all("Kafka Commit Staging", filters={
+					"reference_doctype": "Disbursal of Consultancy",
+					"reference_name": docname,
+					"status": ["in", ["PENDING_APPROVAL", "FAILED"]]
+				})
+
+				frappe.logger().info(f"[Consultancy Kafka] Found {len(staging_docs)} staged commit(s) for {docname}.")
+
+				if not staging_docs:
+					# Log all staging records for this doc regardless of status — helps diagnose missing/wrong-status records
+					all_staging = frappe.get_all("Kafka Commit Staging", filters={
+						"reference_doctype": "Disbursal of Consultancy",
+						"reference_name": docname,
+					}, fields=["name", "status", "creation"])
+					frappe.log_error(
+						f"[Consultancy Kafka] No PENDING_APPROVAL/FAILED staging records found for {docname}. "
+						f"All staging records for this doc: {all_staging}. "
+						f"This means submit_commit_data was either not called or used a different reference_name.",
+						"Consultancy Kafka - No Staging Record"
+					)
+
+				for st in staging_docs:
+					staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
+					try:
+						import json as _json
+						payload = _json.loads(staging_doc.payload)
+
+						frappe.logger().info(
+							f"[Consultancy Kafka] Publishing staging record {staging_doc.name} for {docname}. "
+							f"Payload keys: {list(payload.keys())}, commit_amount={payload.get('commit_amount')}, "
+							f"budget_head={payload.get('budget_head')}, project_name={payload.get('project_name')}"
+						)
+
+						success = kafka_publish_commit(
+							doc=doc,
+							commit_amount=payload.get("commit_amount"),
+							budget_head=payload.get("budget_head"),
+							project_name=payload.get("project_name"),
+							bmr=payload.get("bmr"),
+							bill_amount=payload.get("bill_amount"),
+							frap_app_id=payload.get("frap_app_id"),
+							ref_details=payload.get("ref_details")
+						)
+
+						if success:
+							staging_doc.db_set("status", "PUBLISHED")
+							frappe.logger().info(f"[Consultancy Kafka] Successfully published staging record {staging_doc.name} for {docname}.")
+						else:
+							staging_doc.db_set("status", "FAILED")
+							staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+							frappe.log_error(
+								f"[Consultancy Kafka] kafka_publish_commit returned False for {docname}. "
+								f"Staging: {staging_doc.name}, payload: {payload}",
+								"Consultancy Kafka Publish Failed"
+							)
+
+					except Exception as e:
+						frappe.log_error(frappe.get_traceback(), f"[Consultancy Kafka] Exception processing staging {staging_doc.name} for {docname}")
+						staging_doc.db_set("status", "FAILED")
+						staging_doc.db_set("error_message", str(e))
+
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), f"[Consultancy Kafka] Outer exception for {docname}")
+		# -------------------------------
 
 		frappe.db.commit()
 
@@ -405,6 +510,50 @@ def perform_disbursal_of_consultancy_action(docname, action):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Disbursal of Consultancy Action Error")
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def submit_disbursal_of_consultancy(docname):
+	"""
+	Submit a Disbursal of Consultancy document.
+	Uses the workflow 'Submit' action to properly transition from Draft
+	to the next workflow state (e.g. Pending Approval), instead of
+	calling doc.submit() which would set docstatus=1 and incorrectly
+	match the 'Rejected' workflow state.
+	"""
+	print("submit_disbursal_of_consultancy: execution started")
+	print("Payload received:", docname)
+	try:
+		doc = frappe.get_doc("Disbursal of Consultancy", docname)
+
+		current_state = doc.workflow_state or "Draft"
+		print(f"Current workflow state: {current_state}, docstatus: {doc.docstatus}")
+
+		if current_state != "Draft":
+			return {
+				"status": "info",
+				"message": f"Disbursal of Consultancy '{docname}' is already in state '{current_state}'.",
+				"docname": docname,
+				"workflow_state": current_state,
+			}
+
+		# Use the workflow action to transition properly
+		result = perform_disbursal_of_consultancy_action(docname, "Submit")
+		if result.get("status") == "success":
+			print(f"Disbursal submitted successfully via workflow. New state: {result.get('workflow_state')}")
+		else:
+			print(f"Disbursal submission failed: {result.get('message')}")
+
+		return result
+
+	except Exception as e:
+		import traceback
+		tb = traceback.format_exc()
+		print(f"[ERROR][submit_disbursal_of_consultancy]: {str(e)}")
+		print(f"[ERROR][submit_disbursal_of_consultancy] Traceback:\n{tb}")
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Disbursal of Consultancy Submit Error")
+		return {"status": "error", "message": str(e) or tb}
 
 @frappe.whitelist()
 def get_disbursal_of_consultancy_workflow_actions(docname):
