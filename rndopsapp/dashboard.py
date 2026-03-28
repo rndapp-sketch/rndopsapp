@@ -122,8 +122,8 @@ def get_director_dashboard_data():
     research_projects = frappe.db.count("Project Registration", filters={"project_type": "Research"})
     consultancy_projects = frappe.db.count("Project Registration", filters={"project_type": "Consultancy"})
 
-    # Completed projects - checking workflow_state or docstatus
-    completed_projects = frappe.db.count("Project Registration", filters={"docstatus": 1})
+    # Completed projects - docstatus=1 but NOT in 'Approved' state (those are ongoing)
+    ongoing_projects = frappe.db.count("Project Registration", filters={"docstatus": 1, "workflow_state": ["not in", ["Approved"]]})
 
     # Total staff count - count from manpower details child table across all projects
     total_staff_count = frappe.db.sql("""
@@ -135,7 +135,7 @@ def get_director_dashboard_data():
         "total_projects": total_projects,
         "research_projects": research_projects,
         "consultancy_projects": consultancy_projects,
-        "completed_projects": completed_projects,
+        "ongoing_projects": ongoing_projects,
         "total_staff_count": total_staff_count
     }
 
@@ -318,20 +318,23 @@ def get_pi_dashboard_data(user=None):
     total_projects = len(projects)
     draft_projects = 0
     pending_review = 0
-    completed_projects = 0
+    ongoing_projects = 0
     
     draft_states = ["Draft", "Endorsement Draft"]
     
     for p in projects:
         if p.docstatus == 0 and p.workflow_state in draft_states:
             draft_projects += 1
+        elif p.docstatus == 1 and p.workflow_state == "Approved":
+            # Approved = ongoing project (registered & being worked on)
+            pending_review += 1
         elif p.docstatus == 1:
-            completed_projects += 1
+            ongoing_projects += 1
         else:
             if p.workflow_state not in draft_states and p.workflow_state != 'Rejected':
                 pending_review += 1
     
-    completion_rate = int((completed_projects / total_projects) * 100) if total_projects > 0 else 0
+    completion_rate = int((ongoing_projects / total_projects) * 100) if total_projects > 0 else 0
     
     # Active Staff (count rows in manpower_details across all PI projects)
     active_staff = 0

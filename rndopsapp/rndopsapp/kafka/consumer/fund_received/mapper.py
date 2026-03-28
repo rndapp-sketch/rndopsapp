@@ -47,6 +47,34 @@ class FundReceivedConsumerMapper:
         return None
 
     @staticmethod
+    def get_project_registration_name(project_number: str) -> Optional[str]:
+        """
+        Look up the Project Registration document name from project_no field.
+
+        Args:
+            project_number: The project_no value (e.g. '26RBSBESP0391LSAH0015')
+
+        Returns:
+            str: Project Registration document name (e.g. '2026032701DST000704'),
+                 or the original project_number if not found.
+        """
+        if not project_number:
+            return project_number
+
+        # Search Project Registration where project_no matches
+        prj_name = frappe.db.get_value(
+            'Project Registration',
+            {'project_no': project_number},
+            'name'
+        )
+
+        if prj_name:
+            return prj_name
+
+        # Fallback: return original project_number if no match found
+        return project_number
+
+    @staticmethod
     def map_status(kafka_status: Optional[str]) -> Optional[str]:
         """
         Map Kafka status to Frappe workflow state.
@@ -92,11 +120,12 @@ class FundReceivedConsumerMapper:
                     'sanctioned_letter_no', dto.sanctionLetterNo
                 )
 
-            # Map and apply project_number
+            # Map and apply project_number → look up Project Registration name
             if dto.projectNumber:
+                prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
                 frappe.db.set_value(
                     'Fund Received', doc_name,
-                    'prjreg_title', dto.projectNumber
+                    'prjreg_title', prj_reg_name
                 )
 
             # Map and apply amount_received

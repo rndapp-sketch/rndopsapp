@@ -38,6 +38,7 @@
   "ss_payment",
   "additional_terms_and_conditions_if_any",
   "declaration_section",
+  "check_the_below_declaration",
   "html_dqce"
  ],
  "fields": [
@@ -218,13 +219,19 @@
    "hidden": 1,
    "label": "RDP11 Number",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "check_the_below_declaration",
+   "fieldtype": "Check",
+   "label": "Check the declaration below"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-21 12:13:58.526581",
+ "modified": "2026-03-28 14:58:40.684434",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "sanction_sheet",

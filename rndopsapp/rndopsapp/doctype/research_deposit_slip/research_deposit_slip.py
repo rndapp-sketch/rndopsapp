@@ -168,20 +168,17 @@ def get_research_deposit_slip_fields(doc_name=None):
 				link_options[fieldname] = frappe.get_all(
 					linked_doctype,
 					fields=["name as value", "full_name as label"],
-					limit=200
-				)
+					)
 			else:
 				link_options[fieldname] = frappe.get_all(
 					linked_doctype,
 					fields=["name as value", f"{title_field} as label"],
-					limit=200
 				)
 		except Exception as e:
 			# Fallback to just name if title field doesn't exist
 			link_options[fieldname] = frappe.get_all(
 				linked_doctype,
 				fields=["name as value", "name as label"],
-				limit=200
 			)
 
 	# Fetch Client Scripts from Frappe UI (stored in database)
