@@ -113,6 +113,7 @@
   {
    "fieldname": "workflow_status",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Workflow Status",
    "read_only": 1
   }
@@ -121,7 +122,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-21 10:24:15.606645",
+ "modified": "2026-03-28 14:32:43.627175",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "P_11 Form",
@@ -142,6 +143,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

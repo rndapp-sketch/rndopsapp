@@ -1224,7 +1224,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			If provided but doesn't exist, creates a new document.
 			If not provided, falls back to data.get("name") or creates new.
 	"""
-	print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
+	print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:",doc_data)
 	
 	# --- FIX START: Convert JSON string to Python Dictionary ---
 	if isinstance(doc_data, str):
@@ -1784,4 +1784,20 @@ def update_project_fields(docname, is_the_account_type_pfms=None, enter_scheme_n
 		return {"status": "success", "message": _("Database manually updated for fields: {0}").format(", ".join(update_dict.keys()))}
 	else:
 		return {"status": "failed", "message": _("No fields provided for update")}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_project_title(project_no):
+	"""
+	Get the title of a Project Registration document by its project_no.
+	"""
+	if not project_no:
+		return "Not Found"
+
+	project_title = frappe.db.get_value("Project Registration", {"project_no": project_no}, "project_title")
+
+	if not project_title:
+		return "Not Found"
+
+	return project_title
 

@@ -233,7 +233,7 @@
   },
   {
    "fieldname": "project_title",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "in_list_view": 1,
    "label": "Project Title",
    "reqd": 1
@@ -1168,18 +1168,18 @@
    "hidden": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "is_the_account_type_pfms",
    "fieldtype": "Select",
    "label": "Is the account type PFMS?",
-   "options": "\nYes\nNo",
-   "allow_on_submit": 1
+   "options": "\nYes\nNo"
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.is_the_account_type_pfms==\"Yes\"",
    "fieldname": "enter_scheme_number",
    "fieldtype": "Data",
-   "label": "Enter Scheme Number",
-   "allow_on_submit": 1
+   "label": "Enter Scheme Number"
   },
   {
    "description": "*Visible in RnD Staff approval page",
@@ -1195,11 +1195,11 @@
    "label": "Scheme Details"
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.is_the_account_type_pfms==\"Yes\"",
    "fieldname": "scheme_name",
    "fieldtype": "Data",
-   "label": "Scheme Name",
-   "allow_on_submit": 1
+   "label": "Scheme Name"
   },
   {
    "fieldname": "column_break_hwjp",
@@ -1214,18 +1214,18 @@
    "label": "Account Details"
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.is_the_account_type_pfms==\"No\"",
    "fieldname": "account_number",
    "fieldtype": "Data",
-   "label": "Account Number",
-   "allow_on_submit": 1
+   "label": "Account Number"
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.is_the_account_type_pfms==\"No\"",
    "fieldname": "bank_name",
    "fieldtype": "Data",
-   "label": "Bank Name",
-   "allow_on_submit": 1
+   "label": "Bank Name"
   },
   {
    "fieldname": "column_break_vivr",
@@ -1249,7 +1249,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-23 16:17:55.083931",
+ "modified": "2026-03-28 13:14:30.891394",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
@@ -1390,6 +1390,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",

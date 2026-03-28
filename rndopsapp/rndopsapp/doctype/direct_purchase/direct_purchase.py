@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 def extract_eval_expression(expression):
@@ -437,6 +438,9 @@ def get_direct_purchase_workflow_actions(docname):
 	current_state = doc.workflow_state or "Draft"
 	user_roles = frappe.get_roles(frappe.session.user)
 
+	print(f"\n--- [GET_ACTIONS] docname={docname}, current_state='{current_state}', user={frappe.session.user}")
+	print(f"    User Roles: {user_roles}")
+
 	workflow_name = frappe.db.get_value(
 		"Workflow",
 		{"document_type": "Direct Purchase", "is_active": 1},
@@ -453,32 +457,146 @@ def get_direct_purchase_workflow_actions(docname):
 		if transition.state != current_state:
 			continue
 
+		print(f"    Transition: state='{transition.state}' action='{transition.action}' allowed='{transition.allowed}'")
+
 		transition_roles = transition.get("allowed") or []
 		if isinstance(transition_roles, str):
 			transition_roles = [transition_roles]
 
 		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
+			print(f"      [PASS] Role check passed")
 			if transition.condition:
+				print(f"      Condition: {transition.condition}")
 				try:
-					if not frappe.safe_eval(transition.condition, None, {"doc": doc}):
+					eval_context = {
+						"doc": doc,
+						"flt": frappe.utils.flt,
+						"cint": frappe.utils.cint,
+						"frappe": frappe._dict(
+							db=frappe._dict(
+								get_value=frappe.db.get_value,
+								get_list=frappe.db.get_list,
+								get_single_value=frappe.db.get_single_value,
+							),
+							utils=frappe._dict(
+								flt=frappe.utils.flt,
+								cint=frappe.utils.cint,
+							),
+							session=frappe.session,
+						),
+					}
+					result = frappe.safe_eval(transition.condition, None, eval_context)
+					print(f"      Condition result: {result}")
+					if not result:
+						print(f"      [SKIP] Condition is False")
 						continue
-				except Exception:
+				except Exception as e:
+					print(f"      [ERROR] Condition eval failed: {str(e)}")
 					continue
 
 			allowed_actions.append(transition.action)
+			print(f"      [ADDED] action='{transition.action}'")
+		else:
+			print(f"      [FAIL] Role check. Expected one of: {transition_roles}")
+
+	print(f"    Final allowed_actions: {list(dict.fromkeys(allowed_actions))}")
 
 	return list(dict.fromkeys(allowed_actions))
 
 
+# @frappe.whitelist()
+# def perform_direct_purchase_action(docname, action):
+# 	"""
+# 	Executes the selected workflow action and updates the document state.
+# 	"""
+# 	try:
+# 		doc = frappe.get_doc("Direct Purchase", docname)
+# 		current_state = doc.workflow_state or "Draft"
+# 		user_roles = frappe.get_roles(frappe.session.user)
+
+# 		workflow_name = frappe.db.get_value(
+# 			"Workflow",
+# 			{"document_type": "Direct Purchase", "is_active": 1},
+# 			"name"
+# 		)
+
+# 		if not workflow_name:
+# 			frappe.throw("No active workflow found for Direct Purchase.")
+
+# 		workflow = frappe.get_doc("Workflow", workflow_name)
+
+# 		next_state = None
+# 		transition = None
+
+# 		for t in workflow.transitions:
+# 			if t.state == current_state and t.action == action:
+# 				allowed_roles = t.get("allowed") or []
+# 				if isinstance(allowed_roles, str):
+# 					allowed_roles = [allowed_roles]
+
+# 				if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
+# 					continue
+
+# 				if t.condition:
+# 					try:
+# 						if not frappe.safe_eval(t.condition, None, {"doc": doc}):
+# 							continue
+# 					except Exception as e:
+# 						frappe.log_error(f"Workflow condition error: {str(e)}", "Workflow Error")
+# 						continue
+
+# 				next_state = t.next_state
+# 				transition = t
+# 				break
+
+# 		if not next_state:
+# 			frappe.throw(
+# 				f"No valid transition found for action '{action}' from state "
+# 				f"'{current_state}' matching your role and conditions."
+# 			)
+
+# 		doc.workflow_state = next_state
+
+# 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
+
+# 		if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
+# 			doc.submit()
+# 		elif state_doc and state_doc.doc_status == "2" and doc.docstatus != 2:
+# 			doc.cancel()
+# 		else:
+# 			doc.save(ignore_permissions=True)
+
+# 		frappe.db.commit()
+
+# 		return {
+# 			"status": "success",
+# 			"message": f"Action '{action}' completed. New State: {next_state}",
+# 			"docname": docname,
+# 			"workflow_state": next_state,
+# 			"next_actions": get_direct_purchase_workflow_actions(docname)
+# 		}
+
+# 	except Exception as e:
+# 		frappe.db.rollback()
+# 		frappe.log_error(frappe.get_traceback(), "Direct Purchase Action Error")
+# 		return {"status": "error", "message": str(e)}
+
 @frappe.whitelist()
 def perform_direct_purchase_action(docname, action):
+	print("------=-==-=-=-=-=-=-=-=-=-=-=-DP-=-=-=-=-=-=-=-=-=-=-=-")
 	"""
 	Executes the selected workflow action and updates the document state.
 	"""
+	print(f"\n--- [START] perform_direct_purchase_action ---")
+	print(f"Docname: {docname} | Action requested: {action}")
+	
 	try:
 		doc = frappe.get_doc("Direct Purchase", docname)
 		current_state = doc.workflow_state or "Draft"
 		user_roles = frappe.get_roles(frappe.session.user)
+		
+		print(f"Current State: '{current_state}' | User: {frappe.session.user}")
+		print(f"User Roles: {user_roles}")
 
 		workflow_name = frappe.db.get_value(
 			"Workflow",
@@ -486,7 +604,10 @@ def perform_direct_purchase_action(docname, action):
 			"name"
 		)
 
+		print(f"Active Workflow Found: {workflow_name}")
+
 		if not workflow_name:
+			print("[ERROR] No active workflow found for Direct Purchase.")
 			frappe.throw("No active workflow found for Direct Purchase.")
 
 		workflow = frappe.get_doc("Workflow", workflow_name)
@@ -494,45 +615,101 @@ def perform_direct_purchase_action(docname, action):
 		next_state = None
 		transition = None
 
+		print("Iterating over workflow transitions...")
 		for t in workflow.transitions:
+			# Debug transition match
+			print(f"  Checking Transition -> State: '{t.state}', Action: '{t.action}'")
+			
 			if t.state == current_state and t.action == action:
+				print(f"    [MATCH] State & Action match found!")
+				
 				allowed_roles = t.get("allowed") or []
 				if isinstance(allowed_roles, str):
 					allowed_roles = [allowed_roles]
+				
+				print(f"    Allowed roles for transition: {allowed_roles}")
 
+				# Role check
 				if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
+					print(f"    [FAIL] Role check failed.")
+					print(f"           - Workflow expects one of: {allowed_roles}")
+					print(f"           - User actually has: {user_roles}")
+					print(f"           -> TIP: Make sure the Role Name in the Workflow exactly matches the Role Name assigned to the user.")
 					continue
+				else:
+					print("    [PASS] Role check passed.")
 
+				# Condition check
 				if t.condition:
+					print(f"    Evaluating condition: {t.condition}")
 					try:
-						if not frappe.safe_eval(t.condition, None, {"doc": doc}):
+						eval_context = {
+							"doc": doc,
+							"flt": frappe.utils.flt,
+							"cint": frappe.utils.cint,
+							"frappe": frappe._dict(
+								db=frappe._dict(
+									get_value=frappe.db.get_value,
+									get_list=frappe.db.get_list,
+									get_single_value=frappe.db.get_single_value,
+								),
+								utils=frappe._dict(
+									flt=frappe.utils.flt,
+									cint=frappe.utils.cint,
+								),
+								session=frappe.session,
+							),
+						}
+						if not frappe.safe_eval(t.condition, None, eval_context):
+							print("    [FAIL] Condition evaluated to False.")
 							continue
+						print("    [PASS] Condition evaluated to True.")
 					except Exception as e:
+						print(f"    [ERROR] Workflow condition error: {str(e)}")
 						frappe.log_error(f"Workflow condition error: {str(e)}", "Workflow Error")
 						continue
 
+				# Successful transition found
 				next_state = t.next_state
 				transition = t
+				print(f"    [SUCCESS] Transition approved! Next state will be: '{next_state}'")
 				break
+			else:
+				# Just skip quietly if not matching current state/action
+				pass
 
 		if not next_state:
-			frappe.throw(
-				f"No valid transition found for action '{action}' from state "
-				f"'{current_state}' matching your role and conditions."
-			)
+			error_msg = f"No valid transition found for action '{action}' from state '{current_state}' matching your role and conditions."
+			print(f"[ERROR] {error_msg}")
+			frappe.throw(error_msg)
 
 		doc.workflow_state = next_state
-
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
 
+		if state_doc:
+			print(f"Target state doc_status: {state_doc.doc_status} (Current docstatus: {doc.docstatus})")
+
 		if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
+			print("[ACTION] Submitting document...")
 			doc.submit()
 		elif state_doc and state_doc.doc_status == "2" and doc.docstatus != 2:
+			print("[ACTION] Cancelling document...")
 			doc.cancel()
 		else:
-			doc.save(ignore_permissions=True)
+			print("[ACTION] Updating workflow_state via db.set_value (bypassing Frappe workflow sandbox)...")
+			frappe.db.set_value("Direct Purchase", docname, "workflow_state", next_state)
+
+			# Since db.set_value does NOT trigger on_update hooks,
+			# manually call the Kafka publishing hook if state is now 'Approved'
+			if next_state == "Approved":
+				print("[KAFKA] State is 'Approved' — manually triggering check_workflow_and_publish...")
+				from rndopsapp.rndopsapp.commitPayment import check_workflow_and_publish
+				# Reload the doc so it reflects the updated workflow_state
+				doc.reload()
+				check_workflow_and_publish(doc)
 
 		frappe.db.commit()
+		print(f"--- [END] perform_direct_purchase_action SUCCESS ---\n")
 
 		return {
 			"status": "success",
@@ -544,8 +721,12 @@ def perform_direct_purchase_action(docname, action):
 
 	except Exception as e:
 		frappe.db.rollback()
+		print(f"\n--- [EXCEPTION] perform_direct_purchase_action ---")
+		print(f"Error: {str(e)}")
 		frappe.log_error(frappe.get_traceback(), "Direct Purchase Action Error")
 		return {"status": "error", "message": str(e)}
+
+
 
 
 @frappe.whitelist()

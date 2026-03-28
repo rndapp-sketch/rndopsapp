@@ -313,6 +313,38 @@ def save_fund_received(doc_data, prjreg_title=None, project_reg=None):
 		# INSERT DOC FIRST to generate a name for file attachments
 		new_doc.insert(ignore_permissions=True)
 
+		# ── MinIO upload: main document_upload field ──────────────────────────────
+		if data.get("document_upload_data") and data.get("document_upload_name"):
+			try:
+				from rndopsapp.minio import get_rnd_file_service
+
+				file_data_uri = data["document_upload_data"]
+				if file_data_uri.startswith("data:"):
+					file_data_uri = file_data_uri.split(",", 1)[1]
+				file_bytes = base64.b64decode(file_data_uri)
+
+				upload_result = get_rnd_file_service().save_file(
+					filename=data["document_upload_name"],
+					content=file_bytes,
+					is_private=True,
+					doctype="Project Registration",
+					docname=project_reg or new_doc.prjreg_title,
+					folder="fund_received",
+				)
+
+				if upload_result.get("status"):
+					new_doc.document_upload = upload_result.get("data", {}).get("file_url")
+					print(f"✅ document_upload uploaded to MinIO: {new_doc.document_upload}")
+				else:
+					frappe.log_error(
+						f"MinIO upload failed for document_upload: {upload_result.get('message')}",
+						"Fund Received Document Upload"
+					)
+			except Exception as _upload_err:
+				frappe.log_error(frappe.get_traceback(), "Fund Received Document Upload Error")
+				print(f"❌ document_upload MinIO error: {_upload_err}")
+		# ─────────────────────────────────────────────────────────────────────────
+
 		# Handle child tables - FILTER OUT EMPTY ROWS
 		if "fund_transactions" in data:
 			for transaction in data["fund_transactions"]:
@@ -1164,7 +1196,25 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 		# Since this is created when FR moves to "Pending HoS Approval", 
 		# the Deposit Slip starts in the same state, waiting for HoS approval
 		new_doc.workflow_state = "Pending HoS Approval"
-		
+
+		# Resolve funding_agency: the value may be initials (e.g. "DST") instead of actual fundingagency_ name
+		fa_value = new_doc.get("funding_agency")
+		if fa_value and not frappe.db.exists("fundingagency_", fa_value):
+			# Try to resolve from initials
+			actual_fa = frappe.db.get_value("fundingagency_", {"funding_agency_initials": fa_value}, "name")
+			new_doc.set("funding_agency", actual_fa)  # None if not found
+
+		# Clear gstin_of_funding_agency if it has an invalid link value
+		gstin_val = new_doc.get("gstin_of_funding_agency")
+		if gstin_val and not frappe.db.exists("fundingagency_", gstin_val):
+			new_doc.set("gstin_of_funding_agency", None)
+
+		# Also resolve funding_agency from the Fund Received's project if still not set
+		if not new_doc.get("funding_agency") and fund_received_doc.get("prjreg_title"):
+			fa_name = frappe.db.get_value("Project Registration", fund_received_doc.prjreg_title, "funding_agen")
+			if fa_name and frappe.db.exists("fundingagency_", fa_name):
+				new_doc.set("funding_agency", fa_name)
+
 		new_doc.insert(ignore_permissions=True)
 		# Note: No commit here, as it's part of the larger transaction in perform_fund_received_action
 		

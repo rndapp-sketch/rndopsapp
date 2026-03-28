@@ -4,11 +4,49 @@
 import frappe
 import json
 from frappe.model.document import Document
-from frappe.utils.file_manager import save_file
 from frappe import _
 
 class DisbursalofHonorarium(Document):
-	pass
+	def validate(self):
+		"""
+		Intercept file uploads: if any Attach field has a local /files/ URL,
+		migrate it to MinIO under Project_Registration/{project}/disbursal_of_honorarium/.
+		This fires on every doc.save(), catching files uploaded via Frappe's upload_file.
+		"""
+		self._process_attach_fields()
+
+	def _process_attach_fields(self):
+		project_docname = self.get("project_name")
+		if not project_docname:
+			return
+
+		meta = frappe.get_meta(self.doctype)
+		for df in meta.fields:
+			if df.fieldtype == "Attach":
+				fieldname = df.fieldname
+				file_url = self.get(fieldname)
+				if file_url and (file_url.startswith("/files/") or file_url.startswith("/private/files/")):
+					print(f"[HONORARIUM_FILE_DEBUG] validate() migrating {fieldname}: {file_url}")
+					try:
+						from rndopsapp.file_handler import migrate_local_file_to_minio
+
+						result = migrate_local_file_to_minio(
+							file_url=file_url,
+							doctype="Project Registration",
+							docname=project_docname,
+							fieldname="disbursal_of_honorarium"
+						)
+						print(f"[HONORARIUM_FILE_DEBUG] validate() migration result: {result}")
+						if result.get("status"):
+							self.set(fieldname, result.get("file_url"))
+						else:
+							frappe.log_error(
+								f"MinIO migration failed for {fieldname}: {result.get('message')}",
+								"Disbursal Honorarium MinIO Migration"
+							)
+					except Exception as e:
+						print(f"[HONORARIUM_FILE_DEBUG] validate() migration error: {str(e)}")
+						frappe.log_error(frappe.get_traceback(), f"MinIO Migration Error for {fieldname}")
 
 def extract_eval_expression(expression):
 	"""
@@ -143,15 +181,25 @@ def get_disbursal_of_honorarium_fields(doc_name=None):
 	}
 
 @frappe.whitelist()
-def save_disbursal_of_honorarium_data(data):
+def save_disbursal_of_honorarium_data(data, files=None):
 	"""
 	Save Disbursal of Honorarium data.
 	Expects 'data' as a JSON string or dict.
+	'files' is an optional list of file objects with {filename, content, fieldname} for MinIO upload.
 	"""
-	print("dATA==================================================",data)
+	import base64 as _b64
+
 	if isinstance(data, str):
 		data = json.loads(data)
-	
+
+	# Parse files payload
+	files_payload = files
+	if isinstance(files_payload, str):
+		try:
+			files_payload = json.loads(files_payload)
+		except Exception:
+			files_payload = None
+
 	try:
 		# Create or Get Doc
 		if data.get("name"):
@@ -202,33 +250,83 @@ def save_disbursal_of_honorarium_data(data):
 			if field in data:
 				val = data[field]
 				doc.set(field, val if val != "null" else None)
-		
-		# Handle File Upload fields (Attach)
+
+		# Resolve project docname for MinIO path
+		project_docname = data.get("project_name") or doc.get("project_name")
+		print(f"[HONORARIUM_FILE_DEBUG] project_docname={project_docname}, files_payload type={type(files_payload)}, files_payload={files_payload}")
+		print(f"[HONORARIUM_FILE_DEBUG] data keys={list(data.keys())}")
+		print(f"[HONORARIUM_FILE_DEBUG] attached_approvals in data={('attached_approvals' in data)}, val={repr(data.get('attached_approvals', 'NOT_PRESENT'))[:200]}")
+		print(f"[HONORARIUM_FILE_DEBUG] additional_documents in data={('additional_documents' in data)}, val={repr(data.get('additional_documents', 'NOT_PRESENT'))[:200]}")
+
+		# --- Handle File Upload fields (Attach) — upload to MinIO ---
 		# attached_approvals, additional_documents
 		file_fields = ["attached_approvals", "additional_documents"]
 		for field in file_fields:
 			if field in data:
 				val = data[field]
-				# If val is a dict, it's a new file upload
+				print(f"[HONORARIUM_FILE_DEBUG] field={field}, val type={type(val).__name__}, val={repr(val)[:200]}")
+				# Case 1: Base64 dict from frontend (e.g. {file_name: "x.pdf", file_data: "base64..."})
 				if isinstance(val, dict) and val.get("file_name") and val.get("file_data"):
-					try:
-						saved_file = save_file(
-							val["file_name"],
-							val["file_data"],
-							doc.doctype,
-							doc.name,
-							decode=True,
-							is_private=0,
-							df=field
-						)
-						doc.set(field, saved_file.file_url)
-					except Exception as e:
-						frappe.log_error(f"Error saving file for {field}: {str(e)}", "Disbursal of Honorarium File Upload")
-						# If upload fails, maybe don't set the field or set to None
-						# Ensure we don't break the whole save
+					print(f"[HONORARIUM_FILE_DEBUG] -> Case 1: base64 dict upload for {field}")
+					minio_url = _upload_base64_to_minio(val, project_docname, field)
+					if minio_url:
+						doc.set(field, minio_url)
+						print(f"[HONORARIUM_FILE_DEBUG] -> MinIO URL set: {minio_url}")
+					else:
+						print(f"[HONORARIUM_FILE_DEBUG] -> base64 upload returned None!")
 				elif isinstance(val, str):
-					# Existing file URL or cleared
-					doc.set(field, val)
+					# Case 2: Local file URL from Frappe's upload_file — migrate to MinIO
+					if val.startswith("/files/") or val.startswith("/private/files/"):
+						print(f"[HONORARIUM_FILE_DEBUG] -> Case 2: local file migration for {field}: {val}")
+						migrated_url = _migrate_local_to_minio(val, project_docname, field)
+						doc.set(field, migrated_url)
+						print(f"[HONORARIUM_FILE_DEBUG] -> Migrated URL: {migrated_url}")
+					else:
+						# Case 3: Already a MinIO URL or empty
+						print(f"[HONORARIUM_FILE_DEBUG] -> Case 3: existing URL for {field}: {val}")
+						doc.set(field, val)
+				else:
+					print(f"[HONORARIUM_FILE_DEBUG] -> UNHANDLED type for {field}: {type(val).__name__}")
+
+		# --- Handle files parameter (list of base64 file objects) ---
+		if files_payload and isinstance(files_payload, list):
+			from rndopsapp.minio import get_rnd_file_service
+			for f in files_payload:
+				try:
+					filename = f.get("filename") or f.get("file_name") or f.get("name")
+					content_b64 = f.get("content") or f.get("file_data") or f.get("data") or ""
+					target_field = f.get("fieldname") or f.get("field")
+
+					if not (filename and content_b64):
+						continue
+
+					if content_b64.startswith("data:"):
+						content_b64 = content_b64.split(",", 1)[1]
+
+					file_content = _b64.b64decode(content_b64)
+
+					upload_result = get_rnd_file_service().save_file(
+						filename=filename,
+						content=file_content,
+						is_private=False,
+						doctype="Project Registration",
+						docname=project_docname,
+						folder="disbursal_of_honorarium"
+					)
+
+					if upload_result.get("status"):
+						file_url = upload_result.get("data", {}).get("file_url")
+						if target_field and target_field in file_fields:
+							doc.set(target_field, file_url)
+						frappe.logger().info(f"File uploaded to MinIO via files param: {filename} -> {file_url}")
+					else:
+						frappe.log_error(
+							f"MinIO upload failed for {filename}: {upload_result.get('message')}",
+							"Disbursal of Honorarium File Upload"
+						)
+				except Exception as fe:
+					frappe.log_error(frappe.get_traceback(), f"File upload error for {f.get('filename')}")
+					continue
 		
 		# Handle Child Table: table_weoy (Honorarium Table)
 		items_data = data.get("table_weoy", [])
@@ -238,7 +336,6 @@ def save_disbursal_of_honorarium_data(data):
 		if items_data:
 			doc.set("table_weoy", []) # Clear existing
 			for item in items_data:
-				# Check for file uploads in child table (if any - none in honorarium_table currently, but good practice)
 				doc.append("table_weoy", item)
 		
 		# Save
@@ -251,6 +348,73 @@ def save_disbursal_of_honorarium_data(data):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Disbursal of Honorarium Save Error")
 		return {"status": "error", "message": str(e)}
+
+
+def _upload_base64_to_minio(val, project_docname, field):
+	"""Upload a base64 file dict to MinIO. Returns the MinIO URL or None."""
+	import base64 as _b64
+	try:
+		from rndopsapp.minio import get_rnd_file_service
+
+		filename = val["file_name"]
+		content_b64 = val["file_data"]
+
+		if isinstance(content_b64, str) and content_b64.startswith("data:"):
+			content_b64 = content_b64.split(",", 1)[1]
+
+		file_content = _b64.b64decode(content_b64)
+
+		upload_result = get_rnd_file_service().save_file(
+			filename=filename,
+			content=file_content,
+			is_private=False,
+			doctype="Project Registration",
+			docname=project_docname,
+			folder="disbursal_of_honorarium"
+		)
+
+		if upload_result.get("status"):
+			file_url = upload_result.get("data", {}).get("file_url")
+			frappe.logger().info(f"File uploaded to MinIO for {field}: {file_url}")
+			return file_url
+		else:
+			frappe.log_error(
+				f"MinIO upload failed for {field}: {upload_result.get('message')}",
+				"Disbursal of Honorarium MinIO Upload"
+			)
+	except Exception as e:
+		frappe.log_error(f"Error saving file for {field}: {str(e)}", "Disbursal of Honorarium File Upload")
+	return None
+
+
+def _migrate_local_to_minio(file_url, project_docname, field):
+	"""Migrate a local /files/ URL to MinIO. Returns MinIO URL or original URL as fallback."""
+	try:
+		from rndopsapp.file_handler import migrate_local_file_to_minio
+
+		print(f"[HONORARIUM_FILE_DEBUG] _migrate_local_to_minio called: file_url={file_url}, project={project_docname}, field={field}")
+
+		result = migrate_local_file_to_minio(
+			file_url=file_url,
+			doctype="Project Registration",
+			docname=project_docname,
+			fieldname="disbursal_of_honorarium"
+		)
+		print(f"[HONORARIUM_FILE_DEBUG] migrate_local_file_to_minio result: {result}")
+
+		if result.get("status"):
+			frappe.logger().info(f"Migrated local file to MinIO for {field}: {result.get('file_url')}")
+			return result.get("file_url")
+		else:
+			print(f"[HONORARIUM_FILE_DEBUG] MIGRATION FAILED: {result.get('message')}")
+			frappe.log_error(
+				f"MinIO migration failed for {field}: {result.get('message')}",
+				"Disbursal of Honorarium MinIO Migration"
+			)
+	except Exception as e:
+		print(f"[HONORARIUM_FILE_DEBUG] MIGRATION EXCEPTION: {str(e)}")
+		frappe.log_error(f"Error migrating file for {field}: {str(e)}", "Disbursal of Honorarium File Migration")
+	return file_url  # Fallback to original local URL
 
 @frappe.whitelist()
 def perform_disbursal_of_honorarium_action(docname, action):

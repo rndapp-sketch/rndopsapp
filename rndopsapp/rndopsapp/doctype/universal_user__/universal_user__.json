@@ -1,178 +1,206 @@
 {
-    "actions": [],
-    "allow_rename": 1,
-    "creation": "2026-02-09 13:23:42.362767",
-    "doctype": "DocType",
-    "engine": "InnoDB",
-    "field_order": [
-        "identity_information_section_u_r",
-        "full_name_u_r",
-        "email_u_r",
-        "profile_type_u_r",
-        "username_u_r",
-        "is_email_verified_u_r",
-        "email_verification_section_u_r",
-        "password_section_u_r",
-        "password_hash_u_r",
-        "password_salt_u_r",
-        "password_set_on_u_r",
-        "is_password_set_u_r",
-        "system_mapping_section_u_r",
-        "auth_user_id_u_r",
-        "status_u_r",
-        "is_auth_enabled_u_r",
-        "auth_created_on_u_r",
-        "audit_section_u_r",
-        "created_by_ip_u_r",
-        "last_login_at_u_r"
-    ],
-    "fields": [
-        {
-            "fieldname": "identity_information_section_u_r",
-            "fieldtype": "Section Break",
-            "label": "Identity Information"
-        },
-        {
-            "fieldname": "full_name_u_r",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Full Name",
-            "reqd": 1
-        },
-        {
-            "fieldname": "email_u_r",
-            "fieldtype": "Data",
-            "label": "Email Address",
-            "unique": 1,
-            "reqd": 1
-        },
-        {
-            "fieldname": "mobile_number_u_r",
-            "fieldtype": "Phone",
-            "label": "Mobile Number",
-            "reqd": 1
-        },
-        {
-            "fieldname": "profile_type_u_r",
-            "fieldtype": "Select",
-            "label": "Profile Type",
-            "options": "Individual\nOrganization",
-            "default": "Individual"
-        },
-        {
-            "fieldname": "username_u_r",
-            "fieldtype": "Data",
-            "label": "Username",
-            "unique": 1
-        },
-        {
-            "default": "0",
-            "fieldname": "is_email_verified_u_r",
-            "fieldtype": "Check",
-            "label": "Is Email Verified"
-        },
-        {
-            "fieldname": "email_verification_section_u_r",
-            "fieldtype": "Section Break",
-            "label": "Email Verification"
-        },
-        {
-            "fieldname": "password_section_u_r",
-            "fieldtype": "Section Break",
-            "label": "Password & Security"
-        },
-        {
-            "fieldname": "password_hash_u_r",
-            "fieldtype": "Data",
-            "label": "Password Hash"
-        },
-        {
-            "fieldname": "password_salt_u_r",
-            "fieldtype": "Data",
-            "label": "Password Salt"
-        },
-        {
-            "fieldname": "password_set_on_u_r",
-            "fieldtype": "Datetime",
-            "label": "Password Set On"
-        },
-        {
-            "default": "0",
-            "fieldname": "is_password_set_u_r",
-            "fieldtype": "Check",
-            "label": "Is Password Set"
-        },
-        {
-            "fieldname": "system_mapping_section_u_r",
-            "fieldtype": "Section Break",
-            "label": "System Mapping (Internal Only)"
-        },
-        {
-            "description": "Stores core User.name",
-            "fieldname": "auth_user_id_u_r",
-            "fieldtype": "Data",
-            "label": "Auth User ID"
-        },
-        {
-            "fieldname": "status_u_r",
-            "fieldtype": "Select",
-            "label": "Account Status",
-            "options": "Active\nInactive\nSuspended",
-            "default": "Active"
-        },
-        {
-            "default": "1",
-            "description": "Mirrors auth state",
-            "fieldname": "is_auth_enabled_u_r",
-            "fieldtype": "Check",
-            "label": "Is Auth Enabled"
-        },
-        {
-            "description": "When auth account was created",
-            "fieldname": "auth_created_on_u_r",
-            "fieldtype": "Datetime",
-            "label": "Auth Created On"
-        },
-        {
-            "fieldname": "audit_section_u_r",
-            "fieldtype": "Section Break",
-            "label": "Audit Information"
-        },
-        {
-            "fieldname": "created_by_ip_u_r",
-            "fieldtype": "Data",
-            "label": "Created By IP"
-        },
-        {
-            "fieldname": "last_login_at_u_r",
-            "fieldtype": "Datetime",
-            "label": "Last Login At"
-        }
-    ],
-    "grid_page_length": 50,
-    "index_web_pages_for_search": 1,
-    "links": [],
-    "modified": "2026-02-23 12:00:00.000000",
-    "modified_by": "Administrator",
-    "module": "Rndopsapp",
-    "name": "Universal User__",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "write": 1
-        }
-    ],
-    "row_format": "Dynamic",
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-09 13:23:42.362767",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "identity_information_section_u_r",
+  "full_name_u_r",
+  "email_u_r",
+  "profile_type_u_r",
+  "username_u_r",
+  "is_email_verified_u_r",
+  "password_section_u_r",
+  "column_break_igsd",
+  "password_hash_u_r",
+  "password_salt_u_r",
+  "password_set_on_u_r",
+  "is_password_set_u_r",
+  "system_mapping_section_u_r",
+  "column_break_kjpf",
+  "auth_user_id_u_r",
+  "status_u_r",
+  "is_auth_enabled_u_r",
+  "auth_created_on_u_r",
+  "audit_section_u_r",
+  "column_break_txyo",
+  "created_by_ip_u_r",
+  "last_login_at_u_r",
+  "mobile_number_u_r"
+ ],
+ "fields": [
+  {
+   "fieldname": "identity_information_section_u_r",
+   "fieldtype": "Section Break",
+   "label": "Identity Information"
+  },
+  {
+   "fieldname": "full_name_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Full Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email_u_r",
+   "fieldtype": "Data",
+   "label": "Email Address",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "mobile_number_u_r",
+   "fieldtype": "Phone",
+   "label": "Mobile Number",
+   "reqd": 1
+  },
+  {
+   "default": "Individual",
+   "fieldname": "profile_type_u_r",
+   "fieldtype": "Select",
+   "label": "Profile Type",
+   "options": "Individual\nOrganization"
+  },
+  {
+   "fieldname": "username_u_r",
+   "fieldtype": "Data",
+   "label": "Username",
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_email_verified_u_r",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Email Verified"
+  },
+  {
+   "fieldname": "password_section_u_r",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Password & Security"
+  },
+  {
+   "fieldname": "password_hash_u_r",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Password Hash"
+  },
+  {
+   "fieldname": "password_salt_u_r",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Password Salt"
+  },
+  {
+   "fieldname": "password_set_on_u_r",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Password Set On"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_password_set_u_r",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Password Set"
+  },
+  {
+   "fieldname": "system_mapping_section_u_r",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "System Mapping (Internal Only)"
+  },
+  {
+   "description": "Stores core User.name",
+   "fieldname": "auth_user_id_u_r",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Auth User ID"
+  },
+  {
+   "default": "Active",
+   "fieldname": "status_u_r",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Account Status",
+   "options": "Active\nInactive\nSuspended"
+  },
+  {
+   "default": "1",
+   "description": "Mirrors auth state",
+   "fieldname": "is_auth_enabled_u_r",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Auth Enabled"
+  },
+  {
+   "description": "When auth account was created",
+   "fieldname": "auth_created_on_u_r",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Auth Created On"
+  },
+  {
+   "fieldname": "audit_section_u_r",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Audit Information"
+  },
+  {
+   "fieldname": "created_by_ip_u_r",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Created By IP"
+  },
+  {
+   "fieldname": "last_login_at_u_r",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Last Login At"
+  },
+  {
+   "fieldname": "column_break_igsd",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_kjpf",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_txyo",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-27 17:38:41.421065",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Universal User__",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

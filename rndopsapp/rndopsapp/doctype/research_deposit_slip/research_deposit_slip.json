@@ -69,7 +69,7 @@
    "reqd": 1
   },
   {
-   "fetch_from": "project_title.fund_agen_initials",
+   "fetch_from": "project_title.funding_agen",
    "fieldname": "funding_agency",
    "fieldtype": "Link",
    "label": "Funding Agency",
