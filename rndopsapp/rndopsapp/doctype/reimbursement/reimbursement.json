@@ -211,7 +211,8 @@
    "fieldname": "self_other",
    "fieldtype": "Select",
    "label": "Applying for self or other?",
-   "options": "\nSelf\nOther"
+   "options": "\nSelf\nOther",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_ujss",
@@ -222,7 +223,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-18 18:18:49.455381",
+ "modified": "2026-03-28 16:48:29.082700",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",
@@ -244,6 +245,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
