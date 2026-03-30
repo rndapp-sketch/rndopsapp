@@ -19,8 +19,8 @@
   "applicant_department",
   "applicant_designation",
   "section_break_tgxi",
-  "bank_name",
   "account_holder_name",
+  "bank_name",
   "bank_account_number",
   "ifsc_code",
   "project_and_item_details_section",
@@ -194,14 +194,6 @@
    "label": "Designation"
   },
   {
-   "allow_in_quick_entry": 1,
-   "fieldname": "applicant_webmail",
-   "fieldtype": "Link",
-   "label": "Webmail Id",
-   "options": "User",
-   "read_only": 1
-  },
-  {
    "fieldname": "bank_account_number",
    "fieldtype": "Data",
    "label": "Bank Account Number"
@@ -217,13 +209,20 @@
   {
    "fieldname": "section_break_ujss",
    "fieldtype": "Section Break"
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "fieldname": "applicant_webmail",
+   "fieldtype": "Link",
+   "label": "Webmail Id",
+   "options": "User"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-28 16:48:29.082700",
+ "modified": "2026-03-30 12:26:07.364585",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",

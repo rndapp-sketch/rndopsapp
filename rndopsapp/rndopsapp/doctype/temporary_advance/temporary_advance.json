@@ -21,8 +21,8 @@
   "section_break_ueiu",
   "pi_mentor_user",
   "bank_details_section",
-  "bank_name",
   "account",
+  "bank_name",
   "bank_account_number",
   "ifsc_code",
   "project_and_amount_details_section",
@@ -235,7 +235,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-22 20:37:29.066380",
+ "modified": "2026-03-29 13:13:06.045137",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Temporary Advance",
@@ -322,6 +322,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

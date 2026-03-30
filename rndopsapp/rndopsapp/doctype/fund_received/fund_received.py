@@ -706,6 +706,9 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 												 if transitioning to HoS Approval.
 	"""
 	try:
+		print("=========================================================================")
+		print("DEBUG: perform_fund_received_action called for deposit_slip_data=======>>>>>: ", deposit_slip_data)
+		print("=========================================================================")
 		doc = frappe.get_doc("Fund Received", docname)
 		current_state = doc.workflow_state or "Draft"
 

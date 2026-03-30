@@ -17,6 +17,7 @@
   {
    "fieldname": "particulars_of_items_section",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Particulars of Items"
   },
   {
@@ -54,13 +55,14 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-25 23:11:43.558929",
+ "modified": "2026-03-28 17:14:58.368591",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Particulars of Items Reimbursement",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

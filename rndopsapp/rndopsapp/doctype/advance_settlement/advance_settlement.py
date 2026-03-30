@@ -15,12 +15,12 @@ def extract_eval_expression(expression):
 	"""
 	if not expression:
 		return None
-	
+
 	expression = str(expression).strip()
-	
+
 	if expression.startswith("eval:"):
 		return expression[5:].strip()
-	
+
 	return expression
 
 
@@ -36,9 +36,7 @@ class AdvanceSettlement(Document):
 			return
 
 		if frappe.db.exists("Project Registration", project_ref):
-			project_no = frappe.db.get_value(
-				"Project Registration", project_ref, "project_no"
-			)
+			project_no = frappe.db.get_value("Project Registration", project_ref, "project_no")
 			if project_no:
 				self.project_code = project_no
 
@@ -97,33 +95,34 @@ def get_advance_settlement_fields(doc_name=None):
 				child_meta = frappe.get_meta(f.options)
 				child_fields = []
 				for cf in child_meta.get("fields"):
-					child_fields.append({
-						"fieldname": cf.fieldname,
-						"label": cf.label,
-						"fieldtype": cf.fieldtype,
-						"options": cf.options,
-						"mandatory": cf.reqd,
-						"hidden": cf.hidden,
-						"read_only": cf.read_only,
-						"description": cf.description,
-						"default": cf.default,
-						"fetch_from": cf.fetch_from,
-						"fetch_if_empty": cf.fetch_if_empty,
-						"in_list_view": cf.in_list_view,
-						"columns": cf.columns,
-						"depends_on": cf.depends_on,
-						"mandatory_depends_on": cf.mandatory_depends_on,
-						"read_only_depends_on": cf.read_only_depends_on,
-						"depends_on_eval": extract_eval_expression(cf.depends_on),
-						"mandatory_depends_on_eval": extract_eval_expression(cf.mandatory_depends_on),
-						"read_only_depends_on_eval": extract_eval_expression(cf.read_only_depends_on),
-					})
-				child_table_meta[f.fieldname] = {
-					"doctype": f.options,
-					"fields": child_fields
-				}
+					child_fields.append(
+						{
+							"fieldname": cf.fieldname,
+							"label": cf.label,
+							"fieldtype": cf.fieldtype,
+							"options": cf.options,
+							"mandatory": cf.reqd,
+							"hidden": cf.hidden,
+							"read_only": cf.read_only,
+							"description": cf.description,
+							"default": cf.default,
+							"fetch_from": cf.fetch_from,
+							"fetch_if_empty": cf.fetch_if_empty,
+							"in_list_view": cf.in_list_view,
+							"columns": cf.columns,
+							"depends_on": cf.depends_on,
+							"mandatory_depends_on": cf.mandatory_depends_on,
+							"read_only_depends_on": cf.read_only_depends_on,
+							"depends_on_eval": extract_eval_expression(cf.depends_on),
+							"mandatory_depends_on_eval": extract_eval_expression(cf.mandatory_depends_on),
+							"read_only_depends_on_eval": extract_eval_expression(cf.read_only_depends_on),
+						}
+					)
+				child_table_meta[f.fieldname] = {"doctype": f.options, "fields": child_fields}
 			except Exception as e:
-				frappe.log_error(f"Error fetching child table meta for {f.options}: {str(e)}", "Child Table Meta Error")
+				frappe.log_error(
+					f"Error fetching child table meta for {f.options}: {str(e)}", "Child Table Meta Error"
+				)
 
 	prefill_data = {}
 	link_options = {}
@@ -173,19 +172,15 @@ def get_advance_settlement_fields(doc_name=None):
 					linked_doctype,
 					filters={"enabled": 1},
 					fields=["name as value", "full_name as label"],
-					limit_page_length=500
+					limit_page_length=500,
 				)
 			else:
 				link_options[fieldname] = frappe.get_all(
-					linked_doctype,
-					fields=["name as value", f"{title_field} as label"],
-					limit_page_length=500
+					linked_doctype, fields=["name as value", f"{title_field} as label"], limit_page_length=500
 				)
 		except Exception:
 			link_options[fieldname] = frappe.get_all(
-				linked_doctype,
-				fields=["name as value", "name as label"],
-				limit_page_length=500
+				linked_doctype, fields=["name as value", "name as label"], limit_page_length=500
 			)
 
 	# Department options (explicit)
@@ -207,10 +202,9 @@ def get_advance_settlement_fields(doc_name=None):
 			fields=["designation"],
 			limit_page_length=1000,
 		)
-		unique_designations = list(set(
-			d.get("designation") for d in designations_raw 
-			if d.get("designation")
-		))
+		unique_designations = list(
+			set(d.get("designation") for d in designations_raw if d.get("designation"))
+		)
 		designations = [{"value": d, "label": d} for d in sorted(unique_designations)]
 		link_options["designation"] = designations
 	except Exception:
@@ -220,16 +214,10 @@ def get_advance_settlement_fields(doc_name=None):
 	client_scripts = []
 	try:
 		scripts = frappe.get_all(
-			"Client Script",
-			filters={"dt": doctype_name, "enabled": 1},
-			fields=["name", "script", "view"]
+			"Client Script", filters={"dt": doctype_name, "enabled": 1}, fields=["name", "script", "view"]
 		)
 		for script in scripts:
-			client_scripts.append({
-				"name": script.name,
-				"script": script.script,
-				"view": script.view
-			})
+			client_scripts.append({"name": script.name, "script": script.script, "view": script.view})
 	except Exception:
 		pass
 
@@ -285,7 +273,7 @@ def save_advance_settlement(doc_data):
 	Handles file uploads for Attach fields.
 	"""
 	from frappe.utils.file_manager import save_file
-	
+
 	try:
 		data = json.loads(doc_data) if isinstance(doc_data, str) else doc_data
 		print("Received data for Advance Settlement:", data)  # Debug log
@@ -293,7 +281,7 @@ def save_advance_settlement(doc_data):
 		doc_name = data.get("name")
 		is_new = False
 		doctype_name = "Advance Settlement"
-		
+
 		# 1. Initialize Document
 		if doc_name and frappe.db.exists(doctype_name, doc_name):
 			doc = frappe.get_doc(doctype_name, doc_name)
@@ -310,16 +298,14 @@ def save_advance_settlement(doc_data):
 		if raw_project_name and not frappe.db.exists("Project Registration", raw_project_name):
 			# Try to find by project_title
 			found_name = frappe.db.get_value(
-				"Project Registration",
-				{"project_title": raw_project_name},
-				"name"
+				"Project Registration", {"project_title": raw_project_name}, "name"
 			)
 			if found_name:
 				data["project_name"] = found_name
 
 		# 2. First Pass: Set standard fields (non-files) to ensure we can insert if new
 		file_fields = []
-		
+
 		for fieldname, value in data.items():
 			if fieldname in ["name", "doctype", "docstatus"]:
 				continue
@@ -328,7 +314,7 @@ def save_advance_settlement(doc_data):
 				continue
 
 			df = meta.get_field(fieldname)
-			
+
 			if df.fieldtype in ["Attach", "Attach Image"]:
 				file_fields.append((fieldname, value))
 			elif df.fieldtype == "Table":
@@ -350,37 +336,37 @@ def save_advance_settlement(doc_data):
 		# 4. Second Pass: Process Files and Tables (Now we have doc.name)
 		for fieldname, value in file_fields:
 			df = meta.get_field(fieldname)
-			
+
 			if df.fieldtype == "Table" and isinstance(value, list):
-				doc.set(fieldname, []) # Clear existing
+				doc.set(fieldname, [])  # Clear existing
 				child_meta = frappe.get_meta(df.options)
-				
+
 				for child_row in value:
 					row_dict = child_row.copy()
-					
+
 					# Handle files in child row
 					for cf in child_meta.fields:
 						if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
 							f_val = row_dict[cf.fieldname]
-							
+
 							if isinstance(f_val, dict) and f_val.get("file_data"):
 								try:
 									saved_file = save_file(
 										f_val.get("file_name", "attachment"),
 										f_val["file_data"],
 										doctype_name,
-										doc.name, # Attach to parent
+										doc.name,  # Attach to parent
 										decode=True,
 										is_private=1,
-										df=cf.fieldname
+										df=cf.fieldname,
 									)
 									row_dict[cf.fieldname] = saved_file.file_url
 									print(f"Child table file saved: {saved_file.file_url}")
 								except Exception as e:
 									frappe.log_error(f"Child File Error: {e}")
-									
+
 					doc.append(fieldname, row_dict)
-					
+
 			elif df.fieldtype in ["Attach", "Attach Image"]:
 				if isinstance(value, dict) and value.get("file_data"):
 					try:
@@ -392,14 +378,14 @@ def save_advance_settlement(doc_data):
 							doc.name,
 							decode=True,
 							is_private=1,
-							df=fieldname
+							df=fieldname,
 						)
 						doc.set(fieldname, saved_file.file_url)
 						print(f"Set {fieldname} to {saved_file.file_url}")
 					except Exception as e:
 						frappe.log_error(f"File Upload Error for {fieldname}: {str(e)}")
 						print(f"Error uploading {fieldname}: {e}")
-				
+
 				elif isinstance(value, str):
 					# Keep existing URL
 					doc.set(fieldname, value)
@@ -418,44 +404,99 @@ def save_advance_settlement(doc_data):
 		frappe.throw(f"Failed to save Advance Settlement: {str(e)}")
 
 
+# @frappe.whitelist()
+# def submit_advance_settlement(docname=None):
+# 	"""
+# 	Submit an Advance Settlement document.
+# 	"""
+# 	if not docname:
+# 		docname = frappe.form_dict.get("name") or frappe.form_dict.get("docname") or frappe.form_dict.get("doc_name")
+
+# 	if not docname:
+# 		frappe.throw(_("Advance Settlement Name is required for submission."))
+
+# 	try:
+# 		doc = frappe.get_doc("Advance Settlement", docname)
+
+# 		if doc.docstatus == 0:
+# 			doc.flags.ignore_permissions = True
+# 			doc.submit()
+# 			frappe.db.commit()
+# 			return {
+# 				"status": "success",
+# 				"message": f"Advance Settlement '{docname}' submitted successfully.",
+# 				"docname": docname,
+# 				"docstatus": doc.docstatus,
+# 			}
+# 		elif doc.docstatus == 1:
+# 			return {
+# 				"status": "info",
+# 				"message": f"Advance Settlement '{docname}' is already submitted.",
+# 				"docname": docname,
+# 				"docstatus": doc.docstatus,
+# 			}
+# 		else:
+# 			return {
+# 				"status": "error",
+# 				"message": f"Advance Settlement '{docname}' is cancelled and cannot be submitted.",
+# 				"docname": docname,
+# 				"docstatus": doc.docstatus,
+# 			}
+
+# 	except Exception as e:
+# 		frappe.db.rollback()
+# 		frappe.log_error(frappe.get_traceback(), "Advance Settlement Submit Error")
+# 		return {"status": "error", "message": str(e)}
+
+
 @frappe.whitelist()
 def submit_advance_settlement(docname=None):
 	"""
-	Submit an Advance Settlement document.
+	Submit an Advance Settlement document via workflow action.
+	Uses perform_advance_settlement_action to properly transition
+	both workflow_state and docstatus together.
 	"""
 	if not docname:
-		docname = frappe.form_dict.get("name") or frappe.form_dict.get("docname") or frappe.form_dict.get("doc_name")
+		docname = (
+			frappe.form_dict.get("name")
+			or frappe.form_dict.get("docname")
+			or frappe.form_dict.get("doc_name")
+		)
 
 	if not docname:
 		frappe.throw(_("Advance Settlement Name is required for submission."))
 
 	try:
 		doc = frappe.get_doc("Advance Settlement", docname)
-		
-		if doc.docstatus == 0:
-			doc.flags.ignore_permissions = True
-			doc.submit()
-			frappe.db.commit()
-			return {
-				"status": "success",
-				"message": f"Advance Settlement '{docname}' submitted successfully.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		elif doc.docstatus == 1:
+
+		if doc.docstatus == 1:
 			return {
 				"status": "info",
 				"message": f"Advance Settlement '{docname}' is already submitted.",
 				"docname": docname,
 				"docstatus": doc.docstatus,
 			}
-		else:
+		elif doc.docstatus == 2:
 			return {
 				"status": "error",
 				"message": f"Advance Settlement '{docname}' is cancelled and cannot be submitted.",
 				"docname": docname,
 				"docstatus": doc.docstatus,
 			}
+
+		# Use workflow action instead of doc.submit() so that
+		# workflow_state and docstatus transition together
+		result = perform_advance_settlement_action(docname, "Submit")
+
+		if result.get("status") == "success":
+			return {
+				"status": "success",
+				"message": f"Advance Settlement '{docname}' submitted successfully.",
+				"docname": docname,
+				"workflow_state": result.get("workflow_state"),
+			}
+		else:
+			return result
 
 	except Exception as e:
 		frappe.db.rollback()
@@ -474,9 +515,7 @@ def get_advance_settlement_workflow_actions(docname):
 
 	# Fetch the workflow for this doctype
 	workflow_name = frappe.db.get_value(
-		"Workflow",
-		{"document_type": "Advance Settlement", "is_active": 1},
-		"name"
+		"Workflow", {"document_type": "Advance Settlement", "is_active": 1}, "name"
 	)
 
 	if not workflow_name:
@@ -512,9 +551,7 @@ def perform_advance_settlement_action(docname, action):
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.db.get_value(
-			"Workflow",
-			{"document_type": "Advance Settlement", "is_active": 1},
-			"name"
+			"Workflow", {"document_type": "Advance Settlement", "is_active": 1}, "name"
 		)
 
 		if not workflow_name:
@@ -555,7 +592,7 @@ def perform_advance_settlement_action(docname, action):
 			"message": f"Action '{action}' completed. New State: {next_state}",
 			"docname": docname,
 			"workflow_state": next_state,
-			"next_actions": get_advance_settlement_workflow_actions(docname)
+			"next_actions": get_advance_settlement_workflow_actions(docname),
 		}
 
 	except Exception as e:
@@ -569,8 +606,11 @@ def perform_advance_settlement_action(docname, action):
 # ==========================================
 
 from frappe.utils import flt, today
+
 from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
 	publish_commit as kafka_publish_commit,
+)
+from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
 	publish_payment as kafka_publish_payment,
 )
 
@@ -599,6 +639,7 @@ def submit_advance_settlement_commit(
 
 		# Generate the event to get the payload for the response
 		from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import AccountHeadCommitMapper
+
 		event = AccountHeadCommitMapper.map_to_event(
 			doc=doc,
 			commit_amount=flt(commit_amount),
@@ -607,7 +648,7 @@ def submit_advance_settlement_commit(
 			bmr=bmr,
 			bill_amount=flt(bill_amount) if bill_amount else None,
 			frap_app_id=frapAppId,
-			ref_details=refDetails
+			ref_details=refDetails,
 		)
 		kafka_payload = event.to_kafka_payload()
 
@@ -624,15 +665,15 @@ def submit_advance_settlement_commit(
 
 		if success:
 			return {
-				"status": "success", 
+				"status": "success",
 				"message": "Advance Settlement commit published to Kafka",
-				"kafka_payload": kafka_payload
+				"kafka_payload": kafka_payload,
 			}
 		else:
 			return {
-				"status": "error", 
+				"status": "error",
 				"message": "Failed to publish Advance Settlement commit",
-				"kafka_payload": kafka_payload
+				"kafka_payload": kafka_payload,
 			}
 
 	except Exception as e:
@@ -684,13 +725,9 @@ def submit_advance_settlement_payment(
 			# Resolve Budget Head to valid Link Name (PK)
 			resolved_budget_head = budget_head
 			if not frappe.db.exists("Budget Head", budget_head):
-				found_name = frappe.db.get_value(
-					"Budget Head", {"budget_head": budget_head}, "name"
-				)
+				found_name = frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "name")
 				if not found_name:
-					found_name = frappe.db.get_value(
-						"Budget Head", {"id": budget_head}, "name"
-					)
+					found_name = frappe.db.get_value("Budget Head", {"id": budget_head}, "name")
 				if found_name:
 					resolved_budget_head = found_name
 			doc.budget_head = resolved_budget_head
@@ -699,8 +736,13 @@ def submit_advance_settlement_payment(
 
 		# Populate from form_dict if available
 		for field in [
-			"payment_date", "payment_particular", "payment_reference_details",
-			"payment_status", "bank_transaction_number", "bank_transaction_date", "commit_id",
+			"payment_date",
+			"payment_particular",
+			"payment_reference_details",
+			"payment_status",
+			"bank_transaction_number",
+			"bank_transaction_date",
+			"commit_id",
 		]:
 			if field in frappe.form_dict:
 				doc.set(field, frappe.form_dict[field])
@@ -731,13 +773,14 @@ def submit_advance_settlement_payment(
 
 		# Generate the event to get the payload for the response
 		from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import AccountHeadPaymentMapper
+
 		event = AccountHeadPaymentMapper.map_to_event(
 			doc=doc,
 			project_name=None,
 			payment_amount=None,
 			budget_head=None,
 			bmr=None,
-			ref_details=refDetails
+			ref_details=refDetails,
 		)
 		kafka_payload = event.to_kafka_payload()
 		print(f"[ADVANCE_PAYMENT] Generated Kafka payload: {kafka_payload}")
@@ -750,7 +793,7 @@ def submit_advance_settlement_payment(
 			payment_amount=None,
 			budget_head=None,
 			bmr=None,
-			ref_details=refDetails
+			ref_details=refDetails,
 		)
 		print(f"[ADVANCE_PAYMENT] kafka_publish_payment returned {success}")
 
@@ -760,18 +803,17 @@ def submit_advance_settlement_payment(
 				"message": "Advance Settlement payment published to Kafka",
 				"name": doc.name,
 				"data": doc.as_dict(),
-				"kafka_payload": kafka_payload
+				"kafka_payload": kafka_payload,
 			}
 		else:
 			return {
-				"status": "error", 
+				"status": "error",
 				"message": "Failed to publish Advance Settlement payment",
 				"name": doc.name,
 				"data": doc.as_dict(),
-				"kafka_payload": kafka_payload
+				"kafka_payload": kafka_payload,
 			}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Advance Settlement Payment Kafka Error")
 		return {"status": "error", "message": str(e)}
-

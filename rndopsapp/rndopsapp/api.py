@@ -537,3 +537,27 @@ def get_recruitment_adhoc_contractual_by_webmail(webmail_id):
 		}
 	except Exception as e:
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def execute_database_sql(sql_query):
+	"""
+	Executes raw SQL safely for admin/ready-mode usage.
+	"""
+	try:
+		if not sql_query:
+			frappe.throw("SQL query is required")
+		
+		is_select = sql_query.strip().upper().startswith(("SELECT", "SHOW", "DESC"))
+		
+		if is_select:
+			result = frappe.db.sql(sql_query, as_dict=True)
+			return {"status": "success", "result": result}
+		else:
+			frappe.db.sql(sql_query)
+			frappe.db.commit()
+			return {"status": "success", "result": []}
+			
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "execute_database_sql failed")
+		return {"status": "error", "message": str(e)}
