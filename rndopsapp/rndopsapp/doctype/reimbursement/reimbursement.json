@@ -56,6 +56,7 @@
   {
    "fieldname": "project_number",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Project Number",
    "options": "Project Registration",
    "read_only": 1
@@ -112,6 +113,7 @@
   {
    "fieldname": "project_name",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Project Name",
    "options": "Project Registration"
   },
@@ -222,8 +224,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-30 12:26:07.364585",
- "modified_by": "Administrator",
+ "modified": "2026-03-31 18:07:28.339603",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Reimbursement",
  "naming_rule": "Expression",

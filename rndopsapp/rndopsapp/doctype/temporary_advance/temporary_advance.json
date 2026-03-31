@@ -216,7 +216,8 @@
    "fieldname": "applying_for_select",
    "fieldtype": "Select",
    "label": "Are you applying this for someone?",
-   "options": "\nYes\nNo"
+   "options": "\nYes\nNo",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_ueiu",
@@ -235,8 +236,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-29 13:13:06.045137",
- "modified_by": "Administrator",
+ "modified": "2026-03-31 18:12:05.643026",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Temporary Advance",
  "naming_rule": "Expression",

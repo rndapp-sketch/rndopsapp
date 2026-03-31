@@ -50,10 +50,12 @@
    "search_index": 1
   },
   {
+   "default": "Self",
    "fieldname": "applying_for_self_or_other",
    "fieldtype": "Select",
    "label": "Applying for self or other",
-   "options": "\nSelf\nOther"
+   "options": "Self\nOther",
+   "read_only": 1
   },
   {
    "fieldname": "applicant_details_section",
@@ -199,8 +201,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-26 16:42:49.590027",
- "modified_by": "Administrator",
+ "modified": "2026-03-31 18:14:16.496239",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Disbursal of Honorarium",
  "naming_rule": "Expression",

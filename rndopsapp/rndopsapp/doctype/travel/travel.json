@@ -148,7 +148,8 @@
    "fieldname": "if_traveler",
    "fieldtype": "Select",
    "label": "Applying for self or other? ",
-   "options": "\nSelf\nOther"
+   "options": "\nSelf\nOther",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.if_traveler == 'Other'",
@@ -579,8 +580,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-28 17:58:56.655063",
- "modified_by": "Administrator",
+ "modified": "2026-03-31 18:18:49.020002",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Travel",
  "naming_rule": "Expression",
