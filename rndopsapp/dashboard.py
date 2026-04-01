@@ -246,9 +246,10 @@ def get_director_dashboard_data():
             pr.name as project_id,
             pr.project_title,
             pr.principal_investigator_name as pi_name,
-            pr.implementation_department as department,
+            IFNULL(d.dept_name, pr.implementation_department) as department,
             IFNULL(pr.total_budget_amount, 0) as total_budget_amount
         FROM `tabProject Registration` pr
+        LEFT JOIN `tabDepartment_prornd` d ON d.name = pr.implementation_department
         WHERE pr.total_budget_amount IS NOT NULL
         ORDER BY pr.total_budget_amount DESC
         LIMIT 10
@@ -271,9 +272,10 @@ def get_director_dashboard_data():
             pr.name as project_id,
             pr.project_title,
             pr.principal_investigator_name as pi_name,
-            pr.implementation_department as department,
+            IFNULL(d.dept_name, pr.implementation_department) as department,
             pr.creation
         FROM `tabProject Registration` pr
+        LEFT JOIN `tabDepartment_prornd` d ON d.name = pr.implementation_department
         ORDER BY pr.creation DESC
         LIMIT 10
     """, as_dict=True)

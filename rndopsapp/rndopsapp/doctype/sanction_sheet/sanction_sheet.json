@@ -37,6 +37,7 @@
   "ss_delivery",
   "ss_payment",
   "additional_terms_and_conditions_if_any",
+  "file_path",
   "declaration_section",
   "check_the_below_declaration",
   "html_dqce"
@@ -225,13 +226,18 @@
    "fieldname": "check_the_below_declaration",
    "fieldtype": "Check",
    "label": "Check the declaration below"
+  },
+  {
+   "fieldname": "file_path",
+   "fieldtype": "Data",
+   "label": "Uploaded PO"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-28 14:58:40.684434",
+ "modified": "2026-03-28 23:31:38.309090",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "sanction_sheet",

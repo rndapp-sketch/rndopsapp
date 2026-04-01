@@ -21,8 +21,8 @@
   "section_break_ueiu",
   "pi_mentor_user",
   "bank_details_section",
-  "bank_name",
   "account",
+  "bank_name",
   "bank_account_number",
   "ifsc_code",
   "project_and_amount_details_section",
@@ -216,7 +216,8 @@
    "fieldname": "applying_for_select",
    "fieldtype": "Select",
    "label": "Are you applying this for someone?",
-   "options": "\nYes\nNo"
+   "options": "\nYes\nNo",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_ueiu",
@@ -235,8 +236,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-22 20:37:29.066380",
- "modified_by": "Administrator",
+ "modified": "2026-03-31 18:12:05.643026",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Temporary Advance",
  "naming_rule": "Expression",
@@ -322,6 +323,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

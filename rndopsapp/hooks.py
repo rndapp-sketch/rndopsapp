@@ -194,7 +194,10 @@ doc_events = {
 
 # Request Events
 # ----------------
-# before_request = ["rndopsapp.utils.before_request"]
+before_login = [
+	"rndopsapp.external_auth.clear_admin_ip_lock",
+	"rndopsapp.external_auth.patch_find_by_credentials",
+]
 # after_request = ["rndopsapp.utils.after_request"]
 
 # Job Events

@@ -111,7 +111,8 @@
    "fieldname": "register_for",
    "fieldtype": "Select",
    "label": "If you are doing this purchase for Self or other User",
-   "options": "\nSelf\nOther"
+   "options": "\nSelf\nOther",
+   "read_only": 1
   },
   {
    "fieldname": "amended_from",
@@ -176,8 +177,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-24 01:04:36.390065",
- "modified_by": "Administrator",
+ "modified": "2026-03-31 18:18:14.827267",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Direct Purchase",
  "naming_rule": "Expression",
@@ -210,6 +211,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

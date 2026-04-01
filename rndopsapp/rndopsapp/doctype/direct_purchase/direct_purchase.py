@@ -303,9 +303,10 @@ def get_direct_purchase_fields(doc_name=None):
 def save_direct_purchase_data(data):
 	"""
 	Creates or updates a Direct Purchase document.
-	Handles child tables and file uploads (Attach fields).
+	Handles child tables and file uploads (Attach fields) via MinIO.
 	"""
-	from frappe.utils.file_manager import save_file
+	from rndopsapp.minio import get_rnd_file_service
+	import base64
 
 	try:
 		if isinstance(data, str):
@@ -351,6 +352,22 @@ def save_direct_purchase_data(data):
 			doc.insert(ignore_mandatory=True)
 
 		# 4. Second Pass: Process Files and Tables (now we have doc.name)
+
+		# Resolve Project Registration docname from project_no for correct MinIO path:
+		# rnd-files/Project_Registration/{project_docname}/directpurchase/{doc.name}/
+		_proj_no = doc.project_no or data.get("project_no")
+		_project_docname = None
+		if _proj_no:
+			_project_docname = frappe.db.get_value(
+				"Project Registration", {"project_no": _proj_no}, "name"
+			)
+		# Fall back to attaching directly to Direct Purchase if no project found
+		_file_doctype = "Project Registration" if _project_docname else "Direct Purchase"
+		_file_docname = _project_docname if _project_docname else doc.name
+		_folder = f"directpurchase/{doc.name}"
+
+		file_service = get_rnd_file_service()
+
 		for fieldname, value in file_fields:
 			df = meta.get_field(fieldname)
 
@@ -382,16 +399,17 @@ def save_direct_purchase_data(data):
 								f_val = row_dict[cf.fieldname]
 								if isinstance(f_val, dict) and f_val.get("file_data"):
 									try:
-										saved_file = save_file(
-											f_val.get("file_name", "attachment"),
-											f_val["file_data"],
-											"Direct Purchase",
-											doc.name,
-											decode=True,
-											is_private=1,
-											df=cf.fieldname
+										content = base64.b64decode(f_val["file_data"])
+										result = file_service.save_file(
+											filename=f_val.get("file_name", "attachment"),
+											content=content,
+											is_private=True,
+											doctype=_file_doctype,
+											docname=_file_docname,
+											folder=_folder
 										)
-										row_dict[cf.fieldname] = saved_file.file_url
+										if result.get("status"):
+											row_dict[cf.fieldname] = result.get("file_url") or result.get("data", {}).get("file_url")
 									except Exception as e:
 										frappe.log_error(f"Child File Error: {e}")
 
@@ -400,16 +418,17 @@ def save_direct_purchase_data(data):
 			elif df.fieldtype in ["Attach", "Attach Image"]:
 				if isinstance(value, dict) and value.get("file_data"):
 					try:
-						saved_file = save_file(
-							value.get("file_name", "attachment"),
-							value["file_data"],
-							"Direct Purchase",
-							doc.name,
-							decode=True,
-							is_private=1,
-							df=fieldname
+						content = base64.b64decode(value["file_data"])
+						result = file_service.save_file(
+							filename=value.get("file_name", "attachment"),
+							content=content,
+							is_private=True,
+							doctype=_file_doctype,
+							docname=_file_docname,
+							folder=_folder
 						)
-						doc.set(fieldname, saved_file.file_url)
+						if result.get("status"):
+							doc.set(fieldname, result.get("file_url") or result.get("data", {}).get("file_url"))
 					except Exception as e:
 						frappe.log_error(f"File Upload Error for {fieldname}: {str(e)}")
 
@@ -921,8 +940,11 @@ def generate_purchase_order(sanction_sheet_name, dp_docname=None):
 def upload_po_document(docname, app_id, project_no):
 	"""
 	Endpoint to upload a Purchase Order PDF or Image to object storage (MinIO).
-	Saves the file inside: Project Registration -> {project_no} -> directpurchase/{app_id}
+	Saves the file inside: rnd-files/Project_Registration/{project_docname}/directpurchase/{app_id}/
 	"""
+	print(f"[PO UPLOAD START] -> docname={docname}, app_id={app_id}, project_no={project_no}")
+	import sys; sys.stdout.flush()
+
 	from rndopsapp.minio import get_rnd_file_service
 
 	if "file" in frappe.request.files:
@@ -933,32 +955,67 @@ def upload_po_document(docname, app_id, project_no):
 		content = frappe.local.uploaded_file
 		filename = frappe.local.uploaded_filename
 	else:
+		print("[PO UPLOAD ERROR] No file attached")
 		return {"status": False, "message": "No file attached"}
 
 	try:
 		file_service = get_rnd_file_service()
 
-		# The target folder path inside the minio bucket
-		folder_path = f"directpurchase/{app_id}"
-
-		# Save to object storage
-		upload_result = file_service.save_file(
-			filename=filename,
-			content=content,
-			is_private=True,
-			doctype="Project Registration",
-			docname=docname,
-			folder=folder_path
+		# Resolve Project Registration docname from project_no field
+		project_docname = frappe.db.get_value(
+			"Project Registration", {"project_no": project_no}, "name"
 		)
+		if not project_docname:
+			print(f"[PO UPLOAD ERROR] No Project Registration found for project_no: {project_no}")
+			return {"status": False, "message": f"No Project Registration found for project_no: {project_no}"}
 
-		if not upload_result.get("status"):
-			return upload_result
+		print(f"[PO UPLOAD] Found project_docname: {project_docname}")
 
-		return upload_result
+		# Path: rnd-files/Project_Registration/{project_docname}/directpurchase/{app_id}/po/
+		folder_path = f"directpurchase/{app_id}/po"
+
+		# Prepare file data for MinIO
+		data = file_service._bytes(content)
+		file_hash = file_service._hash(data)
+		path = file_service._path(
+			filename=filename, 
+			file_hash=file_hash, 
+			private=True, 
+			doctype="Project Registration", 
+			docname=project_docname, 
+			folder=folder_path,
+			use_hash=False
+		)
+		mime = file_service._mime(filename)
+
+		print(f"[PO UPLOAD] Generated MinIO path: {path}")
+
+		# Upload directly to object storage WITHOUT creating a Frappe File doc
+		# This bypasses Frappe's `URL must start with http` File doctype validation.
+		file_service.storage.upload(path, data, mime)
+		
+		full_minio_path = f"rnd-files/{path}"
+		print(f"[PO UPLOAD] Successful MinIO upload directly. Path: {full_minio_path}")
+		import sys; sys.stdout.flush()
+
+		# Update the corresponding Sanction Sheet's file_path using purely SQL
+		if frappe.db.exists("sanction_sheet", docname):
+			frappe.db.sql(
+				"""UPDATE `tabsanction_sheet` SET file_path = %s, modified = NOW() WHERE name = %s""",
+				(full_minio_path, docname)
+			)
+			frappe.db.commit()
+			print(f"[PO UPLOAD] Successfully updated DB for sanction_sheet: {docname}")
+		else:
+			print(f"[PO UPLOAD WARNING] The specified sanction_sheet docname '{docname}' does not exist. Cannot update file_path.")
+
+		return {"status": True, "message": "File saved and path stored", "data": {"path": path, "file_url": full_minio_path}}
 
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "PO Upload Error (Direct Purchase)")
+		print(f"\n[PO UPLOAD FATAL ERROR] {str(e)}")
+		print(frappe.get_traceback())
 		return {"status": False, "message": str(e)}
 
 @frappe.whitelist()
@@ -969,14 +1026,22 @@ def get_po_document(docname, app_id, project_no):
 	from rndopsapp.minio import get_rnd_file_service
 
 	try:
-		folder_path = f"directpurchase/{app_id}"
+		# Resolve Project Registration docname from project_no field
+		project_docname = frappe.db.get_value(
+			"Project Registration", {"project_no": project_no}, "name"
+		)
+		if not project_docname:
+			frappe.local.response.http_status_code = 404
+			return {"status": False, "message": f"No Project Registration found for project_no: {project_no}"}
+
+		folder_path = f"directpurchase/{app_id}/po"
 
 		# Search the File doctype to find the latest file matching this location
 		files = frappe.get_all(
 			"File",
 			filters={
 				"attached_to_doctype": "Project Registration",
-				"attached_to_name": project_no,
+				"attached_to_name": project_docname,
 				"file_url": ("like", f"%/{folder_path}/%")
 			},
 			order_by="creation desc",

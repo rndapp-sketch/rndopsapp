@@ -8,6 +8,8 @@
  "field_order": [
   "section_break_sjmh",
   "amended_from",
+  "section_break_twoo",
+  "workflow_state",
   "section_break_bcsq",
   "temporary_advance_application",
   "project_name",
@@ -165,13 +167,23 @@
    "fieldtype": "Table",
    "label": "Expenditure Details",
    "options": "Expenditure Detail"
+  },
+  {
+   "fieldname": "section_break_twoo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-06 15:10:41.107950",
+ "modified": "2026-03-30 14:58:36.643460",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Advance Settlement",
@@ -193,6 +205,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
