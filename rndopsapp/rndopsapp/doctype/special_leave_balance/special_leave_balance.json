@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-31 19:54:38.403090",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "employee_id",
+  "total_leave_balance",
+  "utilized_balance",
+  "available_balance"
+ ],
+ "fields": [
+  {
+   "fieldname": "employee_id",
+   "fieldtype": "Data",
+   "label": "Employee ID"
+  },
+  {
+   "fieldname": "total_leave_balance",
+   "fieldtype": "Date",
+   "label": "Total Leave Balance"
+  },
+  {
+   "fieldname": "utilized_balance",
+   "fieldtype": "Data",
+   "label": "Utilized Balance"
+  },
+  {
+   "fieldname": "available_balance",
+   "fieldtype": "Data",
+   "label": "Available Balance"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-03-31 19:59:11.718854",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "special_leave_balance",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

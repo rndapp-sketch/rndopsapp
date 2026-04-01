@@ -42,10 +42,8 @@
   "travel_financial_assistance",
   "do_you_need_advance",
   "account_head_details_section",
-  "contingency_head",
-  "travel_head",
-  "other_acc_head",
-  "specify_other_acc_head",
+  "column_break_gqur",
+  "account_head",
   "bank_details_section",
   "bank_account_holder",
   "column_break_yzkt",
@@ -219,19 +217,6 @@
    "label": "Assitance Details"
   },
   {
-   "default": "0",
-   "fieldname": "travel_head",
-   "fieldtype": "Check",
-   "label": "Travel"
-  },
-  {
-   "default": "0",
-   "fieldname": "contingency_head",
-   "fieldtype": "Check",
-   "label": "Contingency"
-  },
-  {
-   "fetch_from": "travel_project_title.address_postal_code",
    "fieldname": "travel_project_number",
    "fieldtype": "Data",
    "label": "Auto selected project Number",
@@ -545,18 +530,6 @@
    "label": "Alternative Arrangement"
   },
   {
-   "default": "0",
-   "fieldname": "other_acc_head",
-   "fieldtype": "Check",
-   "label": "Other"
-  },
-  {
-   "depends_on": "eval:doc.other_acc_head==1",
-   "fieldname": "specify_other_acc_head",
-   "fieldtype": "Data",
-   "label": "Specify that Other Account Head Detail"
-  },
-  {
    "fieldname": "column_break_tewx",
    "fieldtype": "Column Break",
    "hidden": 1
@@ -572,13 +545,25 @@
    "fieldtype": "Select",
    "label": "Do you need Advance?",
    "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Account Head",
+   "options": "Budget Head",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_gqur",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-26 20:36:21.331547",
+ "modified": "2026-04-01 15:22:52.160013",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Travel",
