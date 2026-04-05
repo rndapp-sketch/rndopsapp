@@ -712,6 +712,11 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		doc = frappe.get_doc("Fund Received", docname)
 		current_state = doc.workflow_state or "Draft"
 
+		# FIX: Ensure doc has a workflow_state in DB to avoid WorkflowStateError on first save
+		if not doc.workflow_state:
+			doc.db_set("workflow_state", current_state, update_modified=False)
+			doc.workflow_state = current_state
+
 		# --- Data Sanitization / Fix for Legacy Data ---
 		# Check if prjreg_title is a valid link. If not, try to find it via project_no
 		if doc.prjreg_title and not frappe.db.exists("Project Registration", doc.prjreg_title):

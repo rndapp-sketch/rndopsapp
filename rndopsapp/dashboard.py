@@ -109,6 +109,7 @@ def get_dashboard_data(user_email, department):
     return data
 
 
+
 @frappe.whitelist()
 def get_director_dashboard_data():
     """
@@ -122,20 +123,47 @@ def get_director_dashboard_data():
     research_projects = frappe.db.count("Project Registration", filters={"project_type": "Research"})
     consultancy_projects = frappe.db.count("Project Registration", filters={"project_type": "Consultancy"})
 
-    # Completed projects - docstatus=1 but NOT in 'Approved' state (those are ongoing)
-    ongoing_projects = frappe.db.count("Project Registration", filters={"docstatus": 1, "workflow_state": ["not in", ["Approved"]]})
+    today = frappe.utils.today()
 
-    # Total staff count - count from manpower details child table across all projects
-    total_staff_count = frappe.db.sql("""
-        SELECT COUNT(*)
-        FROM `tabproject_registration_manpower_details`
-    """)[0][0] or 0
+    # Get mutually exclusive statuses for all approved projects
+    project_statuses = frappe.db.sql("""
+        SELECT
+            pr.name as project_id,
+            CASE 
+                WHEN pr.prj_end_date IS NOT NULL AND pr.prj_end_date < %s THEN 'completed'
+                WHEN (pr.prj_end_date IS NULL OR pr.prj_end_date >= %s)
+                 AND (
+                     EXISTS (SELECT 1 FROM `tabFund Sanction` fs WHERE fs.project_proposal = pr.name AND fs.docstatus = 1)
+                     OR 
+                     EXISTS (SELECT 1 FROM `tabFund Received` fr WHERE fr.prjreg_title = pr.name AND fr.docstatus = 1)
+                 ) THEN 'ongoing'
+                WHEN (pr.prj_end_date IS NULL OR pr.prj_end_date >= %s)
+                 AND NOT EXISTS (SELECT 1 FROM `tabFund Sanction` fs WHERE fs.project_proposal = pr.name AND fs.docstatus = 1)
+                 AND NOT EXISTS (SELECT 1 FROM `tabFund Received` fr WHERE fr.prjreg_title = pr.name AND fr.docstatus = 1)
+                 THEN 'submitted'
+                ELSE 'other'
+            END as status
+        FROM `tabProject Registration` pr
+        WHERE pr.docstatus = 1
+    """, (today, today, today), as_dict=True)
+
+    completed_projects = [p.project_id for p in project_statuses if p.status == 'completed']
+    ongoing_projects = [p.project_id for p in project_statuses if p.status == 'ongoing']
+    submitted_projects = [p.project_id for p in project_statuses if p.status == 'submitted']
+
+    # Total staff count - count Users where employee class is 'PS - Project Staff' (ID: 64rqq35p8v)
+    total_staff_count = frappe.db.count("User", filters={"empclass": "64rqq35p8v"}) or 0
 
     data["project_overview"] = {
-        "total_projects": total_projects,
+        "total_projects": len(ongoing_projects) + len(submitted_projects),
         "research_projects": research_projects,
         "consultancy_projects": consultancy_projects,
-        "ongoing_projects": ongoing_projects,
+        "submitted_projects": len(submitted_projects),
+        "submitted_project_nos": submitted_projects,
+        "ongoing_projects": len(ongoing_projects),
+        "ongoing_project_nos": ongoing_projects,
+        "completed_projects": len(completed_projects),
+        "completed_project_nos": completed_projects,
         "total_staff_count": total_staff_count
     }
 
@@ -156,10 +184,31 @@ def get_director_dashboard_data():
 
     remaining = total_allocation - utilized
 
+    # Total Sanction Amount — FY Wise (Indian FY: Apr–Mar)
+    # FY label: if month >= 4 → "YYYY-YY+1", else → "YYYY-1-YYYY"
+    fy_wise_sanctions = frappe.db.sql("""
+        SELECT
+            CASE
+                WHEN MONTH(IFNULL(sanctioned_letter_date, creation)) >= 4
+                    THEN CONCAT(YEAR(IFNULL(sanctioned_letter_date, creation)), '-', LPAD(YEAR(IFNULL(sanctioned_letter_date, creation)) - 1999, 2, '0'))
+                ELSE CONCAT(YEAR(IFNULL(sanctioned_letter_date, creation)) - 1, '-', LPAD(YEAR(IFNULL(sanctioned_letter_date, creation)) - 2000, 2, '0'))
+            END AS fy,
+            IFNULL(SUM(total_sanctioned_amount), 0) AS total_amount
+        FROM `tabFund Sanction`
+        WHERE docstatus = 1
+        GROUP BY fy
+        ORDER BY MIN(IFNULL(sanctioned_letter_date, creation)) DESC
+        LIMIT 10
+    """, as_dict=True)
+
     data["funding_analytics"] = {
         "total_allocation": float(total_allocation),
         "utilized": float(utilized),
-        "remaining": float(remaining)
+        "remaining": float(remaining),
+        "sanction_by_fy": [
+            {"fy": row.fy, "total_amount": float(row.total_amount)}
+            for row in fy_wise_sanctions
+        ]
     }
 
     # 3. IPR ANALYTICS — Intellectual Property
@@ -197,15 +246,26 @@ def get_director_dashboard_data():
     }
 
     # 6. PROJECT STATUS BY YEAR — Bar Chart
-    # Get projects grouped by year with status breakdown
+    # Get projects grouped by year with mutually exclusive status breakdown
     project_status_by_year = frappe.db.sql("""
         SELECT
-            YEAR(creation) as year,
-            COUNT(*) as registered,
-            SUM(CASE WHEN docstatus = 0 THEN 1 ELSE 0 END) as ongoing,
-            SUM(CASE WHEN docstatus = 1 THEN 1 ELSE 0 END) as completed
-        FROM `tabProject Registration`
-        GROUP BY YEAR(creation)
+            YEAR(IFNULL(pr.prj_start_date, pr.creation)) as year,
+            SUM(CASE 
+                WHEN (pr.prj_end_date IS NULL OR pr.prj_end_date >= CURDATE())
+                 AND NOT EXISTS (SELECT 1 FROM `tabFund Sanction` fs WHERE fs.project_proposal = pr.name AND fs.docstatus = 1)
+                 AND NOT EXISTS (SELECT 1 FROM `tabFund Received` fr WHERE fr.prjreg_title = pr.name AND fr.docstatus = 1) 
+                 THEN 1 ELSE 0 END) as submitted,
+            SUM(CASE 
+                WHEN (pr.prj_end_date IS NULL OR pr.prj_end_date >= CURDATE())
+                 AND (EXISTS (SELECT 1 FROM `tabFund Sanction` fs WHERE fs.project_proposal = pr.name AND fs.docstatus = 1) 
+                      OR EXISTS (SELECT 1 FROM `tabFund Received` fr WHERE fr.prjreg_title = pr.name AND fr.docstatus = 1))
+                 THEN 1 ELSE 0 END) as ongoing,
+            SUM(CASE 
+                WHEN pr.prj_end_date IS NOT NULL AND pr.prj_end_date < CURDATE() 
+                 THEN 1 ELSE 0 END) as completed
+        FROM `tabProject Registration` pr
+        WHERE pr.docstatus = 1
+        GROUP BY YEAR(IFNULL(pr.prj_start_date, pr.creation))
         ORDER BY year DESC
         LIMIT 5
     """, as_dict=True)
@@ -213,9 +273,9 @@ def get_director_dashboard_data():
     data["project_status_by_year"] = [
         {
             "year": str(row.year),
-            "registered": row.registered or 0,
-            "ongoing": row.ongoing or 0,
-            "completed": row.completed or 0
+            "submitted": int(row.submitted or 0),
+            "ongoing": int(row.ongoing or 0),
+            "completed": int(row.completed or 0)
         }
         for row in project_status_by_year
     ]
@@ -223,11 +283,12 @@ def get_director_dashboard_data():
     # 7. FUNDING SOURCES — Pie Chart
     funding_sources = frappe.db.sql("""
         SELECT
-            IFNULL(funding_agen, 'Unknown') as name,
+            IFNULL(fa.funding_agency_name, IFNULL(pr.funding_agen, 'Unknown')) as name,
             COUNT(*) as value
-        FROM `tabProject Registration`
-        WHERE funding_agen IS NOT NULL AND funding_agen != ''
-        GROUP BY funding_agen
+        FROM `tabProject Registration` pr
+        LEFT JOIN `tabfundingagency_` fa ON fa.name = pr.funding_agen
+        WHERE pr.funding_agen IS NOT NULL AND pr.funding_agen != ''
+        GROUP BY pr.funding_agen, fa.funding_agency_name
         ORDER BY value DESC
         LIMIT 10
     """, as_dict=True)
@@ -292,6 +353,7 @@ def get_director_dashboard_data():
     ]
 
     return data
+
 
 
 @frappe.whitelist()
@@ -430,4 +492,45 @@ def get_pi_dashboard_data(user=None):
     data["recent_updates"] = recent_updates
     
     return data
+
+
+
+
+
+@frappe.whitelist(allow_guest=True)
+def get_role_based_project_counts():
+    """
+    Returns the count of projects for each user under specific roles:
+    - 6i6gphpk2s (IR - Independent Researcher)
+    - 6mcdqaqti2 (IF - Inspired Faculty)
+    - 7orhr5qb5t (PI - Principal Investigator)
+    - 5r4emiig95 (P - Permanent Employee)
+    """
+    query = """
+        SELECT 
+            pr.pi_webmail AS user_email, 
+            pr.principal_investigator_name AS user_name,
+            ec.empclass_name AS role,
+            d1.dept_name AS implementation_department,
+            d2.dept_name AS user_department,
+            COUNT(pr.name) AS project_count 
+        FROM `tabProject Registration` pr
+        LEFT JOIN `tabEmployeeClass_prornd` ec ON pr.applicant_type = ec.name
+        LEFT JOIN `tabUser` u ON pr.pi_webmail = u.name
+        LEFT JOIN `tabDepartment_prornd` d1 ON pr.implementation_department = d1.name
+        LEFT JOIN `tabDepartment_prornd` d2 ON u.department_name = d2.name
+        WHERE pr.applicant_type IN ('6i6gphpk2s', '6mcdqaqti2', '7orhr5qb5t', '5r4emiig95')
+          AND pr.docstatus < 2
+        GROUP BY 
+            pr.pi_webmail, 
+            pr.principal_investigator_name, 
+            ec.empclass_name,
+            d1.dept_name,
+            d2.dept_name
+        ORDER BY role ASC, project_count DESC
+    """
+    
+    # Executing raw SQL to bypass Frappe ORM complexities for this aggregation
+    results = frappe.db.sql(query, as_dict=True)
+    return results
 

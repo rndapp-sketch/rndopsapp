@@ -114,14 +114,14 @@ class FundReceivedConsumerMapper:
         """
         try:
             # Map and apply sanction_letter_no
-            if dto.sanctionLetterNo:
+            if dto.sanctionLetterNo and frappe.db.has_column('Fund Received', 'sanctioned_letter_no'):
                 frappe.db.set_value(
                     'Fund Received', doc_name,
                     'sanctioned_letter_no', dto.sanctionLetterNo
                 )
 
             # Map and apply project_number → look up Project Registration name
-            if dto.projectNumber:
+            if dto.projectNumber and frappe.db.has_column('Fund Received', 'prjreg_title'):
                 prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
                 frappe.db.set_value(
                     'Fund Received', doc_name,
@@ -129,33 +129,40 @@ class FundReceivedConsumerMapper:
                 )
 
             # Map and apply amount_received
-            if dto.amountReceived is not None:
+            if dto.amountReceived is not None and frappe.db.has_column('Fund Received', 'fund_received_amt'):
                 frappe.db.set_value(
                     'Fund Received', doc_name,
                     'fund_received_amt', dto.amountReceived
                 )
 
             # Map and apply bank_account
-            if dto.iitgAccountNumber:
+            if dto.iitgAccountNumber and frappe.db.has_column('Fund Received', 'bank_account'):
                 frappe.db.set_value(
                     'Fund Received', doc_name,
                     'bank_account', dto.iitgAccountNumber
                 )
 
             # Map and apply workflow_state
-            new_status = cls.map_status(dto.fundReceivedStatus)
-            if new_status:
-                frappe.db.set_value(
-                    'Fund Received', doc_name,
-                    'workflow_state', new_status
-                )
+            if frappe.db.has_column('Fund Received', 'workflow_state'):
+                new_status = cls.map_status(dto.fundReceivedStatus)
+                if new_status:
+                    frappe.db.set_value(
+                        'Fund Received', doc_name,
+                        'workflow_state', new_status
+                    )
 
             # Map and apply fund_received_ref_number
-            if dto.fundReceivedRefNumber is not None:
-                frappe.db.set_value(
-                    'Fund Received', doc_name,
-                    'fund_received_ref_number', int(dto.fundReceivedRefNumber)
-                )
+            if dto.fundReceivedRefNumber is not None and frappe.db.has_column('Fund Received', 'fund_received_ref_number'):
+                try:
+                    frappe.db.set_value(
+                        'Fund Received', doc_name,
+                        'fund_received_ref_number', int(dto.fundReceivedRefNumber)
+                    )
+                except (ValueError, TypeError):
+                    frappe.db.set_value(
+                        'Fund Received', doc_name,
+                        'fund_received_ref_number', dto.fundReceivedRefNumber
+                    )
 
             return True
 

@@ -154,16 +154,21 @@ def get_pending_task(page_name="pending-task"):
 
 		title_field = (meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name"))
 
-		records = frappe.get_list(
-			dt,
-			filters={
-				status_field: ["in", list(actionable_states)],
-				"docstatus": ["<", 2] 
-			},
-			fields=["name", title_field, status_field, "modified", "owner", "docstatus", "creation"],
-			order_by="modified desc",
-			limit_page_length=100
-		)
+		try:
+			records = frappe.get_list(
+				dt,
+				filters={
+					status_field: ["in", list(actionable_states)],
+					"docstatus": ["<", 2] 
+				},
+				fields=["name", title_field, status_field, "modified", "owner", "docstatus", "creation"],
+				order_by="modified desc",
+				limit_page_length=100
+			)
+		except Exception as e:
+			frappe.log_error(f"Error fetching pending tasks for {dt}", f"get_pending_task API Error: {str(e)}")
+			print(f"Skipping {dt} due to error: {str(e)}")
+			continue
 
 		mapped = []
 		for r in records:
@@ -171,7 +176,7 @@ def get_pending_task(page_name="pending-task"):
 			mapped.append({
 				"name": r.get("name"), 
 				"title": r.get(title_field),
-				"status": r.get("workflow_state"),
+				"status": r.get(status_field),
 				"creation": r.get("creation"),
 				"modified": r.get("modified"),
 				"owner": r.get("owner"),
