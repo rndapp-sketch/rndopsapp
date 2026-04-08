@@ -994,7 +994,7 @@ def upload_po_document(docname, app_id, project_no):
 		# This bypasses Frappe's `URL must start with http` File doctype validation.
 		file_service.storage.upload(path, data, mime)
 		
-		full_minio_path = f"rnd-files/{path}"
+		full_minio_path = f"prod-rnd-files/{path}"
 		print(f"[PO UPLOAD] Successful MinIO upload directly. Path: {full_minio_path}")
 		import sys; sys.stdout.flush()
 

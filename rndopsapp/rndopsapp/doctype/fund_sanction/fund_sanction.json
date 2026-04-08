@@ -11,6 +11,7 @@
   "project_proposal",
   "refnum_prj_num",
   "sanction_workflow_status",
+  "workflow_status",
   "section_break_edqq",
   "total_sanctioned_amount",
   "sanctioned_letter_no",
@@ -159,13 +160,19 @@
    "fieldname": "sanction_workflow_status",
    "fieldtype": "Data",
    "label": "Workflow Status"
+  },
+  {
+   "fieldname": "workflow_status",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "workflow state"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-08 10:34:47.164217",
+ "modified": "2026-04-01 17:55:19.556298",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Sanction",

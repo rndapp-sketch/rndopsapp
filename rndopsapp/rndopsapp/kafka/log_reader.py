@@ -34,11 +34,6 @@ def get_kafka_logs(log_type='consumer', lines=100, search_string=None):
         content = []
         if log_type == 'terminal':
             # Capture the last N lines from the 'frappe' tmux session
-            # -p: print to stdout
-            # -t: target pane
-            # -S: start line (negative for history)
-            # Note: For search effectiveness in terminal, we might want to capture MORE lines if search is active,
-            # but for now we stick to the requested N lines window.
             result = subprocess.run(
                 ['tmux', 'capture-pane', '-pt', 'frappe', '-S', f'-{lines}'],
                 capture_output=True,
@@ -46,6 +41,11 @@ def get_kafka_logs(log_type='consumer', lines=100, search_string=None):
                 check=True
             )
             content = result.stdout.splitlines()
+            # Persist captured output to terminal.log
+            terminal_log_path = LOG_FILES['terminal']
+            os.makedirs(os.path.dirname(terminal_log_path), exist_ok=True)
+            with open(terminal_log_path, 'a', encoding='utf-8') as f:
+                f.write(result.stdout)
         else:
             file_path = LOG_FILES[log_type]
             if not os.path.exists(file_path):

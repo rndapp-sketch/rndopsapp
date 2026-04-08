@@ -1045,13 +1045,13 @@
   {
    "fieldname": "cat_d_cf_base",
    "fieldtype": "Currency",
-   "label": "Consultancy Fee/Honorarium (Base)",
+   "label": "Consultancy Fee/Honorarium",
    "read_only": 1
   },
   {
    "fieldname": "cat_d_oe_base",
    "fieldtype": "Currency",
-   "label": "Operational Expenses (Base)",
+   "label": "Operational Expenses",
    "read_only": 1
   },
   {
@@ -1249,7 +1249,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-28 13:14:30.891394",
+ "modified": "2026-04-01 12:43:24.342742",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
