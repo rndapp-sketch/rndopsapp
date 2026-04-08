@@ -4,8 +4,8 @@
 # --- KAFKA CLUSTER CONFIGURATION ---
 # 2-Node Fault-Tolerant Cluster
 KAFKA_BOOTSTRAP_SERVERS = [
-    '172.16.134.81:9095',
-    '172.16.134.81:9096'
+    '172.16.135.118:9095',
+    '172.16.135.118:9096'
 ]
 
 # --- TOPIC CONFIGURATION ---
@@ -17,12 +17,14 @@ TOPIC_PROJECT = 'project-registration-events'
 TOPIC_SANCTION = 'fund-sanction-events'
 TOPIC_FUND_RECEIVED = 'fund-received-events'
 TOPIC_DEPOSIT_SLIP = 'deposit-slip-events'
+TOPIC_LOAN_REQUEST = 'loan-request-event'
 
 # --- PRODUCER DLQ TOPICS ---
 TOPIC_PROJECT_DLQ = 'project-registration-events-dlq'
 TOPIC_SANCTION_DLQ = 'fund-sanction-events-dlq'
 TOPIC_FUND_RECEIVED_DLQ = 'fund-received-events-dlq'
 TOPIC_DEPOSIT_SLIP_DLQ = 'deposit-slip-events-dlq'
+TOPIC_LOAN_REQUEST_DLQ = 'loan-request-event-dlq'
 
 # --- CONSUMER TOPICS ---
 TOPIC_ACCOUNTS_FUND_RECEIVED = 'accounts-fundreceived-update'
@@ -34,6 +36,7 @@ ALL_PRODUCER_TOPICS = [
     TOPIC_SANCTION, TOPIC_SANCTION_DLQ,
     TOPIC_FUND_RECEIVED, TOPIC_FUND_RECEIVED_DLQ,
     TOPIC_DEPOSIT_SLIP, TOPIC_DEPOSIT_SLIP_DLQ,
+    TOPIC_LOAN_REQUEST, TOPIC_LOAN_REQUEST_DLQ,
 ]
 
 # All Consumer Topics List
@@ -47,6 +50,7 @@ SCHEMA_VERSION_PROJECT = '1.0'
 SCHEMA_VERSION_SANCTION = '1.0'
 SCHEMA_VERSION_FUND_RECEIVED = '1.0'
 SCHEMA_VERSION_DEPOSIT_SLIP = '1.0'
+SCHEMA_VERSION_LOAN_REQUEST = '1.0'
 
 # --- PRODUCER RETRY CONFIGURATION ---
 PRODUCER_MAX_RETRIES = 3
