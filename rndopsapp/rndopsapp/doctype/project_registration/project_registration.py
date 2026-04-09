@@ -769,6 +769,52 @@ def get_project_form_data(docname=None):
 		
 		_fetch_link_options(fields)
 
+		# 2b. Filter designation_name options for proposed_manpower_details
+		# Only return designations where the User's employee class is "Project Staff"
+		try:
+			# Find the EmployeeClass_prornd ID for "PS - Project Staff"
+			project_staff_empclass_ids = frappe.get_all(
+				"EmployeeClass_prornd",
+				filters={"empclass_name": ["like", "%Project Staff%"]},
+				pluck="name",
+				limit=0,
+			)
+
+			if project_staff_empclass_ids:
+				# Get distinct designation_name values from User where empclass is Project Staff
+				project_staff_designations = frappe.get_all(
+					"User",
+					filters={
+						"empclass": ["in", project_staff_empclass_ids],
+						"designation_name": ["is", "set"],
+					},
+					fields=["designation_name"],
+					distinct=True,
+					pluck="designation_name",
+					limit=0,
+				)
+
+				if project_staff_designations:
+					# Filter Designation_prornd matching by name OR title field
+					# (User.designation_name may store either the record name or the display title)
+					placeholders = ", ".join(["%s"] * len(project_staff_designations))
+					filtered_designations = frappe.db.sql(
+						f"""SELECT name, designation_prornd
+						FROM `tabDesignation_prornd`
+						WHERE name IN ({placeholders})
+						OR designation_prornd IN ({placeholders})""",
+						project_staff_designations + project_staff_designations,
+						as_dict=True,
+					)
+					link_options["designation_name"] = [
+						{"value": item["name"], "label": item.get("designation_prornd", item["name"])}
+						for item in filtered_designations
+					]
+				else:
+					link_options["designation_name"] = []
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Error filtering designation options for manpower details")
+
 		# 3. Get Pre-fill data for the current user
 		prefill_data = {}
 		if frappe.session.user != "Guest":

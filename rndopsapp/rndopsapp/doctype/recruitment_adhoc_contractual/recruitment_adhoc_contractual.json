@@ -6,6 +6,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "workflow_state",
   "section_break_e3vp",
   "column_break_mlei",
   "amended_from",
@@ -43,6 +44,14 @@
   "upfa_declaration_advertisement"
  ],
  "fields": [
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1
+  },
   {
    "fieldname": "section_break_e3vp",
    "fieldtype": "Section Break",

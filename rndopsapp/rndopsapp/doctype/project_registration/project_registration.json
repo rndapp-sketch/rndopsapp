@@ -414,7 +414,8 @@
    "fieldname": "designation",
    "fieldtype": "Data",
    "label": "Designation",
-   "options": "User"
+   "options": "User",
+   "reqd": 1
   },
   {
    "depends_on": "eval:doc.is_additional_pi == \"Yes\"",
@@ -449,7 +450,7 @@
    "depends_on": "eval:doc.project_type == 'Research'",
    "fieldname": "project_duration_months",
    "fieldtype": "Int",
-   "label": "Duration of the Project (in Months)",
+   "label": "Duration of the Project (in Months) (Tentative Date)",
    "mandatory_depends_on": "eval:doc.project_type == 'Research'",
    "non_negative": 1,
    "reqd": 1
@@ -458,7 +459,7 @@
    "depends_on": "eval:doc.project_type == 'Consultancy'",
    "fieldname": "project_duration_days",
    "fieldtype": "Int",
-   "label": "Number of Days",
+   "label": "Number of Days (Tentative Days)",
    "mandatory_depends_on": "eval:doc.project_type == 'Consultancy'",
    "non_negative": 1
   },
@@ -598,7 +599,8 @@
    "in_list_view": 1,
    "label": "Department of Applicant",
    "options": "Department_prornd",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "description": "*The Head of the effective department (Applicant or Implementation) who will approve this application.\n",
@@ -649,7 +651,7 @@
   {
    "fieldname": "upload_proj_prop",
    "fieldtype": "Attach",
-   "label": "Upload Project Proposal"
+   "label": "Upload Project Proposal / Invitation Letter (*If there's multiple files kindly merge them into single pdf and upload here) :"
   },
   {
    "depends_on": "eval:doc.project_type == 'Research' || doc.project_type == 'Consultancy' || doc.project_type == 'Other'",
@@ -716,8 +718,7 @@
    "fieldname": "is_additional_pi",
    "fieldtype": "Select",
    "label": "Does this project has additional PI?",
-   "options": "Yes\nNo",
-   "reqd": 1
+   "options": "Yes\nNo"
   },
   {
    "depends_on": "eval:doc.funding_agency_type == \"Government\" && doc.nature_funding_agency == \"National\"",
@@ -784,7 +785,8 @@
   },
   {
    "fieldname": "section_break_qtll",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Enter the details of Equipment and Manpower (Optional) :-"
   },
   {
    "fieldname": "section_break_ufyb",
@@ -997,7 +999,7 @@
   {
    "fieldname": "consultancy_gstin",
    "fieldtype": "Data",
-   "label": "GSTIN Number"
+   "label": "GSTIN for Agency, if Available"
   },
   {
    "default": "18",
@@ -1090,6 +1092,7 @@
    "label": "Total Amount (Excluding GST) *"
   },
   {
+   "description": "*(TE = Total Expenses)",
    "fieldname": "col_break_ef",
    "fieldtype": "Column Break",
    "label": "Breakup Details"
@@ -1097,13 +1100,13 @@
   {
    "fieldname": "cat_ef_honorarium",
    "fieldtype": "Currency",
-   "label": "Honorarium (0.3 * TE)",
+   "label": "Honorarium and other expenses (0.3 * TE)",
    "read_only": 1
   },
   {
    "fieldname": "cat_ef_institute_share",
    "fieldtype": "Currency",
-   "label": "Institute Share (0.7 * TE)",
+   "label": "Institute Overhead/Share (0.7 * TE)",
    "read_only": 1
   },
   {
@@ -1249,8 +1252,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-01 12:43:24.342742",
- "modified_by": "Administrator",
+ "modified": "2026-04-09 18:41:11.448861",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Project Registration",
  "naming_rule": "Expression",

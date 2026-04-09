@@ -283,12 +283,13 @@ def get_director_dashboard_data():
     # 7. FUNDING SOURCES — Pie Chart
     funding_sources = frappe.db.sql("""
         SELECT
-            IFNULL(fa.funding_agency_name, IFNULL(pr.funding_agen, 'Unknown')) as name,
+            IFNULL(fa.funding_agency_name, IFNULL(NULLIF(pr.funding_agen, ''), 'Unknown')) as name,
             COUNT(*) as value
         FROM `tabProject Registration` pr
         LEFT JOIN `tabfundingagency_` fa ON fa.name = pr.funding_agen
-        WHERE pr.funding_agen IS NOT NULL AND pr.funding_agen != ''
-        GROUP BY pr.funding_agen, fa.funding_agency_name
+        WHERE pr.docstatus = 1
+          AND (pr.prj_end_date IS NULL OR pr.prj_end_date >= CURDATE())
+        GROUP BY name
         ORDER BY value DESC
         LIMIT 10
     """, as_dict=True)
