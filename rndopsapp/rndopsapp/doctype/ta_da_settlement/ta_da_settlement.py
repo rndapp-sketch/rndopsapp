@@ -387,6 +387,71 @@ def get_ta_da_settlement_workflow_actions(docname):
 
 
 @frappe.whitelist()
+def get_ta_da_settlement_commit_details(docname):
+	"""
+	Returns commit-related fields for the TA DA Settlement pending task page UI.
+	Called by the frontend when rendering the Staff's commit form at Pending Staff Approval.
+	Frontend should call submit_commit_data + perform_ta_da_settlement_action('Forward') on commit.
+	"""
+	if not frappe.db.exists("TA DA Settlement", docname):
+		frappe.throw(_("TA DA Settlement document not found."))
+
+	doc = frappe.get_doc("TA DA Settlement", docname)
+
+	# Resolve project registration name and number via the linked Travel doc
+	project_name = None  # Project Registration docname
+	project_number = None  # project_no like "26RBSBESP0391XXLS0010"
+
+	if doc.ta_da_travel_application:
+		travel_project_title = frappe.db.get_value(
+			"Travel", doc.ta_da_travel_application, "travel_project_title"
+		)
+		if travel_project_title:
+			project_name = travel_project_title
+			project_number = frappe.db.get_value(
+				"Project Registration", travel_project_title, "project_no"
+			)
+
+	# Fall back to project_no stored directly on the doc
+	if not project_number and doc.project_no:
+		project_number = doc.project_no
+
+	# TA/DA is always funded from Travel Head
+	budget_head = "Travel Head"
+
+	# Commit amount is the net claimed (after deducting advance taken)
+	commit_amount = doc.ta_da_net_claimed or doc.ta_da_total_claimed or 0
+
+	# Resolve moduleId from Module Registry for "TA DA Settlement"
+	module_id = frappe.db.get_value(
+		"Module Registry Item",
+		{"doctype_name": "TA DA Settlement", "parent": "pending-task"},
+		"mod_vis"
+	) or None
+
+	return {
+		"docname": docname,
+		"workflow_state": doc.workflow_state,
+		"applicant_name": doc.ta_da_name,
+		"webmail_id": doc.webmail_id,
+		"travel_application": doc.ta_da_travel_application,
+		"project_name": project_name,
+		"project_number": project_number,
+		"project_no": doc.project_no,
+		"total_claimed": doc.ta_da_total_claimed,
+		"advance_taken": doc.ta_da_advance_taken,
+		"net_claimed": doc.ta_da_net_claimed,
+		"commit_amount": commit_amount,
+		"budget_head": budget_head,
+		"purpose_of_journey": doc.ta_da_purpose_of_journey,
+		"module_id": module_id,
+		# refDetails = parent Travel's frapAppId (Travel docname)
+		# Frontend must pass this as refDetails when calling submit_commit_data
+		"ref_details": doc.ta_da_travel_application,
+	}
+
+
+@frappe.whitelist()
 def perform_ta_da_settlement_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.
@@ -459,6 +524,65 @@ def perform_ta_da_settlement_action(docname, action):
 			doc.db_set("workflow_state", next_state, update_modified=True)
 			if getattr(doc, "applicant_category", None):
 				doc.db_set("applicant_category", doc.applicant_category, update_modified=False)
+
+		# Kafka publish on Dean / Associate Dean approval
+		# db_set is used above (not doc.save()), so check_workflow_and_publish hook
+		# does NOT fire automatically — we must publish staged commits explicitly here.
+		if next_state == "Approved":
+			frappe.logger().info(f"[TA DA Kafka] Approval triggered for {docname}. Searching for staged commits.")
+			try:
+				from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit as kafka_publish_commit
+				staging_docs = frappe.get_all("Kafka Commit Staging", filters={
+					"reference_doctype": "TA DA Settlement",
+					"reference_name": docname,
+					"status": ["in", ["PENDING_APPROVAL", "FAILED"]]
+				})
+				frappe.logger().info(f"[TA DA Kafka] Found {len(staging_docs)} staged commit(s) for {docname}.")
+				if not staging_docs:
+					all_staging = frappe.get_all("Kafka Commit Staging", filters={
+						"reference_doctype": "TA DA Settlement",
+						"reference_name": docname,
+					}, fields=["name", "status", "creation"])
+					frappe.log_error(
+						f"[TA DA Kafka] No PENDING_APPROVAL/FAILED staging records found for {docname}. "
+						f"All staging records for this doc: {all_staging}. "
+						f"Ensure submit_commit_data was called before the staff Forward action.",
+						"TA DA Kafka - No Staging Record"
+					)
+				for st in staging_docs:
+					staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
+					try:
+						payload = json.loads(staging_doc.payload)
+						frappe.logger().info(
+							f"[TA DA Kafka] Publishing staging record {staging_doc.name} for {docname}. "
+							f"Payload keys: {list(payload.keys())}, commit_amount={payload.get('commit_amount')}, "
+							f"budget_head={payload.get('budget_head')}, project_name={payload.get('project_name')}"
+						)
+						success = kafka_publish_commit(
+							doc=doc,
+							commit_amount=payload.get("commit_amount"),
+							budget_head=payload.get("budget_head"),
+							project_name=payload.get("project_name"),
+							bmr=payload.get("bmr"),
+							bill_amount=payload.get("bill_amount"),
+							frap_app_id=payload.get("frap_app_id"),
+							ref_details=payload.get("ref_details")
+						)
+						if success:
+							staging_doc.db_set("status", "PUBLISHED")
+						else:
+							staging_doc.db_set("status", "FAILED")
+							staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+							frappe.log_error(
+								f"[TA DA Kafka] kafka_publish_commit returned False for staging {staging_doc.name}",
+								"TA DA Kafka - Publish Failed"
+							)
+					except Exception as e:
+						frappe.log_error(frappe.get_traceback(), f"[TA DA Kafka] Exception processing staging {staging_doc.name} for {docname}")
+						staging_doc.db_set("status", "FAILED")
+						staging_doc.db_set("error_message", str(e))
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), f"[TA DA Kafka] Outer exception for {docname}")
 
 		frappe.db.commit()
 

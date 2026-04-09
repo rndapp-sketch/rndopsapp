@@ -419,6 +419,54 @@ def submit_travel(docname):
 
 
 @frappe.whitelist()
+def get_travel_commit_details(docname):
+	"""
+	Returns commit-related fields for the Travel pending task page UI.
+	Called by the frontend when rendering the Staff's commit form on the Pending Task page.
+	Frontend should call submit_commit_data + perform_travel_action('Forward') on commit.
+	"""
+	if not frappe.db.exists("Travel", docname):
+		frappe.throw(_("Travel document not found."))
+
+	doc = frappe.get_doc("Travel", docname)
+
+	# Resolve project number from project registration
+	project_number = None
+	if doc.travel_project_title:
+		project_number = frappe.db.get_value(
+			"Project Registration", doc.travel_project_title, "project_no"
+		)
+
+	# account_head is now a Link to Budget Head — use directly
+	budget_head = doc.account_head or None
+
+	# Resolve moduleId from Module Registry for "Travel"
+	module_id = frappe.db.get_value(
+		"Module Registry Item",
+		{"doctype_name": "Travel", "parent": "pending-task"},
+		"mod_vis"
+	) or 7
+
+	return {
+		"docname": docname,
+		"workflow_state": doc.workflow_state,
+		"applicant_name": doc.applicant_name_travel,
+		"webmail_id": doc.webmail_id_travel,
+		"project_name": doc.travel_project_title,
+		"project_number": project_number,
+		"total_estimate": doc.total_estimate,
+		"budget_head": budget_head,
+		"account_head": doc.account_head,
+		"do_you_need_advance": doc.do_you_need_advance,
+		"from_date": str(doc.from_date) if doc.from_date else None,
+		"to_date": str(doc.to_date) if doc.to_date else None,
+		"nature_of_travel": doc.nature_of_travel,
+		"purpose_of_visit": doc.purpose_of_visit,
+		"module_id": module_id,
+	}
+
+
+@frappe.whitelist()
 def get_travel_workflow_actions(docname):
 	"""
 	Get available workflow actions for the current user based on document state.
@@ -461,6 +509,7 @@ def get_travel_workflow_actions(docname):
 def perform_travel_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.
+	On 'Approved' state, publishes staged commit data to Kafka (two-phase commit pattern).
 	"""
 	try:
 		doc = frappe.get_doc("Travel", docname)
@@ -490,10 +539,7 @@ def perform_travel_action(docname, action):
 				allowed_roles = t.get("allowed") or []
 				if isinstance(allowed_roles, str):
 					allowed_roles = [allowed_roles]
-				
-				# If "System Manager" is in roles, they can usually do anything, 
-				# but strictly following workflow rules is safer for logic differentiation.
-				# However, standard practice is to allow if role matches.
+
 				if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
 					next_state = t.next_state
 					transition = t
@@ -514,6 +560,63 @@ def perform_travel_action(docname, action):
 			doc.cancel()
 		else:
 			doc.save(ignore_permissions=True)
+
+		# Kafka publish on Dean / Associate Dean approval
+		if next_state == "Approved":
+			frappe.logger().info(f"[Travel Kafka] Approval triggered for {docname}. Searching for staged commits.")
+			try:
+				from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit as kafka_publish_commit
+				staging_docs = frappe.get_all("Kafka Commit Staging", filters={
+					"reference_doctype": "Travel",
+					"reference_name": docname,
+					"status": ["in", ["PENDING_APPROVAL", "FAILED"]]
+				})
+				frappe.logger().info(f"[Travel Kafka] Found {len(staging_docs)} staged commit(s) for {docname}.")
+				if not staging_docs:
+					all_staging = frappe.get_all("Kafka Commit Staging", filters={
+						"reference_doctype": "Travel",
+						"reference_name": docname,
+					}, fields=["name", "status", "creation"])
+					frappe.log_error(
+						f"[Travel Kafka] No PENDING_APPROVAL/FAILED staging records found for {docname}. "
+						f"All staging records for this doc: {all_staging}. "
+						f"Ensure submit_commit_data was called before the staff Forward action.",
+						"Travel Kafka - No Staging Record"
+					)
+				for st in staging_docs:
+					staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
+					try:
+						payload = json.loads(staging_doc.payload)
+						frappe.logger().info(
+							f"[Travel Kafka] Publishing staging record {staging_doc.name} for {docname}. "
+							f"Payload keys: {list(payload.keys())}, commit_amount={payload.get('commit_amount')}, "
+							f"budget_head={payload.get('budget_head')}, project_name={payload.get('project_name')}"
+						)
+						success = kafka_publish_commit(
+							doc=doc,
+							commit_amount=payload.get("commit_amount"),
+							budget_head=payload.get("budget_head"),
+							project_name=payload.get("project_name"),
+							bmr=payload.get("bmr"),
+							bill_amount=payload.get("bill_amount"),
+							frap_app_id=payload.get("frap_app_id"),
+							ref_details=payload.get("ref_details")
+						)
+						if success:
+							staging_doc.db_set("status", "PUBLISHED")
+						else:
+							staging_doc.db_set("status", "FAILED")
+							staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+							frappe.log_error(
+								f"[Travel Kafka] kafka_publish_commit returned False for staging {staging_doc.name}",
+								"Travel Kafka - Publish Failed"
+							)
+					except Exception as e:
+						frappe.log_error(frappe.get_traceback(), f"[Travel Kafka] Exception processing staging {staging_doc.name} for {docname}")
+						staging_doc.db_set("status", "FAILED")
+						staging_doc.db_set("error_message", str(e))
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), f"[Travel Kafka] Outer exception for {docname}")
 
 		frappe.db.commit()
 
