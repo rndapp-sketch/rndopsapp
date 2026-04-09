@@ -5,8 +5,8 @@ from project_event_dto import ProjectEventDTO, ProjectDataDTO
 
 # --- CONFIGURATION ---
 KAFKA_BOOTSTRAP_SERVERS = [
-    '172.16.135.118:9095',
-    '172.16.135.118:9096',
+    '172.16.134.81:9095',
+    '172.16.134.81:9096',
     '172.16.135.118:9097'
 ]
 

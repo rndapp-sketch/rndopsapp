@@ -2,7 +2,7 @@ import time
 from kafka.admin import KafkaAdminClient, NewTopic
 from kafka.errors import UnknownTopicOrPartitionError
 
-BOOTSTRAP_SERVERS = ['172.16.135.118:9095', '172.16.135.118:9096']
+BOOTSTRAP_SERVERS = ['172.16.134.81:9095', '172.16.134.81:9096']
 NUM_PARTITIONS = 2
 REPLICATION_FACTOR = 2
 

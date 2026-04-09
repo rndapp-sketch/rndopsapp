@@ -28,7 +28,7 @@ except ImportError:
 
 #### 2. Bootstrap Servers
 ```python
-KAFKA_BOOTSTRAP_SERVERS = ['172.16.135.118:9095', '172.16.135.118:9096']
+KAFKA_BOOTSTRAP_SERVERS = ['172.16.134.81:9095', '172.16.134.81:9096']
 ```
 - **What it is**: A list of initial contact points (brokers) in the Kafka cluster.
 - **Function**: The consumer connects to *any* one of these servers to discover the full cluster metadata (which brokers hold which partitions). Providing multiple servers ensures high availability; if the first broker is down during startup, the client will try the second one.

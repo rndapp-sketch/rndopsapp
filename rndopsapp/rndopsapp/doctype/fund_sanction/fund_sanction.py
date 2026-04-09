@@ -21,7 +21,7 @@
 # # 		pass
 
 
-# # API_URL = "http://172.16.135.27:18080/api/sanction-details/addSanctionDetails"
+# # API_URL = "http://172.16.134.81:18080/api/sanction-details/addSanctionDetails"
 
 
 # # def send_sanction_details_to_api(doc):
@@ -767,7 +767,7 @@
 # 		pass
 
 
-# API_URL = "http://172.16.135.27:18080/api/sanction-details/addSanctionDetails"
+# API_URL = "http://172.16.134.81:18080/api/sanction-details/addSanctionDetails"
 
 
 # def send_sanction_details_to_api(doc):
@@ -1533,7 +1533,7 @@ class FundSanction(Document):
 		pass
 
 
-API_URL = "http://172.16.135.27:18080/api/sanction-details/addSanctionDetails"
+API_URL = "http://172.16.134.81:18080/api/sanction-details/addSanctionDetails"
 
 
 def send_sanction_details_to_api(doc):

@@ -469,7 +469,7 @@ def send_fund_received_to_api(fund_doc):
 	"""
 	print("\n=== SEND FUND RECEIVED TO API START ===")
 	try:
-		url = "http://172.16.135.27:18080/api/fund-received/addFundReceived"
+		url = "http://172.16.134.81:18080/api/fund-received/addFundReceived"
 		print(f"[URL] {url}")
 
 		print("[STEP] Building payload...")

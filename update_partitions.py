@@ -1,7 +1,7 @@
 from kafka.admin import KafkaAdminClient, NewPartitions
 from kafka.errors import KafkaError
 
-BOOTSTRAP_SERVERS = ['172.16.135.118:9095', '172.16.135.118:9096']
+BOOTSTRAP_SERVERS = ['172.16.134.81:9095', '172.16.134.81:9096']
 TOPICS_TO_UPDATE = [
     'fund-received-events',
     'fund-sanction-events',

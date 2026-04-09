@@ -573,7 +573,7 @@ def send_project_registration_data_api(doc):
 		}
 		# print("payload: ", payload)
 		# --- 3. Send Request ---
-		url = "http://172.16.135.27:18080/api/projects"
+		url = "http://172.16.134.81:18080/api/projects"
 		headers = {"Content-Type": "application/json"}
 		
 		# Log the attempt

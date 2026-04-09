@@ -1510,7 +1510,7 @@ All Kafka configuration is centralized in `kafka/config.py`.
 
 **Cluster:**
 ```python
-KAFKA_BOOTSTRAP_SERVERS = ['172.16.135.118:9095', '172.16.135.118:9096']
+KAFKA_BOOTSTRAP_SERVERS = ['172.16.134.81:9095', '172.16.134.81:9096']
 NUM_PARTITIONS = 2
 REPLICATION_FACTOR = 2
 ```

@@ -16,8 +16,8 @@
 # # --- CONFIGURATION ---
 # # Kafka Cluster-A ONLY (topic exists here)
 # KAFKA_BOOTSTRAP_SERVERS = [
-#     '172.16.135.118:9095',
-#     '172.16.135.118:9096'
+#     '172.16.134.81:9095',
+#     '172.16.134.81:9096'
 # ]
 
 # # Consumer Group ID
@@ -966,8 +966,8 @@ if not kafka_logger.handlers:
 # --- CONFIGURATION ---
 # Kafka Cluster-A ONLY (topic exists here)
 KAFKA_BOOTSTRAP_SERVERS = [
-    '172.16.135.118:9095',
-    '172.16.135.118:9096'
+    '172.16.134.81:9095',
+    '172.16.134.81:9096'
 ]
 
 # Consumer Group ID
