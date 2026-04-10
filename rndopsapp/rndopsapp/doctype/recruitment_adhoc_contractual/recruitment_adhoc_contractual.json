@@ -1,0 +1,341 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}0A{#####}",
+ "creation": "2025-12-30 14:56:31.519909",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_e3vp",
+  "column_break_mlei",
+  "amended_from",
+  "upfa_appointment_section",
+  "upfa_appointment_type",
+  "section_break_kbuv",
+  "webmail_id",
+  "head",
+  "upfa_project_section",
+  "upfa_project_title",
+  "upfa_project_code",
+  "upfa_department",
+  "upfa_project_duration",
+  "upfa_financial_section",
+  "upfa_funds_sanctioned",
+  "upfa_funds_received",
+  "upfa_interview_date",
+  "upfa_interview_time",
+  "mode_of_interview",
+  "upfa_interview_venue",
+  "upfa_pi_contact",
+  "details_of_posts_section",
+  "upfa_post_details",
+  "section_break_izok",
+  "chairperson_webmail_id",
+  "chairperson",
+  "upfa_selection_committee_section",
+  "upfa_selection_committee",
+  "upfa_declaration_section",
+  "upfa_declaration_pi",
+  "upfa_declaration_any",
+  "upfa_declaration_if",
+  "upfa_declaration_advertisement"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_e3vp",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Recruitment Adhoc Contractual",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "upfa_appointment_section",
+   "fieldtype": "Section Break",
+   "label": "Appointment Details"
+  },
+  {
+   "fieldname": "upfa_appointment_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Type of Appointment",
+   "options": "\nAdhoc\nContractual",
+   "reqd": 1
+  },
+  {
+   "fieldname": "upfa_project_section",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
+  },
+  {
+   "fieldname": "upfa_project_title",
+   "fieldtype": "Data",
+   "label": "Project Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upfa_project_code",
+   "fieldtype": "Data",
+   "label": "Project Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upfa_department",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department_prornd",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upfa_project_duration",
+   "fieldtype": "Data",
+   "label": "Project Duration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upfa_financial_section",
+   "fieldtype": "Section Break",
+   "label": "Financial & Interview Details"
+  },
+  {
+   "fieldname": "upfa_funds_sanctioned",
+   "fieldtype": "Currency",
+   "label": "Funds Sanctioned for Staff"
+  },
+  {
+   "fieldname": "upfa_funds_received",
+   "fieldtype": "Currency",
+   "label": "Funds Received for Staff"
+  },
+  {
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
+   "fieldname": "upfa_interview_date",
+   "fieldtype": "Date",
+   "label": "Date of Interview"
+  },
+  {
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
+   "fieldname": "upfa_interview_time",
+   "fieldtype": "Time",
+   "label": "Time of Interview"
+  },
+  {
+   "depends_on": "eval:doc.mode_of_interview!=\"Online\"",
+   "fieldname": "upfa_interview_venue",
+   "fieldtype": "Data",
+   "label": "Venue"
+  },
+  {
+   "fieldname": "upfa_pi_contact",
+   "fieldtype": "Data",
+   "label": "PI Contact Number"
+  },
+  {
+   "fieldname": "details_of_posts_section",
+   "fieldtype": "Section Break",
+   "label": "Details of Posts"
+  },
+  {
+   "fieldname": "upfa_post_details",
+   "fieldtype": "Table",
+   "options": "Unified Project Post Details"
+  },
+  {
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
+   "fieldname": "upfa_selection_committee_section",
+   "fieldtype": "Section Break",
+   "label": "Selection Committee"
+  },
+  {
+   "description": "*If the member is from outside, his/her email id should be provided. Otherwise, the webmail ID excluding the part @iitg.ac.in should be provided.",
+   "fieldname": "upfa_selection_committee",
+   "fieldtype": "Table",
+   "label": " Members: Minimum 3 selections should be made (PI & Convener and 2 experts). Chairperson will be selected by DoRnD. ",
+   "options": "Unified Selection Committee Member"
+  },
+  {
+   "fieldname": "upfa_declaration_section",
+   "fieldtype": "Section Break",
+   "label": "Declaration"
+  },
+  {
+   "default": "0",
+   "fieldname": "upfa_declaration_pi",
+   "fieldtype": "Check",
+   "label": "\tPI will be the convener of the selection committee "
+  },
+  {
+   "default": "0",
+   "fieldname": "upfa_declaration_any",
+   "fieldtype": "Check",
+   "label": " \tAny two faculty members of the institute will be expert members"
+  },
+  {
+   "default": "0",
+   "fieldname": "upfa_declaration_if",
+   "fieldtype": "Check",
+   "label": "If required, as per the funding agency, external members should be part of selection committee "
+  },
+  {
+   "default": "0",
+   "fieldname": "upfa_declaration_advertisement",
+   "fieldtype": "Check",
+   "label": "Advertisement cost required for this recruitment shall be incurred from project as selected by me in this application"
+  },
+  {
+   "fieldname": "column_break_mlei",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "section_break_kbuv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "webmail_id.piheadmentor_user_id",
+   "fieldname": "head",
+   "fieldtype": "Data",
+   "label": "Head"
+  },
+  {
+   "fieldname": "webmail_id",
+   "fieldtype": "Link",
+   "label": "Webmail ID",
+   "options": "User"
+  },
+  {
+   "fieldname": "mode_of_interview",
+   "fieldtype": "Select",
+   "label": "Mode of Interview",
+   "options": "\nOnline\nOffline\nHybrid"
+  },
+  {
+   "fieldname": "section_break_izok",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "webmail_id.full_name",
+   "fieldname": "chairperson",
+   "fieldtype": "Data",
+   "label": "Chairperson"
+  },
+  {
+   "depends_on": "eval:frappe.session.user==\"dornd\" && doc.upfa_appointment_type==\"Contractual\"",
+   "fetch_from": "webmail_id.piheadmentor_user_id",
+   "fieldname": "chairperson_webmail_id",
+   "fieldtype": "Data",
+   "label": "Chairperson Webmail ID",
+   "options": "User"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-04-01 17:18:32.989797",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Recruitment Adhoc Contractual",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Ado_RnD",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Dean, RnD",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

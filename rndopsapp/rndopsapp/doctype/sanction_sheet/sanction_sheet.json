@@ -1,0 +1,228 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-26 11:13:27.460486",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_qbod",
+  "applicant_column",
+  "amended_from",
+  "ss_file_number",
+  "ss_applicant_name",
+  "ss_year_period_of_sanction",
+  "ss_department_for_purchase",
+  "ss_account_head",
+  "ss_funding_agency",
+  "ss_funds_allocated",
+  "ss_balance_available",
+  "ss_actual_expenditure",
+  "ss_name_of_firms",
+  "brief_details_of_the_purchase_currency_section",
+  "table_bttk",
+  "section_break_lqsb",
+  "ss_total_es_basic_value",
+  "ss_pack_forward",
+  "ss_freight",
+  "ss_other_charges",
+  "ss_grand_total",
+  "ss_other_charges_from",
+  "small_text_adcz",
+  "section_refer",
+  "html_qjfs",
+  "ss_warranty",
+  "ss_delivery",
+  "ss_payment",
+  "additional_terms_and_conditions_if_any",
+  "declaration_section",
+  "html_dqce"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_qbod",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "sanction_sheet",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "applicant_column",
+   "fieldtype": "Column Break",
+   "label": "Applicant "
+  },
+  {
+   "fieldname": "ss_file_number",
+   "fieldtype": "Data",
+   "label": "File Number"
+  },
+  {
+   "fieldname": "ss_applicant_name",
+   "fieldtype": "Data",
+   "label": "Applicant Name"
+  },
+  {
+   "fieldname": "ss_year_period_of_sanction",
+   "fieldtype": "Data",
+   "label": "Year/ Period of Sanction"
+  },
+  {
+   "fieldname": "ss_department_for_purchase",
+   "fieldtype": "Data",
+   "label": "Name of Department/ Centre placing indents for purchase"
+  },
+  {
+   "fieldname": "ss_account_head",
+   "fieldtype": "Data",
+   "label": "Head of account to which expenditure is debitable"
+  },
+  {
+   "fieldname": "ss_funding_agency",
+   "fieldtype": "Data",
+   "label": "Funding Agency"
+  },
+  {
+   "fieldname": "ss_funds_allocated",
+   "fieldtype": "Data",
+   "label": "Funds allocated under the head (INR)"
+  },
+  {
+   "fieldname": "ss_balance_available",
+   "fieldtype": "Data",
+   "label": "Balance available (exclusive of this sanction) (INR)"
+  },
+  {
+   "fieldname": "ss_actual_expenditure",
+   "fieldtype": "Data",
+   "label": "Actual expenditure under the head of account as on date (INR)"
+  },
+  {
+   "fieldname": "ss_name_of_firms",
+   "fieldtype": "Data",
+   "label": "Name of Firms"
+  },
+  {
+   "fieldname": "brief_details_of_the_purchase_currency_section",
+   "fieldtype": "Section Break",
+   "label": "BRIEF DETAILS OF THE PURCHASE (Currency)"
+  },
+  {
+   "fieldname": "table_bttk",
+   "fieldtype": "Table",
+   "options": "p_11_item_table"
+  },
+  {
+   "fieldname": "section_break_lqsb",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ss_total_es_basic_value",
+   "fieldtype": "Data",
+   "label": "Total Estimated Basic Value"
+  },
+  {
+   "fieldname": "ss_pack_forward",
+   "fieldtype": "Data",
+   "label": "Add- Packing and Forwarding (including GST)"
+  },
+  {
+   "fieldname": "ss_freight",
+   "fieldtype": "Data",
+   "label": "Add- Freight"
+  },
+  {
+   "fieldname": "ss_other_charges",
+   "fieldtype": "Data",
+   "label": "Add- Other Charges (from applicant)"
+  },
+  {
+   "fieldname": "ss_grand_total",
+   "fieldtype": "Data",
+   "label": "Grand Total (Currency)"
+  },
+  {
+   "fieldname": "ss_other_charges_from",
+   "fieldtype": "Data",
+   "label": "Add- Other Charges (Currency) (from)"
+  },
+  {
+   "fieldname": "small_text_adcz",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "section_refer",
+   "fieldtype": "Section Break",
+   "label": " Reference to indents / recommendations from dept. TERMS & CONDITIONS"
+  },
+  {
+   "fieldname": "html_qjfs",
+   "fieldtype": "HTML",
+   "options": "<li>Approved indent at A</li>\n<li>Purchase Committee recommenddation at B</li>"
+  },
+  {
+   "fieldname": "ss_warranty",
+   "fieldtype": "Data",
+   "label": "Warranty"
+  },
+  {
+   "fieldname": "ss_delivery",
+   "fieldtype": "Data",
+   "label": "Delivery"
+  },
+  {
+   "fieldname": "ss_payment",
+   "fieldtype": "Data",
+   "label": "Payment"
+  },
+  {
+   "fieldname": "additional_terms_and_conditions_if_any",
+   "fieldtype": "Small Text",
+   "label": "Additional Terms and Conditions (if any)"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Section Break",
+   "label": "DECLARATION"
+  },
+  {
+   "fieldname": "html_dqce",
+   "fieldtype": "HTML",
+   "options": "<p>Purchase made under direct procurement of the purchase committee up to 10 lakhs by submission of quotation(s).</p>\n<p>Principal Investigator</p>\n\n<p>HoS (II&amp;SI)</p>\n\n<p>Assoc. Dean, R&amp;D</p>"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-02-26 12:29:08.884849",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "sanction_sheet",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

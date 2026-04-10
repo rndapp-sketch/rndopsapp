@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-19 12:53:56.155958",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_qaov",
+  "amended_from",
+  "section_break_hxwy",
+  "applicant_email_id",
+  "applicant_name",
+  "applicant_emp_id",
+  "applicant_prj_num",
+  "applicant_designation",
+  "applicant_department",
+  "resignation_date",
+  "reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_qaov",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Project Staff Resignation",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_hxwy",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "applicant_emp_id",
+   "fieldtype": "Data",
+   "label": "Employee ID"
+  },
+  {
+   "fieldname": "applicant_prj_num",
+   "fieldtype": "Data",
+   "label": "Project No.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applicant_designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fieldname": "applicant_department",
+   "fieldtype": "Data",
+   "label": "Department / Centre / Section"
+  },
+  {
+   "fieldname": "resignation_date",
+   "fieldtype": "Date",
+   "label": "Date of Resignation"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "placeholder": "Mention the reason for your resignation"
+  },
+  {
+   "fieldname": "applicant_name",
+   "fieldtype": "Data",
+   "label": "Name"
+  },
+  {
+   "fieldname": "applicant_email_id",
+   "fieldtype": "Link",
+   "label": "Email Id",
+   "options": "User"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-30 15:49:57.957316",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Project Staff Resignation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

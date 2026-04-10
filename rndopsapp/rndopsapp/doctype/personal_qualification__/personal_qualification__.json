@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-03 12:42:10.867092",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "level_u_r",
+  "course_name_u_r",
+  "specialization_u_r",
+  "institution_u_r",
+  "university_u_r",
+  "year_of_passing_u_r",
+  "result_type_u_r",
+  "score_u_r",
+  "certificate_file_u_r"
+ ],
+ "fields": [
+  {
+   "fieldname": "level_u_r",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Level ",
+   "options": "\n10th\n12th\nDiploma\nBachelor\nMaster\nPhD"
+  },
+  {
+   "fieldname": "course_name_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Course Name",
+   "placeholder": "e.g., B.Tech, MBA"
+  },
+  {
+   "fieldname": "specialization_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": " Specialization",
+   "placeholder": "e.g., Civil, Computer Science"
+  },
+  {
+   "fieldname": "institution_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Institution",
+   "placeholder": "Enter the name of the Institution"
+  },
+  {
+   "fieldname": "university_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Board/University",
+   "placeholder": "Enter the name of the Institution"
+  },
+  {
+   "fieldname": "year_of_passing_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Year Passing"
+  },
+  {
+   "fieldname": "result_type_u_r",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Result Type",
+   "options": "\nPercentage\nCGPA\nGrade"
+  },
+  {
+   "fieldname": "score_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Score/Division",
+   "placeholder": "e.g., 85.5, 9.2, A+"
+  },
+  {
+   "fieldname": "certificate_file_u_r",
+   "fieldtype": "Attach",
+   "label": "Certificate"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-04-02 12:43:08.518417",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Personal Qualification__",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

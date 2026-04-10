@@ -1,0 +1,124 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-22 12:12:42.813480",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_vjtv",
+  "amended_from",
+  "uc_request",
+  "project_id",
+  "application_details_section",
+  "pi_name",
+  "uc_type",
+  "total_sanction_amount",
+  "uc_upload",
+  "prev_uc",
+  "uc_format",
+  "uc_comment",
+  "uc_comment_if_any"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_vjtv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "UC Request",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "uc_request",
+   "fieldtype": "Section Break",
+   "label": "Apply Request for Utilization Certificate"
+  },
+  {
+   "fieldname": "project_id",
+   "fieldtype": "Link",
+   "label": "Select Project",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "application_details_section",
+   "fieldtype": "Section Break",
+   "label": "Application Details"
+  },
+  {
+   "fieldname": "pi_name",
+   "fieldtype": "Small Text",
+   "label": "Name of the applicant"
+  },
+  {
+   "fieldname": "uc_type",
+   "fieldtype": "Select",
+   "label": "Select UC Type",
+   "options": "\nRevised UC\nIntermediate UC\nFinal UC\nAudited UC",
+   "sort_options": 1
+  },
+  {
+   "fieldname": "total_sanction_amount",
+   "fieldtype": "Float",
+   "label": "Total Sanctioned Amount"
+  },
+  {
+   "fieldname": "uc_upload",
+   "fieldtype": "Section Break",
+   "label": "FILE UPLOAD SECTION"
+  },
+  {
+   "fieldname": "prev_uc",
+   "fieldtype": "Attach",
+   "label": "Upload Previous UC (if applicable)"
+  },
+  {
+   "fieldname": "uc_format",
+   "fieldtype": "Attach",
+   "label": "Upload Format (if applicable)"
+  },
+  {
+   "fieldname": "uc_comment",
+   "fieldtype": "Section Break",
+   "label": "Comment"
+  },
+  {
+   "fieldname": "uc_comment_if_any",
+   "fieldtype": "Small Text",
+   "label": "Comment, If any"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-22 12:39:48.209269",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "UC Request",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

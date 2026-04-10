@@ -1,0 +1,467 @@
+{
+ "_comments": "[{\"comment\": \"<div class=\\\"ql-editor read-mode\\\"><p>according to item_type the filtration is not able to fetch th...\", \"by\": \"Administrator\", \"name\": \"3r906jrmv9\"}]",
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}{11}RATE{######}",
+ "creation": "2025-12-19 10:12:58.873627",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_jmgm",
+  "amended_from",
+  "section_break_eyku",
+  "select_form_type",
+  "section_break_ivll",
+  "email_id",
+  "employee_class",
+  "indentor",
+  "applicant_designation",
+  "applicant_department",
+  "is_project_of_other_pi",
+  "pi_head_mentor_user_id",
+  "current_approver",
+  "section_break_piwc",
+  "project_number",
+  "account_head",
+  "other_account_head",
+  "section_break_zlko",
+  "other_pi_email",
+  "name_other_pi",
+  "piheadmentor_user_id_other_pi",
+  "emp_class_other_pi",
+  "other_pi_dept",
+  "p3_section_break",
+  "undertaking",
+  "header_undertaking",
+  "subheader_undertaking",
+  "item_type",
+  "principal_supplier",
+  "principal_address",
+  "agreement_no",
+  "local_supplier",
+  "local_address",
+  "local_email",
+  "certify_authorized_firm",
+  "certify_current_prices",
+  "certify_delivery_time",
+  "section_break_jkzq",
+  "justification",
+  "p4_item_type",
+  "select_vendor",
+  "vendor_address",
+  "vendor_email",
+  "section_break_rdkv",
+  "items",
+  "section_break_xbyh",
+  "column_break_febn",
+  "rate_contract_total",
+  "rate_contract_packing",
+  "rate_contract_grand_total",
+  "amount_in_words"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_jmgm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Rate Contract",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "depends_on": "eval: doc.select_form_type == \"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\" || doc.select_form_type == \"P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\"\n",
+   "fieldname": "section_break_ivll",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "Select",
+   "fieldname": "select_form_type",
+   "fieldtype": "Select",
+   "label": "Select Form Type",
+   "options": "Select\nP3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\nP4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)"
+  },
+  {
+   "fetch_from": "email_id.full_name",
+   "fieldname": "indentor",
+   "fieldtype": "Data",
+   "label": "Indentor",
+   "options": "User",
+   "read_only_depends_on": "eval:doc.email_id && doc.indentor"
+  },
+  {
+   "fieldname": "email_id",
+   "fieldtype": "Link",
+   "label": "Email ID",
+   "options": "User"
+  },
+  {
+   "default": "Select",
+   "fetch_from": "email_id.designation_name",
+   "fieldname": "applicant_designation",
+   "fieldtype": "Data",
+   "label": "Designation",
+   "read_only_depends_on": "eval:doc.email_id && doc.applicant_designation"
+  },
+  {
+   "fetch_from": "email_id.department_name",
+   "fieldname": "applicant_department",
+   "fieldtype": "Data",
+   "label": "Department / Centre / Section",
+   "read_only_depends_on": "eval:doc.email_id && doc.applicant_department"
+  },
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Link",
+   "label": "Project Number",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "section_break_eyku",
+   "fieldtype": "Section Break",
+   "label": "Form Types"
+  },
+  {
+   "fieldname": "undertaking",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "header_undertaking",
+   "fieldtype": "HTML",
+   "options": "<b>INDENTER/ARC FIRM'S DETAILS &amp; UNDERTAKING BY THE INDENTER:</b>"
+  },
+  {
+   "fieldname": "subheader_undertaking",
+   "fieldtype": "HTML",
+   "options": "<p>The items as per the details, are required  for my teaching/ research (or as the case may be) purpose \n                    and these items are available with: (Please mention here the name of the firm as per ARC circular)</p>"
+  },
+  {
+   "depends_on": "eval: doc.select_form_type == \"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\" || doc.select_form_type == \"P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\"\n",
+   "fieldname": "section_break_rdkv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval: doc.select_form_type == \"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\" || doc.select_form_type == \"P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\"\n",
+   "fieldname": "section_break_xbyh",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_febn",
+   "fieldtype": "Column Break",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rate_contract_total",
+   "fieldtype": "Currency",
+   "label": "Rate Contract Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rate_contract_packing",
+   "fieldtype": "Currency",
+   "label": "Packing/Freight Etc."
+  },
+  {
+   "fieldname": "amount_in_words",
+   "fieldtype": "Small Text",
+   "label": "Amount in Words",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Rate Contract Purchase Item Detail"
+  },
+  {
+   "depends_on": "// Math.round(parseFloat(rate_contract_grand_total || 0)) > 0;\n",
+   "fieldname": "rate_contract_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.select_form_type==\"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\"",
+   "fieldname": "section_break_jkzq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "justification",
+   "fieldtype": "Small Text",
+   "label": "Justification",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)'"
+  },
+  {
+   "fieldname": "select_vendor",
+   "fieldtype": "Link",
+   "label": "Select Vendor",
+   "link_filters": "[]",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)'",
+   "options": "Principal Supplier"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "label": "Account Head",
+   "options": "Budget Head"
+  },
+  {
+   "depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'",
+   "fieldname": "p3_section_break",
+   "fieldtype": "Section Break",
+   "label": "Particulars of ARC (P3)"
+  },
+  {
+   "fieldname": "item_type",
+   "fieldtype": "Select",
+   "label": "Item Type",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'",
+   "options": "\nChemicals\nGlassware\nPlasticware\nFiltration\nCustom Services\nMixed Catalogue\nGas Refilling"
+  },
+  {
+   "fieldname": "principal_supplier",
+   "fieldtype": "Link",
+   "label": "Principal Supplier",
+   "link_filters": "[]",
+   "options": "Principal Supplier"
+  },
+  {
+   "fieldname": "local_supplier",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Select Local Supplier",
+   "options": "Local Supplier Detail"
+  },
+  {
+   "default": "0",
+   "fieldname": "certify_authorized_firm",
+   "fieldtype": "Check",
+   "label": "Certified that the items are for my experiments and procured from the authorized firm only.",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'"
+  },
+  {
+   "default": "0",
+   "fieldname": "certify_current_prices",
+   "fieldtype": "Check",
+   "label": "Certified that Cat No, Page No and Prices are furnished as per CURRENT APPLICABLE PRICE LIST.",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'\n"
+  },
+  {
+   "default": "0",
+   "fieldname": "certify_delivery_time",
+   "fieldtype": "Check",
+   "label": "The materials are to be delivered within two weeks from the date of issue of purchase order.",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'"
+  },
+  {
+   "fieldname": "principal_address",
+   "fieldtype": "Small Text",
+   "label": "Principal Supplier Details",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'\n",
+   "fieldname": "agreement_no",
+   "fieldtype": "Data",
+   "label": "Agreement Number",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'",
+   "read_only": 1
+  },
+  {
+   "fieldname": "local_address",
+   "fieldtype": "Small Text",
+   "label": "Local Supplier Details",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.select_form_type=='P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)'",
+   "fieldname": "local_email",
+   "fieldtype": "Data",
+   "label": "Local Supplier Email",
+   "read_only": 1
+  },
+  {
+   "fieldname": "p4_item_type",
+   "fieldtype": "Select",
+   "label": "Select P4 Item Type",
+   "mandatory_depends_on": "eval:doc.select_form_type=='P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)'",
+   "options": "\nUPS Batteries\nHP Printer Cartridges\nGas Refilling\nCopier Papers\nUPS and Transformers\nFurniture"
+  },
+  {
+   "fieldname": "vendor_address",
+   "fieldtype": "Small Text",
+   "label": "Vendor Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "vendor_email",
+   "fieldtype": "Data",
+   "label": "Vendor Email",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.account_head == \"sn5dcvqgs8\"\n",
+   "fieldname": "other_account_head",
+   "fieldtype": "Data",
+   "placeholder": "Mention Other Account Head"
+  },
+  {
+   "depends_on": "eval:doc.is_project_of_other_pi == \"No\" && (doc.select_form_type == \"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\" || doc.select_form_type == \"P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\")\n|| doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user",
+   "fieldname": "section_break_piwc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user",
+   "fieldname": "section_break_zlko",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user\r\n",
+   "fieldname": "other_pi_email",
+   "fieldtype": "Link",
+   "label": "Webmail-ID of other PI",
+   "options": "User"
+  },
+  {
+   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user\r\n",
+   "fetch_from": "other_pi_email.full_name",
+   "fieldname": "name_other_pi",
+   "fieldtype": "Data",
+   "label": "Name of other PI"
+  },
+  {
+   "fieldname": "is_project_of_other_pi",
+   "fieldtype": "Select",
+   "label": "Is Project of other PI?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fetch_from": "email_id.empclass",
+   "fieldname": "employee_class",
+   "fieldtype": "Data",
+   "label": "Employee Class",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "other_pi_email.empclass",
+   "fieldname": "emp_class_other_pi",
+   "fieldtype": "Data",
+   "label": "Employee class other pi",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "other_pi_email.department_name",
+   "fieldname": "other_pi_dept",
+   "fieldtype": "Data",
+   "label": "Department",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "email_id.piheadmentor_user_id",
+   "fieldname": "pi_head_mentor_user_id",
+   "fieldtype": "Select",
+   "label": "PI/Head/Mentor User Id",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "other_pi_email.piheadmentor_user_id",
+   "fieldname": "piheadmentor_user_id_other_pi",
+   "fieldtype": "Select",
+   "label": "PI/Head/Mentor User Id (Other PI)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "current_approver",
+   "fieldtype": "Link",
+   "label": "Current Approver",
+   "options": "User"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-01-21 07:48:32.272829",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Rate Contract",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Ado_RnD",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

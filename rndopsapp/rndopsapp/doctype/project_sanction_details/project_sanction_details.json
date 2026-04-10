@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-10-20 00:30:38.613687",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_j1v6",
+  "amended_from",
+  "total_sanction_amount",
+  "sanction_letter_no",
+  "sanction_letter_date",
+  "sanction_budget_breakup",
+  "section_break_lvia",
+  "total_first_year_budget_1",
+  "column_break_jucn",
+  "total_second_year_budget_1",
+  "column_break_eeme",
+  "total_third_year_budget_1",
+  "column_break_eahd",
+  "total_fourth_year_budget_1",
+  "column_break_edfr",
+  "total_fifth_year_budget_1",
+  "column_break_tceb",
+  "grand_total_proposal_1",
+  "section_break_paht",
+  "sanction_related_file",
+  "have_fund_detail"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_j1v6",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "project_sanction_details",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "total_sanction_amount",
+   "fieldtype": "Currency",
+   "label": "Total sanctioned Amount (\u20b9)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "sanction_letter_no",
+   "fieldtype": "Data",
+   "label": "Sanctioned Letter No."
+  },
+  {
+   "fieldname": "sanction_letter_date",
+   "fieldtype": "Date",
+   "label": "Date of Sanctioned Letter"
+  },
+  {
+   "fieldname": "sanction_budget_breakup",
+   "fieldtype": "Table",
+   "label": "Total Budget Break-up",
+   "options": "Project Sanctioned Budget"
+  },
+  {
+   "fieldname": "section_break_lvia",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_first_year_budget_1",
+   "fieldtype": "Currency",
+   "label": "Total 1st year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_jucn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_second_year_budget_1",
+   "fieldtype": "Currency",
+   "label": "Total 2nd year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_eeme",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_third_year_budget_1",
+   "fieldtype": "Currency",
+   "label": "Total 3rd year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_eahd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_fourth_year_budget_1",
+   "fieldtype": "Currency",
+   "label": "Total 4th year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_edfr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_fifth_year_budget_1",
+   "fieldtype": "Currency",
+   "label": "Total 5th year",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_tceb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "grand_total_proposal_1",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Grand Total"
+  },
+  {
+   "fieldname": "section_break_paht",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "sanction_related_file",
+   "fieldtype": "Table",
+   "label": "Upload Sanction Related Files",
+   "options": "Project Sanction File"
+  },
+  {
+   "depends_on": "eval:doc.have_sanction_details == \"Yes\"",
+   "fieldname": "have_fund_detail",
+   "fieldtype": "Select",
+   "label": "Have You Received Fund? (if you have received fund ,Which will allow you to go next step of Project Registration.)",
+   "options": "Yes\nNo"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-10-20 14:52:31.932513",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "project_sanction_details",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

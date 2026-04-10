@@ -1,0 +1,215 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}22{######}",
+ "creation": "2025-10-30 13:42:04.306318",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_vtw2",
+  "register_for",
+  "project_no",
+  "applicant_details_section",
+  "applicant_name",
+  "applicant_department",
+  "applicant_designation",
+  "applying_for_section",
+  "applying_for_name",
+  "applying_for_department",
+  "applying_for_designation",
+  "section_break_jsdg",
+  "account_head",
+  "table_gdxp",
+  "total_estimate",
+  "is_sanctioned",
+  "table_teqd",
+  "file_upoload_section_section",
+  "upload_detailed_specification",
+  "comments_if_any",
+  "declaration_section",
+  "dec_1",
+  "dec_2",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_vtw2",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_jsdg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Account Head",
+   "reqd": 1
+  },
+  {
+   "fieldname": "table_gdxp",
+   "fieldtype": "Table",
+   "label": "Details of Items to be purchased",
+   "options": "Items to be purchased",
+   "reqd": 1
+  },
+  {
+   "description": "*Note: Atleast select three different commitee members",
+   "fieldname": "table_teqd",
+   "fieldtype": "Table",
+   "label": "Purchase Committee",
+   "options": "Purchase Committee"
+  },
+  {
+   "fieldname": "file_upoload_section_section",
+   "fieldtype": "Section Break",
+   "label": "File Upload Section"
+  },
+  {
+   "fieldname": "upload_detailed_specification",
+   "fieldtype": "Attach",
+   "label": "Upload Detailed Specification"
+  },
+  {
+   "fieldname": "total_estimate",
+   "fieldtype": "Data",
+   "label": "Total Estimate"
+  },
+  {
+   "fieldname": "is_sanctioned",
+   "fieldtype": "Select",
+   "label": "Were the above items sanctioned by the Funding Agency?",
+   "options": "Choose Option\nYes\nNo",
+   "reqd": 1
+  },
+  {
+   "fieldname": "comments_if_any",
+   "fieldtype": "Small Text",
+   "label": "Comments (If Any)"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Section Break",
+   "label": "Declaration"
+  },
+  {
+   "default": "0",
+   "fieldname": "dec_1",
+   "fieldtype": "Check",
+   "label": " For non sanctioned item, the PI will be responsible for any financial obligations that may arise."
+  },
+  {
+   "default": "0",
+   "fieldname": "dec_2",
+   "fieldtype": "Check",
+   "label": " All prices/ amounts mentioned in the form are in India Rupee (INR). "
+  },
+  {
+   "default": "Self",
+   "fieldname": "register_for",
+   "fieldtype": "Select",
+   "label": "If you are doing this purchase for Self or other User",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Direct Purchase",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "applicant_details_section",
+   "fieldtype": "Section Break",
+   "label": "Applicant Details"
+  },
+  {
+   "fieldname": "applicant_name",
+   "fieldtype": "Data",
+   "label": "Applicant Name"
+  },
+  {
+   "fieldname": "applicant_department",
+   "fieldtype": "Data",
+   "label": "Applicant Department"
+  },
+  {
+   "fieldname": "applicant_designation",
+   "fieldtype": "Data",
+   "label": "Applicant Designation"
+  },
+  {
+   "depends_on": "eval:doc.register_for == \"Other\";",
+   "fieldname": "applying_for_section",
+   "fieldtype": "Section Break",
+   "label": "Applying For"
+  },
+  {
+   "fieldname": "applying_for_name",
+   "fieldtype": "Data",
+   "label": "Name"
+  },
+  {
+   "fieldname": "applying_for_department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fieldname": "applying_for_designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-01 17:45:11.384298",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Direct Purchase",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

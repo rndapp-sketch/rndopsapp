@@ -1,0 +1,164 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:REC_{DD}{MM}{YY}{###}-{prjreg_refnum}",
+ "creation": "2025-11-07 16:10:11.007781",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_jgcd",
+  "amended_from",
+  "prjreg_title",
+  "fund_received_ref_number",
+  "section_break_qyal",
+  "fund_received_amt",
+  "bank_account",
+  "section_break_hchd",
+  "gst_invoice_issued",
+  "invoice_no",
+  "document_upload",
+  "fund_transactions",
+  "received_amt_breakup"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_jgcd",
+   "fieldtype": "Section Break",
+   "label": "Reference Details"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Fund Received",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_qyal",
+   "fieldtype": "Section Break",
+   "label": "Received Amount & Invoice"
+  },
+  {
+   "fieldname": "fund_received_amt",
+   "fieldtype": "Currency",
+   "label": "Fund Received Amount"
+  },
+  {
+   "description": "*Where money is received",
+   "fieldname": "bank_account",
+   "fieldtype": "Data",
+   "label": "Bank Account Number"
+  },
+  {
+   "fieldname": "section_break_hchd",
+   "fieldtype": "Section Break",
+   "label": "Transaction & Budget Breakups"
+  },
+  {
+   "default": "No",
+   "depends_on": "eval:doc.prj_type == \"Consultancy\"",
+   "fieldname": "gst_invoice_issued",
+   "fieldtype": "Select",
+   "label": "Is GST Invoice Issued?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.gst_invoice_issued == \"Yes\"",
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "label": "Invoice Number"
+  },
+  {
+   "fieldname": "fund_transactions",
+   "fieldtype": "Table",
+   "label": "Sanction Transaction Details",
+   "options": "Project Fund Transaction"
+  },
+  {
+   "fieldname": "received_amt_breakup",
+   "fieldtype": "Table",
+   "label": "Budget Breakup of the Received Amount",
+   "options": "Project Received Budget"
+  },
+  {
+   "fieldname": "prjreg_title",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Project Title",
+   "options": "Project Registration",
+   "reqd": 1
+  },
+  {
+   "fieldname": "document_upload",
+   "fieldtype": "Attach",
+   "label": "Upload Supporting Document"
+  },
+  {
+   "description": "* Receiving from Accounts Portal",
+   "fieldname": "fund_received_ref_number",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Fund Received Ref No.",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-01-30 11:01:08.858293",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Fund Received",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

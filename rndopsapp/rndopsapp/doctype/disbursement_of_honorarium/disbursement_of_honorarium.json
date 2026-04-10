@@ -1,0 +1,135 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-22 15:18:20.049231",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_fbfc",
+  "amended_from",
+  "section_break_gmuz",
+  "webmail_id",
+  "pi_name",
+  "emp_id",
+  "section_break_jwgb",
+  "project_number",
+  "account_head",
+  "section_break_redp",
+  "honorarium_details",
+  "total_disbursal_amount",
+  "section_break_wvqm",
+  "honorarium_declaration",
+  "honorarium_attachments"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_fbfc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Disbursement of Honorarium",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_gmuz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "webmail_id",
+   "fieldtype": "Link",
+   "label": "Webmail ID",
+   "options": "User"
+  },
+  {
+   "fetch_from": "webmail_id.full_name",
+   "fieldname": "pi_name",
+   "fieldtype": "Data",
+   "label": "PI Name"
+  },
+  {
+   "fetch_from": "webmail_id.employee_id",
+   "fieldname": "emp_id",
+   "fieldtype": "Data",
+   "label": "Employee ID"
+  },
+  {
+   "fieldname": "section_break_jwgb",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Link",
+   "label": "Project Number",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head"
+  },
+  {
+   "fieldname": "section_break_redp",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "honorarium_details",
+   "fieldtype": "Table",
+   "label": "Details of Honorarium",
+   "options": "Details Of Honorarium"
+  },
+  {
+   "fieldname": "total_disbursal_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount ( In Rupees )"
+  },
+  {
+   "fieldname": "section_break_wvqm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "honorarium_declaration",
+   "fieldtype": "HTML",
+   "options": "<span style=\"color: #006600;\">\n                                    1. For payment of honorarium to PhD students availing institute fellowship approval of the <strong>Dean of Academic Affairs</strong> is required.\n                                    <br>\n                                    2. For payment of honorarium to staff other than facilities and outsider from the institute the approval of the <strong>Competent Authority</strong> is required.\n                                    <br>\n                                    3. The honorarium is disbursed at the request of the Project Investigator. However, if there is any objection from the funding agency the full amount is to be refunded by PI.\n                                </span>"
+  },
+  {
+   "fieldname": "honorarium_attachments",
+   "fieldtype": "Attach",
+   "label": "Please Attach merged Copy of All Approvals"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-22 15:27:55.742268",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Disbursement of Honorarium",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

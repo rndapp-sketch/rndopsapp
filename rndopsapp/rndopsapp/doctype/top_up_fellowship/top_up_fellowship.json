@@ -1,0 +1,169 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-19 10:36:03.772564",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_d4hp",
+  "amended_from",
+  "application_for_part_time_employment_of_students_section",
+  "name_of_student",
+  "roll_number",
+  "dept_centre",
+  "contact_number",
+  "account_number",
+  "bank_name",
+  "ifsc",
+  "branch_code",
+  "account_holder_name",
+  "programme",
+  "webmail",
+  "details_of_supervisor_section",
+  "pi_webmail",
+  "declaration_section",
+  "checkbox1",
+  "checkbox2",
+  "checkbox3"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_d4hp",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Top Up Fellowship",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "application_for_part_time_employment_of_students_section",
+   "fieldtype": "Section Break",
+   "label": "Application for Part Time Employment of Students  "
+  },
+  {
+   "fieldname": "name_of_student",
+   "fieldtype": "Small Text",
+   "label": "Name of the Student"
+  },
+  {
+   "fieldname": "roll_number",
+   "fieldtype": "Small Text",
+   "label": "Roll Number"
+  },
+  {
+   "fieldname": "dept_centre",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Department / Centre (where student is currently enrolled)",
+   "options": "Department_prornd",
+   "reqd": 1
+  },
+  {
+   "fieldname": "contact_number",
+   "fieldtype": "Small Text",
+   "label": "Contact Number"
+  },
+  {
+   "fieldname": "account_number",
+   "fieldtype": "Small Text",
+   "label": "Bank Account No."
+  },
+  {
+   "fieldname": "bank_name",
+   "fieldtype": "Small Text",
+   "label": "Bank Name"
+  },
+  {
+   "fieldname": "ifsc",
+   "fieldtype": "Small Text",
+   "label": "IFSC Code"
+  },
+  {
+   "fieldname": "branch_code",
+   "fieldtype": "Small Text",
+   "label": "Bank Branch Code"
+  },
+  {
+   "fieldname": "account_holder_name",
+   "fieldtype": "Small Text",
+   "label": "Account Holder Name"
+  },
+  {
+   "fieldname": "programme",
+   "fieldtype": "Data",
+   "label": "Select Programme"
+  },
+  {
+   "fieldname": "webmail",
+   "fieldtype": "Data",
+   "label": "Webmail ID"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Section Break",
+   "label": "DECLARATION"
+  },
+  {
+   "default": "0",
+   "fieldname": "checkbox1",
+   "fieldtype": "Check",
+   "label": "I hereby promise that I will perform the assigned teaching assistantship duty by the Department / Center without any compromise. "
+  },
+  {
+   "default": "0",
+   "fieldname": "checkbox2",
+   "fieldtype": "Check",
+   "label": "I will ensure that there will not be any compromise in my academic and research performance. "
+  },
+  {
+   "default": "0",
+   "fieldname": "checkbox3",
+   "fieldtype": "Check",
+   "label": "This part-time employment can be cancelled by the competent authority without giving any notice period. "
+  },
+  {
+   "fieldname": "pi_webmail",
+   "fieldtype": "Data",
+   "label": "Webmail ID of Supervisor/ Faculty Adviser"
+  },
+  {
+   "fieldname": "details_of_supervisor_section",
+   "fieldtype": "Section Break",
+   "label": "Details of Supervisor"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-12-19 12:45:21.489223",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Top Up Fellowship",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
