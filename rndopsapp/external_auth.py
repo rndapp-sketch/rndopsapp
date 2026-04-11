@@ -6,7 +6,7 @@ EXTERNAL_AUTH_TIMEOUT = 10  # seconds
 
 
 def get_external_auth_url():
-	return frappe.conf.get("external_auth_url", "http://172.16.134.81:3001/auth/login")
+	return frappe.conf.get("external_auth_url", "http://172.16.135.27:3001/auth/login")
 
 
 def clear_admin_ip_lock():

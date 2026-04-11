@@ -300,3 +300,56 @@ def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, 
 		}
 	except Exception as e:
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_project_staff_designations():
+	"""
+	Returns a list of designations linked to users with an employee class of "Project Staff".
+	"""
+	try:
+		project_staff_empclass_ids = frappe.get_all(
+			"EmployeeClass_prornd",
+			filters={"empclass_name": ["like", "%Project Staff%"]},
+			pluck="name",
+			limit=0,
+		)
+
+		if not project_staff_empclass_ids:
+			return {"status": "success", "data": []}
+
+		project_staff_designations = frappe.get_all(
+			"User",
+			filters={
+				"empclass": ["in", project_staff_empclass_ids],
+				"designation_name": ["is", "set"],
+			},
+			fields=["designation_name"],
+			distinct=True,
+			pluck="designation_name",
+			limit=0,
+		)
+
+		if not project_staff_designations:
+			return {"status": "success", "data": []}
+
+		placeholders = ", ".join(["%s"] * len(project_staff_designations))
+		filtered_designations = frappe.db.sql(
+			f"""SELECT name, designation_prornd
+			FROM `tabDesignation_prornd`
+			WHERE name IN ({placeholders})
+			OR designation_prornd IN ({placeholders})""",
+			project_staff_designations + project_staff_designations,
+			as_dict=True,
+		)
+
+		data = [
+			{"value": item["name"], "label": item.get("designation_prornd") or item["name"]}
+			for item in filtered_designations
+		]
+
+		return {"status": "success", "data": data}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Error in get_project_staff_designations")
+		return {"status": "error", "message": str(e)}
