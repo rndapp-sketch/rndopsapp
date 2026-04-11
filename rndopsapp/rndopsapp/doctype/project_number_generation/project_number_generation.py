@@ -14,69 +14,60 @@ class ProjectNumberGeneration(Document):
             self.emp_id = str(self.emp_id).strip()[:5]
 
     def before_insert(self):
-        # Auto-generate project_no based on PI and year - no manual entry allowed
-        # 1. Get current year dynamically from current date
-        current_year = frappe.utils.now_datetime().year
-
-        # 2. Get PI email from the calling context (should be passed from save function)
-        # If not available, fall back to emp_id based counting
-        pi_email = getattr(self, '_pi_email', None)
-
-        if pi_email:
-            # 3a. Count existing projects for this PI (by email) in current year
-            # Only count Project Registration records where project_no is populated
-            existing_count = frappe.db.sql("""
-                SELECT COUNT(*)
-                FROM `tabProject Registration`
-                WHERE (pi_userid = %s OR pi_webmail = %s)
-                AND project_no IS NOT NULL
-                AND project_no != ''
-                AND SUBSTRING(project_no, 1, 2) = %s
-            """, (pi_email, pi_email, str(current_year)[-2:]))[0][0]
-        else:
-            # 3b. Fallback: Count by emp_id (normalized to handle leading zeros)
-            normalized_emp_id = str(self.emp_id).lstrip('0') if self.emp_id else "0"
-            existing_count = frappe.db.sql("""
-                SELECT COUNT(*)
-                FROM `tabProject Number Generation`
-                WHERE CAST(emp_id AS UNSIGNED) = %s
-                AND current_year1 = %s
-            """, (normalized_emp_id, current_year))[0][0]
-
-        # 4. Next project number is count + 1 (resets each year)
-        next_project_no = existing_count + 1
-
-        # 5. Format as 4 digits with leading zeros
-        self.project_no = str(next_project_no).zfill(4)
-
-        # 6. Set current_year1 if not already set
         if not self.current_year1:
-            self.current_year1 = current_year
+            self.current_year1 = frappe.utils.now_datetime().year
 
     def autoname(self):
-        # 1. Year (2 digits) - dynamically get last 2 digits of current year
+        # autoname runs first in Frappe's lifecycle, so getseries must be here
+        # to ensure project_no is available when the name is assembled.
+        from frappe.model.naming import getseries
+
         current_year = frappe.utils.now_datetime().year
+
+        # 1. Year (2 digits)
         year = str(current_year)[-2:]
 
         # 2. Category (1)
         cat = str(self.category or "C")[:1]
 
-        # 3. Project No (4) - Leading 0s (auto-generated in before_insert)
-        proj = str(self.project_no or "0").zfill(4)[-4:]
+        # 3. Dept Initial (4) - repeat last char if shorter than 4
+        dept_raw = str(self.dept_initial or "A").upper()
+        dept = dept_raw.ljust(4, dept_raw[-1])[:4]
 
-        # 4. Dept Initial (4) - Leading x
-        dept = str(self.dept_initial or "").upper().rjust(4, 'x')[:4]
-
-        # 5. Project Type (2)
+        # 4. Project Type (2)
         ptype = str(self.project_type or "SP")[:2]
 
-        # 6. Emp ID (4) - Leading 0s
+        # 5. Emp ID (4) - zero-padded
         eid = str(self.emp_id or "0").zfill(4)[-4:]
 
-        # 7. Emp Initial (4) - Leading x
-        einit = str(self.emp_initial or "").upper().rjust(4, 'x')[:4]
+        # 6. Emp Initial (4) - always 4 chars from generation logic; repeat last char as safety net
+        einit_raw = str(self.emp_initial or "A").upper()
+        einit = einit_raw.ljust(4, einit_raw[-1])[:4]
 
-        # Total: 2+1+4+4+2+4+4 = 21
+        # 7. Project No (4) - global sequential, resets each year
+        series_key = f"PROJ-{current_year}-"
+
+        # If tabSeries row doesn't exist yet (projects created before this logic),
+        # seed it from the MAX project_no of existing records so numbering continues
+        # correctly instead of restarting from 0001.
+        if not frappe.db.sql("SELECT 1 FROM `tabSeries` WHERE `name` = %s", series_key):
+            max_result = frappe.db.sql("""
+                SELECT MAX(CAST(project_no AS UNSIGNED))
+                FROM `tabProject Number Generation`
+                WHERE current_year1 = %s
+                AND project_no IS NOT NULL AND project_no != ''
+            """, current_year)
+            seed = int(max_result[0][0] or 0) if max_result else 0
+            # INSERT IGNORE handles concurrent race — only one thread wins, others skip
+            frappe.db.sql(
+                "INSERT IGNORE INTO `tabSeries` (`name`, `current`) VALUES (%s, %s)",
+                (series_key, seed)
+            )
+
+        self.project_no = getseries(series_key, 4)
+        proj = self.project_no
+
+        # Total: 2+1+4+2+4+4+4 = 21
         self.name = f"{year}{cat}{dept}{ptype}{eid}{einit}{proj}"
 
 @frappe.whitelist()
@@ -137,124 +128,101 @@ def get_project_number_generation_fields(doc_name=None):
 
     if doc_name:
         try:
-            # doc_name should be Project Registration docname
             proj_reg = frappe.get_doc("Project Registration", doc_name)
 
-            # Get PI details from Project Registration
-            # Use pi_userid or pi_webmail as the primary identifier
-            pi_email = proj_reg.get("pi_userid") or proj_reg.get("pi_webmail")
+            pi_email = proj_reg.get("pi_userid") or proj_reg.get("pi_webmail") or ""
             pi_employee_id = proj_reg.get("pi_employee_id")
 
-            if pi_email:
-                # Get current year dynamically
-                current_year = frappe.utils.now_datetime().year
-                year_2digit = str(current_year)[-2:]
+            current_year = frappe.utils.now_datetime().year
+            year_2digit = str(current_year)[-2:]
 
-                # Count existing Project Registration records for this PI in current year
-                # Only count records where project_no is populated (not NULL or empty)
-                existing_projects = frappe.db.sql("""
-                    SELECT COUNT(*)
-                    FROM `tabProject Registration`
-                    WHERE (pi_userid = %s OR pi_webmail = %s)
-                    AND project_no IS NOT NULL
-                    AND project_no != ''
-                    AND SUBSTRING(project_no, 1, 2) = %s
-                """, (pi_email, pi_email, year_2digit))[0][0]
+            # Preview next global sequential number (read-only peek, not consumed)
+            series_key = f"PROJ-{current_year}-"
+            result = frappe.db.sql("SELECT `current` FROM `tabSeries` WHERE `name` = %s", series_key)
+            if result:
+                current_series_val = int(result[0][0] or 0)
+            else:
+                # Series not seeded yet — read MAX project_no from existing records
+                max_result = frappe.db.sql("""
+                    SELECT MAX(CAST(project_no AS UNSIGNED))
+                    FROM `tabProject Number Generation`
+                    WHERE current_year1 = %s
+                    AND project_no IS NOT NULL AND project_no != ''
+                """, current_year)
+                current_series_val = int(max_result[0][0] or 0) if max_result else 0
+            calculated_project_no = str(current_series_val + 1).zfill(4)
 
-                # Next project number
-                next_project_no = existing_projects + 1
-                calculated_project_no = str(next_project_no).zfill(4)
+            # Department initial
+            implementation_dept = proj_reg.get("implementation_department")
+            dept_initial = None
+            if implementation_dept:
+                try:
+                    dept_doc = frappe.get_doc("Department_prornd", implementation_dept)
+                    dept_initial = dept_doc.get("dept_initials")
+                    if dept_initial:
+                        dept_initial = str(dept_initial).strip()[:4]
+                except Exception:
+                    pass
 
-                # Get implementation department and dept_initial
-                implementation_dept = proj_reg.get("implementation_department")
-                dept_initial = None
+            # Emp initial from PI name; fill short slots from username chars, never use X
+            pi_name = proj_reg.get("principal_investigator_name", "")
+            username_chars = pi_email.split("@")[0].upper()
 
-                if implementation_dept:
-                    try:
-                        dept_doc = frappe.get_doc("Department_prornd", implementation_dept)
-                        dept_initial = dept_doc.get("dept_initials")
-                        if dept_initial:
-                            dept_initial = str(dept_initial).strip()[:4]
-                    except Exception:
-                        pass
-
-                # Extract PI initials from full name
-                pi_name = proj_reg.get("principal_investigator_name", "")
-                emp_initial = ""
-
-                if pi_name:
-                    # Split name into words and get initials
-                    name_parts = pi_name.strip().split()
-                    initials = "".join([part[0].upper() for part in name_parts if part])
-
-                    # If we have less than 4 characters, pad with subsequent letters from the last name
-                    if len(initials) < 4 and name_parts:
-                        last_name = name_parts[-1].upper()
-                        # Add subsequent letters from last name
-                        char_index = 1
-                        while len(initials) < 4 and char_index < len(last_name):
-                            initials += last_name[char_index]
-                            char_index += 1
-
-                    # If still less than 4, pad with 'X'
-                    emp_initial = initials.ljust(4, 'X')[:4]
+            if pi_name:
+                name_parts = [p for p in pi_name.strip().split() if p]
+                if len(name_parts) == 1:
+                    source = name_parts[0].upper() + username_chars
+                    emp_initial = source[:4]
                 else:
-                    emp_initial = "XXXX"
+                    part1 = name_parts[0].upper()
+                    part2 = name_parts[1].upper()
+                    init = part1[:2] + part2[:2]
+                    if len(init) < 4:
+                        extra = (part1[2:] + part2[2:]
+                                 + "".join(p.upper() for p in name_parts[2:])
+                                 + username_chars)
+                        init = init + extra
+                    emp_initial = init[:4]
+            else:
+                emp_initial = username_chars[:4] if username_chars else "UNKN"
 
-                # Get project type and category from Project Registration
-                project_type_mapping = {
-                    "Research": "R",
-                    "Consultancy": "C",
-                    "Other": "O"
-                }
-                category = project_type_mapping.get(proj_reg.get("project_type"), "C")
+            # Category and project type
+            project_type_mapping = {"Research": "R", "Consultancy": "C", "Other": "O"}
+            category = project_type_mapping.get(proj_reg.get("project_type"), "C")
 
-                # Apply autoname formatting logic to generate preview
-                # Format: YY + Category + DeptInitial + ProjectType + EmpID + EmpInitial + ProjectNo
-                # Example: 26CxxxxSP0391xxxx0001
+            proj_type_from_reg = proj_reg.get("project_type", "")
+            project_type_code = "SP"
+            if "Consultancy" in proj_type_from_reg:
+                project_type_code = "CN"
+            elif "Research" in proj_type_from_reg:
+                project_type_code = "SP"
+            elif "Other" in proj_type_from_reg:
+                project_type_code = "OT"
 
-                # Get project_type from Project Registration (map to 2-char code)
-                proj_type_from_reg = proj_reg.get("project_type", "")
-                project_type_code = "SP"  # Default
-                if "Consultancy" in proj_type_from_reg:
-                    project_type_code = "CN"
-                elif "Research" in proj_type_from_reg:
-                    project_type_code = "SP"
-                elif "Other" in proj_type_from_reg:
-                    project_type_code = "OT"
+            # Preview project name (mirrors autoname logic)
+            dept_raw = (dept_initial or "A").upper()
+            dept_formatted = dept_raw.ljust(4, dept_raw[-1])[:4]
+            eid_formatted = str(pi_employee_id or "0").zfill(4)[-4:]
+            einit_raw = emp_initial or "A"
+            einit_formatted = einit_raw.ljust(4, einit_raw[-1])[:4]
+            preview_project_name = f"{year_2digit}{category[:1]}{dept_formatted}{project_type_code[:2]}{eid_formatted}{einit_formatted}{calculated_project_no}"
 
-                # Format fields according to autoname logic
-                year_formatted = year_2digit
-                cat_formatted = category[:1] if category else "C"
-                dept_formatted = (dept_initial or "").upper().rjust(4, 'x')[:4]
-                ptype_formatted = project_type_code[:2]
-                eid_formatted = str(pi_employee_id or "0").zfill(4)[-4:]
-                einit_formatted = emp_initial[:4]  # Already formatted to 4 chars
-                proj_no_formatted = calculated_project_no
-
-                # Generate final project number with all fields
-                preview_project_name = f"{year_formatted}{cat_formatted}{dept_formatted}{ptype_formatted}{eid_formatted}{einit_formatted}{proj_no_formatted}"
-
-                # Store the final project number for return
-                final_project_number = preview_project_name
-
-                # Pre-fill data with PI information
-                prefill_data = {
-                    "emp_id": pi_employee_id,
-                    "current_year1": year_2digit,  # Last 2 digits only
-                    "project_no": calculated_project_no,
-                    "select_department": implementation_dept,
-                    "dept_initial": dept_initial,
-                    "category": category,
-                    "project_type": project_type_code,
-                    "emp_initial": emp_initial,  # Auto-extracted from PI name
-                    "principal_investigator_name": proj_reg.get("principal_investigator_name"),
-                    "pi_email": pi_email,
-                    "preview_project_name": preview_project_name
-                }
+            final_project_number = preview_project_name
+            prefill_data = {
+                "emp_id": pi_employee_id,
+                "current_year1": year_2digit,
+                "project_no": calculated_project_no,
+                "select_department": implementation_dept,
+                "dept_initial": dept_initial,
+                "category": category,
+                "project_type": project_type_code,
+                "emp_initial": emp_initial,
+                "principal_investigator_name": proj_reg.get("principal_investigator_name"),
+                "pi_email": pi_email,
+                "preview_project_name": preview_project_name
+            }
         except Exception as e:
             frappe.log_error(f"Error fetching Project Registration data: {str(e)}")
-            pass
 
     # 4. Client Scripts
     client_scripts = []
