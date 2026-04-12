@@ -193,7 +193,7 @@ def save_recruitment_adhoc_contractual_data(data):
         
         if "workflow_state" in data:
             doc.set("workflow_state", data["workflow_state"])
-            
+
         # Handle Child Tables
         for f in meta.fields:
             if f.fieldtype == "Table":
@@ -202,9 +202,15 @@ def save_recruitment_adhoc_contractual_data(data):
                     doc.set(f.fieldname, []) # Clear existing
                     for item in items_data:
                         doc.append(f.fieldname, item)
-        
+
         # Save
         doc.save(ignore_permissions=True)
+
+        # fetch_from fields (e.g. `head`) are overwritten by Frappe's ORM during save,
+        # so persist the frontend-supplied value directly after save
+        if "head" in data and data["head"]:
+            frappe.db.set_value("Recruitment Adhoc Contractual", doc.name, "head", data["head"])
+
         frappe.db.commit()
         return {"status": "success", "docname": doc.name}
 
@@ -258,8 +264,21 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
         }
     except Exception as e:
         frappe.db.rollback()
+        error_msg = str(e)
+        if getattr(frappe.local, 'message_log', None):
+            try:
+                messages = [json.loads(msg).get("message", "") if isinstance(msg, str) else msg.get("message", "") for msg in frappe.local.message_log]
+                if any(messages):
+                    error_msg = " | ".join([m for m in messages if m])
+            except Exception:
+                pass
+                
+        if not error_msg:
+            error_msg = "Unknown error occurred during workflow transition."
+            
+        frappe.log_error(frappe.get_traceback(), f"Workflow Action Failed: {action} on {docname}")
         # Provide a more user-friendly error message if it's a known workflow error
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": error_msg}
 
 
 @frappe.whitelist()

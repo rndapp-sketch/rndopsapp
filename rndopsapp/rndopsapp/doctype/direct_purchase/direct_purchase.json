@@ -29,7 +29,8 @@
   "declaration_section",
   "dec_1",
   "dec_2",
-  "amended_from"
+  "amended_from",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -170,6 +171,12 @@
    "fieldname": "project_no",
    "fieldtype": "Data",
    "label": "Project Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
    "read_only": 1
   }
  ],

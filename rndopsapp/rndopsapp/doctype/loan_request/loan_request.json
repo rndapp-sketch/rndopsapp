@@ -36,7 +36,8 @@
   "witness_attachment",
   "section_break_hucf",
   "bmr",
-  "bmr_date"
+  "bmr_date",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -217,6 +218,12 @@
    "fieldtype": "Date",
    "label": "BMR Date",
    "mandatory_depends_on": "eval:doc.workflow_state == 'Pending @ Staff (Deposit Loan)'"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

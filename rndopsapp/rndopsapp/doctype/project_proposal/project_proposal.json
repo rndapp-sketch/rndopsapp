@@ -97,7 +97,8 @@
   "approver_signature",
   "approver_name",
   "approver_date",
-  "edited_endorsement_content"
+  "edited_endorsement_content",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -672,6 +673,12 @@
   {
    "fieldname": "column_break_svle",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

@@ -549,7 +549,8 @@ def check_workflow_and_publish(doc, method=None):
         "Direct Purchase",
         "Advance Settlement",
         "Travel",
-        "TA DA Settlement"
+        "TA DA Settlement",
+        "Recruitment Adhoc Contractual"
     ]
     
     if doc.doctype not in applicable_doctypes:

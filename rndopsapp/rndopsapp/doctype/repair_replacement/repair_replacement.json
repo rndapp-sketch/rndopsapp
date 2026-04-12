@@ -28,7 +28,8 @@
   "rr_upload_estimate",
   "rr_upload_service_report",
   "declaration_section",
-  "rr_dec_1"
+  "rr_dec_1",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -156,6 +157,12 @@
    "fieldname": "rr_dec_1",
    "fieldtype": "Check",
    "label": " All prices/ amounts mentioned in the form are in India Rupee (INR)."
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

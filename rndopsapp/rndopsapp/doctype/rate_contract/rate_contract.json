@@ -57,7 +57,8 @@
   "rate_contract_total",
   "rate_contract_packing",
   "rate_contract_grand_total",
-  "amount_in_words"
+  "amount_in_words",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -381,6 +382,12 @@
    "fieldtype": "Link",
    "label": "Current Approver",
    "options": "User"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

@@ -34,7 +34,8 @@
   "disbursal_note",
   "please_attach_a_copy_of_completion_report",
   "section_break_vjlz",
-  "disbursal_additional_documents"
+  "disbursal_additional_documents",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -196,6 +197,12 @@
    "fieldname": "student_welfare_fund",
    "fieldtype": "Currency",
    "label": "Student Welfare Fund (5%)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
    "read_only": 1
   }
  ],

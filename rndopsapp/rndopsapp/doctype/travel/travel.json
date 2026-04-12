@@ -87,7 +87,8 @@
   "travel_declaration_section",
   "declaration_section",
   "travel_declaration_text",
-  "travel_declaration_accepted"
+  "travel_declaration_accepted",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -559,6 +560,12 @@
   {
    "fieldname": "column_break_gqur",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

@@ -226,7 +226,7 @@ def submit_loan_request(docname):
 	"""
 	try:
 		doc = frappe.get_doc("Loan Request", docname)
-		current_state = doc.workflow_state or "Draft"
+		current_state = doc.get("workflow_state") or "Draft"
 
 		if current_state != "Draft":
 			return {
@@ -250,7 +250,7 @@ def get_loan_request_workflow_actions(docname):
 	Returns available workflow actions for the current user based on document state.
 	"""
 	doc = frappe.get_doc("Loan Request", docname)
-	current_state = doc.workflow_state or "Draft"
+	current_state = doc.get("workflow_state") or "Draft"
 	user_roles = frappe.get_roles(frappe.session.user)
 
 	workflow_name = frappe.db.get_value(
@@ -283,7 +283,7 @@ def perform_loan_request_action(docname, action, bmr=None, bmr_date=None):
 	"""
 	try:
 		doc = frappe.get_doc("Loan Request", docname)
-		current_state = doc.workflow_state or "Draft"
+		current_state = doc.get("workflow_state") or "Draft"
 
 		# Save BMR fields when staff submits the Deposit Loan action
 		if action == "Deposit Loan" and current_state == "Pending @ Staff (Deposit Loan)":
@@ -316,15 +316,18 @@ def perform_loan_request_action(docname, action, bmr=None, bmr_date=None):
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
 
-		doc.workflow_state = next_state
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
 
 		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
 			doc.flags.ignore_permissions = True
+			doc.flags.ignore_workflow = True
 			doc.submit()
+			frappe.db.set_value("Loan Request", docname, "workflow_state", next_state)
 		elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
 			doc.flags.ignore_permissions = True
+			doc.flags.ignore_workflow = True
 			doc.cancel()
+			frappe.db.set_value("Loan Request", docname, "workflow_state", next_state)
 		else:
 			doc.db_set("workflow_state", next_state, update_modified=True)
 

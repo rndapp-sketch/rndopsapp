@@ -178,7 +178,8 @@
   "amount_received",
   "fund_transactions",
   "iitg_bank_account_number",
-  "received_amount_breakup"
+  "received_amount_breakup",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -1244,6 +1245,12 @@
    "fieldname": "existing_project_number",
    "fieldtype": "Data",
    "label": "Enter Existing Project Number"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

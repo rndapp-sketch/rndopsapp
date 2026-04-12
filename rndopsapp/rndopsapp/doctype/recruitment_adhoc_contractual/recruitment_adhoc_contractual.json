@@ -20,6 +20,7 @@
   "upfa_project_code",
   "upfa_department",
   "upfa_project_duration",
+  "account_head",
   "upfa_financial_section",
   "upfa_funds_sanctioned",
   "upfa_funds_received",
@@ -87,7 +88,7 @@
   },
   {
    "fieldname": "upfa_project_title",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "label": "Project Title",
    "read_only": 1
   },
@@ -257,13 +258,19 @@
    "fieldtype": "Select",
    "label": "Walk In",
    "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-11 15:40:10.552118",
+ "modified": "2026-04-12 12:44:26.947627",
  "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",

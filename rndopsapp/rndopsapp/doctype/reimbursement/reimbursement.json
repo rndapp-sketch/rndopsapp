@@ -35,7 +35,8 @@
   "dec2",
   "dec3",
   "dec4",
-  "amended_from"
+  "amended_from",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -218,6 +219,12 @@
    "fieldtype": "Link",
    "label": "Webmail Id",
    "options": "User"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
