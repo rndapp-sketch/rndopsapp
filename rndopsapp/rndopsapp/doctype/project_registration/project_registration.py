@@ -770,50 +770,35 @@ def get_project_form_data(docname=None):
 		_fetch_link_options(fields)
 
 		# 2b. Filter designation_name options for proposed_manpower_details
-		# Only return designations where the User's employee class is "Project Staff"
+		# ============================================================
+		# EDITED BY MKY | 2026-04-14 14:52 IST
+		# START OF EDIT — Simplifed designation_name options & Quick Entry prepend
+		# Replaced complex User lookup with direct Designation_prornd query.
+		# Prepending "CREATE_NEW" option at the top for Frappe quick entry UI.
+		# ============================================================
 		try:
-			# Find the EmployeeClass_prornd ID for "PS - Project Staff"
-			project_staff_empclass_ids = frappe.get_all(
-				"EmployeeClass_prornd",
-				filters={"empclass_name": ["like", "%Project Staff%"]},
-				pluck="name",
+			designations = frappe.get_all(
+				"Designation_prornd",
+				filters={"designation_type": "Project Staff"},
+				fields=["name as value", "designation_prornd as label"],
+				order_by="designation_prornd asc",
 				limit=0,
 			)
 
-			if project_staff_empclass_ids:
-				# Get distinct designation_name values from User where empclass is Project Staff
-				project_staff_designations = frappe.get_all(
-					"User",
-					filters={
-						"empclass": ["in", project_staff_empclass_ids],
-						"designation_name": ["is", "set"],
-					},
-					fields=["designation_name"],
-					distinct=True,
-					pluck="designation_name",
-					limit=0,
-				)
+			data = [
+				{"value": item["value"], "label": item.get("label") or item["value"]}
+				for item in designations
+			]
 
-				if project_staff_designations:
-					# Filter Designation_prornd matching by name OR title field
-					# (User.designation_name may store either the record name or the display title)
-					placeholders = ", ".join(["%s"] * len(project_staff_designations))
-					filtered_designations = frappe.db.sql(
-						f"""SELECT name, designation_prornd
-						FROM `tabDesignation_prornd`
-						WHERE name IN ({placeholders})
-						OR designation_prornd IN ({placeholders})""",
-						project_staff_designations + project_staff_designations,
-						as_dict=True,
-					)
-					link_options["designation_name"] = [
-						{"value": item["name"], "label": item.get("designation_prornd", item["name"])}
-						for item in filtered_designations
-					]
-				else:
-					link_options["designation_name"] = []
-		except Exception:
+			# Insert "Create New" option at the very top for Frappe-style quick entry
+			data.insert(0, {"value": "CREATE_NEW", "label": "➕ Create New Designation..."})
+
+			link_options["designation_name"] = data
+		except Exception as e:
 			frappe.log_error(frappe.get_traceback(), "Error filtering designation options for manpower details")
+			link_options["designation_name"] = [{"value": "CREATE_NEW", "label": "➕ Create New Designation..."}]
+		# END OF EDIT — MKY | 2026-04-14 14:52 IST
+		# ============================================================
 
 		# 3. Get Pre-fill data for the current user
 		prefill_data = {}
@@ -1353,7 +1338,11 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			elif doc.owner != frappe.session.user:
 				frappe.throw(_("You do not have permission to edit this draft."))
 			if doc.docstatus != 0:
-				frappe.throw(_("Cannot save draft. The project has already been submitted."))
+				frappe.logger().warning(
+					f"Document {resolved_docname} is already submitted (docstatus={doc.docstatus}). Creating new draft instead."
+				)
+				doc = frappe.new_doc("Project Registration")
+				data.pop("name", None)  # Don't carry over the submitted doc's name
 		else:
 			doc = frappe.new_doc("Project Registration")
 
@@ -1950,3 +1939,253 @@ def get_project_title(project_no):
 
 	return project_title
 
+# ============================================================
+# EDITED BY MKY | 2026-04-14 15:35 IST
+# START OF EDIT — Custom Designation Creation API
+# Endpoint invoked when a user clicks "CREATE_NEW" from the frontend table.
+# Deduplicates entries using SQL LIKE before inserting.
+# Returns status="duplicate" when already found so frontend can alert user.
+# ============================================================
+@frappe.whitelist()
+def create_custom_designation(designation_name, designation_type="Project Staff"):
+	"""
+	Checks for an existing designation (case-insensitive).
+	Returns status="duplicate" with a message if already present.
+	Otherwise creates a new Designation_prornd record and returns status="success".
+	"""
+	try:
+		if not designation_name:
+			return {"status": "error", "message": "Designation name is required"}
+
+		designation_name = designation_name.strip()
+		# Case-insensitive duplicate check across both name and designation_prornd fields
+		existing = frappe.db.sql(
+			"""SELECT name, designation_prornd FROM `tabDesignation_prornd`
+			WHERE UPPER(designation_prornd)=%s OR UPPER(name)=%s LIMIT 1""",
+			(designation_name.upper(), designation_name.upper()),
+			as_dict=True
+		)
+
+		if existing:
+			# Return a distinct "duplicate" status — frontend will alert the user
+			return {
+				"status": "duplicate",
+				"designation_name": existing[0]["name"],
+				"message": f"Designation \'{existing[0].get('designation_prornd') or existing[0]['name']}\' already exists in the system."
+			}
+
+		# Create new designation
+		new_doc = frappe.get_doc({
+			"doctype": "Designation_prornd",
+			"designation_prornd": designation_name,
+			"designation_type": designation_type
+		})
+		new_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		return {"status": "success", "designation_name": new_doc.name}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), f"Custom Designation Creation Error for {designation_name}")
+		return {"status": "error", "message": str(e)}
+
+# END OF EDIT — MKY | 2026-04-14 15:35 IST
+# ============================================================
+
+
+
+@frappe.whitelist()
+def update_proposed_budget_breakup(docname, rows):
+    """
+    Replace the proposed_budget_breakup child table rows for a Project Registration and
+    recalculate grand totals.
+
+    Args:
+        docname (str): Name of the Project Registration document.
+        rows (list | str): List of row dicts. Each row may contain:
+            - account_head (str)       — Select field value
+            - head (str)               — alias accepted; mapped to account_head
+            - years (list[float])      — [yr1, yr2, yr3, yr4, yr5] shorthand
+            - first_year_budget … fifth_year_budget (float)  — explicit year columns
+            - is_total_row (bool)
+    """
+    try:
+        print(f"[BUDGET_UPDATE] START docname={docname} user={frappe.session.user} rows_type={type(rows)}")
+
+        if not docname:
+            return {"status": "error", "message": "Document name is required"}
+
+        if isinstance(rows, str):
+            rows = json.loads(rows)
+
+        if not isinstance(rows, list):
+            print(f"[BUDGET_UPDATE] rows is not a list: {type(rows)} value={rows}")
+            return {"status": "error", "message": "'rows' must be a list"}
+
+        print(f"[BUDGET_UPDATE] rows count={len(rows)}")
+
+        doc = frappe.get_doc("Project Registration", docname)
+        print(f"[BUDGET_UPDATE] doc fetched: owner={doc.owner} docstatus={doc.docstatus} workflow_state={doc.workflow_state}")
+
+        if doc.owner != frappe.session.user:
+            print(f"[BUDGET_UPDATE] OWNER MISMATCH: doc.owner={doc.owner} session={frappe.session.user}")
+            return {"status": "error", "message": "You can only edit your own projects"}
+
+        year_fields = [
+            "first_year_budget",
+            "second_year_budget",
+            "third_year_budget",
+            "fourth_year_budget",
+            "fifth_year_budget",
+        ]
+
+        # Build processed rows first
+        processed_rows = []
+        for idx, row_data in enumerate(rows):
+            update_data = row_data.copy() if isinstance(row_data, dict) else {}
+            print(f"[BUDGET_UPDATE] row[{idx}] raw: {update_data}")
+
+            if "head" in update_data:
+                update_data["account_head"] = update_data.pop("head")
+
+            if isinstance(update_data.get("account_head"), dict):
+                bh = update_data["account_head"]
+                update_data["account_head"] = bh.get("value") or bh.get("name") or None
+
+            years_array = update_data.pop("years", []) or []
+            for i, amount in enumerate(years_array):
+                if i < len(year_fields):
+                    update_data[year_fields[i]] = flt(amount)
+
+            row_total = sum(flt(update_data.get(f, 0)) for f in year_fields)
+            update_data["total_proposal_of_heads"] = row_total
+            update_data["idx"] = idx + 1
+            processed_rows.append(update_data)
+            print(f"[BUDGET_UPDATE] row[{idx}] processed: {update_data}")
+
+        grand_total = sum(r["total_proposal_of_heads"] for r in processed_rows)
+        print(f"[BUDGET_UPDATE] grand_total={grand_total} docstatus={doc.docstatus}")
+
+        if doc.docstatus == 1:
+            # Submitted doc — bypass doc.save() and write directly to DB
+            print(f"[BUDGET_UPDATE] SUBMITTED: using direct DB update")
+
+            # Fetch existing rows keyed by account_head and by name
+            existing_rows = frappe.db.get_all(
+                "Project Sanctioned Budget",
+                filters={
+                    "parent": docname,
+                    "parentfield": "proposed_budget_breakup",
+                    "parenttype": "Project Registration",
+                },
+                fields=["name", "account_head"],
+            )
+            # Build lookup: account_head → row name, name → row name
+            by_account_head = {r["account_head"]: r["name"] for r in existing_rows}
+            by_name = {r["name"]: r["name"] for r in existing_rows}
+            print(f"[BUDGET_UPDATE] existing rows: {[r['account_head'] for r in existing_rows]}")
+
+            now = frappe.utils.now()
+            for row in processed_rows:
+                # Resolve existing row: prefer explicit name, then match by account_head
+                existing_name = by_name.get(row.get("name")) or by_account_head.get(row.get("account_head"))
+
+                update_vals = {k: v for k, v in row.items() if k not in ("name", "idx")}
+                update_vals["modified"] = now
+                update_vals["modified_by"] = frappe.session.user
+
+                if existing_name:
+                    frappe.db.set_value(
+                        "Project Sanctioned Budget",
+                        existing_name,
+                        update_vals,
+                        update_modified=False,
+                    )
+                    print(f"[BUDGET_UPDATE] updated existing row {existing_name} (account_head={row.get('account_head')})")
+                else:
+                    child = frappe.get_doc({
+                        "doctype": "Project Sanctioned Budget",
+                        "parent": docname,
+                        "parentfield": "proposed_budget_breakup",
+                        "parenttype": "Project Registration",
+                        "creation": now,
+                        "owner": frappe.session.user,
+                        **row,
+                    })
+                    child.db_insert()
+                    print(f"[BUDGET_UPDATE] inserted new row idx={row['idx']} (account_head={row.get('account_head')})")
+
+            frappe.db.set_value("Project Registration", docname, {
+                "grand_total_proposal": grand_total,
+                "total_budget_amount": grand_total,
+            }, update_modified=False)
+
+        else:
+            # Draft / Saved — use normal doc.save()
+            print(f"[BUDGET_UPDATE] DRAFT: using doc.save()")
+            doc.set("proposed_budget_breakup", [])
+            for row in processed_rows:
+                child = doc.append("proposed_budget_breakup", {})
+                child.update(row)
+
+            doc.grand_total_proposal = grand_total
+            doc.total_budget_amount = grand_total
+            doc.save(ignore_permissions=True)
+
+        frappe.db.commit()
+        print(f"[BUDGET_UPDATE] COMMITTED successfully")
+
+        return {
+            "status": "success",
+            "docname": doc.name,
+            "grand_total": grand_total,
+            "rows_saved": len(doc.proposed_budget_breakup),
+        }
+
+    except frappe.DoesNotExistError:
+        print(f"[BUDGET_UPDATE] DoesNotExist: {docname}")
+        return {"status": "error", "message": f"Project '{docname}' not found"}
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[BUDGET_UPDATE] EXCEPTION: {e}\n{tb}")
+        frappe.db.rollback()
+        frappe.log_error(frappe.get_traceback(), f"Update Proposed Budget Breakup Error for {docname}")
+        return {"status": "error", "message": str(e), "traceback": tb}
+
+
+@frappe.whitelist()
+def delete_draft_project(docname):
+    """
+    Allows the owner of a Draft-state Project Registration to delete it.
+    Only the user who created the document (owner) can delete it, and only if it is in Draft state.
+    """
+    try:
+        if not docname:
+            return {"status": "error", "message": "Document name is required"}
+
+        doc = frappe.get_doc("Project Registration", docname)
+
+        if doc.workflow_state != "Draft":
+            return {
+                "status": "error",
+                "message": f"Only Draft projects can be deleted. Current state: '{doc.workflow_state}'"
+            }
+
+        if doc.owner != frappe.session.user:
+            return {
+                "status": "error",
+                "message": "You can only delete your own draft projects"
+            }
+
+        frappe.delete_doc("Project Registration", docname, ignore_permissions=True)
+        frappe.db.commit()
+
+        return {"status": "success", "message": f"Project '{docname}' deleted successfully"}
+
+    except frappe.DoesNotExistError:
+        return {"status": "error", "message": f"Project '{docname}' not found"}
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(frappe.get_traceback(), f"Delete Draft Project Error for {docname}")
+        return {"status": "error", "message": str(e)}
