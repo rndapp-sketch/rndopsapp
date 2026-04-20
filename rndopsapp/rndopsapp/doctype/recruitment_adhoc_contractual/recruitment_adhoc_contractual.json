@@ -235,12 +235,14 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "chairperson_webmail_id",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Chairperson Webmail",
-   "options": "User"
+   "options": "Email"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "chairperson_name",
    "fieldtype": "Data",
    "label": "Chairperson"
@@ -249,7 +251,6 @@
    "allow_on_submit": 1,
    "fieldname": "last_date_of_appllication",
    "fieldtype": "Date",
-   "hidden": 1,
    "label": "Last Date of Appllication"
   },
   {
@@ -270,8 +271,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 12:44:26.947627",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-04-16 21:31:28.353157",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",
  "naming_rule": "Expression",

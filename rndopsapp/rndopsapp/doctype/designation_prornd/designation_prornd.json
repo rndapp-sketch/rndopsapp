@@ -2,29 +2,40 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
+ "autoname": "format:{designation_prornd}",
  "creation": "2025-07-30 12:35:57.762187",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "designation_prornd"
+  "designation_prornd",
+  "designation_type"
  ],
  "fields": [
   {
+   "allow_in_quick_entry": 1,
    "fieldname": "designation_prornd",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "User_Designation",
    "placeholder": "Select a Designation",
    "reqd": 1
+  },
+  {
+   "description": "Please Specify the Designation type",
+   "fieldname": "designation_type",
+   "fieldtype": "Select",
+   "label": "Designation Type",
+   "options": "\nProject Staff\nPermanent Staff\nOthers"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-08-06 12:41:06.094882",
+ "modified": "2026-04-16 21:31:28.595900",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Designation_prornd",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -41,6 +52,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",

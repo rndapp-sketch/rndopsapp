@@ -138,9 +138,9 @@ def get_pending_task(page_name="pending-task"):
 			if check_roles(transition_row.allowed):
 				actionable_states.add(transition_row.state)
 
-		# Explicitly exclude "Draft" state as requested
-		if "Draft" in actionable_states:
-			actionable_states.remove("Draft")
+		# Exclude terminal/approved states — no pending action needed
+		for excluded in ("Draft", "Endorsement Approved", "Sanction Approved"):
+			actionable_states.discard(excluded)
 
 		if not actionable_states:
 			continue

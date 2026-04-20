@@ -204,7 +204,7 @@ class FundReceivedMapper:
 
         # Find linked deposit slip
         deposit_slip_name, deposit_slip_doctype = cls.get_linked_deposit_slip(doc)
-        has_deposit_slip = deposit_slip_name is not None
+        deposit_slip_status = "PENDING_SUBMISSION" if deposit_slip_name is None else "SUBMITTED"
 
         return FundReceivedDTO(
             fundReceivedRefNumberFap=doc.name,
@@ -213,7 +213,7 @@ class FundReceivedMapper:
             projectNumber=project_number,
             amountReceived=float(getattr(doc, 'fund_received_amt', 0) or 0),
             iitgAccountNumber=getattr(doc, 'bank_account', None) or "",
-            depositSlipStatus=has_deposit_slip,
+            depositSlipStatus=deposit_slip_status,
             fundReceivedStatus="PENDING_APPROVAL",
             depositeStatusUpdateTime=current_timestamp,
             fundReceivedStatusUpdateTime=current_timestamp,

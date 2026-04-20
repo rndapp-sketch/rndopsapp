@@ -68,10 +68,10 @@ class ProjectDataDTO(BaseModel):
     grandTotal: float = 0.0
 
     # Dates
-    startDate: Optional[date] = None
-    completionDate: Optional[date] = None
+    startDate: str = "0000-00-00"
+    completionDate: str = "0000-00-00"
     durationInDays: str = "0"
-    durationMonths: str = "0"
+    durationMonths: str = "00"
 
     # Status
     status: str
@@ -83,7 +83,15 @@ class ProjectDataDTO(BaseModel):
     @field_validator("startDate", "completionDate", mode="before")
     @classmethod
     def normalize_date(cls, v):
-        return parse_date(v)
+        if v is None or v == "":
+            return "0000-00-00"
+        if isinstance(v, str):
+            return v
+        if isinstance(v, date):
+            return v.isoformat()
+        if isinstance(v, list) and len(v) >= 3:
+            return date(v[0], v[1], v[2]).isoformat()
+        return "0000-00-00"
 
     @field_validator("applyDate", mode="before")
     @classmethod

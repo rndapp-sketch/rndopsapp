@@ -1,5 +1,4 @@
 {
- "_comments": "[{\"comment\": \"<div class=\\\"ql-editor read-mode\\\"><p>according to item_type the filtration is not able to fetch th...\", \"by\": \"Administrator\", \"name\": \"3r906jrmv9\"}]",
  "actions": [],
  "allow_rename": 1,
  "autoname": "format:{YYYY}{MM}{DD}{11}RATE{######}",
@@ -394,7 +393,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-21 07:48:32.272829",
+ "modified": "2026-04-12 14:20:47.193446",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Rate Contract",
@@ -468,6 +467,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

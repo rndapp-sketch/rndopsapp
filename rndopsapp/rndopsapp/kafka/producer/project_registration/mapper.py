@@ -2,7 +2,7 @@
 # Project Registration Mapper - Maps Frappe document to DTO
 
 import frappe
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import List, Optional, Tuple
 
 from .dto import ProjectDataDTO, ProjectEventDTO
@@ -186,9 +186,10 @@ class ProjectRegistrationMapper:
         # Get funding agency ID
         funding_agency_id = cls.get_funding_agency(doc)
 
-        # Parse dates
-        start_date = doc.prj_start_date or doc.start_date
-        completion_date = doc.prj_end_date or doc.completion_date
+        # Parse dates - default to today and today + 1 month if missing
+        today = date.today()
+        start_date = doc.prj_start_date or getattr(doc, 'start_date', None) or today
+        completion_date = doc.prj_end_date or getattr(doc, 'completion_date', None) or (today + timedelta(days=30))
 
         # Apply/Verdict Dates
         apply_date = doc.creation if doc.creation else datetime.utcnow()
@@ -239,7 +240,7 @@ class ProjectRegistrationMapper:
             grandTotal=grand_total,
             startDate=start_date,
             completionDate=completion_date,
-            durationMonths=str(doc.project_duration_months) if doc.project_duration_months else "0",
+            durationMonths=str(doc.project_duration_months) if doc.project_duration_months else "00",
             durationInDays=str(doc.project_duration_days) if doc.project_duration_days else "0",
             status=doc.workflow_state or "",
             applyDate=apply_date,

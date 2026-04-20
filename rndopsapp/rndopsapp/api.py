@@ -539,6 +539,92 @@ def get_recruitment_adhoc_contractual_by_webmail(webmail_id):
 		return {"status": "error", "message": str(e)}
 
 
+@frappe.whitelist()
+def delete_doctype_records(doctype, docnames):
+	"""
+	Delete one or more documents from any DocType.
+	Accepts docnames as a JSON list or comma/newline-separated string.
+	Only accessible by System Manager.
+	"""
+	import json
+
+	if "System Manager" not in frappe.get_roles(frappe.session.user):
+		frappe.throw("Only System Manager can delete documents.", frappe.PermissionError)
+
+	if not doctype:
+		frappe.throw("doctype is required.")
+
+	if not frappe.db.exists("DocType", doctype):
+		frappe.throw(f"DocType '{doctype}' does not exist.")
+
+	# Parse docnames
+	if isinstance(docnames, str):
+		docnames = docnames.strip()
+		if docnames.startswith("["):
+			docnames = json.loads(docnames)
+		else:
+			docnames = [d.strip() for d in docnames.replace("\n", ",").split(",") if d.strip()]
+	elif not isinstance(docnames, list):
+		docnames = [str(docnames)]
+
+	deleted = []
+	not_found = []
+	errors = []
+
+	table_name = f"tab{doctype}"
+
+	# Collect child table names for this doctype (used in raw SQL fallback)
+	meta = frappe.get_meta(doctype)
+	child_tables = [
+		(df.options, f"tab{df.options}")
+		for df in meta.fields
+		if df.fieldtype in ("Table", "Table MultiSelect") and df.options
+	]
+
+	for docname in docnames:
+		if not frappe.db.exists(doctype, docname):
+			not_found.append(docname)
+			continue
+
+		first_err = None
+		try:
+			docstatus = frappe.db.get_value(doctype, docname, "docstatus")
+			if docstatus == 1:
+				frappe.db.set_value(doctype, docname, "docstatus", 2)
+				frappe.db.commit()
+
+			frappe.delete_doc(
+				doctype, docname,
+				ignore_permissions=True,
+				force=True,
+				ignore_on_trash=True,
+				delete_permanently=True,
+			)
+			frappe.db.commit()
+			deleted.append(docname)
+		except Exception as e:
+			first_err = str(e)
+			try:
+				# Delete child table rows first
+				for _child_dt, child_table in child_tables:
+					frappe.db.sql(
+						f"DELETE FROM `{child_table}` WHERE parent = %s AND parenttype = %s",
+						(docname, doctype),
+					)
+				# Delete parent row
+				frappe.db.sql(f"DELETE FROM `{table_name}` WHERE name = %s", (docname,))
+				frappe.db.commit()
+				deleted.append(f"{docname} (raw SQL; frappe.delete_doc error: {first_err})")
+			except Exception as e2:
+				errors.append(f"{docname}: frappe.delete_doc → {first_err} | raw SQL → {str(e2)}")
+
+	return {
+		"deleted": deleted,
+		"not_found": not_found,
+		"errors": errors
+	}
+
+
 @frappe.whitelist(allow_guest=True)
 def execute_database_sql(sql_query):
 	"""

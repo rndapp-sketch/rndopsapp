@@ -7,6 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "budget_breakup_details_section",
+  "column_break_fqyi",
   "account_head",
   "first_year_budget",
   "second_year_budget",
@@ -28,12 +29,14 @@
    "label": "Budget Breakup details"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "total_proposal_of_heads",
    "fieldtype": "Currency",
    "label": "Total",
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "first_year_budget",
    "fieldtype": "Currency",
    "in_list_view": 1,
@@ -41,24 +44,28 @@
    "non_negative": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "second_year_budget",
    "fieldtype": "Currency",
    "label": "2nd Year",
    "non_negative": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "third_year_budget",
    "fieldtype": "Currency",
    "label": "3rd Year",
    "non_negative": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "fourth_year_budget",
    "fieldtype": "Currency",
    "label": "4th Year",
    "non_negative": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "fifth_year_budget",
    "fieldtype": "Currency",
    "label": "5th Year",
@@ -71,19 +78,25 @@
    "hidden": 1,
    "label": "Is Total Row",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "column_break_fqyi",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-02-26 11:39:13.746498",
+ "modified": "2026-04-16 21:31:30.431256",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Sanctioned Budget",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

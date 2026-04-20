@@ -46,7 +46,7 @@ class FundReceivedDTO:
     projectNumber: str = ""
     amountReceived: float = 0.0
     iitgAccountNumber: str = ""
-    depositSlipStatus: bool = False
+    depositSlipStatus: str = "PENDING_SUBMISSION"
     fundReceivedStatus: str = "PENDING_APPROVAL"
     depositeStatusUpdateTime: str = ""
     fundReceivedStatusUpdateTime: str = ""

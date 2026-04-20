@@ -187,6 +187,7 @@ def submit_project_registration(docname):
 	doc.head_approver = dept_doc.dept_head  # You can change this logic if needed
 
 	# Save the updated values before submission
+	doc.flags.ignore_mandatory = True
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
 
@@ -1019,6 +1020,37 @@ def save_project_data(doc, html_content=None):
 			# Handle Child Tables (value is a list of row objects)
 			if df.fieldtype == "Table" and isinstance(value, list):
 				for child_row in value:
+					if fieldname == "upload_supporting_docs" and isinstance(child_row, dict):
+						attachment = child_row.get("attachment")
+						if isinstance(attachment, dict) and attachment.get("file_name") and attachment.get("file_data"):
+							file_data_uri = attachment.get("file_data")
+							if file_data_uri.startswith("data:"):
+								file_data_uri = file_data_uri.split(",", 1)[1]
+							try:
+								file_bytes = base64.b64decode(file_data_uri)
+								file_service = get_rnd_file_service()
+								upload_result = file_service.save_file(
+									filename=attachment.get("file_name"),
+									content=file_bytes,
+									is_private=True,
+									doctype=new_project.doctype,
+									docname=new_project.name,
+									folder="attachments",
+								)
+								if upload_result.get("status"):
+									child_row = dict(child_row)
+									child_row["attachment"] = upload_result.get("data", {}).get("file_url")
+								else:
+									frappe.log_error(
+										upload_result.get("message"),
+										f"Supporting doc upload failed for {new_project.name}"
+									)
+									child_row = dict(child_row)
+									child_row.pop("attachment", None)
+							except Exception:
+								frappe.log_error(frappe.get_traceback(), f"Supporting doc upload error for {new_project.name}")
+								child_row = dict(child_row)
+								child_row.pop("attachment", None)
 					new_project.append(fieldname, child_row)
 
 			# Handle Attach fields (value is a Base64 data URI string)
@@ -1039,7 +1071,7 @@ def save_project_data(doc, html_content=None):
 						is_private=True,
 						doctype=new_project.doctype,
 						docname=new_project.name,
-						folder=get_file_category_for_doctype(new_project.doctype, fieldname),
+						folder="attachments",
 						use_hash=False
 					)
 
@@ -1319,6 +1351,14 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		if files_payload:
 			frappe.logger().warning(f"Jimmy Logging Debug first file: {files_payload[0] if len(files_payload) > 0 else 'None'}")
 
+		# Build lookup map: filename → file entry (for upload_supporting_docs matching)
+		# files_payload items look like: {"filename": "...", "content": "data:...;base64,..."}
+		files_by_name = {}
+		if isinstance(files_payload, list):
+			for f in files_payload:
+				if isinstance(f, dict) and f.get("filename"):
+					files_by_name[f["filename"]] = f
+
 		# --- Resolve docname: explicit arg > data["name"] > duplicate check > new ---
 		resolved_docname = docname or data.get("name")
 		
@@ -1355,6 +1395,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			"sanctioned_budget_breakup",
 			"sanction_related_files",
 			"fund_transactions",
+			"upload_supporting_docs",
 		}
 		parent_data = {k: v for k, v in data.items() if k not in child_tables_map}
 
@@ -1429,6 +1470,52 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 						if i < len(year_fields):
 							update_data[year_fields[i]] = flt(amount)
 				# frappe.logger("budget_update").warning(f"Updated proposed_budget_breakup data: {update_data}")
+
+				elif table_fieldname == "upload_supporting_docs":
+					# Map frontend field names → child doctype field names
+					if "doc_description" in update_data:
+						update_data["file_description"] = update_data.pop("doc_description")
+
+					update_data.pop("id", None)
+
+					# `supporting_file` from the row holds either a stored URL or a plain filename
+					row_filename = update_data.pop("supporting_file", None)
+					if row_filename and "/" in row_filename:
+						update_data.setdefault("project_file", row_filename)
+
+					# For existing rows, preserve project_file from DB if not being replaced
+					row_name = update_data.get("name")
+					if row_name and not update_data.get("project_file"):
+						saved_url = frappe.db.get_value("Project Files", row_name, "project_file")
+						if saved_url:
+							update_data["project_file"] = saved_url
+
+					# Match file from files_payload by filename (payload uses {filename, content})
+					file_entry = files_by_name.get(row_filename) if row_filename else None
+					if file_entry and file_entry.get("content"):
+						file_data_uri = file_entry["content"]
+						if file_data_uri.startswith("data:"):
+							file_data_uri = file_data_uri.split(",", 1)[1]
+						try:
+							file_bytes = base64.b64decode(file_data_uri)
+							file_service = get_rnd_file_service()
+							upload_result = file_service.save_file(
+								filename=file_entry["filename"],
+								content=file_bytes,
+								is_private=True,
+								doctype=doc.doctype,
+								docname=doc.name,
+								folder=get_file_category_for_doctype(doc.doctype, "upload_supporting_docs"),
+							)
+							if upload_result.get("status"):
+								update_data["project_file"] = upload_result["data"]["file_url"]
+							else:
+								frappe.log_error(
+									upload_result.get("message"),
+									f"Supporting doc upload failed for {doc.name}"
+								)
+						except Exception:
+							frappe.log_error(frappe.get_traceback(), f"Supporting doc upload error for {doc.name}")
 
 				child = doc.append(table_fieldname, {})
 				child.update(update_data)
@@ -1520,14 +1607,27 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 
 					# Upload to MinIO using RNDFileService
 					file_service = get_rnd_file_service()
+					# ============================================================
+					# EDITED BY MKY | 2026-04-20 23:51 IST
+					# START OF EDIT — Fix: wrong folder created from filename pattern match
+					# Bug: f.get("file_name") or filename was passed as fieldname into
+					# get_file_category_for_doctype(). When filename contained "endorsement"
+					# (e.g. "Endorsement_ARG_PI_SAKET.pdf"), _infer_category_from_fieldname()
+					# matched the word and returned "endorsement" as the MinIO folder.
+					# Fix: only use f.get("fieldname") if it is an actual DocField key;
+					# otherwise always fall back to "attachments" — never pass the raw filename.
+					# ============================================================
+					_field_for_category = f.get("fieldname") if f.get("fieldname") else "attachments"
 					upload_result = file_service.save_file(
 						filename=filename,
 						content=file_content,
 						is_private=is_private,
 						doctype=doc.doctype,
 						docname=doc.name,
-						folder=get_file_category_for_doctype(doc.doctype, f.get("fieldname") or f.get("file_name") or filename)
+						folder=get_file_category_for_doctype(doc.doctype, _field_for_category)
 					)
+					# END OF EDIT — MKY | 2026-04-20 23:51 IST
+					# ============================================================
 
 					if upload_result.get("status"):
 						frappe.logger().info(f"File uploaded to MinIO: {filename} -> {upload_result.get('data', {}).get('file_url')}")

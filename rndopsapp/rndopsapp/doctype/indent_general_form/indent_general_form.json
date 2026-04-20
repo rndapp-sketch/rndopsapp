@@ -24,8 +24,7 @@
   "igf_items",
   "igf_total_estimate",
   "igf_sanctioned_by_agency",
-  "igf_details_of_vendors",
-  "igf_vendors",
+  "column_break_ybui",
   "igf_purchase_committee",
   "igf_committee_members",
   "igf_committee_note",
@@ -108,14 +107,17 @@
   {
    "fieldname": "igf_account_head",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Account Head",
-   "options": "\nConsumable\nContingency\nEquipment\nOther",
-   "placeholder": "Select the Account Head"
+   "options": "\nConsumable\nContingency\nEquipments\nOther",
+   "placeholder": "Select the Account Head",
+   "reqd": 1
   },
   {
    "fetch_from": "igf_webmail_id.employee_id",
    "fieldname": "igf_employee_code",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Employee Code"
   },
   {
@@ -153,17 +155,6 @@
    "options": "Yes\nNo"
   },
   {
-   "fieldname": "igf_details_of_vendors",
-   "fieldtype": "Section Break",
-   "label": "DETAILS OF VENDORS"
-  },
-  {
-   "fieldname": "igf_vendors",
-   "fieldtype": "Table",
-   "label": "Details of Vendors",
-   "options": "IGF Vendor Detail"
-  },
-  {
    "fieldname": "igf_purchase_committee",
    "fieldtype": "Section Break",
    "label": "PURCHASE COMMITTEE (Minimum 3 members)"
@@ -188,9 +179,11 @@
   {
    "fieldname": "igf_tender_type",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Tender Type",
    "options": "\nLimited Tender\nOpen Tender",
-   "placeholder": "Select the Tender Type"
+   "placeholder": "Select the Tender Type",
+   "reqd": 1
   },
   {
    "fieldname": "igf_number_of_bids",
@@ -226,21 +219,25 @@
    "fieldname": "igf_declaration_text",
    "fieldtype": "Check",
    "label": "For non sanctioned item, the PI will be responsible for any financial obligations that may arise.",
-   "options": "\n\n<p style=\"font-size: 13px;\">\n  All prices / amounts mentioned in the form are in Indian Rupee (INR).\n</p>\n",
-   "read_only": 1
+   "options": "\n\n<p style=\"font-size: 13px;\">\n  All prices / amounts mentioned in the form are in Indian Rupee (INR).\n</p>\n"
   },
   {
    "default": "0",
    "fieldname": "igf_decl_inr_confirmation",
    "fieldtype": "Check",
    "label": "All prices / amounts mentioned in the form are in Indian Rupee (INR)."
+  },
+  {
+   "fieldname": "column_break_ybui",
+   "fieldtype": "Column Break",
+   "hidden": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-06 13:43:43.946277",
+ "modified": "2026-04-16 21:31:29.279487",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Indent General Form",

@@ -111,7 +111,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-24 11:31:51.590126",
+ "modified": "2026-02-26 14:56:11.666999",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "AccountHeadPayment",
@@ -133,6 +133,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

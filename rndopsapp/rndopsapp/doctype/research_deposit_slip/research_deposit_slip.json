@@ -273,7 +273,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-24 12:55:03.073088",
+ "modified": "2026-03-28 01:27:10.813181",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Research Deposit Slip",
@@ -342,6 +342,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

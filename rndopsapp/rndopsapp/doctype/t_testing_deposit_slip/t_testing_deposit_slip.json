@@ -162,7 +162,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-21 11:04:07.009414",
+ "modified": "2026-02-16 11:19:39.617713",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "T Testing Deposit Slip",
@@ -195,6 +195,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

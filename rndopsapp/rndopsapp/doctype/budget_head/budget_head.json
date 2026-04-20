@@ -24,7 +24,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-23 16:43:36.846742",
+ "modified": "2026-02-16 11:19:38.216647",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Budget Head",
@@ -58,6 +58,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",

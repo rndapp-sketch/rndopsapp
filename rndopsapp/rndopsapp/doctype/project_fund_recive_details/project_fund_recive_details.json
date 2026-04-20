@@ -16,7 +16,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-10-21 10:35:16.202259",
+ "modified": "2026-02-16 11:19:27.385848",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "project_fund_recive_details",
@@ -36,6 +36,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

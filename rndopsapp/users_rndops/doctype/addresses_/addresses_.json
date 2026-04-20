@@ -53,7 +53,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-16 13:11:31.532698",
+ "modified": "2026-02-16 11:19:42.593206",
  "modified_by": "Administrator",
  "module": "users_rndops",
  "name": "addresses_",
@@ -61,6 +61,7 @@
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

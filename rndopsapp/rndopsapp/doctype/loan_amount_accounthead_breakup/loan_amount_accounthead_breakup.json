@@ -1,6 +1,6 @@
 {
  "actions": [],
- "creation": "2026-04-03 00:00:00.000000",
+ "creation": "2026-04-03 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -26,13 +26,14 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-03 00:00:00.000000",
+ "modified": "2026-04-03 00:00:00",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Loan Amount Accounthead Breakup",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

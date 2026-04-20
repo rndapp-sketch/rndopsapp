@@ -138,6 +138,8 @@ def save_loan_request(doc_data):
 			"loan_amount",
 			"agreement_no_1",
 			"agreement_no_2",
+			"project_copi",
+			"comments_if_any",
 		]
 		for field in scalar_fields:
 			if field in data and data[field] is not None:
@@ -153,6 +155,15 @@ def save_loan_request(doc_data):
 			elif isinstance(witness_value, str):
 				# Already a URL (re-save or existing doc)
 				doc.set("witness_attachment", witness_value)
+
+		# additional_attachment — Attach field (may be a URL string or a base64 file dict)
+		_pending_additional_file = None
+		additional_value = data.get("additional_attachment")
+		if additional_value:
+			if isinstance(additional_value, dict) and additional_value.get("file_data"):
+				_pending_additional_file = additional_value
+			elif isinstance(additional_value, str):
+				doc.set("additional_attachment", additional_value)
 
 		# Child table — fund breakup rows
 		fund_breakup = data.get("account_head_fund_breakup")
@@ -205,12 +216,36 @@ def save_loan_request(doc_data):
 			except Exception as e:
 				frappe.log_error(frappe.get_traceback(), "Loan Request Witness Attachment Upload Error")
 
+		# Upload additional_attachment to Project_Registration/{project_number}/Loan/
+		additional_url = None
+		if _pending_additional_file:
+			import base64
+			from rndopsapp.minio import get_rnd_file_service
+			try:
+				file_name = _pending_additional_file.get("file_name", "attachment")
+				file_data_str = _pending_additional_file.get("file_data", "")
+				if "," in file_data_str:
+					file_data_str = file_data_str.split(",", 1)[1]
+				content = base64.b64decode(file_data_str)
+
+				project_number = doc.get("project_number") or "unknown"
+				file_service = get_rnd_file_service()
+				# Path: Project_Registration/{project_number}/Loan/{filename}
+				path = f"Project_Registration/{project_number}/Loan/{file_name}"
+				mime = file_service._mime(file_name)
+				file_service.storage.upload(path, content, mime)
+				additional_url = f"/prod-rnd-files/{path}"
+				frappe.db.set_value("Loan Request", doc.name, "additional_attachment", additional_url)
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), "Loan Request Additional Attachment Upload Error")
+
 		frappe.db.commit()
 		return {
 			"status": "success",
 			"docname": doc.name,
 			"loan_amount": doc.loan_amount,
 			"witness_attachment": witness_url or doc.get("witness_attachment"),
+			"additional_attachment": additional_url or doc.get("additional_attachment"),
 		}
 
 	except Exception as e:

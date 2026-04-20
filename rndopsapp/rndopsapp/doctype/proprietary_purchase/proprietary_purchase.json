@@ -82,10 +82,10 @@
   {
    "fieldname": "workflow_state",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Workflow State",
    "options": "Workflow State",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   },
   {
    "fieldname": "proprietary_itemss_purchase_details_section",
@@ -218,7 +218,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-05 18:45:14.331873",
+ "modified": "2026-03-24 00:35:26.703434",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "proprietary_purchase",
@@ -239,6 +239,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

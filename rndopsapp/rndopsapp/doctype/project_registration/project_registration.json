@@ -44,6 +44,7 @@
   "executive_summary",
   "upload_proj_prop",
   "my_projects",
+  "upload_supporting_docs",
   "for_office_use_only_section",
   "project_no",
   "section_break_vwve",
@@ -255,6 +256,7 @@
    "label": "Executive Summary"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "implementation_department",
    "fieldtype": "Link",
    "label": "Department/Centre where the project will be implemented",
@@ -286,6 +288,7 @@
    "label": "Proposed Budget"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.funding_agency_type_1",
    "fieldname": "funding_agency_type",
    "fieldtype": "Data",
@@ -422,7 +425,7 @@
    "depends_on": "eval:doc.is_additional_pi == \"Yes\"",
    "fieldname": "additional_pi_table",
    "fieldtype": "Table",
-   "label": "Details of Additional Principal Investigator(s)",
+   "label": "Details of Additional Principal Investigator(s) (Only Internal PI)",
    "mandatory_depends_on": "eval:doc.is_additional_pi == \"Yes\"",
    "options": "Project Additional PI"
   },
@@ -437,7 +440,7 @@
    "depends_on": "eval:doc.has_co_pi == 'Yes'",
    "fieldname": "co_investigator_table",
    "fieldtype": "Table",
-   "label": "Details of Additional Co-Principal Investigator(s)",
+   "label": "Details of Additional Co-Principal Investigator(s) ((Only Internal Co-PI))",
    "mandatory_depends_on": "eval:doc.has_co_pi == 'Yes'",
    "options": "Project Co-Investigator"
   },
@@ -603,6 +606,7 @@
    "reqd": 1
   },
   {
+   "allow_on_submit": 1,
    "description": "*The Head of the effective department (Applicant or Implementation) who will approve this application.\n",
    "fieldname": "department_head",
    "fieldtype": "Link",
@@ -611,6 +615,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "description": "Hidden field used by the workflow to dynamically assign the Head approval task.",
    "fieldname": "head_approver",
    "fieldtype": "Link",
@@ -651,6 +656,7 @@
   {
    "fieldname": "upload_proj_prop",
    "fieldtype": "Attach",
+   "hidden": 1,
    "label": "Upload Project Proposal / Invitation Letter (*If there's multiple files kindly merge them into single pdf and upload here) :"
   },
   {
@@ -670,6 +676,7 @@
   },
   {
    "allow_in_quick_entry": 1,
+   "allow_on_submit": 1,
    "fieldname": "proposed_budget_breakup",
    "fieldtype": "Table",
    "label": "Proposed Budget Break-up",
@@ -807,13 +814,15 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "Select 'Others' if the Funding Agency is not listed.",
+   "allow_on_submit": 1,
+   "description": "Funding Agency not found? Register a new Funding Agency.",
    "fieldname": "funding_agen",
    "fieldtype": "Link",
    "label": "Select Funding Agency",
    "options": "fundingagency_"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "funding_agency_schemes",
    "fieldtype": "Small Text",
    "label": "Name of the Research Scheme if applicable"
@@ -892,6 +901,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.origin_of_funding_agency",
    "fieldname": "origin_of_funding_agency",
    "fieldtype": "Data",
@@ -899,6 +909,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_country",
    "fieldname": "address_country",
    "fieldtype": "Data",
@@ -907,6 +918,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_address",
    "fieldname": "address_street_village_locality",
    "fieldtype": "Data",
@@ -914,6 +926,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_state",
    "fieldname": "address_state",
    "fieldtype": "Data",
@@ -921,6 +934,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_postalcode",
    "fieldname": "address_postal_code",
    "fieldtype": "Data",
@@ -928,6 +942,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.funding_agency_type == \"Government\"",
    "fetch_from": "funding_agen.ministry_funding_agency",
    "fieldname": "funding_agency_ministry",
@@ -972,6 +987,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.funding_agency_type == \"Government\"",
    "fetch_from": "funding_agen.funding_agency_initials",
    "fieldname": "fund_agen_initials",
@@ -982,11 +998,13 @@
   {
    "fieldname": "prj_start_date",
    "fieldtype": "Date",
+   "hidden": 1,
    "label": "Project Start Date (if available)"
   },
   {
    "fieldname": "prj_end_date",
    "fieldtype": "Date",
+   "hidden": 1,
    "label": "Project End Date"
   },
   {
@@ -1144,6 +1162,7 @@
    "label": "GSTIN number"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.funding_agency_id",
    "fieldname": "funding_agency_id",
    "fieldtype": "Data",
@@ -1251,14 +1270,20 @@
    "fieldtype": "Data",
    "label": "Workflow State",
    "read_only": 1
+  },
+  {
+   "fieldname": "upload_supporting_docs",
+   "fieldtype": "Table",
+   "label": "Upload Supporting Docs ( Project Proposal / Invitation Letter)",
+   "options": "Project Files"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-10 22:51:31.836225",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-04-21 00:34:01.868995",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
  "naming_rule": "Expression",

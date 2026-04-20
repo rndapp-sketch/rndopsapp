@@ -29,11 +29,15 @@
   "account_head_fund_breakup",
   "section_break_voiw",
   "loan_amount",
+  "section_break_mjkn",
+  "comments_if_any",
   "loan_agreements_section",
   "agreement_no_1",
   "agreement_no_2",
   "section_break_fqlm",
   "witness_attachment",
+  "project_copi",
+  "additional_attachment",
   "section_break_hucf",
   "bmr",
   "bmr_date",
@@ -182,7 +186,9 @@
   {
    "fieldname": "witness_attachment",
    "fieldtype": "Attach",
-   "label": "If the Project Has CO-PI then Upload Co-PI's Witnesses (Witnesses  can be email attachment or Form No RD-M14 hardcopy signed attachment)  "
+   "hidden": 1,
+   "label": "If the Project Has CO-PI then Upload Co-PI's Witnesses (Witnesses  can be email attachment or Form No RD-M14 hardcopy signed attachment)  ",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_fqlm",
@@ -224,13 +230,33 @@
    "fieldtype": "Data",
    "label": "Workflow State",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_break_mjkn",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "comments_if_any",
+   "fieldtype": "Long Text",
+   "label": "Comments, If Any"
+  },
+  {
+   "fieldname": "additional_attachment",
+   "fieldtype": "Attach",
+   "label": "Add Attachment , if Any"
+  },
+  {
+   "fieldname": "project_copi",
+   "fieldtype": "Select",
+   "label": "Does this Project Has Co-PI?",
+   "options": "\nYes\nNo"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-07 17:16:15.003584",
+ "modified": "2026-04-16 21:31:31.013303",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Loan Request",

@@ -335,12 +335,30 @@ def save_universal_registration___data(data=None, **kwargs):
 					if not isinstance(child_row, dict):
 						continue
 						
-					# Handle Phone fields in child table
+					# Parse specific child fields
 					for cf in child_meta.fields:
+						# Handle Phone fields in child table
 						if cf.fieldtype == "Phone" and child_row.get(cf.fieldname):
 							p_val = child_row[cf.fieldname]
 							if not str(p_val).startswith("+"):
 								child_row[cf.fieldname] = f"+91-{p_val}"
+								
+						# Handle Attach fields (Base64) in child table
+						elif cf.fieldtype in ["Attach", "Attach Image"] and child_row.get(cf.fieldname) and isinstance(child_row[cf.fieldname], dict) and child_row[cf.fieldname].get("file_data"):
+							try:
+								saved_file = save_file(
+									child_row[cf.fieldname]["file_name"],
+									child_row[cf.fieldname]["file_data"],
+									"Universal Registration__",
+									doc.name,
+									decode=True,
+									is_private=0,
+									df=cf.fieldname
+								)
+								child_row[cf.fieldname] = saved_file.file_url
+							except Exception as e:
+								frappe.log_error(f"Child Table File Upload Error: {str(e)}")
+								child_row[cf.fieldname] = None
 
 					doc.append(fieldname, child_row)
 					
@@ -487,12 +505,29 @@ def update_universal_registration___data(docname, data):
 				child_meta = frappe.get_meta(df.options)
 				
 				for child_row in value:
-					# Handle Phone fields in child table
+					if not isinstance(child_row, dict):
+						continue
+					# Handle Parse specific child fields
 					for cf in child_meta.fields:
 						if cf.fieldtype == "Phone" and child_row.get(cf.fieldname):
 							p_val = child_row[cf.fieldname]
 							if not str(p_val).startswith("+"):
 								child_row[cf.fieldname] = f"+91-{p_val}"
+						elif cf.fieldtype in ["Attach", "Attach Image"] and child_row.get(cf.fieldname) and isinstance(child_row[cf.fieldname], dict) and child_row[cf.fieldname].get("file_data"):
+							try:
+								saved_file = save_file(
+									child_row[cf.fieldname]["file_name"],
+									child_row[cf.fieldname]["file_data"],
+									"Universal Registration__",
+									doc.name,
+									decode=True,
+									is_private=0,
+									df=cf.fieldname
+								)
+								child_row[cf.fieldname] = saved_file.file_url
+							except Exception as e:
+								frappe.log_error(f"Child Table File Upload Error: {str(e)}")
+								child_row[cf.fieldname] = None
 
 					doc.append(fieldname, child_row)
 					
@@ -647,4 +682,92 @@ def get_registration_by_profile_type(profile_type):
 		
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Get Registration by Profile Type Error")
+		return {"status": "error", "message": str(e)}
+
+@frappe.whitelist(allow_guest=True)
+def check_email_availability(email=None, exclude_docname=None):
+	"""
+	Real-time email availability check.
+	Checks both Universal Registration__ and Frappe core User tables.
+	Returns availability status with details about where the email was found.
+	"""
+	try:
+		if not email or not email.strip():
+			return {"status": "error", "message": "Email is required."}
+
+		email = email.strip().lower()
+		found_in = []
+
+		# 1. Check in Universal Registration__
+		ur_filters = {"email_address_u_r": email}
+		if exclude_docname:
+			ur_filters["name"] = ["!=", exclude_docname]
+
+		if frappe.db.exists("Universal Registration__", ur_filters):
+			found_in.append("Universal Registration")
+
+		# 2. Check in Frappe core User (User doctype uses email as the 'name' field)
+		if frappe.db.exists("User", email):
+			found_in.append("System User")
+
+		if found_in:
+			return {
+				"status": "success",
+				"available": False,
+				"found_in": found_in,
+				"message": f"This email is already registered in: {', '.join(found_in)}"
+			}
+		else:
+			return {
+				"status": "success",
+				"available": True,
+				"found_in": [],
+				"message": "Email is available."
+			}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Check Email Availability Error")
+		return {"status": "error", "message": str(e)}
+
+@frappe.whitelist(allow_guest=True)
+def check_duplicate_registration(email=None, id_numbers=None, exclude_docname=None):
+	"""
+	Check if an email or any ID Number already exists.
+	"""
+	try:
+		duplicates = []
+		
+		# Check Email
+		if email:
+			filters = {"email_address_u_r": email}
+			if exclude_docname:
+				filters["name"] = ["!=", exclude_docname]
+			
+			if frappe.db.exists("Universal Registration__", filters):
+				duplicates.append("Email")
+				
+		# Check ID Numbers
+		if id_numbers:
+			if isinstance(id_numbers, str):
+				id_numbers = json.loads(id_numbers)
+				
+			for id_num in id_numbers:
+				query = "SELECT parent FROM `tabUniversal Documents__` WHERE parenttype = 'Universal Registration__' AND id_number_u_r = %s"
+				args = [id_num]
+				if exclude_docname:
+					query += " AND parent != %s"
+					args.append(exclude_docname)
+					
+				if frappe.db.sql(query, tuple(args)):
+					if "ID Number" not in duplicates:
+						duplicates.append("ID Number")
+					break
+					
+		return {
+			"status": "success",
+			"has_duplicate": len(duplicates) > 0,
+			"duplicates": duplicates
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Check Duplicate Registration Error")
 		return {"status": "error", "message": str(e)}

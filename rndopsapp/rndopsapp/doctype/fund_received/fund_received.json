@@ -52,7 +52,7 @@
    "description": "*Where money is received",
    "fieldname": "bank_account",
    "fieldtype": "Data",
-   "label": "Bank Account Number"
+   "label": "Bank Account Number / Scheme (Name / Number)"
   },
   {
    "fieldname": "section_break_hchd",
@@ -102,7 +102,6 @@
    "description": "* Receiving from Accounts Portal",
    "fieldname": "fund_received_ref_number",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Fund Received Ref No.",
    "read_only": 1
   },
@@ -117,7 +116,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-01 18:29:36.016369",
+ "modified": "2026-04-20 22:22:03.470809",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Received",
@@ -178,6 +177,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

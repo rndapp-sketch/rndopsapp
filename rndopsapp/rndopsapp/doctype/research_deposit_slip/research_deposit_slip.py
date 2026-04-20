@@ -134,7 +134,7 @@ def get_research_deposit_slip_fields(doc_name=None):
 			fund_received = frappe.db.get_value(
 				"Fund Received",
 				doc_name,
-				["name", "prjreg_title", "sanction_ref_no", "fund_received_amt", "bank_account"],
+				["name", "prjreg_title", "fund_received_ref_number", "fund_received_amt", "bank_account"],
 				as_dict=True,
 			)
 

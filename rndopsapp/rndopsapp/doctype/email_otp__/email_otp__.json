@@ -119,7 +119,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-23 12:00:00.000000",
+ "modified": "2026-02-23 12:00:00",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Email OTP__",
@@ -152,6 +152,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

@@ -99,7 +99,7 @@ def get_recruitment_adhoc_contractual_fields(doc_name=None):
             "User",
             filters={"enabled": 1, "user_type": "System User"},
             fields=["name as value", "full_name as label"],
-            limit_page_length=500,
+            limit_page_length=0,
         )
         link_options["webmail_id"] = users
         link_options["chairperson_webmail_id"] = users
@@ -122,7 +122,7 @@ def get_recruitment_adhoc_contractual_fields(doc_name=None):
         amended_docs = frappe.get_all(
             "Recruitment Adhoc Contractual",
             fields=["name as value", "name as label"],
-            limit_page_length=200,
+            limit_page_length=0,
         )
         link_options["amended_from"] = amended_docs
     except Exception:
@@ -142,7 +142,7 @@ def get_recruitment_adhoc_contractual_fields(doc_name=None):
                 "department",
                 "project_duration",
             ],
-            limit_page_length=200,
+            limit_page_length=0,
             order_by="modified desc",
         )
         link_options["project_registration"] = projects
@@ -210,6 +210,44 @@ def save_recruitment_adhoc_contractual_data(data):
         # so persist the frontend-supplied value directly after save
         if "head" in data and data["head"]:
             frappe.db.set_value("Recruitment Adhoc Contractual", doc.name, "head", data["head"])
+
+        # Resolve chairperson_name from chairperson_webmail_id (User lookup)
+        # Priority: explicit email in payload → fallback to project head_approver
+        chairperson_email = data.get("chairperson_webmail_id")
+        if not chairperson_email:
+            upfa_project_code = data.get("upfa_project_code")
+            if upfa_project_code:
+                project = frappe.db.get_value(
+                    "Project Registration",
+                    {"project_no": upfa_project_code},
+                    ["head_approver"],
+                    as_dict=True,
+                )
+                if project and project.get("head_approver"):
+                    chairperson_email = project["head_approver"]
+
+        if chairperson_email:
+            user = frappe.db.get_value(
+                "User",
+                chairperson_email,
+                ["first_name", "middle_name", "last_name"],
+                as_dict=True,
+            )
+            if user:
+                name_parts = [
+                    (user.get("first_name") or "").strip(),
+                    (user.get("middle_name") or "").strip(),
+                    (user.get("last_name") or "").strip(),
+                ]
+                chairperson_name = " ".join(part for part in name_parts if part)
+                frappe.db.set_value(
+                    "Recruitment Adhoc Contractual",
+                    doc.name,
+                    {
+                        "chairperson_webmail_id": chairperson_email,
+                        "chairperson_name": chairperson_name,
+                    },
+                )
 
         frappe.db.commit()
         return {"status": "success", "docname": doc.name}
@@ -321,54 +359,183 @@ def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, 
 		return {"status": "error", "message": str(e)}
 
 
+# ============================================================
+# EDITED BY MKY | 2026-04-14 12:23 IST
+# START OF EDIT — Dynamic Designation Fetching via designation_type
+# Replaced complex EmployeeClass→User→Designation chain with a
+# direct filter on Designation_prornd.designation_type field.
+# Added get_filtered_designations() for dynamic frontend calls.
+# ============================================================
+
 @frappe.whitelist(allow_guest=True)
 def get_project_staff_designations():
 	"""
-	Returns a list of designations linked to users with an employee class of "Project Staff".
+	Returns a list of designations where designation_type = "Project Staff"
+	directly from Designation_prornd doctype.
+	"Other" is always appended at the end for custom user input.
+	"""
+	return get_filtered_designations(designation_type="Project Staff")
+
+
+@frappe.whitelist(allow_guest=True)
+def get_filtered_designations(designation_type=None):
+	"""
+	Returns designations from Designation_prornd filtered by designation_type.
+	If designation_type is not provided, returns all designations.
+	"Other" is always appended at the end to allow custom user input.
+
+	Args:
+		designation_type (str, optional): e.g. "Project Staff", "Permanent Staff", "Others"
+
+	Returns:
+		dict: {"status": "success", "data": [{"value": ..., "label": ...}, ...]}
 	"""
 	try:
-		project_staff_empclass_ids = frappe.get_all(
-			"EmployeeClass_prornd",
-			filters={"empclass_name": ["like", "%Project Staff%"]},
-			pluck="name",
+		filters = {}
+		if designation_type:
+			filters["designation_type"] = designation_type
+
+		designations = frappe.get_all(
+			"Designation_prornd",
+			filters=filters,
+			fields=["name as value", "designation_prornd as label"],
+			order_by="designation_prornd asc",
 			limit=0,
-		)
-
-		if not project_staff_empclass_ids:
-			return {"status": "success", "data": []}
-
-		project_staff_designations = frappe.get_all(
-			"User",
-			filters={
-				"empclass": ["in", project_staff_empclass_ids],
-				"designation_name": ["is", "set"],
-			},
-			fields=["designation_name"],
-			distinct=True,
-			pluck="designation_name",
-			limit=0,
-		)
-
-		if not project_staff_designations:
-			return {"status": "success", "data": []}
-
-		placeholders = ", ".join(["%s"] * len(project_staff_designations))
-		filtered_designations = frappe.db.sql(
-			f"""SELECT name, designation_prornd
-			FROM `tabDesignation_prornd`
-			WHERE name IN ({placeholders})
-			OR designation_prornd IN ({placeholders})""",
-			project_staff_designations + project_staff_designations,
-			as_dict=True,
 		)
 
 		data = [
-			{"value": item["name"], "label": item.get("designation_prornd") or item["name"]}
-			for item in filtered_designations
+			{"value": item["value"], "label": item.get("label") or item["value"]}
+			for item in designations
 		]
+
+		# ============================================================
+		# EDITED BY MKY | 2026-04-14 15:35 IST
+		# START OF EDIT — Quick Entry Prepend
+		# Replaced "Other" appended at the end with "CREATE_NEW" prepended at the top.
+		# ============================================================
+		data.insert(0, {
+			"value": "CREATE_NEW",
+			"label": "➕ Create New Designation..."
+		})
+		# END OF EDIT — MKY | 2026-04-14 15:35 IST
+		# ============================================================
 
 		return {"status": "success", "data": data}
 
 	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), "Error in get_project_staff_designations")
+		frappe.log_error(frappe.get_traceback(), "Error in get_filtered_designations")
 		return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def update_chairperson_fields(docname, chairperson_webmail_id, chairperson_name):
+    """
+    Directly updates chairperson_webmail_id and chairperson_name on a
+    Recruitment Adhoc Contractual document.
+    Restricted to users with the 'Dean, RnD' role.
+    """
+    print(f"[update_chairperson_fields] Called by: {frappe.session.user}")
+    print(f"[update_chairperson_fields] docname={docname}, email={chairperson_webmail_id}, name={chairperson_name}")
+
+    user_roles = frappe.get_roles(frappe.session.user)
+    print(f"[update_chairperson_fields] User roles: {user_roles}")
+
+    if "Dean, RnD" not in user_roles:
+        print(f"[update_chairperson_fields] Permission denied for user: {frappe.session.user}")
+        frappe.throw("Not permitted", frappe.PermissionError)
+
+    try:
+        # Derive chairperson_name from User if not explicitly provided
+        if not chairperson_name:
+            user = frappe.db.get_value(
+                "User",
+                chairperson_webmail_id,
+                ["first_name", "middle_name", "last_name"],
+                as_dict=True,
+            )
+            if user:
+                name_parts = [
+                    (user.get("first_name") or "").strip(),
+                    (user.get("middle_name") or "").strip(),
+                    (user.get("last_name") or "").strip(),
+                ]
+                chairperson_name = " ".join(part for part in name_parts if part)
+                print(f"[update_chairperson_fields] Derived name from User: {chairperson_name}")
+
+        print(f"[update_chairperson_fields] Attempting db.set_value on {docname}")
+        frappe.db.set_value(
+            "Recruitment Adhoc Contractual",
+            docname,
+            {
+                "chairperson_webmail_id": chairperson_webmail_id,
+                "chairperson_name": chairperson_name,
+            },
+        )
+        frappe.db.commit()
+    except Exception as e:
+        frappe.db.rollback()
+        print(f"[update_chairperson_fields] ERROR: {e}")
+        frappe.log_error(frappe.get_traceback(), f"update_chairperson_fields failed for {docname}")
+        return {"status": "error", "message": str(e)}
+    else:
+        print(f"[update_chairperson_fields] Success — chairperson_webmail_id={chairperson_webmail_id}, chairperson_name={chairperson_name}")
+        return {
+            "status": "success",
+            "chairperson_webmail_id": chairperson_webmail_id,
+            "chairperson_name": chairperson_name,
+        }
+
+
+# END OF EDIT — MKY | 2026-04-14 12:23 IST
+# ============================================================
+
+# ============================================================
+# EDITED BY MKY | 2026-04-14 15:35 IST
+# START OF EDIT — create_custom_designation for Recruitment Adhoc Contractual
+# Mirrors the same logic from project_registration.py.
+# Returns status="duplicate" when designation already exists so frontend alerts the user.
+# ============================================================
+@frappe.whitelist()
+def create_custom_designation(designation_name, designation_type="Project Staff"):
+	"""
+	Checks for an existing designation (case-insensitive).
+	Returns status="duplicate" with a message if already present.
+	Otherwise creates a new Designation_prornd record and returns status="success".
+	"""
+	try:
+		if not designation_name:
+			return {"status": "error", "message": "Designation name is required"}
+
+		designation_name = designation_name.strip()
+		# Case-insensitive duplicate check across both name and designation_prornd fields
+		existing = frappe.db.sql(
+			"""SELECT name, designation_prornd FROM `tabDesignation_prornd`
+			WHERE UPPER(designation_prornd)=%s OR UPPER(name)=%s LIMIT 1""",
+			(designation_name.upper(), designation_name.upper()),
+			as_dict=True
+		)
+
+		if existing:
+			# Return a distinct "duplicate" status — frontend will alert the user
+			return {
+				"status": "duplicate",
+				"designation_name": existing[0]["name"],
+				"message": f"Designation '{existing[0].get('designation_prornd') or existing[0]['name']}' already exists in the system."
+			}
+
+		# Create new designation
+		new_doc = frappe.get_doc({
+			"doctype": "Designation_prornd",
+			"designation_prornd": designation_name,
+			"designation_type": designation_type
+		})
+		new_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		return {"status": "success", "designation_name": new_doc.name}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), f"Recruitment Adhoc Contractual Custom Designation Creation Error for {designation_name}")
+		return {"status": "error", "message": str(e)}
+
+# END OF EDIT — MKY | 2026-04-14 15:35 IST
+# ============================================================
