@@ -167,99 +167,164 @@ def extract_eval_expression(expression):
 	return expression
 
 
+# ============================================================
+# EDITED BY MKY | 2026-04-21 01:46 IST
+# START OF EDIT — Hardened notify_mattermost: split timeout
+# into (connect=2s, read=3s) so a dead/unreachable Mattermost
+# server fails fast and NEVER blocks or affects functionality.
+# ============================================================
+def notify_mattermost(message: str) -> None:
+	"""
+	Sends a plain-text message to the configured Mattermost channel.
+	- connect timeout = 2 s : fails fast if server is unreachable
+	- read timeout   = 3 s : fails fast if server is slow
+	All exceptions are silently swallowed — this call must NEVER
+	affect the main application flow under any circumstances.
+	"""
+	try:
+		_url = "http://172.16.135.118:8065/api/v4/posts"
+		_headers = {
+			"Authorization": "Bearer fmjih41b4iymicttnuhinsqime",
+			"Content-Type": "application/json",
+		}
+		_payload = {
+			"channel_id": "ihmkbbfq9ibzugfpy9rncq5yke",
+			"message": str(message),
+		}
+		import requests as _req
+		# timeout=(connect_timeout, read_timeout)
+		# If Mattermost is down, connect fails in ≤2 s and we move on.
+		_req.post(_url, json=_payload, headers=_headers, timeout=(2, 3))
+	except Exception:
+		pass  # API down / network error — silently skip, never raise
+# END OF EDIT — MKY | 2026-04-21 01:46 IST
+# ============================================================
+
 
 @frappe.whitelist()
 def submit_project_registration(docname):
-	# Fetch the Project Registration document
-	doc = frappe.get_doc("Project Registration", docname)
+	# ============================================================
+	# EDITED BY MKY | 2026-04-21 01:54 IST
+	# START OF EDIT — Wrapped entire function in try/except so ALL
+	# exceptions (including frappe.throw ValidationErrors) are sent
+	# to Mattermost before being re-raised to Frappe normally.
+	# ============================================================
+	try:
+		# Fetch the Project Registration document
+		doc = frappe.get_doc("Project Registration", docname)
 
-	# Convert to dict for reference
-	data = doc.as_dict()
-	# print(f"Implementation Department: {data.get('implementation_department')}")
+		# Convert to dict for reference
+		data = doc.as_dict()
+		# print(f"Implementation Department: {data.get('implementation_department')}")
 
-	# --- Fetch linked Department_prornd document ---
-	dept_doc = frappe.get_doc("Department_prornd", data.get("implementation_department"))
-	# print(f"Department Name: {dept_doc.dept_name}")
-	# print(f"Department Head: {dept_doc.dept_head}")
+		# --- Fetch linked Department_prornd document ---
+		dept_doc = frappe.get_doc("Department_prornd", data.get("implementation_department"))
+		# print(f"Department Name: {dept_doc.dept_name}")
+		# print(f"Department Head: {dept_doc.dept_head}")
 
-	# ✅ Update Project Registration fields from Department_prornd
-	doc.department_head = dept_doc.dept_head
-	doc.head_approver = dept_doc.dept_head  # You can change this logic if needed
+		# ✅ Update Project Registration fields from Department_prornd
+		doc.department_head = dept_doc.dept_head
+		doc.head_approver = dept_doc.dept_head  # You can change this logic if needed
 
-	# Save the updated values before submission
-	doc.flags.ignore_mandatory = True
-	doc.save(ignore_permissions=True)
-	frappe.db.commit()
-
-	# --- Workflow Handling Section ---
-	if not doc.workflow_state:
-		doc.workflow_state = "Draft"
-
-	# Security: Only owner can submit draft
-	# if doc.owner != frappe.session.user:
-	# 	frappe.throw("Permission Denied: You are not the owner of this document.")
-
-	if doc.docstatus != 0:
-		frappe.throw("This document has already been submitted.")
-
-	# --- Resolve workflow path based on EmployeeClass_prornd ---
-	applicant_type_identifier = doc.applicant_type
-	if not applicant_type_identifier:
-		frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
-
-	emp_class_doc_id = None
-	if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
-		emp_class_doc_id = applicant_type_identifier
-	else:
-		found_id = frappe.db.get_value(
-			"EmployeeClass_prornd",
-			{"empclass_name": applicant_type_identifier},
-			"name",
-		)
-		if found_id:
-			emp_class_doc_id = found_id
-
-	if not emp_class_doc_id:
-		frappe.throw(
-			f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'."
-		)
-
-	workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
-	if not workflow_path or not frappe.db.exists("Workflow", workflow_path):
-		workflow_path = "pending_approval_prjReg"
-		frappe.db.set_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path", workflow_path)
+		# Save the updated values before submission
+		doc.flags.ignore_mandatory = True
+		doc.save(ignore_permissions=True)
 		frappe.db.commit()
 
-	workflow_doc = frappe.get_doc("Workflow", workflow_path)
-	current_state = doc.workflow_state
+		# --- Workflow Handling Section ---
+		if not doc.workflow_state:
+			doc.workflow_state = "Draft"
 
-	# --- Find the next transition ---
-	next_transition = None
-	for t in workflow_doc.transitions:
-		if t.state == current_state:
-			next_transition = t
-			break
+		# Security: Only owner can submit draft
+		# if doc.owner != frappe.session.user:
+		# 	frappe.throw("Permission Denied: You are not the owner of this document.")
 
-	if not next_transition:
-		frappe.throw(
-			f"No transition found from current state '{current_state}' in workflow '{workflow_path}'."
+		if doc.docstatus != 0:
+			frappe.throw("This document has already been submitted.")
+
+		# --- Resolve workflow path based on EmployeeClass_prornd ---
+		applicant_type_identifier = doc.applicant_type
+		if not applicant_type_identifier:
+			frappe.throw("Cannot submit: Applicant Type (Employee Class) is missing.")
+
+		emp_class_doc_id = None
+		if frappe.db.exists("EmployeeClass_prornd", applicant_type_identifier):
+			emp_class_doc_id = applicant_type_identifier
+		else:
+			found_id = frappe.db.get_value(
+				"EmployeeClass_prornd",
+				{"empclass_name": applicant_type_identifier},
+				"name",
+			)
+			if found_id:
+				emp_class_doc_id = found_id
+
+		if not emp_class_doc_id:
+			frappe.throw(
+				f"Invalid Applicant Type: Could not find an Employee Class matching '{applicant_type_identifier}'."
+			)
+
+		workflow_path = frappe.db.get_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path")
+		if not workflow_path or not frappe.db.exists("Workflow", workflow_path):
+			workflow_path = "pending_approval_prjReg"
+			frappe.db.set_value("EmployeeClass_prornd", emp_class_doc_id, "workflow_path", workflow_path)
+			frappe.db.commit()
+
+		workflow_doc = frappe.get_doc("Workflow", workflow_path)
+		current_state = doc.workflow_state
+
+		# --- Find the next transition ---
+		next_transition = None
+		for t in workflow_doc.transitions:
+			if t.state == current_state:
+				next_transition = t
+				break
+
+		if not next_transition:
+			frappe.throw(
+				f"No transition found from current state '{current_state}' in workflow '{workflow_path}'."
+			)
+
+		next_state = next_transition.next_state
+
+		# --- Optional Head Approval Handling ---
+		if "Head Approval" in next_state and not doc.head_approver:
+			frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
+
+		# ✅ Update workflow and submit
+		doc.workflow_state = next_state
+		doc.submit()
+
+		notify_mattermost(
+			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
+			f"✅ [submit_project_registration] SUCCESS ✅\n"
+			f"Time         : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f"Docname      : {docname}\n"
+			f"New State    : {doc.workflow_state}\n"
+			f"Dept Head    : {doc.department_head}\n"
+			f"Head Approver: {doc.head_approver}"
 		)
 
-	next_state = next_transition.next_state
+		return {
+			"workflow_state": doc.workflow_state,
+			"department_head": doc.department_head,
+			"head_approver": doc.head_approver,
+		}
 
-	# --- Optional Head Approval Handling ---
-	if "Head Approval" in next_state and not doc.head_approver:
-		frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
-
-	# ✅ Update workflow and submit
-	doc.workflow_state = next_state
-	doc.submit()
-
-	return {
-		"workflow_state": doc.workflow_state,
-		"department_head": doc.department_head,
-		"head_approver": doc.head_approver,
-	}
+	except Exception as e:
+		_tb = frappe.get_traceback()
+		notify_mattermost(
+			f"❌ -=-=-=-=-=-=❌-=-=-=-=-=-❌=-=-=-=-=-=-=-=❌-=-=-=-=-=-❌ \n"
+			f"❌ [submit_project_registration] ERROR ❌\n"
+			f"Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f"Docname  : {docname}\n"
+			f"Exception: {type(e).__name__}: {str(e)}\n"
+			f"User     : {frappe.session.user}\n"
+			f"---TRACEBACK---\n{_tb}"
+		)
+		raise  # Re-raise so Frappe handles the HTTP response normally
+	# END OF EDIT — MKY | 2026-04-21 01:54 IST
+	# ============================================================
 
 
 
@@ -1180,6 +1245,20 @@ def save_project_data(doc, html_content=None):
 			frappe.log_error(f"Error making files public for {new_project.name}: {str(e)}")
 
 		# Return the name of the newly created document to the frontend
+		# ============================================================
+		# EDITED BY MKY | 2026-04-21 01:43 IST
+		# START OF EDIT — Mattermost success notification for save_project_data
+		# ============================================================
+		notify_mattermost(
+			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
+			f"✅ [save_project_data] SUCCESS ✅\n"
+			f"Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f"Docname : {new_project.name}\n"
+			f"User    : {frappe.session.user}\n"
+			f"Message : Project Registration Successful"
+		)
+		# END OF EDIT — MKY | 2026-04-21 01:43 IST
+		# ============================================================
 		return {
 			"status": "success",
 			"message": "Project Registration Successful",
@@ -1189,7 +1268,22 @@ def save_project_data(doc, html_content=None):
 	except Exception as e:
 		# If any error occurs, rollback the transaction and inform the user
 		frappe.db.rollback()
-		frappe.log_error(frappe.get_traceback(), "Project Registration Save Error")
+		_tb = frappe.get_traceback()
+		frappe.log_error(_tb, "Project Registration Save Error")
+		# ============================================================
+		# EDITED BY MKY | 2026-04-21 01:46 IST
+		# START OF EDIT — Error notification: actual exception first
+		# ============================================================
+		notify_mattermost(
+			f"❌ -=-=-=-=-=-=❌-=-=-=-=-=-❌=-=-=-=-=-=-=-=❌-=-=-=-=-=-❌ \n"
+			f"❌ [save_project_data] ERROR ❌\n"
+			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f"Exception : {type(e).__name__}: {str(e)}\n"
+			f"User      : {frappe.session.user}\n"
+			f"---TRACEBACK---\n{_tb}"
+		)
+		# END OF EDIT — MKY | 2026-04-21 01:46 IST
+		# ============================================================
 		frappe.throw(_("An error occurred while saving the project. Please contact support."))
 
 
@@ -1371,18 +1465,42 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				resolved_docname = existing_drafts[0].name
 				frappe.logger().info(f"Duplicate prevented: Found existing draft {resolved_docname} for {data.get('project_title')}")
 
+		# Tracks the existing DB workflow_state for correction-state reset logic below.
+		existing_workflow_state = None
+		# States in which the PI is expected to re-edit the doc; we revert in place
+		# so the docname is preserved instead of creating a new draft.
+		correction_states = {
+			"Needs Correction (PE)",
+			"Needs Correction (HOD)",
+			"Needs Correction",
+		}
 		if resolved_docname and frappe.db.exists("Project Registration", resolved_docname):
 			doc = frappe.get_doc("Project Registration", resolved_docname)
 			if doc.owner != frappe.session.user and "System Manager" not in frappe.get_roles(frappe.session.user):
 				pass # Allow System Manager to edit, or fall back to standard permission checks
 			elif doc.owner != frappe.session.user:
 				frappe.throw(_("You do not have permission to edit this draft."))
+
+			existing_workflow_state = doc.workflow_state
+
 			if doc.docstatus != 0:
-				frappe.logger().warning(
-					f"Document {resolved_docname} is already submitted (docstatus={doc.docstatus}). Creating new draft instead."
-				)
-				doc = frappe.new_doc("Project Registration")
-				data.pop("name", None)  # Don't carry over the submitted doc's name
+				if doc.workflow_state in correction_states:
+					# Submitted doc sent back for correction — revert to draft in place
+					# to preserve the same docname.
+					frappe.db.set_value(
+						"Project Registration", doc.name,
+						{"docstatus": 0, "workflow_state": "Draft"},
+						update_modified=False,
+					)
+					frappe.db.commit()
+					doc = frappe.get_doc("Project Registration", resolved_docname)
+				else:
+					frappe.logger().warning(
+						f"Document {resolved_docname} is already submitted (docstatus={doc.docstatus}). Creating new draft instead."
+					)
+					doc = frappe.new_doc("Project Registration")
+					data.pop("name", None)  # Don't carry over the submitted doc's name
+					existing_workflow_state = None
 		else:
 			doc = frappe.new_doc("Project Registration")
 
@@ -1399,6 +1517,10 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		}
 		parent_data = {k: v for k, v in data.items() if k not in child_tables_map}
 
+		# Draft-save must not let the frontend push a workflow transition; we manage
+		# workflow_state below based on existing DB state.
+		parent_data.pop("workflow_state", None)
+
 		# --- Sanitize Parent Data ---
 		for key, value in parent_data.items():
 			if isinstance(value, dict):
@@ -1410,6 +1532,16 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			parent_data["copi_contact"] = _format_phone_number(parent_data.get("copi_contact"))
 
 		doc.update(parent_data)
+
+		# If the existing doc was in a correction state (e.g., "Needs Correction (PE)"),
+		# reset it to Draft. We bypass workflow transition validation by writing "Draft"
+		# directly to the DB first, so save() sees pre-state == post-state == "Draft".
+		if existing_workflow_state and existing_workflow_state != "Draft":
+			frappe.db.set_value(
+				"Project Registration", doc.name, "workflow_state", "Draft",
+				update_modified=False,
+			)
+			doc.workflow_state = "Draft"
 
 		implementation_dept = data.get("applicant_department")
 		if not implementation_dept and data.get("pi_webmail"):
@@ -1720,10 +1852,39 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		else:
 			print("DEBUG: html_content is empty or None")
 
+		# ============================================================
+		# EDITED BY MKY | 2026-04-21 01:43 IST
+		# START OF EDIT — Mattermost success notification for save_project_draft
+		# ============================================================
+		notify_mattermost(
+			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
+			f"✅ [save_project_draft] SUCCESS ✅\n"
+			f"Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f"Docname : {doc.name}\n"
+			f"User    : {frappe.session.user}\n"
+			f"Status  : Draft saved successfully"
+		)
+		# END OF EDIT — MKY | 2026-04-21 01:43 IST
+		# ============================================================
 		return {"docname": doc.name}
 
 	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), "Project Draft Save Error")
+		_tb = frappe.get_traceback()
+		frappe.log_error(_tb, "Project Draft Save Error")
+		# ============================================================
+		# EDITED BY MKY | 2026-04-21 01:43 IST
+		# START OF EDIT — Mattermost error notification for save_project_draft
+		# ============================================================
+		notify_mattermost(
+			f"❌ -=-=-=-=-=-=❌-=-=-=-=-=-❌=-=-=-=-=-=-=-=❌-=-=-=-=-=-❌ \n"
+			f"❌ [save_project_draft] ERROR ❌\n"
+			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f"Exception : {type(e).__name__}: {str(e)}\n"
+			f"User      : {frappe.session.user}\n"
+			f"---TRACEBACK---\n{_tb}"
+		)
+		# END OF EDIT — MKY | 2026-04-21 01:43 IST
+		# ============================================================
 		frappe.throw(_("An error occurred while saving the draft: {0}").format(str(e)))
 
 
