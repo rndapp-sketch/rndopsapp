@@ -234,7 +234,7 @@ def save_loan_request(doc_data):
 				path = f"Project_Registration/{project_number}/Loan/{file_name}"
 				mime = file_service._mime(file_name)
 				file_service.storage.upload(path, content, mime)
-				additional_url = f"/prod-rnd-files/{path}"
+				additional_url = f"/rnd-files/{path}"
 				frappe.db.set_value("Loan Request", doc.name, "additional_attachment", additional_url)
 			except Exception as e:
 				frappe.log_error(frappe.get_traceback(), "Loan Request Additional Attachment Upload Error")

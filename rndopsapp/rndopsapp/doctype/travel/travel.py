@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import date_diff, getdate
 
 
 def extract_eval_expression(expression):
@@ -207,6 +208,13 @@ def get_travel_fields(doc_name=None):
 	except Exception:
 		pass
 
+	# Inject live SCL balance into the HTML field so React sees real data
+	scl_html = _build_scl_balance_html(current_user)
+	for f in fields:
+		if f["fieldname"] == "travel_leave_balance_html":
+			f["options"] = scl_html
+			break
+
 	return {
 		"fields": fields,
 		"prefill_data": prefill_data,
@@ -214,6 +222,7 @@ def get_travel_fields(doc_name=None):
 		"related_data": related_data,
 		"client_scripts": client_scripts,
 		"child_table_meta": child_table_meta,
+		"scl_balance": _get_raw_scl_balance(current_user),
 	}
 
 
@@ -251,6 +260,75 @@ def get_user_details_travel(user_email):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), _("Error fetching user details for Travel"))
 		frappe.throw(_("An error occurred while fetching user details."))
+
+
+@frappe.whitelist()
+def get_special_leave_balance_for_travel(employee=None):
+	"""
+	Thin proxy so the Travel form can call a single endpoint.
+	Delegates to the canonical implementation in special_leave_balance.py.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import (
+		get_special_leave_balance,
+	)
+	return get_special_leave_balance(employee)
+
+
+def _get_raw_scl_balance(employee):
+	"""Return raw SCL balance dict for the employee (no throw on error)."""
+	try:
+		from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import (
+			get_special_leave_balance,
+		)
+		return get_special_leave_balance(employee)
+	except Exception:
+		return {"is_eligible": False}
+
+
+def _build_scl_balance_html(employee):
+	"""Build the HTML string for the SCL balance card shown in the Travel form."""
+	data = _get_raw_scl_balance(employee)
+
+	if not data or not data.get("is_eligible"):
+		return """
+		<div style="border:1px solid #d1d8dd;padding:12px;border-radius:6px;background:#f9f9f9;">
+			<strong>Special Casual Leave (SCL)</strong><br>
+			<span style="color:#888;">Not eligible for SCL.</span>
+		</div>"""
+
+	available = data.get("available_balance", 0)
+	total    = data.get("total_credited", 0)
+	utilized = data.get("utilized_balance", 0)
+	year     = data.get("year", "")
+	color    = "#1a7f37" if available > 0 else "#cf1322"
+	icon     = "✅" if available > 0 else "⚠️"
+	exhausted_msg = ""
+	if available == 0:
+		exhausted_msg = f"""
+		<div style="margin-top:8px;padding:6px 10px;background:#fff1f0;
+		            border-radius:4px;color:#cf1322;font-size:12px;">
+			You have exhausted your SCL quota for {year}.
+		</div>"""
+
+	return f"""
+	<div style="border:1px solid #d1d8dd;padding:12px;border-radius:6px;background:#fff;">
+		<strong style="font-size:14px;">Special Casual Leave (SCL) — {year}</strong>
+		<table style="margin-top:8px;width:100%;border-collapse:collapse;font-size:13px;">
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Total Credited</td>
+				<td style="padding:2px 0;font-weight:600;">{total} days</td>
+			</tr>
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Utilized</td>
+				<td style="padding:2px 0;font-weight:600;">{utilized} days</td>
+			</tr>
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Available</td>
+				<td style="padding:2px 0;font-weight:700;color:{color};">{available} days {icon}</td>
+			</tr>
+		</table>
+		{exhausted_msg}
+	</div>"""
 
 
 @frappe.whitelist()
@@ -561,6 +639,10 @@ def perform_travel_action(docname, action):
 		else:
 			doc.save(ignore_permissions=True)
 
+		# --- Special Casual Leave deduction on Approval ---
+		if next_state == "Approved" and doc.travel_special_casual_leave == "Required":
+			_deduct_scl_on_approval(doc)
+
 		# Kafka publish on Dean / Associate Dean approval
 		if next_state == "Approved":
 			frappe.logger().info(f"[Travel Kafka] Approval triggered for {docname}. Searching for staged commits.")
@@ -632,4 +714,106 @@ def perform_travel_action(docname, action):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Travel Action Error")
 		return {"status": "error", "message": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# SCL helpers
+# ---------------------------------------------------------------------------
+
+def _calculate_scl_days(doc):
+	"""Return the number of SCL days requested in this Travel doc."""
+	if not doc.travel_leave_from_date or not doc.travel_leave_to_date:
+		return 0
+	delta = date_diff(doc.travel_leave_to_date, doc.travel_leave_from_date)
+	return max(0, delta + 1)
+
+
+def _deduct_scl_on_approval(doc):
+	"""
+	Called when a Travel application moves to Approved and SCL is Required.
+	Deducts days from the employee's special_leave_balance for the year of
+	travel_leave_from_date (or current year as fallback).
+	Logs a warning in Frappe error log if balance is insufficient but does
+	NOT block approval — raise frappe.throw() here if you prefer hard block.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import deduct_leaves
+
+	employee = doc.webmail_id_travel
+	if not employee:
+		frappe.log_error(
+			f"[SCL] Cannot deduct: webmail_id_travel is empty on Travel {doc.name}",
+			"SCL Deduction Warning"
+		)
+		return
+
+	days = _calculate_scl_days(doc)
+	if days <= 0:
+		frappe.log_error(
+			f"[SCL] Cannot deduct: leave dates missing or invalid on Travel {doc.name}",
+			"SCL Deduction Warning"
+		)
+		return
+
+	# Use the year of the leave start date
+	year = getdate(doc.travel_leave_from_date).year
+
+	success = deduct_leaves(
+		employee=employee,
+		year=year,
+		days=days,
+		reference_doctype="Travel",
+		reference_name=doc.name,
+	)
+
+	if not success:
+		# Warn in error log; optionally notify approver
+		frappe.log_error(
+			f"[SCL] Insufficient balance for {employee} in {year}. "
+			f"Requested {days} days but balance is exhausted. Travel: {doc.name}",
+			"SCL Insufficient Balance"
+		)
+		# --- Uncomment the line below to HARD BLOCK approval instead of warning ---
+		# frappe.throw(_(f"Insufficient Special Casual Leave balance. Requested {days} days exceeds available balance."))
+	else:
+		frappe.logger().info(
+			f"[SCL] Deducted {days} day(s) from {employee} ({year}) for Travel {doc.name}"
+		)
+
+
+@frappe.whitelist()
+def cancel_travel_scl(docname):
+	"""
+	Reverses the SCL deduction when a Travel application is cancelled.
+	Call this from the frontend cancel flow after cancelling the doc.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import reverse_leaves
+
+	if not frappe.db.exists("Travel", docname):
+		return {"status": "error", "message": "Travel document not found."}
+
+	doc = frappe.get_doc("Travel", docname)
+
+	if doc.travel_special_casual_leave != "Required":
+		return {"status": "skipped", "message": "SCL was not required for this travel."}
+
+	employee = doc.webmail_id_travel
+	days = _calculate_scl_days(doc)
+
+	if not employee or days <= 0:
+		return {"status": "skipped", "message": "No valid employee/dates to reverse."}
+
+	year = getdate(doc.travel_leave_from_date).year
+
+	reverse_leaves(
+		employee=employee,
+		year=year,
+		days=days,
+		reference_doctype="Travel",
+		reference_name=docname,
+	)
+
+	return {
+		"status": "success",
+		"message": f"Reversed {days} SCL day(s) for {employee} ({year}).",
+	}
 

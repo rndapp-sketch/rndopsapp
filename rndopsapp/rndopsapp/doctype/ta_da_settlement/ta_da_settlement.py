@@ -142,6 +142,10 @@ def get_ta_da_settlement_fields(doc_name=None, travel_ref=None):
 			# Purpose of journey from Travel's purpose_of_visit
 			prefill_data["ta_da_purpose_of_journey"] = travel_doc.purpose_of_visit
 
+			# Account head from Travel
+			if travel_doc.account_head:
+				prefill_data["ta_da_account_head"] = travel_doc.account_head
+
 			# Advance taken from Travel's total_estimate
 			if travel_doc.total_estimate:
 				prefill_data["ta_da_advance_taken"] = travel_doc.total_estimate
@@ -249,6 +253,8 @@ def save_ta_da_settlement(doc_data):
 			"ta_da_boarding_lodging_status": "boarding_and_lodging_status",
 			"boarding_and_lodging_status": "boarding_and_lodging_status",
 			"ta_da_free_transport": "ta_da_free_transport",
+			# Account head (auto-filled from linked Travel)
+			"ta_da_account_head": "ta_da_account_head",
 			# Direct doctype fieldname fallbacks
 			"webmail_id": "webmail_id",
 			"project_no": "project_no",
