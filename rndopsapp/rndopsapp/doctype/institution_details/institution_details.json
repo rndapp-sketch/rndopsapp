@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-04-10 19:26:11.383096",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "institution_name_u_r",
+  "address_institution_u_r",
+  "website_link_u_r"
+ ],
+ "fields": [
+  {
+   "fieldname": "institution_name_u_r",
+   "fieldtype": "Data",
+   "label": "Institution Name"
+  },
+  {
+   "fieldname": "address_institution_u_r",
+   "fieldtype": "Data",
+   "label": "Institution Address "
+  },
+  {
+   "fieldname": "website_link_u_r",
+   "fieldtype": "Data",
+   "label": "Institution Website Link"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-04-10 20:02:18.740498",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Institution Details",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

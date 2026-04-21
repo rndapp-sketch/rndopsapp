@@ -23,9 +23,8 @@
   "whatsapp_number_u_r",
   "alternate_mobile_number_u_r",
   "email_address_u_r",
-  "university_detail_u_r",
-  "university_name_u_r",
-  "university_address_u_r",
+  "user_affiliation_detail_section_u_r",
+  "institution_details_u_r",
   "designation_u_r",
   "department_u_r",
   "personal_history_section_u_r",
@@ -63,7 +62,9 @@
   "signatory_name_u_r",
   "signatory_designation_u_r",
   "date_of_signing_u_r",
-  "naming_series"
+  "naming_series",
+  "funding_agency_details_section",
+  "table_qghf"
  ],
  "fields": [
   {
@@ -111,7 +112,7 @@
    "fieldname": "organization_sub_type_u_r",
    "fieldtype": "Select",
    "label": "Org Sub-Type",
-   "options": "\nVendor\nInstitution\nCompany\nFunding Agency\nGovt Body\nLocal Supplier\nPrinciple Supplier"
+   "options": "\nVendor\nCompany\nFunding Agency\nGovt Body\nLocal Supplier\nPrinciple Supplier"
   },
   {
    "description": "Matches ID proof",
@@ -119,7 +120,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Full Name",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
   },
   {
    "fieldname": "guardian_name_u_r",
@@ -149,13 +150,13 @@
    "fieldtype": "Phone",
    "in_list_view": 1,
    "label": "Mobile Number",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
   },
   {
    "fieldname": "email_address_u_r",
    "fieldtype": "Data",
    "label": "Email Address",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
   },
   {
    "fieldname": "qualifications_u_r",
@@ -368,19 +369,15 @@
    "reqd": 1
   },
   {
-   "fieldname": "university_detail_u_r",
+   "fieldname": "user_affiliation_detail_section_u_r",
    "fieldtype": "Section Break",
-   "label": "University Detail"
+   "label": "User Affiliation Details"
   },
   {
-   "fieldname": "university_name_u_r",
-   "fieldtype": "Data",
-   "label": "University Name "
-  },
-  {
-   "fieldname": "university_address_u_r",
-   "fieldtype": "Data",
-   "label": "University Address"
+   "fieldname": "institution_details_u_r",
+   "fieldtype": "Table",
+   "label": "Institution Details",
+   "options": "Institution Details"
   },
   {
    "fieldname": "designation_u_r",
@@ -391,12 +388,22 @@
    "fieldname": "department_u_r",
    "fieldtype": "Data",
    "label": "Department"
+  },
+  {
+   "fieldname": "funding_agency_details_section",
+   "fieldtype": "Section Break",
+   "label": "Funding Agency Details"
+  },
+  {
+   "fieldname": "table_qghf",
+   "fieldtype": "Table",
+   "options": "Funding Agency__"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-04 14:05:50.709193",
+ "modified": "2026-04-10 20:53:03.951313",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Universal Registration__",
