@@ -539,3 +539,59 @@ def create_custom_designation(designation_name, designation_type="Project Staff"
 
 # END OF EDIT — MKY | 2026-04-14 15:35 IST
 # ============================================================
+
+
+# ============================================================
+# EDITED BY MKY | 2026-04-21 IST
+# START OF EDIT — Single-field update endpoints
+# Each endpoint updates exactly one field on a Recruitment Adhoc
+# Contractual document (identified by docname) without touching
+# any other field. All four target fields carry allow_on_submit=1
+# so updates are safe on submitted documents as well.
+# ============================================================
+
+def _update_single_field(docname, fieldname, value):
+	"""Internal helper to update a single field on a Recruitment Adhoc Contractual doc."""
+	if not docname:
+		return {"status": "error", "message": "docname is required"}
+
+	if not frappe.db.exists("Recruitment Adhoc Contractual", docname):
+		return {"status": "error", "message": f"Document '{docname}' not found"}
+
+	try:
+		frappe.db.set_value("Recruitment Adhoc Contractual", docname, fieldname, value)
+		frappe.db.commit()
+		return {"status": "success", "docname": docname, fieldname: value}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), f"update {fieldname} failed for {docname}")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def update_walk_in(docname, walk_in):
+	"""Update only the walk_in field ('Yes' / 'No' / '')."""
+	if walk_in not in ("", "Yes", "No", None):
+		return {"status": "error", "message": "walk_in must be 'Yes', 'No', or empty"}
+	return _update_single_field(docname, "walk_in", walk_in or "")
+
+
+@frappe.whitelist()
+def update_upfa_interview_date(docname, upfa_interview_date):
+	"""Update only the upfa_interview_date field (Date, YYYY-MM-DD)."""
+	return _update_single_field(docname, "upfa_interview_date", upfa_interview_date or None)
+
+
+@frappe.whitelist()
+def update_upfa_interview_time(docname, upfa_interview_time):
+	"""Update only the upfa_interview_time field (Time, HH:MM:SS)."""
+	return _update_single_field(docname, "upfa_interview_time", upfa_interview_time or None)
+
+
+@frappe.whitelist()
+def update_last_date_of_appllication(docname, last_date_of_appllication):
+	"""Update only the last_date_of_appllication field (Date, YYYY-MM-DD)."""
+	return _update_single_field(docname, "last_date_of_appllication", last_date_of_appllication or None)
+
+# END OF EDIT — MKY | 2026-04-21 IST
+# ============================================================

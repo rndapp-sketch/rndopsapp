@@ -4,6 +4,19 @@ import frappe
 
 
 @frappe.whitelist()
+def get_all_user_roles():
+    """
+    Returns a list of all users and their roles.
+    Bypasses the child-table REST API restriction.
+    """
+    # Optional: Restricted to System Managers for security
+    if "System Manager" not in frappe.get_roles():
+        frappe.throw("You do not have permission to access the role list.", frappe.PermissionError)
+
+    return frappe.get_all("Has Role", fields=["parent", "role"], limit_page_length=10000)
+
+
+@frappe.whitelist()
 def get_user_roles(user=None):
 	"""
 	Returns a list of roles for the given user.

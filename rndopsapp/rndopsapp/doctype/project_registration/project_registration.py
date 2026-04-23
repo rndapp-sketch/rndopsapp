@@ -173,9 +173,9 @@ def extract_eval_expression(expression):
 # into (connect=2s, read=3s) so a dead/unreachable Mattermost
 # server fails fast and NEVER blocks or affects functionality.
 # ============================================================
-def notify_mattermost(message: str) -> None:
+def notify_mattermost(message: str, urgent: bool = False) -> None:
 	"""
-	Sends a plain-text message to the configured Mattermost channel.
+	Sends a message to the configured Mattermost channel.
 	- connect timeout = 2 s : fails fast if server is unreachable
 	- read timeout   = 3 s : fails fast if server is slow
 	All exceptions are silently swallowed — this call must NEVER
@@ -183,20 +183,38 @@ def notify_mattermost(message: str) -> None:
 	"""
 	try:
 		_url = "http://172.16.135.118:8065/api/v4/posts"
+
 		_headers = {
 			"Authorization": "Bearer fmjih41b4iymicttnuhinsqime",
 			"Content-Type": "application/json",
 		}
+
 		_payload = {
 			"channel_id": "ihmkbbfq9ibzugfpy9rncq5yke",
 			"message": str(message),
 		}
+
+		# Add URGENT priority only when requested
+		if urgent:
+			_payload["metadata"] = {
+				"priority": {
+					"priority": "urgent",
+					"requested_ack": False,
+					"persistent_notifications": False,
+				}
+			}
+
 		import requests as _req
-		# timeout=(connect_timeout, read_timeout)
-		# If Mattermost is down, connect fails in ≤2 s and we move on.
-		_req.post(_url, json=_payload, headers=_headers, timeout=(2, 3))
+
+		_req.post(
+			_url,
+			json=_payload,
+			headers=_headers,
+			timeout=(2, 3),
+		)
+
 	except Exception:
-		pass  # API down / network error — silently skip, never raise
+		pass  # never interrupt main flow
 # END OF EDIT — MKY | 2026-04-21 01:46 IST
 # ============================================================
 
@@ -320,7 +338,8 @@ def submit_project_registration(docname):
 			f"Docname  : {docname}\n"
 			f"Exception: {type(e).__name__}: {str(e)}\n"
 			f"User     : {frappe.session.user}\n"
-			f"---TRACEBACK---\n{_tb}"
+			f"---TRACEBACK---\n{_tb}",
+			urgent=True,
 		)
 		raise  # Re-raise so Frappe handles the HTTP response normally
 	# END OF EDIT — MKY | 2026-04-21 01:54 IST
@@ -1280,7 +1299,8 @@ def save_project_data(doc, html_content=None):
 			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
 			f"Exception : {type(e).__name__}: {str(e)}\n"
 			f"User      : {frappe.session.user}\n"
-			f"---TRACEBACK---\n{_tb}"
+			f"---TRACEBACK---\n{_tb}",
+			urgent=True,
 		)
 		# END OF EDIT — MKY | 2026-04-21 01:46 IST
 		# ============================================================
@@ -1881,7 +1901,8 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
 			f"Exception : {type(e).__name__}: {str(e)}\n"
 			f"User      : {frappe.session.user}\n"
-			f"---TRACEBACK---\n{_tb}"
+			f"---TRACEBACK---\n{_tb}",
+			urgent=True,
 		)
 		# END OF EDIT — MKY | 2026-04-21 01:43 IST
 		# ============================================================

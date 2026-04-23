@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "format:{YY}{category}{dept_initial}{project_type}{emp_id}{emp_initial}{project_no}",
+ "autoname": "format:{current_year1}{category}-{dept_initial}{emp_id}{emp_initial}-{project_no}",
  "creation": "2026-02-09 10:54:19.277272",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -11,7 +11,6 @@
   "project_no",
   "select_department",
   "dept_initial",
-  "project_type",
   "emp_id",
   "emp_initial"
  ],
@@ -59,16 +58,8 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Current Year",
-   "length": 2,
+   "length": 4,
    "options": "YY"
-  },
-  {
-   "fieldname": "project_type",
-   "fieldtype": "Select",
-   "label": "Project Type",
-   "length": 2,
-   "options": "\nSP\nCN\nOT\nPD\nTT",
-   "placeholder": "SP"
   },
   {
    "fieldname": "select_department",
@@ -82,7 +73,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-18 11:25:18.147284",
+ "modified": "2026-04-23 00:21:48.529617",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Number Generation",

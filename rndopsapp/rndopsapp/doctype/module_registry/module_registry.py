@@ -195,17 +195,22 @@ def get_pending_task(page_name="pending-task"):
 
 
 @frappe.whitelist()
-def get_task_registry():
+def get_task_registry(debug=0):
 	"""
 	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_task_registry
-	
+
 	Returns all documents that were processed/moved/approved by the current user.
 	Only accessible by roles: staff, hos, dean, adornd, head of department.
-	
-	This tracks documents where the user performed any workflow action
-	(forward, approve, reject, etc.) across all doctypes in the rndopsapp module.
+
+	Pass ?debug=1 to include per-doctype diagnostics (why each doctype was
+	kept/dropped, plus per-method hit counts: modified_by / Version / Workflow Action).
 	"""
-	
+
+	try:
+		debug_flag = bool(int(debug))
+	except (TypeError, ValueError):
+		debug_flag = bool(debug)
+
 	# 1. Get Current User and Roles
 	current_user = frappe.session.user
 	user_roles = frappe.get_roles(current_user)
@@ -261,25 +266,33 @@ def get_task_registry():
 	print(f"Doctypes in Rndopsapp module ({len(doctype_names)}): {doctype_names}")
 	
 	skipped_info = []  # Track why doctypes are skipped
-	
+	debug_info = []    # Populated only when debug_flag is True
+
+	def _dbg(entry):
+		if debug_flag:
+			debug_info.append(entry)
+
 	results = []
-	
-	# 3. For each doctype, find documents modified by the current user 
+
+	# 3. For each doctype, find documents modified by the current user
 	# where workflow_state has been changed (meaning they performed an action)
 	for dt_name in doctype_names:
 		# Skip child tables and non-workflow doctypes
 		if not frappe.db.exists("DocType", dt_name):
+			_dbg({"doctype": dt_name, "reason": "doctype row missing"})
 			continue
-			
+
 		meta = frappe.get_meta(dt_name)
-		
+
 		# Skip child tables
 		if meta.istable:
+			_dbg({"doctype": dt_name, "reason": "child table (istable=1)"})
 			continue
-		
+
 		# Check read permission
 		if not frappe.has_permission(dt_name, "read"):
 			skipped_info.append({"doctype": dt_name, "reason": "no read permission"})
+			_dbg({"doctype": dt_name, "reason": "no read permission"})
 			continue
 		
 		# Determine status field - can be workflow_state, status, or state
@@ -378,12 +391,12 @@ def get_task_registry():
 			# Combine and deduplicate
 			all_doc_names = set()
 			combined_docs = []
-			
+
 			for doc in modified_docs:
 				if doc.name not in all_doc_names:
 					all_doc_names.add(doc.name)
 					combined_docs.append(doc)
-			
+
 			for doc in version_docs:
 				if doc.name not in all_doc_names:
 					all_doc_names.add(doc.name)
@@ -393,8 +406,25 @@ def get_task_registry():
 				if doc.name not in all_doc_names:
 					all_doc_names.add(doc.name)
 					combined_docs.append(doc)
-			
+
+			# Diagnostics: per-method counts for this doctype
+			has_workflow = bool(frappe.db.exists("Workflow", {"document_type": dt_name}))
+			method_counts = {
+				"method1_modified_by": len(modified_docs),
+				"method2_versions": len(version_docs),
+				"method3_workflow_action": len(wf_action_docs),
+				"combined_unique": len(combined_docs),
+			}
+
 			if not combined_docs:
+				_dbg({
+					"doctype": dt_name,
+					"reason": "no matching records for this user",
+					"status_field": status_field,
+					"has_workflow": has_workflow,
+					"track_changes": bool(getattr(meta, "track_changes", 0)),
+					"counts": method_counts,
+				})
 				continue
 			
 			# Get title field for better display
@@ -427,16 +457,25 @@ def get_task_registry():
 					"count": len(mapped),
 					"records": mapped
 				})
+				_dbg({
+					"doctype": dt_name,
+					"reason": "included",
+					"status_field": status_field,
+					"has_workflow": has_workflow,
+					"track_changes": bool(getattr(meta, "track_changes", 0)),
+					"counts": method_counts,
+				})
 				print(f"Found {len(mapped)} documents in {dt_name} processed by user")
-			
+
 		except Exception as e:
 			print(f"Error processing {dt_name}: {str(e)}")
+			_dbg({"doctype": dt_name, "reason": "exception", "error": str(e)})
 			continue
 	
 	# Sort results by doctype name for consistent ordering
 	results.sort(key=lambda x: x["doctype"])
-	
-	return {
+
+	response = {
 		"success": True,
 		"user": current_user,
 		"roles": user_roles,
@@ -444,5 +483,13 @@ def get_task_registry():
 		"total_doctypes_with_data": len(results),
 		"total_documents": sum(r["count"] for r in results),
 		"skipped": skipped_info,
-		"results": results
+		"results": results,
 	}
+
+	if debug_flag:
+		response["debug"] = {
+			"all_doctypes_in_module": sorted(doctype_names),
+			"per_doctype": sorted(debug_info, key=lambda x: x.get("doctype", "")),
+		}
+
+	return response

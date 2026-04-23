@@ -974,7 +974,7 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Project No.",
-   "length": 22,
+   "length": 30,
    "read_only": 1
   },
   {
@@ -1282,7 +1282,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-21 00:34:01.868995",
+ "modified": "2026-04-23 08:33:15.873867",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

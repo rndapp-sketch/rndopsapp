@@ -156,22 +156,29 @@ def create_workflow(doctype, amount_field):
     
     # ---- PENDING HOS APPROVAL ACTIONS ----
     if doctype == "Direct Purchase":
-        dean_limit_cond = f'flt(doc.{amount_field}) <= flt(frappe.db.get_single_value("ProRnd Workflow Settings", "dp_dean_limit"))'
-        dir_limit_cond = f'flt(doc.{amount_field}) > flt(frappe.db.get_single_value("ProRnd Workflow Settings", "dp_dean_limit")) and flt(doc.{amount_field}) <= flt(frappe.db.get_single_value("ProRnd Workflow Settings", "dp_director_limit"))'
-        
+        # Director approval is only needed for Consumable/Contingency > ₹3,00,000.
+        # All other budget heads: Dean approves directly regardless of amount.
+        cc_heads = '(doc.account_head in ("Consumable", "Contingency"))'
+        non_cc_heads = '(doc.account_head not in ("Consumable", "Contingency"))'
+        cc_dean_limit = 300000
+
+        cc_dean_approve = f'{cc_heads} and flt(doc.{amount_field}) <= {cc_dean_limit}'
+        cc_dean_forward = f'{cc_heads} and flt(doc.{amount_field}) > {cc_dean_limit}'
+
         # HoS -> Dean (Always, skipping Associate Dean)
         add_trans("Pending HoS Approval", "Approve", "Pending Dean Approval", "Hos, RnD (Head of Section, RnD)")
         add_trans("Pending HoS Approval", "Reject", "Rejected", "Hos, RnD (Head of Section, RnD)")
-        
-        # Dean -> Approved (If <= Dean Limit)
-        add_trans("Pending Dean Approval", "Approve", "Approved", "Dean, RnD", dean_limit_cond)
-        
-        # Dean -> Director (If > Dean Limit and <= Director Limit)
-        add_trans("Pending Dean Approval", "Approve", "Pending Director Approval", "Dean, RnD", dir_limit_cond)
+
+        # Dean -> Approved (Consumable/Contingency ≤ ₹3,00,000)
+        add_trans("Pending Dean Approval", "Approve", "Approved", "Dean, RnD", cc_dean_approve)
+        # Dean -> Director (Consumable/Contingency > ₹3,00,000)
+        add_trans("Pending Dean Approval", "Forward", "Pending Director Approval", "Dean, RnD", cc_dean_forward)
+        # Dean -> Approved (All other budget heads, any amount)
+        add_trans("Pending Dean Approval", "Approve", "Approved", "Dean, RnD", non_cc_heads)
         add_trans("Pending Dean Approval", "Reject", "Rejected", "Dean, RnD")
-        
-        # Director -> Approved
-        add_trans("Pending Director Approval", "Approve", "Approved", "Director")
+
+        # Director -> Approved (only reachable for C/C > ₹3,00,000)
+        add_trans("Pending Director Approval", "Approve", "Approved", "Director", cc_heads)
         add_trans("Pending Director Approval", "Reject", "Rejected", "Director")
     
     else:
