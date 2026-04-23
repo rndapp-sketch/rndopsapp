@@ -142,6 +142,12 @@ def get_pending_task(page_name="pending-task"):
 		for excluded in ("Draft", "Endorsement Approved", "Sanction Approved"):
 			actionable_states.discard(excluded)
 
+		# Ado_RnD: restrict strictly to Associate-Dean pending states so the
+		# inbox doesn't pick up transitions that merely share the role.
+		if "Ado_RnD" in user_roles and not is_system_manager:
+			ado_states = {"Pending Associate Dean", "Pending Associate Dean Approval"}
+			actionable_states &= ado_states
+
 		if not actionable_states:
 			continue
 
