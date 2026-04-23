@@ -23,6 +23,8 @@
   "whatsapp_number_u_r",
   "alternate_mobile_number_u_r",
   "email_address_u_r",
+  "user_affiliation_detail_section_u_r",
+  "institution_details_u_r",
   "personal_history_section_u_r",
   "address_details",
   "qualifications_u_r",
@@ -48,17 +50,14 @@
   "financial_and_documents_common_section_u_r",
   "bank_details_u_r",
   "uploaded_documents_u_r",
-  "compliance_and_sub_type_logic_section_u_r",
-  "gst_number_u_r",
-  "overhead_percentage_u_r",
-  "discount_percentage_u_r",
-  "agreement_number_u_r",
   "vendor_declarations_and_signatory_section_u_r",
   "decl_info_true_u_r",
   "signatory_name_u_r",
   "signatory_designation_u_r",
   "date_of_signing_u_r",
-  "naming_series"
+  "naming_series",
+  "funding_agency_section",
+  "funding_agency_u_r"
  ],
  "fields": [
   {
@@ -98,7 +97,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Profile Type",
-   "options": "\nIndividual / Personal\nOrganization",
+   "options": "\nIndividual (For Honorarium)\nOrganization\nPI / Co-PI (External only)",
    "reqd": 1
   },
   {
@@ -106,7 +105,7 @@
    "fieldname": "organization_sub_type_u_r",
    "fieldtype": "Select",
    "label": "Org Sub-Type",
-   "options": "\nVendor\nInstitution\nCompany\nFunding Agency\nGovt Body\nLocal Supplier\nPrinciple Supplier"
+   "options": "\nVendor\nCompany\nFunding Agency\nGovt Body\nLocal Supplier\nPrinciple Supplier"
   },
   {
    "description": "Matches ID proof",
@@ -114,7 +113,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Full Name",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
   },
   {
    "fieldname": "guardian_name_u_r",
@@ -125,8 +124,7 @@
    "fieldname": "dob_u_r",
    "fieldtype": "Date",
    "in_list_view": 1,
-   "label": "Date of Birth",
-   "reqd": 1
+   "label": "Date of Birth"
   },
   {
    "fieldname": "gender_u_r",
@@ -145,13 +143,13 @@
    "fieldtype": "Phone",
    "in_list_view": 1,
    "label": "Mobile Number",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
   },
   {
    "fieldname": "email_address_u_r",
    "fieldtype": "Data",
-   "label": "Email Address",
-   "reqd": 1
+   "label": "Official Email Address",
+   "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
   },
   {
    "fieldname": "qualifications_u_r",
@@ -210,7 +208,7 @@
   {
    "fieldname": "uploaded_documents_u_r",
    "fieldtype": "Table",
-   "label": "Uploaded Docs",
+   "label": "Identity & Credential Documents",
    "options": "Universal Documents__"
   },
   {
@@ -242,7 +240,7 @@
    "default": "0",
    "fieldname": "same_as_mobile_number_u_r",
    "fieldtype": "Check",
-   "label": "Same as mobile number."
+   "label": "WhatsApp No. Same as mobile number."
   },
   {
    "fieldname": "alternate_mobile_number_u_r",
@@ -326,34 +324,8 @@
    "label": " Vendor Profile and Statutory"
   },
   {
-   "fieldname": "gst_number_u_r",
-   "fieldtype": "Data",
-   "label": "GST Number"
-  },
-  {
-   "fieldname": "overhead_percentage_u_r",
-   "fieldtype": "Percent",
-   "label": "Overhead %"
-  },
-  {
-   "fieldname": "discount_percentage_u_r",
-   "fieldtype": "Percent",
-   "label": "Discount %"
-  },
-  {
-   "fieldname": "agreement_number_u_r",
-   "fieldtype": "Data",
-   "label": "Agreement No"
-  },
-  {
-   "fieldname": "compliance_and_sub_type_logic_section_u_r",
-   "fieldtype": "Section Break",
-   "label": "Compliance and Sub Type Logic"
-  },
-  {
    "fieldname": "universal_user_u_r",
    "fieldtype": "Link",
-   "hidden": 1,
    "label": "Universal User",
    "options": "Universal User__"
   },
@@ -363,12 +335,34 @@
    "label": "Naming Series",
    "options": "UNIREG-.#####",
    "reqd": 1
+  },
+  {
+   "fieldname": "user_affiliation_detail_section_u_r",
+   "fieldtype": "Section Break",
+   "label": "User Affiliation Details"
+  },
+  {
+   "fieldname": "institution_details_u_r",
+   "fieldtype": "Table",
+   "label": "Institution Details",
+   "options": "Institution Details"
+  },
+  {
+   "fieldname": "funding_agency_section",
+   "fieldtype": "Section Break",
+   "label": "Funding Agency"
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "fieldname": "funding_agency_u_r",
+   "fieldtype": "Link",
+   "options": "fundingagency_"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-18 11:25:18.507822",
+ "modified": "2026-04-23 15:21:56.406601",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Universal Registration__",
