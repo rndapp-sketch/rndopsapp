@@ -670,6 +670,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.project_type==\"Research\"",
    "fieldname": "budget_proposal_details_section",
    "fieldtype": "Section Break",
    "label": "Budget Details"
@@ -1282,7 +1283,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-23 08:33:15.873867",
+ "modified": "2026-04-28 14:39:32.694042",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

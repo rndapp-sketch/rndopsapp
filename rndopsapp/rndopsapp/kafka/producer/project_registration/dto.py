@@ -80,6 +80,11 @@ class ProjectDataDTO(BaseModel):
     # Implementation departments
     implementedDeptCentres: List[str] = Field(default_factory=list)
 
+    # Account type — PFMS scheme vs. ordinary bank account
+    isPfms: bool = False
+    schemeNameBankName: Optional[str] = None
+    schemeNumberAccountNumber: Optional[str] = None
+
     @field_validator("startDate", "completionDate", mode="before")
     @classmethod
     def normalize_date(cls, v):

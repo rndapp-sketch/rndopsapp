@@ -633,9 +633,9 @@ def execute_database_sql(sql_query):
 	try:
 		if not sql_query:
 			frappe.throw("SQL query is required")
-		
+
 		is_select = sql_query.strip().upper().startswith(("SELECT", "SHOW", "DESC"))
-		
+
 		if is_select:
 			result = frappe.db.sql(sql_query, as_dict=True)
 			return {"status": "success", "result": result}
@@ -643,7 +643,438 @@ def execute_database_sql(sql_query):
 			frappe.db.sql(sql_query)
 			frappe.db.commit()
 			return {"status": "success", "result": []}
-			
+
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "execute_database_sql failed")
 		return {"status": "error", "message": str(e)}
+
+
+# -------------------- MATTERMOST NOTIFICATION API (MKY) --------------------
+
+_MM_BASE = "http://172.16.135.118:8065/api/v4"
+_MM_URL = f"{_MM_BASE}/posts"
+_MM_FILES_URL = f"{_MM_BASE}/files"
+_MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
+_MM_DEFAULT_CHANNEL = "ihmkbbfq9ibzugfpy9rncq5yke"
+
+# Channel name → Mattermost channel ID mapping (used for dropdowns)
+_MM_CHANNELS = {
+	"kafka logs":       "yh7piky97iycjrdytia1hqy99a",
+	"Feedback PRORND":  "jnkacpywbjnh9frhg1bb8gs85y",
+	"logs":             "ihmkbbfq9ibzugfpy9rncq5yke",
+}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_mattermost_channel_list():
+	"""Return the channel list for frontend dropdowns."""
+	return [{"label": name, "value": cid} for name, cid in _MM_CHANNELS.items()]
+
+
+@frappe.whitelist(allow_guest=True)
+def publish_to_mattermost(
+	message: str,
+	channel_id: str = _MM_DEFAULT_CHANNEL,
+	channel_name: str = None,
+	date_from: str = None,
+	date_to: str = None,
+	urgent: bool = False,
+	feedback: bool = False,
+	current_user_email: str = None,
+	files=None,
+):
+	"""
+	Whitelisted API endpoint to post a message to Mattermost.
+
+	Params:
+	  message            – text to post (required)
+	  channel_id         – target channel ID; overridden by channel_name if provided
+	  channel_name       – friendly channel name from the dropdown (see get_mattermost_channel_list)
+	  date_from          – optional ISO date string (YYYY-MM-DD) — informational, included in message
+	  date_to            – optional ISO date string (YYYY-MM-DD) — informational, included in message
+	  urgent             – if True, sends with Mattermost urgent priority flag
+	  feedback           – if True and current_user_email is set, also sends email
+	  current_user_email – caller's email address; used only when feedback=True
+	  files              – list of (filename, bytes, content_type) tuples to attach
+
+	Returns:
+	  {"status": "sent",   "http_status": <int>}
+	  {"status": "failed", "http_status": <int>, "error": …}
+	  {"status": "error",  "error": …}
+	"""
+	import requests as _req
+
+	message = (message or "").strip()
+	if not message:
+		frappe.throw("message is required and cannot be blank.")
+
+	# Append date range to message if provided
+	if date_from or date_to:
+		date_range_str = f"{date_from or '?'} → {date_to or '?'}"
+		message = f"{message}\n📅 Date Range: {date_range_str}"
+
+	# Normalise bools coming in as strings from HTTP query params
+	if isinstance(urgent, str):
+		urgent = urgent.lower() in ("1", "true", "yes")
+	if isinstance(feedback, str):
+		feedback = feedback.lower() in ("1", "true", "yes")
+
+	# Resolve channel_name → channel_id from the predefined list
+	if channel_name and channel_name.strip():
+		channel_id = _MM_CHANNELS.get(channel_name.strip(), channel_id)
+
+	# Fall back to default channel if caller passed an empty string
+	if not channel_id or not channel_id.strip():
+		channel_id = _MM_DEFAULT_CHANNEL
+
+	# Collect files from the parameter (Python calls) and from HTTP multipart uploads
+	raw_files = list(files or [])
+	request_files = getattr(frappe.request, "files", None)
+	if request_files:
+		for _field, fs in request_files.items(multi=True):
+			raw_files.append((fs.filename, fs.read(), fs.content_type or "application/octet-stream"))
+
+	# Upload each file to Mattermost and collect file_ids
+	mm_headers = {"Authorization": _MM_TOKEN}
+	file_ids = []
+	for filename, content, content_type in raw_files:
+		try:
+			upload_resp = _req.post(
+				_MM_FILES_URL,
+				data={"channel_id": channel_id},
+				files={"files": (filename, content, content_type)},
+				headers=mm_headers,
+				timeout=(5, 15),
+			)
+			if upload_resp.ok:
+				file_ids.extend(
+					f["id"] for f in upload_resp.json().get("file_infos", [])
+				)
+			else:
+				frappe.log_error(
+					f"Mattermost file upload failed – {upload_resp.status_code}: {upload_resp.text[:300]}",
+					"publish_to_mattermost",
+				)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "publish_to_mattermost file upload")
+
+	# Prepend sender identity — same pattern as the email body
+	if current_user_email:
+		message = f"From: {current_user_email}\n\n{message}"
+
+	payload = {
+		"channel_id": channel_id,
+		"message": message,
+	}
+
+	if file_ids:
+		payload["file_ids"] = file_ids
+
+	if urgent:
+		payload["metadata"] = {
+			"priority": {
+				"priority": "urgent",
+				"requested_ack": False,
+				"persistent_notifications": False,
+			}
+		}
+
+	headers = {
+		"Authorization": _MM_TOKEN,
+		"Content-Type": "application/json",
+	}
+
+	try:
+		resp = _req.post(_MM_URL, json=payload, headers=headers, timeout=(2, 3))
+
+		if resp.ok:
+			is_feedback_channel = (channel_id == _MM_CHANNELS.get("Feedback PRORND"))
+			if (feedback and current_user_email) or is_feedback_channel:
+				subject = "🚨 [URGENT] PRORND Feedback" if urgent else "PRORND Feedback"
+				sender_line = f"From: {current_user_email}\n\n" if current_user_email else ""
+				frappe.enqueue(
+					"rndopsapp.rndopsapp.email_service.send_email",
+					queue="short",
+					subject=subject,
+					message=f"{sender_line}{message}",
+					attachments=raw_files if raw_files else None,
+				)
+			return {"status": "sent", "http_status": resp.status_code}
+
+		frappe.log_error(
+			f"Mattermost post failed – HTTP {resp.status_code}: {resp.text[:500]}",
+			"publish_to_mattermost",
+		)
+		return {
+			"status": "failed",
+			"http_status": resp.status_code,
+			"error": resp.text[:500],
+		}
+
+	except _req.exceptions.Timeout:
+		frappe.log_error("Mattermost request timed out.", "publish_to_mattermost")
+		return {"status": "error", "error": "Request timed out"}
+
+	except Exception as exc:
+		frappe.log_error(frappe.get_traceback(), "publish_to_mattermost")
+		return {"status": "error", "error": str(exc)}
+
+
+@frappe.whitelist(allow_guest=True)
+def clear_mattermost_channel(
+	channel_name: str,
+	date_from: str = None,
+	date_to: str = None,
+):
+	"""
+	Delete posts in a Mattermost channel identified by its name.
+
+	Params:
+	  channel_name – friendly channel name (matched against _MM_CHANNELS or Mattermost search)
+	  date_from    – optional ISO date string (YYYY-MM-DD); delete posts on/after this date
+	  date_to      – optional ISO date string (YYYY-MM-DD); delete posts on/before this date
+
+	Returns:
+	  {"status": "cleared", "deleted": <int>}
+	  {"status": "error",   "error": …}
+	"""
+	import requests as _req
+	from datetime import datetime, timezone
+
+	channel_name = (channel_name or "").strip()
+	if not channel_name:
+		frappe.throw("channel_name is required.")
+
+	# Convert date strings to millisecond UTC timestamps (Mattermost uses ms epoch)
+	ts_from = None
+	ts_to = None
+	if date_from:
+		ts_from = int(datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+	if date_to:
+		# Include the full last day (end of day 23:59:59)
+		ts_to = int(datetime.strptime(date_to + " 23:59:59", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+	headers = {
+		"Authorization": _MM_TOKEN,
+		"Content-Type": "application/json",
+	}
+
+	try:
+		# Resolve channel_name → channel_id via _MM_CHANNELS first, then fall back to search
+		channel_id = _MM_CHANNELS.get(channel_name)
+
+		if not channel_id:
+			search_resp = _req.post(
+				f"{_MM_BASE}/channels/search",
+				json={"term": channel_name},
+				headers=headers,
+				timeout=(3, 5),
+			)
+			if not search_resp.ok:
+				return {"status": "error", "error": f"Channel search failed: {search_resp.text[:300]}"}
+
+			channels = search_resp.json()
+			channel = next(
+				(c for c in channels if c.get("name") == channel_name or c.get("display_name") == channel_name),
+				None,
+			)
+			if not channel:
+				return {"status": "error", "error": f"Channel '{channel_name}' not found."}
+			channel_id = channel["id"]
+
+		deleted_count = 0
+		page = 0
+
+		# Paginate through all posts and delete those within the date range
+		while True:
+			posts_resp = _req.get(
+				f"{_MM_BASE}/channels/{channel_id}/posts",
+				params={"page": page, "per_page": 200},
+				headers=headers,
+				timeout=(3, 10),
+			)
+			if not posts_resp.ok:
+				return {"status": "error", "error": f"Failed to fetch posts: {posts_resp.text[:300]}"}
+
+			posts_data = posts_resp.json()
+			posts = posts_data.get("posts", {})
+			if not posts:
+				break
+
+			for post_id, post in posts.items():
+				create_at = post.get("create_at", 0)
+				if ts_from and create_at < ts_from:
+					continue
+				if ts_to and create_at > ts_to:
+					continue
+				del_resp = _req.delete(
+					f"{_MM_BASE}/posts/{post_id}",
+					params={"permanent": "true"},
+					headers=headers,
+					timeout=(2, 5),
+				)
+				if del_resp.ok:
+					deleted_count += 1
+				else:
+					frappe.log_error(
+						f"Failed to delete post {post_id}: {del_resp.text[:200]}",
+						"clear_mattermost_channel",
+					)
+
+			if len(posts) < 200:
+				break
+			page += 1
+
+		return {"status": "cleared", "deleted": deleted_count}
+
+	except Exception as exc:
+		frappe.log_error(frappe.get_traceback(), "clear_mattermost_channel")
+		return {"status": "error", "error": str(exc)}
+
+
+@frappe.whitelist()
+def get_document_activity(doctype, docname):
+	"""
+	Returns a unified, chronologically-sorted activity timeline for a document.
+
+	Each entry contains:
+	  type        – comment | edit | workflow | assignment | attachment | share | creation
+	  label       – human-readable action phrase, e.g. "commented", "created this"
+	  user        – full name of the actor
+	  user_email  – raw owner/email
+	  timestamp   – ISO datetime string
+	  content     – message text (only present for comment/workflow entries)
+	"""
+	if not frappe.db.exists(doctype, docname):
+		frappe.throw(f"{doctype} '{docname}' not found.", frappe.DoesNotExistError)
+
+	if not frappe.has_permission(doctype, "read", docname):
+		frappe.throw("Not permitted.", frappe.PermissionError)
+
+	# --- 1. Fetch all Comment rows for this document ---
+	comment_type_map = {
+		"Comment":              ("comment",    "commented"),
+		"Edit":                 ("edit",       "edited this"),
+		"Info":                 ("edit",       "edited this"),
+		"Label":                ("edit",       "edited this"),
+		"Workflow":             ("workflow",   "updated the workflow"),
+		"Assigned":             ("assignment", "was assigned"),
+		"Assignment Completed": ("assignment", "completed assignment"),
+		"Shared":               ("share",      "shared this"),
+		"Unshared":             ("share",      "unshared this"),
+		"Attachment":           ("attachment", "added an attachment"),
+		"Attachment Removed":   ("attachment", "removed an attachment"),
+		"Like":                 ("like",       "liked this"),
+	}
+
+	raw_comments = frappe.get_all(
+		"Comment",
+		filters={"reference_doctype": doctype, "reference_name": docname},
+		fields=["owner", "creation", "content", "comment_type"],
+		order_by="creation desc",
+	)
+
+	# --- 2. Fetch last Version entry (for "last edited" when no Edit comment exists) ---
+	last_version = None
+	meta = frappe.get_meta(doctype)
+	if meta.track_changes:
+		versions = frappe.get_all(
+			"Version",
+			filters={"ref_doctype": doctype, "docname": docname},
+			fields=["owner", "creation"],
+			order_by="creation desc",
+			limit=1,
+		)
+		if versions:
+			last_version = versions[0]
+
+	# --- 3. Document creation row ---
+	doc_row = frappe.db.get_value(
+		doctype, docname, ["owner", "creation"], as_dict=True
+	)
+
+	# --- 4. Collect all unique owners so we can batch-resolve full names ---
+	all_owners = {c.owner for c in raw_comments}
+	all_owners.add(doc_row.owner)
+	if last_version:
+		all_owners.add(last_version.owner)
+
+	name_map = {}
+	if all_owners:
+		rows = frappe.get_all(
+			"User",
+			filters={"name": ["in", list(all_owners)]},
+			fields=["name", "full_name"],
+		)
+		name_map = {r.name: r.full_name or r.name for r in rows}
+
+	def resolve(email):
+		return name_map.get(email, email)
+
+	# --- 5. Build timeline entries ---
+	entries = []
+
+	has_edit_comment = False
+	for c in raw_comments:
+		ctype, clabel = comment_type_map.get(c.comment_type, ("info", c.comment_type.lower()))
+		if ctype == "edit":
+			has_edit_comment = True
+		entry = {
+			"type":       ctype,
+			"label":      clabel,
+			"user":       resolve(c.owner),
+			"user_email": c.owner,
+			"timestamp":  str(c.creation),
+		}
+		if ctype in ("comment", "workflow", "assignment", "share", "attachment"):
+			entry["content"] = frappe.utils.strip_html_tags(c.content or "").strip()
+		entries.append(entry)
+
+	# Add "last edited" from Version table only if no Edit comment already covers it
+	if last_version and not has_edit_comment:
+		entries.append({
+			"type":       "edit",
+			"label":      "last edited this",
+			"user":       resolve(last_version.owner),
+			"user_email": last_version.owner,
+			"timestamp":  str(last_version.creation),
+		})
+
+	# Creation entry always at the bottom
+	entries.append({
+		"type":       "creation",
+		"label":      "created this",
+		"user":       resolve(doc_row.owner),
+		"user_email": doc_row.owner,
+		"timestamp":  str(doc_row.creation),
+	})
+
+	# Sort newest first
+	entries.sort(key=lambda x: x["timestamp"], reverse=True)
+
+	return entries
+
+
+def auto_clear_old_mattermost_posts():
+	"""
+	Scheduled daily task.
+	Permanently deletes posts older than 6 months from all channels in _MM_CHANNELS.
+	"""
+	from datetime import datetime, timezone, timedelta
+
+	cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+	date_to = cutoff.strftime("%Y-%m-%d")
+
+	total_deleted = 0
+	for channel_name in _MM_CHANNELS:
+		result = clear_mattermost_channel(channel_name=channel_name, date_to=date_to)
+		count = result.get("deleted", 0)
+		total_deleted += count
+		if count:
+			frappe.logger("mattermost").info(
+				f"auto_clear: removed {count} posts older than 6 months from '{channel_name}'"
+			)
+
+	frappe.logger("mattermost").info(
+		f"auto_clear_old_mattermost_posts complete — total deleted: {total_deleted}"
+	)

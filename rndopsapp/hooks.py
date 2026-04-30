@@ -146,23 +146,11 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"rndopsapp.tasks.all"
-# 	],
-# 	"daily": [
-# 		"rndopsapp.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"rndopsapp.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"rndopsapp.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"rndopsapp.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"rndopsapp.rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
+	],
+}
 
 # Testing
 # -------
@@ -194,6 +182,9 @@ doc_events = {
 
 # Request Events
 # ----------------
+before_request = [
+	"rndopsapp.rndopsapp.kafka.consumer_service.ensure_consumer_running",
+]
 before_login = [
 	"rndopsapp.external_auth.clear_admin_ip_lock",
 	"rndopsapp.external_auth.patch_find_by_credentials",

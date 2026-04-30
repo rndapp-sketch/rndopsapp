@@ -1,6 +1,7 @@
 import frappe
 import requests
 import json
+import threading
 from frappe.utils import today, flt
 from datetime import datetime
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
@@ -11,6 +12,25 @@ from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
     publish_commit as kafka_publish_commit,
     publish_payment as kafka_publish_payment
 )
+
+_MM_URL = "http://172.16.135.118:8065/api/v4/posts"
+_MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
+_MM_KAFKA_CHANNEL = "yh7piky97iycjrdytia1hqy99a"  # "kafka logs" channel
+
+
+def _mm_notify(message: str):
+    """Fire-and-forget Mattermost notification. Never blocks or raises."""
+    def _post():
+        try:
+            requests.post(
+                _MM_URL,
+                json={"channel_id": _MM_KAFKA_CHANNEL, "message": message},
+                headers={"Authorization": _MM_TOKEN, "Content-Type": "application/json"},
+                timeout=(2, 3),
+            )
+        except Exception:
+            pass
+    threading.Thread(target=_post, daemon=True).start()
 
 # External API endpoints
 LEDGER_API_BASE_URL = "http://172.16.134.81:18080/api/commit-payment-transactions"
@@ -313,13 +333,13 @@ def get_commits_by_account_head_and_status(account_head_id, status):
 # ==========================================
 
 @frappe.whitelist()
-def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None):
+def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None):
     """
     Submit commit data by staging it in Kafka Commit Staging.
     It will be published to Kafka later upon workflow reaching 'Approved' (Dean Approval).
     Works for Reimbursement, Travel, Temporary Advance, Advance Settlement, etc.
     """
-    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails}")
+    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular}")
     try:
         # Basic validation
         if not frappe.db.exists(doctype, name):
@@ -334,7 +354,8 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
             "bmr": bmr,
             "bill_amount": flt(bill_amount) if bill_amount else None,
             "frap_app_id": frapAppId,
-            "ref_details": refDetails
+            "ref_details": refDetails,
+            "commit_particular": commitParticular
         }
         print(f"[COMMIT_STAGING] Payload built: {payload}")
 
@@ -450,10 +471,26 @@ def check_workflow_and_publish(doc, method=None):
             if success:
                 staging_doc.db_set("status", "PUBLISHED")
                 print(f"[CHECK_WORKFLOW] Staging doc {staging_doc.name} marked PUBLISHED")
+                _mm_notify(
+                    f":white_check_mark: **Kafka Commit Published**\n"
+                    f"**DocType:** {doc.doctype}\n"
+                    f"**Doc:** {doc.name}\n"
+                    f"**Project:** {payload.get('project_name', '-')}\n"
+                    f"**Amount:** {payload.get('commit_amount', '-')}\n"
+                    f"**Budget Head:** {payload.get('budget_head', '-')}\n"
+                    f"**Staging:** {staging_doc.name}"
+                )
             else:
                 staging_doc.db_set("status", "FAILED")
                 staging_doc.db_set("error_message", "kafka_publish_commit returned False")
                 print(f"[CHECK_WORKFLOW] Staging doc {staging_doc.name} marked FAILED (returned False)")
+                _mm_notify(
+                    f":x: **Kafka Commit FAILED**\n"
+                    f"**DocType:** {doc.doctype}\n"
+                    f"**Doc:** {doc.name}\n"
+                    f"**Project:** {payload.get('project_name', '-')}\n"
+                    f"**Staging:** {staging_doc.name}"
+                )
 
         except Exception as e:
             print(f"[CHECK_WORKFLOW] EXCEPTION on staging doc {staging_doc.name}: {str(e)}")
@@ -503,10 +540,24 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
             if success:
                 staging_doc.db_set("status", "PUBLISHED")
                 results.append({"staging": staging_doc.name, "result": "PUBLISHED"})
+                _mm_notify(
+                    f":white_check_mark: **Kafka Commit Published (Manual)**\n"
+                    f"**DocType:** {reference_doctype}\n"
+                    f"**Doc:** {reference_name}\n"
+                    f"**Project:** {payload.get('project_name', '-')}\n"
+                    f"**Amount:** {payload.get('commit_amount', '-')}\n"
+                    f"**Staging:** {staging_doc.name}"
+                )
             else:
                 staging_doc.db_set("status", "FAILED")
                 staging_doc.db_set("error_message", "kafka_publish_commit returned False")
                 results.append({"staging": staging_doc.name, "result": "FAILED"})
+                _mm_notify(
+                    f":x: **Kafka Commit FAILED (Manual)**\n"
+                    f"**DocType:** {reference_doctype}\n"
+                    f"**Doc:** {reference_name}\n"
+                    f"**Staging:** {staging_doc.name}"
+                )
 
         frappe.db.commit()
         return {"status": "success", "results": results}
@@ -644,16 +695,54 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
         print(f"[PAYMENT_DEBUG] kafka_publish_payment returned: {success}")
 
         if success:
+            _mm_notify(
+                f":white_check_mark: **Kafka Payment Published**\n"
+                f"**DocType:** {doctype}\n"
+                f"**Doc:** {doc.name}\n"
+                f"**Project:** {doc.project_ref_number or '-'}\n"
+                f"**Amount:** {doc.payment_amount or '-'}\n"
+                f"**Budget Head:** {doc.budget_head or '-'}"
+            )
             return {
-                "status": "success", 
-                "message": "Payment published to Kafka", 
+                "status": "success",
+                "message": "Payment published to Kafka",
                 "name": doc.name,
                 "data": doc.as_dict()
             }
         else:
+            _mm_notify(
+                f":x: **Kafka Payment FAILED**\n"
+                f"**DocType:** {doctype}\n"
+                f"**Doc:** {doc.name}\n"
+                f"**Project:** {doc.project_ref_number or '-'}"
+            )
             return {"status": "error", "message": "Failed to publish payment"}
 
     except Exception as e:
         print(f"[PAYMENT_DEBUG] Exception in submit_payment_data: {str(e)}")
         frappe.log_error(frappe.get_traceback(), "Submit Payment Data Error")
         return {"status": "error", "message": str(e)}
+
+# START MKY 2026-04-23 12:45:00 IST - Added endpoints to fetch workflow states securely
+@frappe.whitelist()
+def get_workflow_states(doctype):
+    try:
+        workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
+        if not workflows:
+            return {"status": "error", "message": "No active workflow found"}
+        
+        states = frappe.get_all("Workflow Document State", filters={"parent": workflows[0]}, pluck="state")
+        return {"status": "success", "data": list(set(states))}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def get_document_state(doctype, docname):
+    try:
+        if not frappe.db.exists(doctype, docname):
+            return {"status": "error", "message": "Document not found"}
+        state = frappe.db.get_value(doctype, docname, "workflow_state")
+        return {"status": "success", "state": state or "Draft / Not Set"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+# END MKY

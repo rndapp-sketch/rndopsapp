@@ -169,6 +169,29 @@ class ProjectRegistrationMapper:
 
         return overhead_amount, gst_amount, grand_total, budget_with_overhead
 
+    @staticmethod
+    def get_account_type_fields(doc) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Map Project Registration account-type fields to the Kafka DTO.
+
+        is_the_account_type_pfms is a Yes/No Select field on the doctype.
+        - "Yes" → PFMS scheme: scheme_name + enter_scheme_number
+        - "No"  → Bank account: bank_name + account_number
+
+        Returns:
+            Tuple: (is_pfms, scheme_name_or_bank_name, scheme_number_or_account_number)
+        """
+        is_pfms = (getattr(doc, "is_the_account_type_pfms", None) or "").strip().lower() == "yes"
+
+        if is_pfms:
+            scheme_name_bank_name = getattr(doc, "scheme_name", None) or None
+            scheme_number_account_number = getattr(doc, "enter_scheme_number", None) or None
+        else:
+            scheme_name_bank_name = getattr(doc, "bank_name", None) or None
+            scheme_number_account_number = getattr(doc, "account_number", None) or None
+
+        return is_pfms, scheme_name_bank_name, scheme_number_account_number
+
     @classmethod
     def map_to_dto(cls, doc) -> ProjectDataDTO:
         """
@@ -222,6 +245,10 @@ class ProjectRegistrationMapper:
             base_total_budget, overhead_amount, gst_amount
         )
 
+        # Account type (PFMS vs. Bank Account)
+        is_pfms, scheme_name_bank_name, scheme_number_account_number = \
+            cls.get_account_type_fields(doc)
+
         # Build ProjectDataDTO
         return ProjectDataDTO(
             projectNumber=doc.project_no or doc.name,
@@ -244,7 +271,10 @@ class ProjectRegistrationMapper:
             durationInDays=str(doc.project_duration_days) if doc.project_duration_days else "0",
             status=doc.workflow_state or "",
             applyDate=apply_date,
-            implementedDeptCentres=dept_centres
+            implementedDeptCentres=dept_centres,
+            isPfms=is_pfms,
+            schemeNameBankName=scheme_name_bank_name,
+            schemeNumberAccountNumber=scheme_number_account_number,
         )
 
     @classmethod

@@ -160,14 +160,27 @@ def get_pending_task(page_name="pending-task"):
 
 		title_field = (meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name"))
 
+		# "Pending Head Approval" must be visible only to the specific head
+		# whose email is stored on the document. Field name varies per doctype.
+		head_field_map = {
+			"Recruitment Adhoc Contractual": "head",
+			"Project Registration": "head_approver",
+			"Rate Contract": "current_approver",
+		}
+		head_field = head_field_map.get(dt)
+		if head_field and not meta.has_field(head_field):
+			head_field = None
+
+		extra_fields = [head_field] if head_field else []
+
 		try:
 			records = frappe.get_list(
 				dt,
 				filters={
 					status_field: ["in", list(actionable_states)],
-					"docstatus": ["<", 2] 
+					"docstatus": ["<", 2]
 				},
-				fields=["name", title_field, status_field, "modified", "owner", "docstatus", "creation"],
+				fields=["name", title_field, status_field, "modified", "owner", "docstatus", "creation"] + extra_fields,
 				order_by="modified desc",
 				limit_page_length=100
 			)
@@ -179,8 +192,17 @@ def get_pending_task(page_name="pending-task"):
 		mapped = []
 		for r in records:
 			# print("r:",r)
+			if (
+				head_field
+				and r.get(status_field) == "Pending Head Approval"
+				and not is_system_manager
+			):
+				head_email = (r.get(head_field) or "").strip().lower()
+				if head_email != current_user.lower():
+					continue
+
 			mapped.append({
-				"name": r.get("name"), 
+				"name": r.get("name"),
 				"title": r.get(title_field),
 				"status": r.get(status_field),
 				"creation": r.get("creation"),

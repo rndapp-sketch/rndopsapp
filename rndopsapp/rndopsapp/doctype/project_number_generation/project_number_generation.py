@@ -156,7 +156,7 @@ class ProjectNumberGeneration(Document):
             # getseries pads to 4 minimum and grows past 9999 without overflow.
             self.project_no = getseries(series_key, 4)
 
-        self.name = f"{fin_year}{cat}-{dept}{eid}{einit}-{self.project_no}"
+        self.name = f"{fin_year}{cat}-{self.project_no}-{dept}{eid}{einit}"
 
 
 @frappe.whitelist()
@@ -223,12 +223,13 @@ def get_project_number_generation_fields(doc_name=None):
             user_data = _fetch_from_user(pi_email)
             employee_id = user_data.get("employee_id")
             pi_initials = user_data.get("pi_initials")
-            department = user_data.get("department_name") or proj_reg.get(
-                "implementation_department"
-            )
-            dept_initials = user_data.get("dept_initials")
-            dept_name = user_data.get("dept_name")
-            if department and (not dept_initials or not dept_name):
+
+            # Department always comes from the project's implementation_department,
+            # not the PI's user profile (they may be from a different department).
+            department = proj_reg.get("implementation_department")
+            dept_initials = None
+            dept_name = None
+            if department:
                 dept_row = frappe.db.get_value(
                     "Department_prornd",
                     department,
@@ -236,21 +237,21 @@ def get_project_number_generation_fields(doc_name=None):
                     as_dict=True,
                 )
                 if dept_row:
-                    dept_initials = dept_initials or dept_row.dept_initials
-                    dept_name = dept_name or dept_row.dept_name
+                    dept_initials = dept_row.dept_initials
+                    dept_name = dept_row.dept_name
 
             fin_year = _financial_year()
             calculated_project_no = _peek_next_sequence(fin_year)
 
             category = CATEGORY_BY_PROJECT_TYPE.get(proj_reg.get("project_type"), "C")
 
-            dept_formatted = str(dept_initials or "").upper()[:4]
-            eid_formatted = str(employee_id or "").zfill(4)[-4:]
-            einit_formatted = str(pi_initials or "").upper()[:4]
+            dept_formatted = (str(dept_initials or "").upper()[:4]) or "XXXX"
+            eid_formatted = (str(employee_id or "").strip().zfill(4)[-4:]) if (employee_id and str(employee_id).strip()) else "XXXX"
+            einit_formatted = (str(pi_initials or "").upper()[:4]) or "XXXX"
 
             preview_project_name = (
-                f"{fin_year}{category}-{dept_formatted}{eid_formatted}{einit_formatted}"
-                f"-{calculated_project_no}"
+                f"{fin_year}{category}-{calculated_project_no}"
+                f"-{dept_formatted}{eid_formatted}{einit_formatted}"
             )
 
             final_project_number = preview_project_name

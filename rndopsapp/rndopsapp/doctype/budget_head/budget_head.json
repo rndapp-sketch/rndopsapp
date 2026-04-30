@@ -7,7 +7,8 @@
  "engine": "InnoDB",
  "field_order": [
   "budget_head",
-  "id"
+  "id",
+  "specify_the_budget_head"
  ],
  "fields": [
   {
@@ -19,12 +20,18 @@
    "fieldname": "id",
    "fieldtype": "Int",
    "label": "id"
+  },
+  {
+   "depends_on": "eval: doc.budget_head==\"Others\" || doc.budget_head==\"Recurring\" || doc.budget_head==\"Non-Recurring\"",
+   "fieldname": "specify_the_budget_head",
+   "fieldtype": "Data",
+   "label": "Specify the Budget Head"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-16 11:19:38.216647",
+ "modified": "2026-04-28 11:10:23.133111",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Budget Head",

@@ -1,11 +1,17 @@
 # # # Copyright (c) 2025, rndops and contributors
 # # # For license information, please see license.txt
 
+import base64
+import datetime
+
 import frappe
 import requests
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
+from rndopsapp.file_handler import get_file_category_for_doctype
+from rndopsapp.minio import get_rnd_file_service
+from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_sanction
 
 # from frappe.workflow.doctype.workflow.workflow import get_workflow_name
@@ -155,92 +161,92 @@ def get_project_proposal_budget_details(project_proposal_name):
 
 
 
-@frappe.whitelist()
-def save_fund_sanction_data(data):
-	"""
-	Save Fund Sanction form data to the backend.
-	Expects 'data' as a JSON string from frontend.
-	"""
-	import json
+# @frappe.whitelist()
+# def save_fund_sanction_data(data):
+# 	"""
+# 	Save Fund Sanction form data to the backend.
+# 	Expects 'data' as a JSON string from frontend.
+# 	"""
+# 	import json
 
-	try:
-		# Parse JSON string if needed
-		if isinstance(data, str):
-			data = json.loads(data)
+# 	try:
+# 		# Parse JSON string if needed
+# 		if isinstance(data, str):
+# 			data = json.loads(data)
 
-		# Create or update Fund Sanction document
-		docname = data.get("name")  # If editing an existing doc
-		if docname:
-			fs_doc = frappe.get_doc("Fund Sanction", docname)
-		else:
-			fs_doc = frappe.new_doc("Fund Sanction")
+# 		# Create or update Fund Sanction document
+# 		docname = data.get("name")  # If editing an existing doc
+# 		if docname:
+# 			fs_doc = frappe.get_doc("Fund Sanction", docname)
+# 		else:
+# 			fs_doc = frappe.new_doc("Fund Sanction")
 
-		# Map simple fields
-		simple_fields = [
-			"amended_from",
-			"project_proposal",
-			"total_sanctioned_amount",
-			"sanctioned_letter_no",
-			"sanctioned_letter_date",
-			"total_first_year_budget_1",
-			"total_second_year_budget_1",
-			"total_third_year_budget_1",
-			"total_fourth_year_budget_1",
-			"total_fifth_year_budget_1",
-			"grand_total_proposal_1",
-			"have_fund_details",
-			"project_type_linked",
-			"is_gst_invoice_issued",
-			"invoice_details",
-			"amount_received",
-			"iitg_bank_account_number",
-		]
+# 		# Map simple fields
+# 		simple_fields = [
+# 			"amended_from",
+# 			"project_proposal",
+# 			"total_sanctioned_amount",
+# 			"sanctioned_letter_no",
+# 			"sanctioned_letter_date",
+# 			"total_first_year_budget_1",
+# 			"total_second_year_budget_1",
+# 			"total_third_year_budget_1",
+# 			"total_fourth_year_budget_1",
+# 			"total_fifth_year_budget_1",
+# 			"grand_total_proposal_1",
+# 			"have_fund_details",
+# 			"project_type_linked",
+# 			"is_gst_invoice_issued",
+# 			"invoice_details",
+# 			"amount_received",
+# 			"iitg_bank_account_number",
+# 		]
 
-		for field in simple_fields:
-			if field in data:
-				setattr(fs_doc, field, data[field] if data[field] != "null" else None)
+# 		for field in simple_fields:
+# 			if field in data:
+# 				setattr(fs_doc, field, data[field] if data[field] != "null" else None)
 
-		# Handle child tables
-		child_tables = {
-			"sanctioned_budget_breakup": "Sanctioned Budget Breakup",
-			"fund_transactions": "Fund Transactions",
-			"received_amount_breakup": "Received Amount Breakup",
-		}
+# 		# Handle child tables
+# 		child_tables = {
+# 			"sanctioned_budget_breakup": "Sanctioned Budget Breakup",
+# 			"fund_transactions": "Fund Transactions",
+# 			"received_amount_breakup": "Received Amount Breakup",
+# 		}
 
-		for field, child_doctype in child_tables.items():
-			if field in data:
-				items = json.loads(data[field]) if isinstance(data[field], str) else data[field]
-				fs_doc.set(field, [])  # clear existing child table
-				for item in items:
-					child = fs_doc.append(field, item)
+# 		for field, child_doctype in child_tables.items():
+# 			if field in data:
+# 				items = json.loads(data[field]) if isinstance(data[field], str) else data[field]
+# 				fs_doc.set(field, [])  # clear existing child table
+# 				for item in items:
+# 					child = fs_doc.append(field, item)
 
-		# Handle file attachments
-		if "sanction_related_files_meta" in data:
-			files_meta = json.loads(data["sanction_related_files_meta"])
-			for fmeta in files_meta:
-				# If file content comes as file_0, file_1, etc.
-				file_key = f"file_{files_meta.index(fmeta)}"
-				file_data = data.get(file_key)
-				if file_data:
-					# Save file in Frappe file system
-					file_doc = frappe.get_doc(
-						{
-							"doctype": "File",
-							"file_name": fmeta.get("description", f"file_{file_key}"),
-							"attached_to_doctype": "Fund Sanction",
-							"attached_to_name": fs_doc.name,
-							"content": file_data,  # file content in base64
-						}
-					)
-					file_doc.insert()
+# 		# Handle file attachments
+# 		if "sanction_related_files_meta" in data:
+# 			files_meta = json.loads(data["sanction_related_files_meta"])
+# 			for fmeta in files_meta:
+# 				# If file content comes as file_0, file_1, etc.
+# 				file_key = f"file_{files_meta.index(fmeta)}"
+# 				file_data = data.get(file_key)
+# 				if file_data:
+# 					# Save file in Frappe file system
+# 					file_doc = frappe.get_doc(
+# 						{
+# 							"doctype": "File",
+# 							"file_name": fmeta.get("description", f"file_{file_key}"),
+# 							"attached_to_doctype": "Fund Sanction",
+# 							"attached_to_name": fs_doc.name,
+# 							"content": file_data,  # file content in base64
+# 						}
+# 					)
+# 					file_doc.insert()
 
-		fs_doc.save()
-		frappe.db.commit()
-		return {"status": "success", "name": fs_doc.name}
+# 		fs_doc.save()
+# 		frappe.db.commit()
+# 		return {"status": "success", "name": fs_doc.name}
 
-	except Exception as e:
-		frappe.log_error(frappe.get_traceback(), _("Error saving Fund Sanction"))
-		return {"status": "error", "message": str(e)}
+# 	except Exception as e:
+# 		frappe.log_error(frappe.get_traceback(), _("Error saving Fund Sanction"))
+# 		return {"status": "error", "message": str(e)}
 
 
 
@@ -318,31 +324,99 @@ def save_fund_sanction_data(files=None, **data):
 	ERPNext link validations and saving only file paths.
 	"""
 	import json
-	import base64
+	import os
+
+	# --- Debug: dump raw incoming payload so we can see what the frontend sends ---
+	try:
+		_dir = os.path.dirname(__file__)
+		_ts = datetime.datetime.now().isoformat()
+		with open(os.path.join(_dir, "fund_sanction_save.log"), "a") as _lf:
+			_lf.write(f"\n{'=' * 60}\n[{_ts}] save_fund_sanction_data called\n")
+			_lf.write(f"files param type: {type(files).__name__}\n")
+			if isinstance(files, str):
+				_lf.write(f"files (string, {len(files)} chars, preview): {files[:300]}\n")
+			elif isinstance(files, list):
+				_lf.write(f"files (list of {len(files)})\n")
+			else:
+				_lf.write(f"files: {files!r}\n")
+			_lf.write(f"data keys: {list(data.keys())}\n")
+			try:
+				form_keys = list(frappe.form_dict.keys()) if getattr(frappe, "form_dict", None) else []
+				_lf.write(f"frappe.form_dict keys: {form_keys}\n")
+				req_files = getattr(frappe.request, "files", None)
+				if req_files:
+					_lf.write(f"frappe.request.files keys: {list(req_files.keys())}\n")
+			except Exception as _e:
+				_lf.write(f"form_dict/request inspect error: {_e}\n")
+			_lf.write(f"{'=' * 60}\n")
+	except Exception:
+		pass
 
 	is_new = False  # Initialize is_new flag
+	uploaded_file_urls = []  # Collected MinIO URLs for the Mattermost success log
 
 	try:
 		# Extract child tables and flags
 		budget_data = data.pop("sanctioned_budget_breakup", [])
 		files_data = data.pop("sanction_related_files", [])
 		submit = data.pop("submit", False)
-		
-		# Handle files payload from argument or data
-		files_payload = files
-		if not files_payload:
-			files_payload = data.pop("files", None)
-			
-		if isinstance(files_payload, str):
-			try:
-				files_payload = json.loads(files_payload)
-			except Exception:
-				pass
+
+		# --- Handle files payload (tolerant of several key names / shapes) ---
+		# Frontend may send base64 uploads under any of: files, files_payload,
+		# file_data, attachments. Some clients also embed base64 fields inside
+		# sanction_related_files rows — we pick those up too as a fallback.
+		def _coerce_list(val):
+			if not val:
+				return None
+			if isinstance(val, str):
+				try:
+					parsed = json.loads(val)
+				except Exception:
+					return None
+				val = parsed
+			if isinstance(val, list):
+				return val
+			return None
+
+		files_payload = _coerce_list(files)
+		for candidate_key in ("files", "files_payload", "file_data", "attachments"):
+			if files_payload:
+				break
+			files_payload = _coerce_list(data.pop(candidate_key, None))
+
+		# Fallback: promote base64 fields embedded in sanction_related_files rows
+		if not files_payload and isinstance(files_data, list):
+			embedded = []
+			for row in files_data:
+				if not isinstance(row, dict):
+					continue
+				content_b64 = row.get("content") or row.get("file_data") or row.get("data")
+				if not content_b64:
+					continue
+				embedded.append({
+					"filename": row.get("filename") or row.get("file_name") or row.get("description"),
+					"content": content_b64,
+					"description": row.get("description"),
+					"is_private": row.get("is_private", 1),
+				})
+			if embedded:
+				files_payload = embedded
 
 		print(f"\nIncoming Fund Sanction save request. Keys: {list(data.keys())}")
-		print(f"Budget rows: {len(budget_data)}, File rows: {len(files_data)}")
+		print(
+			f"Budget rows: {len(budget_data)}, File rows: {len(files_data)}, "
+			f"files_payload type={type(files_payload).__name__} "
+			f"count={len(files_payload) if isinstance(files_payload, list) else 0}"
+		)
+		if isinstance(files_payload, list) and files_payload:
+			_first = files_payload[0]
+			if isinstance(_first, dict):
+				_preview = {k: (str(v)[:40] + "…") if isinstance(v, str) and len(v) > 40 else v
+							for k, v in _first.items()}
+				print(f"[DEBUG] first file entry: {_preview}")
 
-		# Extract project_reg if present
+		# project_reg anchors uploaded files under the Project Registration's
+		# MinIO directory (e.g. Project_Registration/<project_reg>/fund_sanction/...).
 		project_reg = data.pop("project_reg", None)
 		data.pop("project_no", None)
 
@@ -399,13 +473,15 @@ def save_fund_sanction_data(files=None, **data):
 		doc.save(ignore_permissions=True)
 		print("✅ Second save complete")
 
-		# --- Handle new file uploads (Base64) ---
+		# --- Handle new file uploads (Base64) → MinIO, mirrors save_project_draft ---
 		if files_payload and isinstance(files_payload, list):
+			file_service = get_rnd_file_service()
 			for f in files_payload:
 				try:
 					filename = f.get("filename") or f.get("file_name") or f.get("name")
 					content_b64 = f.get("content") or f.get("file_data") or f.get("data") or ""
 					is_private = int(f.get("is_private") or 1)
+					description = f.get("description") or filename
 
 					if not (filename and content_b64):
 						continue
@@ -415,26 +491,42 @@ def save_fund_sanction_data(files=None, **data):
 
 					file_content = base64.b64decode(content_b64)
 
-					from rndopsapp.minio import get_rnd_file_service
-					
-					upload_result = get_rnd_file_service().save_file(
+					# Route files under the Project Registration's MinIO directory:
+					#   Project_Registration/<project_reg>/fund_sanction/<filename>
+					# Falls through to doc.project_proposal if project_reg wasn't sent.
+					target_doctype = "Project Registration"
+					target_docname = project_reg or doc.project_proposal
+					fieldname_hint = f.get("fieldname")
+					if fieldname_hint:
+						folder = get_file_category_for_doctype(target_doctype, fieldname_hint)
+					else:
+						folder = "fund_sanction"
+
+					upload_result = file_service.save_file(
 						filename=filename,
 						content=file_content,
 						is_private=bool(is_private),
-						doctype="Project Registration",
-						docname=project_reg or doc.project_proposal,
-						folder="sanction"
+						doctype=target_doctype,
+						docname=target_docname,
+						folder=folder,
 					)
 
 					if upload_result.get("status"):
 						file_url = upload_result.get("data", {}).get("file_url")
-						# Also add to sanction_related_files child table if needed
 						doc.append("sanction_related_files", {
-							"description": filename,
-							"sanction_file": file_url
+							"description": description,
+							"sanction_file": file_url,
 						})
+						if file_url:
+							uploaded_file_urls.append(file_url)
+						frappe.logger().info(
+							f"File uploaded to MinIO: {filename} -> {file_url}"
+						)
 					else:
-						frappe.log_error(f"File upload failed: {upload_result.get('message')}", "Fund Sanction File Upload")
+						frappe.log_error(
+							f"MinIO upload failed: {upload_result.get('message')}",
+							f"save_fund_sanction_data: file upload error for {filename}",
+						)
 
 				except Exception as fe:
 					frappe.log_error(
@@ -442,8 +534,10 @@ def save_fund_sanction_data(files=None, **data):
 						f"save_fund_sanction_data: file upload error for {f.get('filename')}",
 					)
 					continue
-			
+
 			# Save again to update child table with new files
+			doc.flags.ignore_validate = True
+			doc.flags.ignore_mandatory = True
 			doc.save(ignore_permissions=True)
 			frappe.db.commit()
 
@@ -452,37 +546,116 @@ def save_fund_sanction_data(files=None, **data):
 			doc.submit()
 			print("✅ Submitted successfully")
 
-		# --- ✅ Send data to external API (Kafka) ---
+		# --- ✅ Send data to external API (Kafka) only when Sanction Approved ---
 		kafka_success = False
-		try:
-			kafka_success = publish_sanction(doc)
-			if kafka_success:
-				frappe.msgprint(_("Sanction data synced successfully to external system."), indicator="green")
-			else:
-				# Rollback: Delete if newly created, otherwise log error
+		if doc.workflow_state == "Sanction Approved":
+			try:
+				kafka_success = publish_sanction(doc)
+				if kafka_success:
+					frappe.msgprint(_("Sanction data synced successfully to external system."), indicator="green")
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  📡 [Kafka Publish] SUCCESS                   │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {doc.name}\n"
+						f" State    : {doc.workflow_state}\n"
+						f" User     : {frappe.session.user}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```"
+					)
+				else:
+					# Rollback: Delete if newly created, otherwise log error
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  ⚠️ [Kafka Publish] FAILED                    │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {doc.name}\n"
+						f" State    : {doc.workflow_state}\n"
+						f" User     : {frappe.session.user}\n"
+						f" Rollback : {'yes (new doc)' if is_new else 'no (kept local)'}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```",
+						urgent=True,
+					)
+					if is_new:
+						doc.delete(ignore_permissions=True)
+						frappe.db.rollback()
+						frappe.throw(_("Kafka sync failed. Fund Sanction was not saved. Please try again."))
+					else:
+						frappe.msgprint(_("Warning: Kafka sync failed. Data saved locally but not synced."), indicator="orange")
+			except frappe.ValidationError:
+				raise  # Re-raise validation errors from frappe.throw
+			except Exception as e:
+				_kafka_tb = frappe.get_traceback()
+				frappe.log_error(_kafka_tb, "Fund Sanction Kafka Sync Error")
+				notify_mattermost(
+					"```\n"
+					"┌──────────────────────────────────────────────┐\n"
+					"│  ❌ [Kafka Publish] EXCEPTION                 │\n"
+					"├──────────────────────────────────────────────┤\n"
+					f" Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+					f" Docname   : {doc.name}\n"
+					f" State     : {doc.workflow_state}\n"
+					f" User      : {frappe.session.user}\n"
+					f" Exception : {type(e).__name__}: {str(e)}\n"
+					"└──────────────────────────────────────────────┘\n"
+					f"---TRACEBACK---\n{_kafka_tb}\n"
+					"```",
+					urgent=True,
+				)
 				if is_new:
 					doc.delete(ignore_permissions=True)
 					frappe.db.rollback()
 					frappe.throw(_("Kafka sync failed. Fund Sanction was not saved. Please try again."))
 				else:
-					frappe.msgprint(_("Warning: Kafka sync failed. Data saved locally but not synced."), indicator="orange")
-		except frappe.ValidationError:
-			raise  # Re-raise validation errors from frappe.throw
-		except Exception as e:
-			frappe.log_error(frappe.get_traceback(), "Fund Sanction Kafka Sync Error")
-			if is_new:
-				doc.delete(ignore_permissions=True)
-				frappe.db.rollback()
-				frappe.throw(_("Kafka sync failed. Fund Sanction was not saved. Please try again."))
-			else:
-				frappe.msgprint(_("Warning: Kafka sync failed. Check Error Log."), indicator="red")
+					frappe.msgprint(_("Warning: Kafka sync failed. Check Error Log."), indicator="red")
 
 		frappe.db.commit()
+
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {u}" for u in uploaded_file_urls)
+		else:
+			files_block = "   (no new uploads)"
+
+		notify_mattermost(
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ✅ [save_fund_sanction_data] SUCCESS        │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname : {doc.name}\n"
+			f" State   : {doc.workflow_state}\n"
+			f" User    : {frappe.session.user}\n"
+			f" Kafka   : {'synced' if kafka_success else 'skipped' if doc.workflow_state != 'Sanction Approved' else 'failed'}\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```"
+		)
+
 		return {"status": "success", "docname": doc.name}
 
 	except Exception as e:
+		_tb = frappe.get_traceback()
 		frappe.db.rollback()
-		frappe.log_error(frappe.get_traceback(), "Fund Sanction Save Error")
+		frappe.log_error(_tb, "Fund Sanction Save Error")
+		notify_mattermost(
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ❌ [save_fund_sanction_data] ERROR          │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Exception : {type(e).__name__}: {str(e)}\n"
+			f" User      : {frappe.session.user}\n"
+			"└──────────────────────────────────────────────┘\n"
+			f"---TRACEBACK---\n{_tb}\n"
+			"```",
+			urgent=True,
+		)
 		frappe.throw(f"An error occurred while saving the Fund Sanction: {str(e)}")
 
 
@@ -692,9 +865,9 @@ def submit_fund_sanction(sanction_name=None, save=None, files=None, project_reg=
 		# Pass explicit parameters back into data for save_fund_sanction_data
 		if project_reg is not None:
 			data["project_reg"] = project_reg
-		if project_no is not None:
+		if profund_sanctionject_no is not None:
 			data["project_no"] = project_no
-		res = save_fund_sanction_data(files, **data)
+		res = save__data(files, **data)
 		if isinstance(res, dict) and res.get("status") == "success":
 			sanction_name = res.get("docname") or res.get("name")
 		else:

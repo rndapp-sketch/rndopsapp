@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}12{######}",
  "creation": "2025-12-26 12:34:09.267229",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -237,10 +238,11 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-16 21:31:29.279487",
+ "modified": "2026-04-27 18:02:49.846668",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Indent General Form",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

@@ -168,7 +168,7 @@ def extract_eval_expression(expression):
 
 
 # ============================================================
-# EDITED BY MKY | 2026-04-21 01:46 IST
+# EDITED BY OJS | 2026-04-21 01:46 IST
 # START OF EDIT — Hardened notify_mattermost: split timeout
 # into (connect=2s, read=3s) so a dead/unreachable Mattermost
 # server fails fast and NEVER blocks or affects functionality.
@@ -215,14 +215,14 @@ def notify_mattermost(message: str, urgent: bool = False) -> None:
 
 	except Exception:
 		pass  # never interrupt main flow
-# END OF EDIT — MKY | 2026-04-21 01:46 IST
+# END OF EDIT — OJS | 2026-04-21 01:46 IST
 # ============================================================
 
 
 @frappe.whitelist()
 def submit_project_registration(docname):
 	# ============================================================
-	# EDITED BY MKY | 2026-04-21 01:54 IST
+	# EDITED BY OJS | 2026-04-21 01:54 IST
 	# START OF EDIT — Wrapped entire function in try/except so ALL
 	# exceptions (including frappe.throw ValidationErrors) are sent
 	# to Mattermost before being re-raised to Frappe normally.
@@ -342,7 +342,7 @@ def submit_project_registration(docname):
 			urgent=True,
 		)
 		raise  # Re-raise so Frappe handles the HTTP response normally
-	# END OF EDIT — MKY | 2026-04-21 01:54 IST
+	# END OF EDIT — OJS | 2026-04-21 01:54 IST
 	# ============================================================
 
 
@@ -856,7 +856,7 @@ def get_project_form_data(docname=None):
 
 		# 2b. Filter designation_name options for proposed_manpower_details
 		# ============================================================
-		# EDITED BY MKY | 2026-04-14 14:52 IST
+		# EDITED BY OJS | 2026-04-14 14:52 IST
 		# START OF EDIT — Simplifed designation_name options & Quick Entry prepend
 		# Replaced complex User lookup with direct Designation_prornd query.
 		# Prepending "CREATE_NEW" option at the top for Frappe quick entry UI.
@@ -882,7 +882,7 @@ def get_project_form_data(docname=None):
 		except Exception as e:
 			frappe.log_error(frappe.get_traceback(), "Error filtering designation options for manpower details")
 			link_options["designation_name"] = [{"value": "CREATE_NEW", "label": "➕ Create New Designation..."}]
-		# END OF EDIT — MKY | 2026-04-14 14:52 IST
+		# END OF EDIT — OJS | 2026-04-14 14:52 IST
 		# ============================================================
 
 		# 3. Get Pre-fill data for the current user
@@ -1265,7 +1265,7 @@ def save_project_data(doc, html_content=None):
 
 		# Return the name of the newly created document to the frontend
 		# ============================================================
-		# EDITED BY MKY | 2026-04-21 01:43 IST
+		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost success notification for save_project_data
 		# ============================================================
 		notify_mattermost(
@@ -1276,7 +1276,7 @@ def save_project_data(doc, html_content=None):
 			f"User    : {frappe.session.user}\n"
 			f"Message : Project Registration Successful"
 		)
-		# END OF EDIT — MKY | 2026-04-21 01:43 IST
+		# END OF EDIT — OJS | 2026-04-21 01:43 IST
 		# ============================================================
 		return {
 			"status": "success",
@@ -1290,7 +1290,7 @@ def save_project_data(doc, html_content=None):
 		_tb = frappe.get_traceback()
 		frappe.log_error(_tb, "Project Registration Save Error")
 		# ============================================================
-		# EDITED BY MKY | 2026-04-21 01:46 IST
+		# EDITED BY OJS | 2026-04-21 01:46 IST
 		# START OF EDIT — Error notification: actual exception first
 		# ============================================================
 		notify_mattermost(
@@ -1302,7 +1302,7 @@ def save_project_data(doc, html_content=None):
 			f"---TRACEBACK---\n{_tb}",
 			urgent=True,
 		)
-		# END OF EDIT — MKY | 2026-04-21 01:46 IST
+		# END OF EDIT — OJS | 2026-04-21 01:46 IST
 		# ============================================================
 		frappe.throw(_("An error occurred while saving the project. Please contact support."))
 
@@ -1487,6 +1487,9 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 
 		# Tracks the existing DB workflow_state for correction-state reset logic below.
 		existing_workflow_state = None
+		# When reverting from "Endorsement Approved", preserve existing field/child-table
+		# values that aren't present in the incoming payload (partial-update semantics).
+		preserve_existing_on_revert = False
 		# States in which the PI is expected to re-edit the doc; we revert in place
 		# so the docname is preserved instead of creating a new draft.
 		correction_states = {
@@ -1494,6 +1497,10 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			"Needs Correction (HOD)",
 			"Needs Correction",
 		}
+		# Endorsement Approved is also reverted in place to Draft, but uses
+		# partial-update semantics (does not wipe fields/child rows absent from payload).
+		endorsement_approved_state = "Endorsement Approved"
+		revertible_states = correction_states | {endorsement_approved_state}
 		if resolved_docname and frappe.db.exists("Project Registration", resolved_docname):
 			doc = frappe.get_doc("Project Registration", resolved_docname)
 			if doc.owner != frappe.session.user and "System Manager" not in frappe.get_roles(frappe.session.user):
@@ -1503,10 +1510,13 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 
 			existing_workflow_state = doc.workflow_state
 
+			if doc.workflow_state == endorsement_approved_state:
+				preserve_existing_on_revert = True
+
 			if doc.docstatus != 0:
-				if doc.workflow_state in correction_states:
-					# Submitted doc sent back for correction — revert to draft in place
-					# to preserve the same docname.
+				if doc.workflow_state in revertible_states:
+					# Submitted doc sent back for correction (or Endorsement Approved) —
+					# revert to draft in place to preserve the same docname.
 					frappe.db.set_value(
 						"Project Registration", doc.name,
 						{"docstatus": 0, "workflow_state": "Draft"},
@@ -1521,6 +1531,15 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 					doc = frappe.new_doc("Project Registration")
 					data.pop("name", None)  # Don't carry over the submitted doc's name
 					existing_workflow_state = None
+					preserve_existing_on_revert = False
+			elif doc.workflow_state == endorsement_approved_state:
+				# docstatus already 0 but state still Endorsement Approved — force back to Draft.
+				frappe.db.set_value(
+					"Project Registration", doc.name, "workflow_state", "Draft",
+					update_modified=False,
+				)
+				frappe.db.commit()
+				doc = frappe.get_doc("Project Registration", resolved_docname)
 		else:
 			doc = frappe.new_doc("Project Registration")
 
@@ -1574,8 +1593,14 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 
 		# --- Process child tables ---
 		for table_fieldname in child_tables_map:
-			doc.set(table_fieldname, [])
 			child_rows_data = data.get(table_fieldname)
+
+			# Endorsement Approved revert: if the payload omits this child table,
+			# preserve the existing rows instead of wiping them.
+			if preserve_existing_on_revert and not isinstance(child_rows_data, list):
+				continue
+
+			doc.set(table_fieldname, [])
 
 			if not isinstance(child_rows_data, list):
 				continue
@@ -1760,7 +1785,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 					# Upload to MinIO using RNDFileService
 					file_service = get_rnd_file_service()
 					# ============================================================
-					# EDITED BY MKY | 2026-04-20 23:51 IST
+					# EDITED BY OJS | 2026-04-20 23:51 IST
 					# START OF EDIT — Fix: wrong folder created from filename pattern match
 					# Bug: f.get("file_name") or filename was passed as fieldname into
 					# get_file_category_for_doctype(). When filename contained "endorsement"
@@ -1778,7 +1803,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 						docname=doc.name,
 						folder=get_file_category_for_doctype(doc.doctype, _field_for_category)
 					)
-					# END OF EDIT — MKY | 2026-04-20 23:51 IST
+					# END OF EDIT — OJS | 2026-04-20 23:51 IST
 					# ============================================================
 
 					if upload_result.get("status"):
@@ -1873,7 +1898,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			print("DEBUG: html_content is empty or None")
 
 		# ============================================================
-		# EDITED BY MKY | 2026-04-21 01:43 IST
+		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost success notification for save_project_draft
 		# ============================================================
 		notify_mattermost(
@@ -1884,7 +1909,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			f"User    : {frappe.session.user}\n"
 			f"Status  : Draft saved successfully"
 		)
-		# END OF EDIT — MKY | 2026-04-21 01:43 IST
+		# END OF EDIT — OJS | 2026-04-21 01:43 IST
 		# ============================================================
 		return {"docname": doc.name}
 
@@ -1892,7 +1917,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		_tb = frappe.get_traceback()
 		frappe.log_error(_tb, "Project Draft Save Error")
 		# ============================================================
-		# EDITED BY MKY | 2026-04-21 01:43 IST
+		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost error notification for save_project_draft
 		# ============================================================
 		notify_mattermost(
@@ -1904,7 +1929,7 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			f"---TRACEBACK---\n{_tb}",
 			urgent=True,
 		)
-		# END OF EDIT — MKY | 2026-04-21 01:43 IST
+		# END OF EDIT — OJS | 2026-04-21 01:43 IST
 		# ============================================================
 		frappe.throw(_("An error occurred while saving the draft: {0}").format(str(e)))
 
@@ -2222,7 +2247,7 @@ def get_project_title(project_no):
 	return project_title
 
 # ============================================================
-# EDITED BY MKY | 2026-04-14 15:35 IST
+# EDITED BY OJS | 2026-04-14 15:35 IST
 # START OF EDIT — Custom Designation Creation API
 # Endpoint invoked when a user clicks "CREATE_NEW" from the frontend table.
 # Deduplicates entries using SQL LIKE before inserting.
@@ -2271,7 +2296,7 @@ def create_custom_designation(designation_name, designation_type="Project Staff"
 		frappe.log_error(frappe.get_traceback(), f"Custom Designation Creation Error for {designation_name}")
 		return {"status": "error", "message": str(e)}
 
-# END OF EDIT — MKY | 2026-04-14 15:35 IST
+# END OF EDIT — OJS | 2026-04-14 15:35 IST
 # ============================================================
 
 

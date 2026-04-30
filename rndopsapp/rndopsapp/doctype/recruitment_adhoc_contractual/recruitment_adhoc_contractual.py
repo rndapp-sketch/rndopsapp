@@ -277,46 +277,154 @@ def get_recruitment_adhoc_contractual_workflow_actions(docname):
 
 @frappe.whitelist()
 def perform_recruitment_adhoc_contractual_action(docname, action):
+    print("------=-==-=-=-=-=-=-=-=-=-=-=-RAC-=-=-=-=-=-=-=-=-=-=-=-")
     """
-    Perform a workflow action on the document.
-    Uses Frappe's built-in workflow engine for robust transition handling.
+    Executes the selected workflow action and updates the document state.
     """
+    print(f"\n--- [START] perform_recruitment_adhoc_contractual_action ---")
+    print(f"Docname: {docname} | Action requested: {action}")
+    
     try:
-        from frappe.model.workflow import apply_workflow
-        
         doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
+        current_state = doc.workflow_state or "Draft"
+        user_roles = frappe.get_roles(frappe.session.user)
         
-        # apply_workflow handles transitions, permissions, and status updates
-        updated_doc = apply_workflow(doc, action)
-        
+        print(f"Current State: '{current_state}' | User: {frappe.session.user}")
+        print(f"User Roles: {user_roles}")
+
+        workflow_name = frappe.db.get_value(
+            "Workflow",
+            {"document_type": "Recruitment Adhoc Contractual", "is_active": 1},
+            "name"
+        )
+
+        print(f"Active Workflow Found: {workflow_name}")
+
+        if not workflow_name:
+            print("[ERROR] No active workflow found for Recruitment Adhoc Contractual.")
+            frappe.throw("No active workflow found for Recruitment Adhoc Contractual.")
+
+        workflow = frappe.get_doc("Workflow", workflow_name)
+
+        next_state = None
+        transition = None
+
+        print("Iterating over workflow transitions...")
+        for t in workflow.transitions:
+            print(f"  Checking Transition -> State: '{t.state}', Action: '{t.action}'")
+            
+            if t.state == current_state and t.action == action:
+                print(f"    [MATCH] State & Action match found!")
+                
+                allowed_roles = t.get("allowed") or []
+                if isinstance(allowed_roles, str):
+                    allowed_roles = [allowed_roles]
+                
+                print(f"    Allowed roles for transition: {allowed_roles}")
+
+                if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
+                    print(f"    [FAIL] Role check failed.")
+                    continue
+                else:
+                    print("    [PASS] Role check passed.")
+
+                if t.condition:
+                    print(f"    Evaluating condition: {t.condition}")
+                    try:
+                        eval_context = {
+                            "doc": doc,
+                            "flt": frappe.utils.flt,
+                            "cint": frappe.utils.cint,
+                            "frappe": frappe._dict(
+                                db=frappe._dict(
+                                    get_value=frappe.db.get_value,
+                                    get_list=frappe.db.get_list,
+                                    get_single_value=frappe.db.get_single_value,
+                                ),
+                                utils=frappe._dict(
+                                    flt=frappe.utils.flt,
+                                    cint=frappe.utils.cint,
+                                ),
+                                session=frappe.session,
+                            ),
+                        }
+                        if not frappe.safe_eval(t.condition, None, eval_context):
+                            print("    [FAIL] Condition evaluated to False.")
+                            continue
+                        print("    [PASS] Condition evaluated to True.")
+                    except Exception as e:
+                        print(f"    [ERROR] Workflow condition error: {str(e)}")
+                        continue
+
+                next_state = t.next_state
+                transition = t
+                print(f"    [SUCCESS] Transition approved! Next state will be: '{next_state}'")
+                break
+
+        if not next_state:
+            error_msg = f"No valid transition found for action '{action}' from state '{current_state}' matching your role and conditions."
+            print(f"[ERROR] {error_msg}")
+            frappe.throw(error_msg)
+
+        doc.workflow_state = next_state
+        state_doc = next((s for s in workflow.states if s.state == next_state), None)
+
+        if state_doc:
+            print(f"Target state doc_status: {state_doc.doc_status} (Current docstatus: {doc.docstatus})")
+
+        # ============================================================
+        # EDITED BY MKY | 2026-04-23 18:21 IST
+        # START OF EDIT — Fix incorrect doc.cancel() on submitted workflow transitions
+        # Root cause: all workflow states (except Draft) have doc_status=1. When a
+        # submitted doc (docstatus=1) transitions to another doc_status=1 state, the
+        # old elif branch incorrectly called doc.cancel() (docstatus=2).
+        # Fix: only submit when going Draft→Submitted (docstatus 0→1).
+        #      only cancel when the target state explicitly requires docstatus=2
+        #      AND the current doc is still submitted (not already cancelled).
+        #      All other transitions (submitted→submitted) safely use db.set_value.
+        # ============================================================
+        if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
+            print("[ACTION] Submitting document (Draft → Submitted)...")
+            doc.submit()
+        elif state_doc and state_doc.doc_status == "2" and doc.docstatus == 1:
+            # Only cancel if the workflow explicitly targets a Cancelled state
+            # (doc_status=2) and the doc is currently submitted.
+            print("[ACTION] Cancelling document (Submitted → Cancelled by workflow)...")
+            doc.cancel()
+        else:
+            # Handles: submitted→submitted state transitions and any fallthrough.
+            # Safest path — update only workflow_state, no docstatus change.
+            print("[ACTION] Updating workflow_state via db.set_value...")
+            frappe.db.set_value("Recruitment Adhoc Contractual", docname, "workflow_state", next_state)
+
+            # Since db.set_value does NOT trigger on_update hooks,
+            # manually call the Kafka publishing hook if state is now 'Approved'
+            if next_state == "Approved":
+                print("[KAFKA] State is 'Approved' — manually triggering check_workflow_and_publish...")
+                from rndopsapp.rndopsapp.commitPayment import check_workflow_and_publish
+                # Reload the doc so it reflects the updated workflow_state
+                doc.reload()
+                check_workflow_and_publish(doc)
+        # END OF EDIT — MKY | 2026-04-23 18:21 IST
+        # ============================================================
+
         frappe.db.commit()
-        
-        new_state = updated_doc.workflow_state
-        
+        print(f"--- [END] perform_recruitment_adhoc_contractual_action SUCCESS ---\n")
+
         return {
             "status": "success",
-            "message": f"Action '{action}' completed. New State: {new_state}",
+            "message": f"Action '{action}' completed. New State: {next_state}",
             "docname": docname,
-            "workflow_state": new_state,
+            "workflow_state": next_state,
             "next_actions": get_recruitment_adhoc_contractual_workflow_actions(docname)
         }
+        
     except Exception as e:
         frappe.db.rollback()
-        error_msg = str(e)
-        if getattr(frappe.local, 'message_log', None):
-            try:
-                messages = [json.loads(msg).get("message", "") if isinstance(msg, str) else msg.get("message", "") for msg in frappe.local.message_log]
-                if any(messages):
-                    error_msg = " | ".join([m for m in messages if m])
-            except Exception:
-                pass
-                
-        if not error_msg:
-            error_msg = "Unknown error occurred during workflow transition."
-            
+        print(f"\n--- [EXCEPTION] perform_recruitment_adhoc_contractual_action ---")
+        print(f"Error: {str(e)}")
         frappe.log_error(frappe.get_traceback(), f"Workflow Action Failed: {action} on {docname}")
-        # Provide a more user-friendly error message if it's a known workflow error
-        return {"status": "error", "message": error_msg}
+        return {"status": "error", "message": str(e)}
 
 
 @frappe.whitelist()

@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe.model.document import Document
 from frappe.model.workflow import get_transitions
+from rndopsapp.minio import get_rnd_file_service
 
 
 class SelectionCommitteeReport(Document):
@@ -206,8 +207,19 @@ def get_selection_committee_report_fields(doc_name=None):
 
 @frappe.whitelist()
 def save_selection_committee_report_data(data):
+	import base64
+
 	if isinstance(data, str):
 		data = json.loads(data)
+
+	# Extract attendance_report file payload before field mapping.
+	# Frontend sends it as {"file_data": "data:...;base64,...", "file_name": "..."}
+	attendance_file = data.pop("attendance_report", None)
+	if not isinstance(attendance_file, dict):
+		# Already a stored URL string — put it back so the field mapper sets it normally
+		if attendance_file:
+			data["attendance_report"] = attendance_file
+		attendance_file = None
 
 	try:
 		# Create or Get Doc
@@ -239,6 +251,44 @@ def save_selection_committee_report_data(data):
 		# Save
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
+
+		# --- Handle attendance_report file upload (base64 payload) ---
+		if attendance_file:
+			filename = attendance_file.get("file_name") or attendance_file.get("filename")
+			content_b64 = attendance_file.get("file_data") or attendance_file.get("content") or ""
+
+			if not filename or not content_b64:
+				frappe.db.rollback()
+				return {"status": "error", "message": "attendance_report: file_name and file_data are required"}
+
+			if content_b64.startswith("data:"):
+				content_b64 = content_b64.split(",", 1)[1]
+
+			file_content = base64.b64decode(content_b64)
+
+			project_id = doc.project_number or data.get("project_number")
+			if not project_id:
+				frappe.db.rollback()
+				return {"status": "error", "message": "project_number is required to upload attendance_report"}
+
+			file_service = get_rnd_file_service()
+			upload_result = file_service.save_file(
+				filename=filename,
+				content=file_content,
+				is_private=True,
+				doctype="Project Registration",
+				docname=project_id,
+				folder="scr",
+			)
+
+			if not upload_result.get("status"):
+				frappe.db.rollback()
+				return {"status": "error", "message": f"MinIO upload failed: {upload_result.get('message')}"}
+
+			doc.attendance_report = upload_result["data"]["file_url"]
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+
 		return {"status": "success", "docname": doc.name}
 
 	except Exception as e:

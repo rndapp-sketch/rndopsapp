@@ -729,6 +729,7 @@ def check_email_availability(email=None, exclude_docname=None):
 		frappe.log_error(frappe.get_traceback(), "Check Email Availability Error")
 		return {"status": "error", "message": str(e)}
 
+
 @frappe.whitelist(allow_guest=True)
 def check_duplicate_registration(email=None, id_numbers=None, exclude_docname=None):
 	"""
@@ -736,7 +737,6 @@ def check_duplicate_registration(email=None, id_numbers=None, exclude_docname=No
 	"""
 	try:
 		duplicates = []
-		
 		# Check Email
 		if email:
 			filters = {"email_address_u_r": email}

@@ -110,6 +110,197 @@ def get_dashboard_data(user_email, department):
 
 
 
+@frappe.whitelist(allow_guest=True)
+def get_head_dashboard_data(user_email, department):
+    """
+    HoD Dashboard — Department-level analytics (mirrors director dashboard at department scope).
+    Returns project overview, PI-wise breakdown, fund analytics, and proposal stats.
+    """
+    data = {}
+
+    # Resolve department — try dept_name match, then direct ID, then user's own department
+    dept_record = frappe.db.sql("""
+        SELECT name, dept_name FROM `tabDepartment_prornd`
+        WHERE dept_name = %s OR name = %s
+        LIMIT 1
+    """, (department, department), as_dict=True)
+
+    if dept_record:
+        department_id    = dept_record[0].name
+        department_label = dept_record[0].dept_name
+    else:
+        # Fall back: pull department from the user's own record
+        user_dept_id = frappe.db.get_value("User", user_email, "department_name")
+        if user_dept_id:
+            department_id    = user_dept_id
+            department_label = frappe.db.get_value("Department_prornd", user_dept_id, "dept_name") or user_dept_id
+        else:
+            department_id    = department
+            department_label = department
+
+    data["department"] = {"id": department_id, "name": department_label}
+
+    # Debug: show all departments so caller can verify the correct ID
+    all_depts = frappe.db.sql(
+        "SELECT name, dept_name FROM `tabDepartment_prornd` ORDER BY dept_name",
+        as_dict=True
+    )
+    data["_debug_departments"] = [{"id": d.name, "name": d.dept_name} for d in all_depts]
+
+    # 1. User Data
+    user_data = frappe.get_all(
+        "User",
+        filters={"email": user_email},
+        fields=["full_name"],
+        ignore_permissions=True
+    )
+    user_roles = frappe.get_all(
+        "Has Role",
+        filters={"parent": user_email, "parenttype": "User"},
+        fields=["role"],
+        ignore_permissions=True
+    )
+    data["user_data"] = {
+        **(user_data[0] if user_data else {}),
+        "roles": [r.role for r in user_roles]
+    }
+
+    today = frappe.utils.today()
+
+    # 2. Project Overview — fetch all registered projects in this department with status
+    all_projects = frappe.db.sql("""
+        SELECT
+            pr.name AS project_id,
+            pr.project_title,
+            pr.project_type,
+            pr.pi_webmail,
+            pr.principal_investigator_name,
+            pr.prj_start_date,
+            pr.prj_end_date,
+            CASE
+                WHEN pr.prj_end_date IS NOT NULL AND pr.prj_end_date < %s THEN 'completed'
+                WHEN (pr.prj_end_date IS NULL OR pr.prj_end_date >= %s)
+                 AND (
+                     EXISTS (SELECT 1 FROM `tabFund Sanction` fs WHERE fs.project_proposal = pr.name AND fs.docstatus = 1)
+                     OR EXISTS (SELECT 1 FROM `tabFund Received` fr WHERE fr.prjreg_title = pr.name AND fr.docstatus = 1)
+                 ) THEN 'ongoing'
+                ELSE 'submitted'
+            END AS status
+        FROM `tabProject Registration` pr
+        WHERE pr.docstatus = 1 AND pr.implementation_department = %s
+        ORDER BY pr.creation DESC
+    """, (today, today, department_id), as_dict=True)
+
+    submitted_projects = [p for p in all_projects if p.status == 'submitted']
+    ongoing_projects  = [p for p in all_projects if p.status == 'ongoing']
+    completed_projects = [p for p in all_projects if p.status == 'completed']
+    all_project_ids   = [p.project_id for p in all_projects]
+
+    research_count    = sum(1 for p in all_projects if p.get("project_type") == "Research")
+    consultancy_count = sum(1 for p in all_projects if p.get("project_type") == "Consultancy")
+
+    total_staff = 0
+    if all_project_ids:
+        placeholders = ", ".join(["%s"] * len(all_project_ids))
+        total_staff = frappe.db.sql(
+            f"SELECT COUNT(*) FROM `tabproject_registration_manpower_details` WHERE parent IN ({placeholders})",
+            tuple(all_project_ids)
+        )[0][0] or 0
+
+    data["project_overview"] = {
+        "total_projects": len(all_projects),
+        "submitted_projects": len(submitted_projects),
+        "ongoing_projects": len(ongoing_projects),
+        "completed_projects": len(completed_projects),
+        "research_projects": research_count,
+        "consultancy_projects": consultancy_count,
+        "total_staff": total_staff
+    }
+
+    # 3. PI-wise Project Breakdown
+    pi_map = {}
+    for p in all_projects:
+        key = p.pi_webmail or p.principal_investigator_name or "Unknown"
+        if key not in pi_map:
+            pi_map[key] = {
+                "pi_email": p.pi_webmail,
+                "pi_name": p.principal_investigator_name or "Unknown",
+                "projects": []
+            }
+        pi_map[key]["projects"].append({
+            "project_id": p.project_id,
+            "project_title": p.project_title,
+            "project_type": p.project_type,
+            "status": p.status,
+            "prj_start_date": str(p.prj_start_date) if p.prj_start_date else None,
+            "prj_end_date": str(p.prj_end_date) if p.prj_end_date else None
+        })
+
+    pi_list = sorted(pi_map.values(), key=lambda x: len(x["projects"]), reverse=True)
+    for pi in pi_list:
+        pi["project_count"] = len(pi["projects"])
+    data["pi_wise_projects"] = pi_list
+
+    # 4. Fund Analytics — from Fund Sanction for this department's projects
+    if all_project_ids:
+        placeholders = ", ".join(["%s"] * len(all_project_ids))
+        fund_rows = frappe.db.sql(f"""
+            SELECT
+                IFNULL(SUM(total_sanctioned_amount), 0) AS total_allocation,
+                IFNULL(SUM(CASE WHEN have_fund_details = 'Yes' THEN amount_received ELSE 0 END), 0) AS utilized_amount
+            FROM `tabFund Sanction`
+            WHERE docstatus = 1 AND project_proposal IN ({placeholders})
+        """, tuple(all_project_ids), as_dict=True)
+
+        if fund_rows and fund_rows[0]:
+            total_allocation = float(fund_rows[0].total_allocation or 0)
+            utilized_amount  = float(fund_rows[0].utilized_amount or 0)
+            available_funds  = total_allocation - utilized_amount
+            utilization_rate = (utilized_amount / total_allocation * 100) if total_allocation else 0
+            data["fund_analytics"] = {
+                "total_allocation": total_allocation,
+                "utilized_amount": utilized_amount,
+                "available_funds": available_funds,
+                "utilization_rate": utilization_rate
+            }
+        else:
+            data["fund_analytics"] = {}
+    else:
+        data["fund_analytics"] = {}
+
+    # 5. Proposal Analytics — Project Proposals from this department (all docstatus)
+    proposal_rows = frappe.db.sql("""
+        SELECT
+            docstatus,
+            COUNT(*) AS total,
+            IFNULL(SUM(total_budget_amount), 0) AS budget_total
+        FROM `tabProject Proposal`
+        WHERE implementation_department = %s
+        GROUP BY docstatus
+    """, (department_id,), as_dict=True)
+
+    draft_count     = next((r.total for r in proposal_rows if r.docstatus == 0), 0)
+    submitted_count = next((r.total for r in proposal_rows if r.docstatus == 1), 0)
+    cancelled_count = next((r.total for r in proposal_rows if r.docstatus == 2), 0)
+    proposed_budget_total = sum(float(r.budget_total or 0) for r in proposal_rows)
+
+    pending_hod_approval = frappe.db.count(
+        "Project Proposal",
+        filters={"implementation_department": department_id, "workflow_state": "Pending HoD Approval", "docstatus": 0}
+    )
+
+    data["proposal_analytics"] = {
+        "total_proposals": draft_count + submitted_count + cancelled_count,
+        "draft_proposals": draft_count,
+        "submitted_proposals": submitted_count,
+        "cancelled_proposals": cancelled_count,
+        "pending_hod_approval": pending_hod_approval,
+        "proposed_budget_total": proposed_budget_total
+    }
+
+    return data
+
+
 @frappe.whitelist()
 def get_director_dashboard_data():
     """

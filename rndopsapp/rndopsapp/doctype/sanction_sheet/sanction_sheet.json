@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}18{#####}",
  "creation": "2026-02-26 11:13:27.460486",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -110,8 +111,8 @@
   },
   {
    "fieldname": "ss_name_of_firms",
-   "fieldtype": "Data",
-   "label": "Name of Firms"
+   "fieldtype": "Small Text",
+   "label": "Name of Firm"
   },
   {
    "fieldname": "brief_details_of_the_purchase_currency_section",
@@ -230,6 +231,7 @@
   {
    "fieldname": "file_path",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Uploaded PO"
   }
  ],
@@ -237,10 +239,11 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-01 20:39:20.072134",
- "modified_by": "Administrator",
+ "modified": "2026-04-29 17:33:42.637825",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "sanction_sheet",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

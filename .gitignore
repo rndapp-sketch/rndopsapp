@@ -28,3 +28,4 @@ bench.log
 
 # Ignore config
 config.py
+email_config.py
