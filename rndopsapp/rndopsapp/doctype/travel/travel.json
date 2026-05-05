@@ -10,10 +10,8 @@
   "amended_from",
   "trvel_leave_balance_section",
   "if_traveler",
-  "travel_right_column",
-  "leave_balance_head",
-  "travel_leave_balance_html",
-  "travel_supporting_documents",
+  "travel_project_title",
+  "travel_project_number",
   "section_break_lroa",
   "column_break_tewx",
   "webmail_id_travel",
@@ -32,8 +30,6 @@
   "venue_address",
   "organizing_authority",
   "purpose_of_visit",
-  "travel_project_title",
-  "travel_project_number",
   "travel_period_section",
   "from_date",
   "column_break_skdw",
@@ -68,6 +64,9 @@
   "travel_special_casual_leave",
   "travel_leave_from_date",
   "travel_leave_to_date",
+  "travel_right_column",
+  "travel_supporting_documents",
+  "travel_leave_balance_html",
   "station_leave_required_section",
   "station_leave_required",
   "station_leave_details_section",
@@ -219,15 +218,15 @@
    "label": "Assitance Details"
   },
   {
+   "fetch_from": "travel_project_title.project_no",
    "fieldname": "travel_project_number",
    "fieldtype": "Data",
-   "label": "Auto selected project Number",
-   "read_only": 1
+   "label": "Project Number"
   },
   {
    "fieldname": "travel_project_title",
    "fieldtype": "Link",
-   "label": "Auto selected project Title",
+   "label": "Project Title",
    "options": "Project Registration",
    "reqd": 1
   },
@@ -372,7 +371,7 @@
    "fieldname": "travel_leave_balance_html",
    "fieldtype": "HTML",
    "label": "Leave Balance",
-   "options": "<div style=\"border:1px solid #d1d8dd; padding:10px; border-radius:6px;\">\n    <strong>Special Casual Leave (SCL)</strong><br>\n    <span>30 days remaining</span>\n</div>\n"
+   "options": "<div style=\"border:1px solid #d1d8dd; padding:10px; border-radius:6px;\">\n    <strong>Special Casual Leave (SCL) Balance</strong><br>\n    <span>30 days remaining</span>\n</div>\n"
   },
   {
    "depends_on": "eval:doc.if_traveler == \"Self\";",
@@ -505,12 +504,6 @@
    "hidden": 1
   },
   {
-   "depends_on": "eval:doc.if_traveler == \"Self\";",
-   "fieldname": "leave_balance_head",
-   "fieldtype": "HTML",
-   "options": "<h3 class=\"right-top-heading\" style=\"color:#006600; font-weight: bolder; font-size: 20px; margin-top:25px;\">Your Leave Balance</h3>"
-  },
-  {
    "fieldname": "account_head_details_section",
    "fieldtype": "Section Break",
    "label": "Account Head Details"
@@ -529,8 +522,9 @@
   {
    "depends_on": "eval:doc.travel_classes_arrangement > 0;",
    "fieldname": "alternative_arrangement",
-   "fieldtype": "Text",
-   "label": "Alternative Arrangement"
+   "fieldtype": "Select",
+   "label": "Alternative Arrangement",
+   "options": "\nYes\nNo"
   },
   {
    "fieldname": "column_break_tewx",
@@ -572,7 +566,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 14:20:47.794320",
+ "modified": "2026-04-21 12:45:29.971473",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Travel",

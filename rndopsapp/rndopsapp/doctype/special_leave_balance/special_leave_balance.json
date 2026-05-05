@@ -1,44 +1,88 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
+ "autoname": "format:{employee}-{year}",
  "creation": "2026-03-31 19:54:38.403090",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "employee_id",
-  "total_leave_balance",
+  "employee",
+  "year",
+  "col_break_1",
+  "total_credited",
   "utilized_balance",
-  "available_balance"
+  "available_balance",
+  "last_credit_date",
+  "section_log",
+  "scl_log"
  ],
  "fields": [
   {
-   "fieldname": "employee_id",
-   "fieldtype": "Data",
-   "label": "Employee ID"
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
   },
   {
-   "fieldname": "total_leave_balance",
-   "fieldtype": "Date",
-   "label": "Total Leave Balance"
+   "fieldname": "year",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Year",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_credited",
+   "fieldtype": "Int",
+   "label": "Total Credited",
+   "default": "0",
+   "read_only": 0
   },
   {
    "fieldname": "utilized_balance",
-   "fieldtype": "Data",
-   "label": "Utilized Balance"
+   "fieldtype": "Int",
+   "label": "Utilized Balance",
+   "default": "0"
   },
   {
    "fieldname": "available_balance",
-   "fieldtype": "Data",
-   "label": "Available Balance"
+   "fieldtype": "Int",
+   "label": "Available Balance",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "last_credit_date",
+   "fieldtype": "Date",
+   "label": "Last Credit Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_log",
+   "fieldtype": "Section Break",
+   "label": "Transaction Log"
+  },
+  {
+   "fieldname": "scl_log",
+   "fieldtype": "Table",
+   "label": "SCL Log",
+   "options": "SCL Transaction Log"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-31 19:59:11.718854",
+ "modified": "2026-04-18 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "special_leave_balance",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -52,11 +96,16 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "read": 1,
+   "role": "All_ProRnd_User"
   }
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "employee"
 }

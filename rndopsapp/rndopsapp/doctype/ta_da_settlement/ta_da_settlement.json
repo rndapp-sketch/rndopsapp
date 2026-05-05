@@ -10,6 +10,7 @@
   "amended_from",
   "section_break_orsk",
   "ta_da_travel_application",
+  "ta_da_account_head",
   "section_break_gvbr",
   "ta_da_name",
   "webmail_id",
@@ -33,7 +34,6 @@
   "ta_da_advance_taken",
   "ta_da_net_claimed",
   "comment_section_section",
-  "ta_da_comment",
   "ta_da_additional_comment",
   "declaration_and_certification_section",
   "ta_da_check",
@@ -42,8 +42,7 @@
   "ta_da_not_paid_elsewhere",
   "boarding_and_lodging_status",
   "ta_da_free_transport",
-  "applicant_category",
-  "workflow_state"
+  "applicant_category"
  ],
  "fields": [
   {
@@ -186,11 +185,6 @@
    "label": "Comment Section"
   },
   {
-   "fieldname": "ta_da_comment",
-   "fieldtype": "Small Text",
-   "label": "Comment"
-  },
-  {
    "fieldname": "ta_da_additional_comment",
    "fieldtype": "Small Text",
    "label": "Comment, If any"
@@ -269,17 +263,17 @@
    "read_only": 1
   },
   {
-   "fieldname": "workflow_state",
+   "fetch_from": "ta_da_travel_application.account_head",
+   "fieldname": "ta_da_account_head",
    "fieldtype": "Data",
-   "label": "Workflow State",
-   "read_only": 1
+   "label": "Account Head from Travel"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 14:20:48.341428",
+ "modified": "2026-04-10 18:20:16.510592",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "TA DA Settlement",

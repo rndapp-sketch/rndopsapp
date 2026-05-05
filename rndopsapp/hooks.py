@@ -150,6 +150,17 @@ scheduler_events = {
 	"daily": [
 		"rndopsapp.rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
 	],
+	# Special Casual Leave (SCL) auto-credit
+	# Jan 1  00:00 — credit first 15 days, create new year record
+	# Jul 1  00:00 — credit next  15 days (total 30 for the year)
+	"cron": {
+		"0 0 1 1 *": [
+			"rndopsapp.rndopsapp.tasks.scl_credit.credit_january_scl"
+		],
+		"0 0 1 7 *": [
+			"rndopsapp.rndopsapp.tasks.scl_credit.credit_july_scl"
+		],
+	}
 }
 
 # Testing
