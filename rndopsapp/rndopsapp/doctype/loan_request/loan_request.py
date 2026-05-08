@@ -89,7 +89,7 @@ def get_loan_request_fields(doc_name=None):
 		projects = frappe.get_all(
 			"Project Registration",
 			fields=["name as value", "project_title as label", "project_no"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["project_name"] = projects
 	except Exception:

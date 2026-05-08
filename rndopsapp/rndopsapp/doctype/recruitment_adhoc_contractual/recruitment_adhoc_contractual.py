@@ -288,7 +288,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
         doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
         current_state = doc.workflow_state or "Draft"
         user_roles = frappe.get_roles(frappe.session.user)
-        
+
         print(f"Current State: '{current_state}' | User: {frappe.session.user}")
         print(f"User Roles: {user_roles}")
 
@@ -435,8 +435,12 @@ def submit_recruitment_adhoc_contractual(docname):
     return perform_recruitment_adhoc_contractual_action(docname, "Submit")
 
 
+# ============================================================
+# EDITED BY MKY | 2026-05-05 12:28 IST
+# START OF EDIT — Add status parameter to filter by workflow_state
+# ============================================================
 @frappe.whitelist(allow_guest=True)
-def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, webmail_id=None):
+def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, webmail_id=None, status=None):
 	"""
 	Get all Recruitment Adhoc Contractual documents for a specific PI mail and project_no.
 	"""
@@ -450,6 +454,10 @@ def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, 
 			filters["webmail_id"] = pi_mail
 		if project_no:
 			filters["upfa_project_code"] = project_no
+		if status:
+			# Remove any quotes if passed directly from URL and format (e.g. "approved" -> "Approved")
+			status_clean = status.strip('"').strip("'").title()
+			filters["workflow_state"] = status_clean
 			
 		doc_names = frappe.get_all(
 			"Recruitment Adhoc Contractual",
@@ -465,6 +473,98 @@ def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, 
 		}
 	except Exception as e:
 		return {"status": "error", "message": str(e)}
+# END OF EDIT — MKY | 2026-05-05 12:28 IST
+# ============================================================
+
+# ============================================================
+# EDITED BY MKY | 2026-05-05 12:31 IST
+# START OF EDIT — Add get_recruitment_adhoc_contractual_with_project_info endpoint
+# ============================================================
+@frappe.whitelist(allow_guest=True)
+def get_recruitment_adhoc_contractual_with_project_info(pi_mail=None, project_no=None, webmail_id=None, status=None):
+	"""
+	Same response as get_recruitment_adhoc_contractual_by_webmail, but each
+	document is enriched with a `project_info` block containing the
+	department name, PI name and funding agency name resolved via
+	upfa_project_code -> Project Registration.project_no.
+
+	Optional filter:
+		status -> matches against workflow_state (e.g. "Approved").
+	"""
+	if webmail_id and not pi_mail:
+		pi_mail = webmail_id
+
+	try:
+		filters = {}
+		if pi_mail:
+			filters["webmail_id"] = pi_mail
+		if project_no:
+			filters["upfa_project_code"] = project_no
+		if status:
+			status_clean = status.strip('"').strip("'").title()
+			filters["workflow_state"] = status_clean
+
+		doc_names = frappe.get_all(
+			"Recruitment Adhoc Contractual",
+			filters=filters,
+			pluck="name",
+		)
+
+		project_cache = {}
+
+		def resolve_project_info(project_code):
+			if not project_code:
+				return {
+					"department_name": None,
+					"pi_name": None,
+					"funding_agency_name": None,
+				}
+			if project_code in project_cache:
+				return project_cache[project_code]
+
+			info = {
+				"department_name": None,
+				"pi_name": None,
+				"funding_agency_name": None,
+			}
+
+			project = frappe.db.get_value(
+				"Project Registration",
+				{"project_no": project_code},
+				["implementation_department", "principal_investigator_name", "funding_agen"],
+				as_dict=True,
+			)
+			if project:
+				info["pi_name"] = project.get("principal_investigator_name")
+
+				if project.get("implementation_department"):
+					info["department_name"] = frappe.db.get_value(
+						"Department_prornd",
+						project["implementation_department"],
+						"dept_name",
+					)
+
+				if project.get("funding_agen"):
+					info["funding_agency_name"] = frappe.db.get_value(
+						"fundingagency_",
+						project["funding_agen"],
+						"funding_agency_name",
+					)
+
+			project_cache[project_code] = info
+			return info
+
+		docs = []
+		for name in doc_names:
+			doc_dict = frappe.get_doc("Recruitment Adhoc Contractual", name).as_dict()
+			doc_dict["project_info"] = resolve_project_info(doc_dict.get("upfa_project_code"))
+			docs.append(doc_dict)
+
+		return {"status": "success", "data": docs}
+	except Exception as e:
+		return {"status": "error", "message": str(e)}
+# END OF EDIT — MKY | 2026-05-05 12:31 IST
+# ============================================================
 
 
 # ============================================================

@@ -110,7 +110,7 @@ def get_selection_committee_report_fields(doc_name=None):
 			"User",
 			filters={"enabled": 1, "user_type": "System User"},
 			fields=["name as value", "full_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["webmail_id"] = users
 		link_options["chairperson_webmail_id"] = users
@@ -174,7 +174,7 @@ def get_selection_committee_report_fields(doc_name=None):
 							child_link_docs = frappe.get_all(
 								cf.options,
 								fields=["name as value", "name as label"],
-								limit_page_length=500,
+								limit_page_length=0,
 							)
 							link_options[cf.fieldname] = child_link_docs
 							link_options[cf.options] = child_link_docs

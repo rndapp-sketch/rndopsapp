@@ -29,8 +29,16 @@ class ProjectRegistration(Document):
 		"""
 		Intercept file uploads from Frappe UI and upload to MinIO instead of local filesystem.
 		"""
+		self._validate_budget_amounts()
 		self._process_attach_fields()
 		self._process_child_attach_fields()
+
+	def _validate_budget_amounts(self):
+		amount = self.get("total_budget_amount")
+		if amount is None:
+			amount = self.get("grand_total_proposal")
+		if flt(amount) < 0:
+			frappe.throw("Total Budget Amount cannot be negative.")
 
 	def _process_attach_fields(self):
 		meta = frappe.get_meta(self.doctype)
@@ -854,7 +862,30 @@ def get_project_form_data(docname=None):
 		
 		_fetch_link_options(fields)
 
-		# 2b. Filter designation_name options for proposed_manpower_details
+		# 2b. Append Universal Registration users (PI / Co-PI External only) to pi_webmail link options
+		try:
+			ur_users = frappe.db.get_all(
+				"Universal Registration__",
+				fields=["email_address_u_r as name", "full_name_u_r"],
+				filters=[
+					["email_address_u_r", "!=", ""],
+					["profile_type_u_r", "=", "PI / Co-PI (External only)"]
+				],
+				order_by="full_name_u_r asc",
+				limit=0
+			)
+			existing_values = {opt["value"] for opt in link_options.get("pi_webmail", [])}
+			for ur in ur_users:
+				email = ur.get("name") or ""
+				if email and email not in existing_values:
+					link_options.setdefault("pi_webmail", []).append({
+						"value": email,
+						"label": f"{ur.get('full_name_u_r') or email} ({email})"
+					})
+		except Exception:
+			pass
+
+		# 2c. Filter designation_name options for proposed_manpower_details
 		# ============================================================
 		# EDITED BY OJS | 2026-04-14 14:52 IST
 		# START OF EDIT — Simplifed designation_name options & Quick Entry prepend
@@ -956,9 +987,13 @@ def get_project_form_data(docname=None):
 def get_user_details_for_pi(user_email):
 	"""
 	Fetches details for a specific user to populate PI fields.
+	Tries Frappe User first; falls back to Universal Registration if user not found.
 	"""
 	if not user_email:
 		frappe.throw(_("User Email is required."))
+
+	from rndopsapp.rndopsapp.doctype.universal_registration__.universal_registration__ import get_external_profile
+
 	try:
 		user_doc = frappe.get_doc("User", user_email)
 		# IMPORTANT: Replace these with your actual custom field names in the User doctype
@@ -976,13 +1011,87 @@ def get_user_details_for_pi(user_email):
 			"copi_address": user_doc.get("inst_name_address"),
 			"copi_contact": user_doc.get("mobile_no")
 		}
+
+		# Append Universal Registration details flat into the same dict (no override)
+		try:
+			ur_result = get_external_profile(search=user_email)
+			if ur_result.get("status") == "success" and ur_result.get("data"):
+				profile = ur_result["data"][0]
+				data["full_name_u_r"]           = profile.get("full_name_u_r")
+				data["mobile_number_u_r"]       = profile.get("mobile_number_u_r")
+				data["email_address_u_r"]       = profile.get("email_address_u_r")
+				data["institution_details_u_r"] = profile.get("institution_details_u_r") or []
+				data["address_details"]         = profile.get("address_details") or []
+				data["org_address_details_u_r"] = profile.get("org_address_details_u_r") or []
+		except Exception:
+			pass
+
 		# frappe.logger().warning(f"Jimmy Logging Debug get_user_details_for_pi: {user_dict}")
 		return data
+
 	except frappe.DoesNotExistError:
+		# Frappe User not found — try Universal Registration directly
+		try:
+			ur_result = get_external_profile(search=user_email)
+			if ur_result.get("status") == "success" and ur_result.get("data"):
+				profile = ur_result["data"][0]
+				institution = (profile.get("institution_details_u_r") or [{}])[0]
+				return {
+					"principal_investigator_name": profile.get("full_name_u_r"),
+					"designation":                 institution.get("designation_u_r"),
+					"applicant_department":        institution.get("department_u_r"),
+					"copi_address":                institution.get("address_institution_u_r"),
+					"copi_contact":                profile.get("mobile_number_u_r")
+				}
+		except Exception:
+			pass
 		return None
+
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), _("Error fetching user details"))
 		frappe.throw(_("An error occurred while fetching user details."))
+
+
+@frappe.whitelist()
+def get_copi_details_from_universal(copi_email):
+	"""
+	Prefill Co-PI fields from Universal Registration using get_external_profile.
+	Called when copi_email (Link → User) is set on the child row.
+	Returns a flat dict ready to set on the co_investigator_table row.
+	"""
+	if not copi_email:
+		return {"status": "error", "message": "Co-PI email is required."}
+
+	from rndopsapp.rndopsapp.doctype.universal_registration__.universal_registration__ import get_external_profile
+
+	result = get_external_profile(search=copi_email)
+
+	if result.get("status") != "success" or not result.get("data"):
+		# Fallback: try from Frappe User doc
+		try:
+			user_doc = frappe.get_doc("User", copi_email)
+			return {
+				"status": "success",
+				"copi_name":        user_doc.full_name or "",
+				"copi_contact":     user_doc.get("mobile_no") or "",
+				"copi_designation": user_doc.get("designation_name") or "",
+				"copi_address":     user_doc.get("inst_name_address") or "",
+				"copi_department":  user_doc.get("department_name") or ""
+			}
+		except Exception:
+			return {"status": "error", "message": f"No Universal Registration found for '{copi_email}'."}
+
+	profile = result["data"][0]
+	institution = (profile.get("institution_details_u_r") or [{}])[0]
+
+	return {
+		"status":           "success",
+		"copi_name":        profile.get("full_name_u_r") or "",
+		"copi_contact":     profile.get("mobile_number_u_r") or "",
+		"copi_designation": institution.get("designation_u_r") or "",
+		"copi_address":     institution.get("address_institution_u_r") or "",
+		"copi_department":  institution.get("department_u_r") or ""
+	}
 
 
 @frappe.whitelist()

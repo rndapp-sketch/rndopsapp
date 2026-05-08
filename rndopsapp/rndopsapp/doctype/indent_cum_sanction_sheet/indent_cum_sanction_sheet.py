@@ -483,7 +483,7 @@ def get_icss_fields(doc_name=None):
 		account_heads = frappe.get_all(
 			"Budget Head",
 			fields=["name as value", "budget_head as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["icss_account_head"] = [
 			{"value": r["value"], "label": r.get("label") or r["value"]}
@@ -498,7 +498,7 @@ def get_icss_fields(doc_name=None):
 			"User",
 			filters={"enabled": 1},
 			fields=["name as value", "full_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["icss_applicant_webmail_id"] = users
 		link_options["icss_applying_for_mail"] = users
@@ -511,7 +511,7 @@ def get_icss_fields(doc_name=None):
 		departments = frappe.get_all(
 			"Department_prornd",
 			fields=["name as value", "dept_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["icss_applicant_department__centre__section"] = departments
 		link_options["icss_applying_for_department_centre_section"] = departments

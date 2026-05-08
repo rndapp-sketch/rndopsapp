@@ -509,8 +509,58 @@ def get_user_details(user_email):
 			except Exception:
 				pass  # Keep original value if lookup fails
 		
+		# Append Universal Registration data — only PI / Co-PI (External only) type
+		try:
+			from rndopsapp.rndopsapp.doctype.universal_registration__.universal_registration__ import get_external_profile
+			ur_result = get_external_profile(search=user_email)
+			if ur_result.get("status") == "success" and ur_result.get("data"):
+				profile = ur_result["data"][0]
+				ur_type = frappe.db.get_value(
+					"Universal Registration__",
+					{"email_address_u_r": profile.get("email_address_u_r")},
+					"profile_type_u_r"
+				)
+				if ur_type == "PI / Co-PI (External only)":
+					institution = (profile.get("institution_details_u_r") or [{}])[0]
+					if not user_dict.get("full_name"):
+						user_dict["full_name"]         = profile.get("full_name_u_r")
+					if not user_dict.get("mobile_no"):
+						user_dict["mobile_no"]         = profile.get("mobile_number_u_r")
+					if not user_dict.get("designation_name"):
+						user_dict["designation_name"]  = institution.get("designation_u_r")
+					if not user_dict.get("department_name"):
+						user_dict["department_name"]   = institution.get("department_u_r")
+					if not user_dict.get("inst_name_address"):
+						user_dict["inst_name_address"] = institution.get("address_institution_u_r")
+		except Exception:
+			pass
+
 		return user_dict
 	except frappe.DoesNotExistError:
+		# Frappe User not found — fall back to Universal Registration (PI / Co-PI only)
+		try:
+			from rndopsapp.rndopsapp.doctype.universal_registration__.universal_registration__ import get_external_profile
+			ur_result = get_external_profile(search=user_email)
+			if ur_result.get("status") == "success" and ur_result.get("data"):
+				profile = ur_result["data"][0]
+				ur_type = frappe.db.get_value(
+					"Universal Registration__",
+					{"email_address_u_r": profile.get("email_address_u_r")},
+					"profile_type_u_r"
+				)
+				if ur_type == "PI / Co-PI (External only)":
+					institution = (profile.get("institution_details_u_r") or [{}])[0]
+					return {
+						"name":             profile.get("email_address_u_r"),
+						"email":            profile.get("email_address_u_r"),
+						"full_name":        profile.get("full_name_u_r"),
+						"mobile_no":        profile.get("mobile_number_u_r"),
+						"designation_name": institution.get("designation_u_r"),
+						"department_name":  institution.get("department_u_r"),
+						"inst_name_address":institution.get("address_institution_u_r")
+					}
+		except Exception:
+			pass
 		return None
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), _("Error fetching user details"))
@@ -932,7 +982,7 @@ def clear_mattermost_channel(
 		return {"status": "error", "error": str(exc)}
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_document_activity(doctype, docname):
 	"""
 	Returns a unified, chronologically-sorted activity timeline for a document.
@@ -947,9 +997,6 @@ def get_document_activity(doctype, docname):
 	"""
 	if not frappe.db.exists(doctype, docname):
 		frappe.throw(f"{doctype} '{docname}' not found.", frappe.DoesNotExistError)
-
-	if not frappe.has_permission(doctype, "read", docname):
-		frappe.throw("Not permitted.", frappe.PermissionError)
 
 	# --- 1. Fetch all Comment rows for this document ---
 	comment_type_map = {
@@ -972,6 +1019,7 @@ def get_document_activity(doctype, docname):
 		filters={"reference_doctype": doctype, "reference_name": docname},
 		fields=["owner", "creation", "content", "comment_type"],
 		order_by="creation desc",
+		ignore_permissions=True,
 	)
 
 	# --- 2. Fetch last Version entry (for "last edited" when no Edit comment exists) ---
@@ -984,6 +1032,7 @@ def get_document_activity(doctype, docname):
 			fields=["owner", "creation"],
 			order_by="creation desc",
 			limit=1,
+			ignore_permissions=True,
 		)
 		if versions:
 			last_version = versions[0]
@@ -1005,6 +1054,7 @@ def get_document_activity(doctype, docname):
 			"User",
 			filters={"name": ["in", list(all_owners)]},
 			fields=["name", "full_name"],
+			ignore_permissions=True,
 		)
 		name_map = {r.name: r.full_name or r.name for r in rows}
 

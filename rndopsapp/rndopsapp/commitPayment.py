@@ -745,4 +745,16 @@ def get_document_state(doctype, docname):
         return {"status": "success", "state": state or "Draft / Not Set"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def set_workflow_state(doctype, docname, state):
+    try:
+        if not frappe.db.exists(doctype, docname):
+            return {"status": "error", "message": "Document not found"}
+        frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
+        frappe.db.commit()
+        return {"status": "success", "message": f"{docname} → {state}"}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "set_workflow_state failed")
+        return {"status": "error", "message": str(e)}
 # END MKY

@@ -144,7 +144,7 @@ def get_direct_purchase_fields(doc_name=None):
 		account_heads = frappe.get_all(
 			"Budget Head",
 			fields=["name as value", "budget_head as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["account_head"] = [
 			{"value": r["value"], "label": r.get("label") or r["value"]} for r in account_heads
@@ -158,7 +158,7 @@ def get_direct_purchase_fields(doc_name=None):
 			"User",
 			filters={"enabled": 1},
 			fields=["name as value", "full_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["applying_for_name"] = users
 	except Exception:
@@ -181,7 +181,7 @@ def get_direct_purchase_fields(doc_name=None):
 			"User",
 			filters=user_filters,
 			fields=["name", "full_name", "designation_name"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		# Build options with extra fields for auto-populate
 		committee_users = []
@@ -940,7 +940,7 @@ def generate_purchase_order(sanction_sheet_name, dp_docname=None):
 def upload_po_document(docname, app_id, project_no):
 	"""
 	Endpoint to upload a Purchase Order PDF or Image to object storage (MinIO).
-	Saves the file inside: rnd-files/Project_Registration/{project_docname}/directpurchase/{app_id}/
+	Saves the file inside: prod-rnd-files/Project_Registration/{project_docname}/directpurchase/{app_id}/
 	"""
 	print(f"[PO UPLOAD START] -> docname={docname}, app_id={app_id}, project_no={project_no}")
 	import sys; sys.stdout.flush()
@@ -1035,37 +1035,32 @@ def get_po_document(docname, app_id, project_no):
 			return {"status": False, "message": f"No Project Registration found for project_no: {project_no}"}
 
 		folder_path = f"directpurchase/{app_id}/po"
+		minio_prefix = f"Project_Registration/{project_docname}/{folder_path}/"
 
-		# Search the File doctype to find the latest file matching this location
-		files = frappe.get_all(
-			"File",
-			filters={
-				"attached_to_doctype": "Project Registration",
-				"attached_to_name": project_docname,
-				"file_url": ("like", f"%/{folder_path}/%")
-			},
-			order_by="creation desc",
-			limit_page_length=1,
-			fields=["name", "file_url", "file_name"]
-		)
+		file_service = get_rnd_file_service()
 
-		if not files:
+		# Search MinIO directly — upload_po_document skips creating a Frappe File doc
+		objects = file_service.storage.list_prefix(minio_prefix)
+
+		if not objects:
 			frappe.local.response.http_status_code = 404
 			return {"status": False, "message": "No PO document found for this direct purchase."}
-			
-		file_doc = files[0]
-		file_service = get_rnd_file_service()
-		
+
+		# Take the most recently modified object
+		latest = sorted(objects, key=lambda o: o.last_modified, reverse=True)[0]
+		object_name = latest.object_name
+		filename = object_name.split("/")[-1]
+
 		# Fetch file bytes from MinIO
-		fetch_result = file_service.get_file(file_doc.file_url)
-		
-		if not fetch_result.get("status"):
+		content = file_service.storage.get(object_name)
+
+		if content is None:
 			frappe.local.response.http_status_code = 404
-			return fetch_result
+			return {"status": False, "message": "File not found in storage."}
 
 		# Serve the bytes as a downloadable file
-		frappe.local.response.filename = file_doc.file_name
-		frappe.local.response.filecontent = fetch_result.get("data", {}).get("content")
+		frappe.local.response.filename = filename
+		frappe.local.response.filecontent = content
 		frappe.local.response.type = "download"
 
 	except Exception as e:

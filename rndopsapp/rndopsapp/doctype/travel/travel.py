@@ -147,19 +147,19 @@ def get_travel_fields(doc_name=None):
 					linked_doctype,
 					filters={"enabled": 1},
 					fields=["name as value", "full_name as label"],
-					limit_page_length=500
+					limit_page_length=0
 				)
 			else:
 				link_options[fieldname] = frappe.get_all(
 					linked_doctype,
 					fields=["name as value", f"{title_field} as label"],
-					limit_page_length=500
+					limit_page_length=0
 				)
 		except Exception:
 			link_options[fieldname] = frappe.get_all(
 				linked_doctype,
 				fields=["name as value", "name as label"],
-				limit_page_length=500
+				limit_page_length=0
 			)
 
 	# Department options (explicit)
@@ -167,7 +167,7 @@ def get_travel_fields(doc_name=None):
 		departments = frappe.get_all(
 			"Department_prornd",
 			fields=["name as value", "dept_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["department_travel"] = departments
 	except Exception:

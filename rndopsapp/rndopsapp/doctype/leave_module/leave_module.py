@@ -321,7 +321,7 @@ def get_leave_module_fields(doc_name=None):
 			"User",
 			filters={"enabled": 1},
 			fields=["name as value", "full_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["email"] = users
 	except Exception:

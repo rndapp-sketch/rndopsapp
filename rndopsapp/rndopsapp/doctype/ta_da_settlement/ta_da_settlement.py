@@ -160,19 +160,19 @@ def get_ta_da_settlement_fields(doc_name=None, travel_ref=None):
 					linked_doctype,
 					filters={"enabled": 1},
 					fields=["name as value", "full_name as label"],
-					limit_page_length=500,
+					limit_page_length=0,
 				)
 			else:
 				link_options[fieldname] = frappe.get_all(
 					linked_doctype,
 					fields=["name as value", f"{title_field} as label"],
-					limit_page_length=500,
+					limit_page_length=0,
 				)
 		except Exception:
 			link_options[fieldname] = frappe.get_all(
 				linked_doctype,
 				fields=["name as value", "name as label"],
-				limit_page_length=500,
+				limit_page_length=0,
 			)
 
 	# Fetch Client Scripts from Frappe (stored in database)

@@ -425,7 +425,7 @@
    "depends_on": "eval:doc.is_additional_pi == \"Yes\"",
    "fieldname": "additional_pi_table",
    "fieldtype": "Table",
-   "label": "Details of Additional Principal Investigator(s) (Only Internal PI)",
+   "label": "Details of Additional Principal Investigator(s) ",
    "mandatory_depends_on": "eval:doc.is_additional_pi == \"Yes\"",
    "options": "Project Additional PI"
   },
@@ -440,7 +440,7 @@
    "depends_on": "eval:doc.has_co_pi == 'Yes'",
    "fieldname": "co_investigator_table",
    "fieldtype": "Table",
-   "label": "Details of Additional Co-Principal Investigator(s) ((Only Internal Co-PI))",
+   "label": "Details of Additional Co-Principal Investigator(s)",
    "mandatory_depends_on": "eval:doc.has_co_pi == 'Yes'",
    "options": "Project Co-Investigator"
   },
@@ -1283,7 +1283,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-28 14:39:32.694042",
+ "modified": "2026-05-07 00:10:43.548666",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

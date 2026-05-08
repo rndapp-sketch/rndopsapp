@@ -148,7 +148,7 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"rndopsapp.rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
+		"rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
 	],
 }
 

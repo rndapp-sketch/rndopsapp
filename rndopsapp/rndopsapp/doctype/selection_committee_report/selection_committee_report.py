@@ -111,7 +111,7 @@ def get_selection_committee_report_fields(doc_name=None):
 			"User",
 			filters={"enabled": 1, "user_type": "System User"},
 			fields=["name as value", "full_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["webmail_id"] = users
 		link_options["chairperson_webmail_id"] = users
@@ -123,7 +123,7 @@ def get_selection_committee_report_fields(doc_name=None):
 		departments = frappe.get_all(
 			"Department_prornd",
 			fields=["name as value", "name as label"],
-			limit_page_length=200,
+			limit_page_length=0,
 		)
 		link_options["upfa_department"] = departments
 	except Exception:
@@ -134,7 +134,7 @@ def get_selection_committee_report_fields(doc_name=None):
 		amended_docs = frappe.get_all(
 			"Selection Committee Report",
 			fields=["name as value", "name as label"],
-			limit_page_length=200,
+			limit_page_length=0,
 		)
 		link_options["amended_from"] = amended_docs
 	except Exception:
@@ -154,7 +154,7 @@ def get_selection_committee_report_fields(doc_name=None):
 				"department",
 				"project_duration",
 			],
-			limit_page_length=200,
+			limit_page_length=0,
 			order_by="modified desc",
 		)
 		link_options["project_registration"] = projects
@@ -175,7 +175,7 @@ def get_selection_committee_report_fields(doc_name=None):
 							child_link_docs = frappe.get_all(
 								cf.options,
 								fields=["name as value", "name as label"],
-								limit_page_length=500,
+								limit_page_length=0,
 							)
 							link_options[cf.fieldname] = child_link_docs
 							link_options[cf.options] = child_link_docs
@@ -248,6 +248,10 @@ def save_selection_committee_report_data(data):
 					for item in items_data:
 						doc.append(f.fieldname, item)
 
+		# Allow linking to cancelled documents (e.g. a cancelled Recruitment Adhoc
+		# Contractual that the SCR was originally created against).
+		doc.flags.ignore_links = True
+
 		# Save
 		doc.save(ignore_permissions=True)
 		frappe.db.commit()
@@ -286,6 +290,7 @@ def save_selection_committee_report_data(data):
 				return {"status": "error", "message": f"MinIO upload failed: {upload_result.get('message')}"}
 
 			doc.attendance_report = upload_result["data"]["file_url"]
+			doc.flags.ignore_links = True
 			doc.save(ignore_permissions=True)
 			frappe.db.commit()
 
@@ -324,6 +329,19 @@ def perform_selection_committee_report_action(docname, action):
 
 		doc = frappe.get_doc("Selection Committee Report", docname)
 		print(f"Fetched doc: {doc.name}, current state: {doc.workflow_state}")
+
+		# Director-PDF gate: SCR cannot be Approved by Dean
+		# until Staff has uploaded the Director-signed scan (if flagged).
+		if (
+			action == "Approve"
+			and (doc.workflow_state or "") == "Pending Dean Approval"
+			and frappe.utils.cint(doc.get("send_to_director")) == 1
+			and not (doc.get("director_signed_pdf") or "").strip()
+		):
+			frappe.throw(
+				"Cannot approve: the Director-signed PDF has not been uploaded "
+				"by Staff yet."
+			)
 
 		# apply_workflow handles transitions, permissions, and status updates
 		updated_doc = apply_workflow(doc, action)
@@ -384,4 +402,100 @@ def get_selection_committee_report_by_webmail(pi_mail=None, project_no=None, web
 		return {"status": "success", "data": docs}
 	except Exception as e:
 		return {"status": "error", "message": str(e)}
+
+
+# ============================================================
+# Director hardcopy / PDF flow (mirrors Recruitment Adhoc Contractual)
+# Dean ticks "Send for Director Approval" on a Contractual SCR.
+# Staff uploads the Director-signed scan via /director-pdf-upload.
+# Dean's Approve action unlocks once director_signed_pdf is set.
+# ============================================================
+
+@frappe.whitelist()
+def update_send_to_director_scr(docname, send_to_director):
+	"""
+	Dean opts the SCR into the Director-hardcopy flow. One-way (cannot clear).
+	Restricted to "Dean, RnD" / "System Manager".
+	"""
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "Dean, RnD" not in user_roles and "System Manager" not in user_roles:
+		frappe.throw("Not permitted", frappe.PermissionError)
+
+	doc = frappe.get_doc("Selection Committee Report", docname)
+	if doc.docstatus != 0:
+		frappe.throw("Cannot update Director Approval flag after document is submitted.")
+
+	if frappe.utils.cint(doc.get("send_to_director")):
+		return {"status": "success", "docname": docname, "send_to_director": 1}
+
+	if not frappe.utils.cint(send_to_director):
+		frappe.throw("send_to_director can only be set, not cleared.")
+
+	frappe.db.set_value(
+		"Selection Committee Report", docname, "send_to_director", 1
+	)
+	frappe.db.commit()
+	return {"status": "success", "docname": docname, "send_to_director": 1}
+
+
+@frappe.whitelist()
+def attach_director_pdf_scr(docname, file_url):
+	"""
+	Staff binds an already-uploaded file URL to director_signed_pdf.
+	Replacing an existing PDF is allowed.
+	Restricted to "staff, RnD" / "System Manager".
+	"""
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "staff, RnD" not in user_roles and "System Manager" not in user_roles:
+		frappe.throw("Not permitted", frappe.PermissionError)
+
+	if not file_url:
+		frappe.throw("file_url is required")
+
+	doc = frappe.get_doc("Selection Committee Report", docname)
+	if doc.docstatus != 0:
+		frappe.throw("Cannot attach Director signed PDF after document is submitted.")
+	if not frappe.utils.cint(doc.get("send_to_director")):
+		frappe.throw("This document is not flagged for Director approval.")
+
+	frappe.db.set_value(
+		"Selection Committee Report", docname, "director_signed_pdf", file_url
+	)
+	frappe.db.commit()
+	return {
+		"status": "success",
+		"docname": docname,
+		"director_signed_pdf": file_url,
+	}
+
+
+@frappe.whitelist()
+def get_pending_director_uploads_scr():
+	"""
+	Returns SCR docs that Dean has flagged for Director approval.
+	Includes both pending uploads and already-uploaded docs (so Staff can
+	replace if needed).
+	"""
+	docs = frappe.get_all(
+		"Selection Committee Report",
+		filters={
+			"send_to_director": 1,
+			"workflow_state": "Pending Dean Approval",
+			"docstatus": 0,
+		},
+		fields=[
+			"name",
+			"interview_id",
+			"principal_investigator",
+			"project_number",
+			"project_name",
+			"upfa_department",
+			"director_signed_pdf",
+			"modified",
+			"workflow_state",
+		],
+		order_by="modified desc",
+	)
+	return {"status": "success", "data": docs}
+# ============================================================
 

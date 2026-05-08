@@ -240,6 +240,11 @@ class ProjectRegistrationMapper:
             overhead_amount, gst_amount, grand_total, budget_with_overhead = \
                 cls.get_research_amounts(doc, base_total_budget)
 
+        # For categories where total_budget_amount is not used (e.g. Cat E/F),
+        # the grand total is stored in category-specific fields instead.
+        if not base_total_budget:
+            base_total_budget = grand_total
+
         # Calculate total budget and overhead percentage
         calculated_total_budget, overhead_percentage = cls.calculate_budget_amounts(
             base_total_budget, overhead_amount, gst_amount

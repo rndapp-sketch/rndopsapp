@@ -729,6 +729,96 @@ def check_email_availability(email=None, exclude_docname=None):
 		frappe.log_error(frappe.get_traceback(), "Check Email Availability Error")
 		return {"status": "error", "message": str(e)}
 
+@frappe.whitelist(allow_guest=True)
+def get_external_profile(search=None):
+	"""
+	Free-form / fuzzy search across full_name_u_r and email_address_u_r.
+	Accepts: ?search=<term>
+	Returns ALL matching records with their child table details.
+	"""
+	term = (search or "").strip()
+	if not term:
+		return {"status": "error", "message": "Provide at least one of: search, email, or name."}
+
+	like = f"%{term}%"
+
+	# Build OR filter across email and full_name
+	matches = frappe.db.sql(
+		"""
+		SELECT name, full_name_u_r, mobile_number_u_r, email_address_u_r
+		FROM `tabUniversal Registration__`
+		WHERE email_address_u_r LIKE %(like)s
+		   OR full_name_u_r     LIKE %(like)s
+		ORDER BY
+			CASE WHEN email_address_u_r = %(term)s THEN 0
+			     WHEN full_name_u_r     = %(term)s THEN 1
+			     ELSE 2 END,
+			full_name_u_r ASC
+		""",
+		{"like": like, "term": term},
+		as_dict=True
+	)
+
+	if not matches:
+		return {"status": "error", "message": f"No registration found matching '{term}'."}
+
+	address_fields = [
+		"address_type_u_r",
+		"address_line_1_u_r",
+		"address_line_2_u_r",
+		"landmark_u_r",
+		"pincode_u_r",
+		"district_u_r",
+		"city_u_r",
+		"state_u_r"
+	]
+
+	results = []
+	for match in matches:
+		docname = match["name"]
+
+		institution_rows = frappe.db.get_all(
+			"Institution Details",
+			filters={"parent": docname, "parenttype": "Universal Registration__"},
+			fields=[
+				"institution_name_u_r",
+				"designation_u_r",
+				"address_institution_u_r",
+				"website_link_u_r",
+				"department_u_r"
+			],
+			order_by="idx asc"
+		)
+
+		address_rows = frappe.db.get_all(
+			"Universal Address__",
+			filters={"parent": docname, "parentfield": "address_details", "parenttype": "Universal Registration__"},
+			fields=address_fields,
+			order_by="idx asc"
+		)
+
+		org_address_rows = frappe.db.get_all(
+			"Universal Address__",
+			filters={"parent": docname, "parentfield": "org_address_details_u_r", "parenttype": "Universal Registration__"},
+			fields=address_fields,
+			order_by="idx asc"
+		)
+
+		results.append({
+			"full_name_u_r":           match.get("full_name_u_r"),
+			"mobile_number_u_r":       match.get("mobile_number_u_r"),
+			"email_address_u_r":       match.get("email_address_u_r"),
+			"institution_details_u_r": institution_rows,
+			"address_details":         address_rows,
+			"org_address_details_u_r": org_address_rows
+		})
+
+	return {
+		"status": "success",
+		"count": len(results),
+		"data": results
+	}
+
 
 @frappe.whitelist(allow_guest=True)
 def check_duplicate_registration(email=None, id_numbers=None, exclude_docname=None):
@@ -737,6 +827,7 @@ def check_duplicate_registration(email=None, id_numbers=None, exclude_docname=No
 	"""
 	try:
 		duplicates = []
+		
 		# Check Email
 		if email:
 			filters = {"email_address_u_r": email}
