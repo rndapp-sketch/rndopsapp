@@ -7,10 +7,159 @@ import frappe
 from frappe.model.document import Document
 from frappe.model.workflow import get_transitions
 from rndopsapp.minio import get_rnd_file_service
+from rndopsapp.rndopsapp.recruitment_api.recruitment_api import get_profile as _recruitment_get_profile
 
 
 class SelectionCommitteeReport(Document):
 	pass
+
+
+def _format_address(addr):
+	"""Format an address dict into a readable string."""
+	parts = [
+		addr.get("houseNum", ""),
+		addr.get("streetName", ""),
+		addr.get("locality", ""),
+		addr.get("city", ""),
+		addr.get("district", ""),
+		addr.get("state", ""),
+		addr.get("country", ""),
+		addr.get("pincode", ""),
+	]
+	return ", ".join(p.strip() for p in parts if p and p.strip())
+
+
+def _fetch_candidate_profile(candidate_id):
+	"""Fetch candidate profile via recruitment_api. Returns the profile dict or None."""
+	try:
+		result = _recruitment_get_profile(candidate_id)
+		if result.get("status") == "success":
+			return result.get("data")
+		frappe.log_error(f"get_profile returned error for ID {candidate_id}: {result.get('message')}", "Selection Candidate Details")
+		return None
+	except Exception as e:
+		frappe.log_error(f"Failed to fetch candidate profile for ID {candidate_id}: {e}", "Selection Candidate Details")
+		return None
+
+
+def _create_selection_candidate_details(doc):
+	"""
+	For each candidate in the SCR's `candidates` JSON field, fetch the external
+	profile and insert a Selection Candidate Details record.
+	Called on Submit workflow action.
+	"""
+	candidates_raw = doc.get("candidates")
+	if not candidates_raw:
+		return
+
+	if isinstance(candidates_raw, str):
+		try:
+			candidates = json.loads(candidates_raw)
+		except Exception:
+			frappe.log_error("Could not parse SCR candidates JSON", "Selection Candidate Details")
+			return
+	else:
+		candidates = candidates_raw
+
+	if not isinstance(candidates, list):
+		return
+
+	for candidate in candidates:
+		candidate_id = candidate.get("candidate_id")
+		if not candidate_id:
+			continue
+
+		# Fetch external profile
+		profile = _fetch_candidate_profile(candidate_id)
+
+		# --- Build field values ---
+		user_data = (profile or {}).get("user", {})
+		cand_data = (profile or {}).get("candidate", {})
+		addresses = (profile or {}).get("address", [])
+		education = (profile or {}).get("education", [])
+		employment = (profile or {}).get("employment", [])
+
+		# Name: prefer profile API values, fall back to SCR candidate_name split
+		first_name = (user_data.get("first_name") or "").strip()
+		last_name = (user_data.get("last_name") or "").strip()
+		if not first_name and not last_name:
+			full_name_parts = (candidate.get("candidate_name") or "").strip().split(" ", 1)
+			first_name = full_name_parts[0]
+			last_name = full_name_parts[1] if len(full_name_parts) > 1 else ""
+
+		# Addresses
+		permanent_addr = ""
+		correspondence_addr = ""
+		for addr in addresses:
+			addr_type = (addr.get("addrType") or "").lower()
+			if addr_type == "permanent" and not permanent_addr:
+				permanent_addr = _format_address(addr)
+			elif addr_type == "correspondence" and not correspondence_addr:
+				correspondence_addr = _format_address(addr)
+
+		# Education & employment IDs (stored as comma-separated)
+		edu_ids = ",".join(str(e["id"]) for e in education if e.get("id"))
+		emp_ids = ",".join(str(e["id"]) for e in employment if e.get("id"))
+
+		# HRA amount calculation from percentage string e.g. "20%"
+		hra_str = str(candidate.get("hra") or "")
+		basic_pay = candidate.get("basic_pay") or 0
+		hra_amount = ""
+		try:
+			pct = float(hra_str.replace("%", "").strip())
+			hra_amount = str(round(basic_pay * pct / 100))
+		except Exception:
+			hra_amount = hra_str
+
+		# Date of birth: strip time component if present
+		dob_raw = cand_data.get("date_of_birth") or ""
+		dob = dob_raw.split("T")[0] if "T" in dob_raw else dob_raw
+
+		# Skip if a record for this candidate+application already exists
+		application_id = candidate.get("application_id")
+		if frappe.db.exists(
+			"Selection Candidate Details",
+			{"candidate_id": int(candidate_id), "application_id": int(application_id or 0)},
+		):
+			continue
+
+		new_doc = frappe.new_doc("Selection Candidate Details")
+		new_doc.candidate_id = int(candidate_id)
+		new_doc.interview_id = doc.name
+		new_doc.application_id = int(application_id) if application_id else None
+		new_doc.post_id = str(candidate.get("recruitment_post_id") or "")
+		new_doc.selection_status = candidate.get("recommendation") or ""
+		new_doc.wl_number = str(candidate.get("waitlist_no") or "")
+
+		new_doc.candidate_name = first_name
+		new_doc.candidate_surname = last_name
+		new_doc.father_name = (cand_data.get("father_name") or "").strip()
+		new_doc.gender = cand_data.get("gender") or ""
+		new_doc.marital_status = cand_data.get("marital_status") or ""
+		new_doc.date_of_birth = dob
+		new_doc.citizenship = cand_data.get("citizenship") or ""
+
+		new_doc.phone_num = cand_data.get("phone_number") or ""
+		new_doc.email = user_data.get("email") or ""
+
+		new_doc.permanent_address = permanent_addr
+		new_doc.correspondence_address = correspondence_addr
+
+		new_doc.educational_details_id = edu_ids
+		new_doc.employment_details_id = emp_ids
+
+		new_doc.basic_pay_recommended_by_committee = str(basic_pay)
+		new_doc.hra_required_by_committee = hra_str
+		new_doc.hra_amount_by_committee = hra_amount
+		new_doc.medical_amount_by_committee = str(candidate.get("medical_required") or "")
+		new_doc.total_amount_by_committee = str(candidate.get("total_amount") or "")
+		new_doc.duration_of_appointment_by_committee = str(candidate.get("upfa_duration_months") or "")
+		new_doc.justification_by_committee = candidate.get("justification") or ""
+
+		new_doc.flags.ignore_permissions = True
+		new_doc.insert()
+
+	frappe.db.commit()
 
 
 @frappe.whitelist()
@@ -349,6 +498,20 @@ def perform_selection_committee_report_action(docname, action):
 
 		frappe.db.commit()
 		print("frappe.db.commit() successful")
+
+		# On Submit: create Selection Candidate Details records from candidates JSON
+		if action == "Submit":
+			print("Action is Submit — creating Selection Candidate Details records")
+			try:
+				_create_selection_candidate_details(updated_doc)
+				print("Selection Candidate Details records created successfully")
+			except Exception as scd_exc:
+				import traceback as _tb
+				frappe.log_error(
+					f"Failed to create Selection Candidate Details for {docname}: {scd_exc}\n{_tb.format_exc()}",
+					"Selection Candidate Details",
+				)
+				print(f"Warning: Selection Candidate Details creation failed: {scd_exc}")
 
 		new_state = updated_doc.workflow_state
 

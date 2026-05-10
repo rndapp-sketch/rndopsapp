@@ -150,6 +150,16 @@ scheduler_events = {
 	"daily": [
 		"rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
 	],
+	"cron": {
+		# SCL January credit — Jan 1 at midnight (creates new-year record, credits 15 days)
+		"0 0 1 1 *": [
+			"rndopsapp.rndopsapp.tasks.scl_credit.credit_january_scl"
+		],
+		# SCL July credit — Jul 1 at midnight (adds 15 days, total becomes 30)
+		"0 0 1 7 *": [
+			"rndopsapp.rndopsapp.tasks.scl_credit.credit_july_scl"
+		],
+	},
 }
 
 # Testing

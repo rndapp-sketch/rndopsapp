@@ -1,0 +1,220 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-08 11:19:19.965867",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "ps_basic_details",
+  "ps_emp_id",
+  "ps_first_name",
+  "ps_middle_name",
+  "ps_last_name",
+  "ps_email_id",
+  "ps_phone_number",
+  "ps_department",
+  "ps_designation",
+  "section_break_cgds",
+  "project_staff_details_column",
+  "ps_date_of_birth",
+  "ps_fathers_name",
+  "ps_present_address",
+  "ps_permanent_address",
+  "ps_pan",
+  "ps_aadhar_number",
+  "ps_blood_group",
+  "ps_maritial_status",
+  "ps_basic_salary",
+  "ps_hra",
+  "ps_ma",
+  "ps_hostel",
+  "ps_citizenship",
+  "ps_aon",
+  "ps_mro",
+  "ps_tenure_details",
+  "table_ymed"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_staff_details_column",
+   "fieldtype": "Column Break",
+   "label": "Project Staff Details"
+  },
+  {
+   "fieldname": "ps_fathers_name",
+   "fieldtype": "Data",
+   "label": "Fathers Name"
+  },
+  {
+   "fieldname": "ps_present_address",
+   "fieldtype": "Small Text",
+   "label": "Present Address"
+  },
+  {
+   "fieldname": "ps_permanent_address",
+   "fieldtype": "Small Text",
+   "label": "Permanent Address"
+  },
+  {
+   "fieldname": "ps_pan",
+   "fieldtype": "Data",
+   "label": "Permanent Account Number (PAN)"
+  },
+  {
+   "fieldname": "ps_aadhar_number",
+   "fieldtype": "Data",
+   "label": "Aadhar Number"
+  },
+  {
+   "fieldname": "ps_blood_group",
+   "fieldtype": "Select",
+   "label": "Blood Group",
+   "options": "\nA+\nA\u2212\nB+\nB\u2212\nAB+\nAB\u2212\nO+\nO\u2212"
+  },
+  {
+   "fieldname": "ps_maritial_status",
+   "fieldtype": "Select",
+   "label": "Maritial Status",
+   "options": "\nSingle\nMarried"
+  },
+  {
+   "fieldname": "ps_basic_details",
+   "fieldtype": "Section Break",
+   "label": "Basic Details"
+  },
+  {
+   "fieldname": "ps_first_name",
+   "fieldtype": "Data",
+   "label": "First Name"
+  },
+  {
+   "fieldname": "ps_middle_name",
+   "fieldtype": "Data",
+   "label": "Middle Name"
+  },
+  {
+   "fieldname": "ps_last_name",
+   "fieldtype": "Data",
+   "label": "Last Name"
+  },
+  {
+   "fieldname": "ps_phone_number",
+   "fieldtype": "Data",
+   "label": "Phone Number"
+  },
+  {
+   "fieldname": "ps_department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fieldname": "ps_designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fieldname": "section_break_cgds",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ps_date_of_birth",
+   "fieldtype": "Date",
+   "label": "Date of Birth"
+  },
+  {
+   "fieldname": "ps_basic_salary",
+   "fieldtype": "Data",
+   "label": "Basic Salary"
+  },
+  {
+   "fieldname": "ps_hra",
+   "fieldtype": "Data",
+   "label": "HRA"
+  },
+  {
+   "fieldname": "ps_ma",
+   "fieldtype": "Data",
+   "label": "Medical Allowance"
+  },
+  {
+   "fieldname": "ps_hostel",
+   "fieldtype": "Data",
+   "label": "Hostel"
+  },
+  {
+   "fieldname": "ps_citizenship",
+   "fieldtype": "Data",
+   "label": "Citizenship"
+  },
+  {
+   "fieldname": "ps_aon",
+   "fieldtype": "Data",
+   "label": "Appointment Order Number"
+  },
+  {
+   "fieldname": "ps_mro",
+   "fieldtype": "Data",
+   "label": "Medical Report Number"
+  },
+  {
+   "fieldname": "ps_emp_id",
+   "fieldtype": "Data",
+   "label": "Employee Id"
+  },
+  {
+   "fieldname": "ps_email_id",
+   "fieldtype": "Data",
+   "label": "Email Id"
+  },
+  {
+   "fieldname": "ps_tenure_details",
+   "fieldtype": "Section Break",
+   "label": "Tenure Details Section"
+  },
+  {
+   "fieldname": "table_ymed",
+   "fieldtype": "Table",
+   "label": "Tenure Details",
+   "options": "project_staff_tenure_details"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-09 13:51:51.543454",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "project_staff_details",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

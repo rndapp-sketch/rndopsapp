@@ -1,46 +1,46 @@
 {
- "actions": [],
- "allow_rename": 1,
- "creation": "2025-12-22 12:54:24.561179",
- "doctype": "DocType",
- "editable_grid": 1,
- "engine": "InnoDB",
- "field_order": [
-  "ta_da_expense_type_other_expense",
-  "ta_da_amount_other_expense",
-  "ta_da_proof_other_expense"
- ],
- "fields": [
-  {
-   "fieldname": "ta_da_expense_type_other_expense",
-   "fieldtype": "Select",
-   "label": "Expense Type",
-   "options": "Registration Fee\nHotel/Lodging Charges\nFood Charges\nOther Charges"
-  },
-  {
-   "fieldname": "ta_da_amount_other_expense",
-   "fieldtype": "Currency",
-   "label": "Amount (INR)"
-  },
-  {
-   "fieldname": "ta_da_proof_other_expense",
-   "fieldtype": "Attach",
-   "label": "Proof"
-  }
- ],
- "grid_page_length": 50,
- "index_web_pages_for_search": 1,
- "istable": 1,
- "links": [],
- "modified": "2026-02-16 11:19:31.122747",
- "modified_by": "Administrator",
- "module": "Rndopsapp",
- "name": "TA DA Other Expense",
- "owner": "Administrator",
- "permissions": [],
- "row_format": "Dynamic",
- "rows_threshold_for_grid_search": 20,
- "sort_field": "modified",
- "sort_order": "DESC",
- "states": []
+    "actions": [],
+    "allow_rename": 1,
+    "creation": "2025-12-22 12:54:24.561179",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "ta_da_expense_type_other_expense",
+        "ta_da_amount_other_expense",
+        "ta_da_proof_other_expense"
+    ],
+    "fields": [
+        {
+            "fieldname": "ta_da_expense_type_other_expense",
+            "fieldtype": "Select",
+            "label": "Expense Type",
+            "options": "Registration Fee\nHotel/Lodging Charges\nFood Charges\nOther Charges"
+        },
+        {
+            "fieldname": "ta_da_amount_other_expense",
+            "fieldtype": "Currency",
+            "label": "Amount (INR)"
+        },
+        {
+            "fieldname": "ta_da_proof_other_expense",
+            "fieldtype": "Attach",
+            "label": "Proof"
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-02-16 11:19:31.122747",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "TA DA Other Expense",
+    "owner": "Administrator",
+    "permissions": [],
+    "row_format": "Dynamic",
+    "rows_threshold_for_grid_search": 20,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
 }

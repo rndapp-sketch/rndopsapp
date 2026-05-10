@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import date_diff, getdate
 
 
 def extract_eval_expression(expression):
@@ -147,19 +148,19 @@ def get_travel_fields(doc_name=None):
 					linked_doctype,
 					filters={"enabled": 1},
 					fields=["name as value", "full_name as label"],
-					limit_page_length=0
+					limit_page_length=500
 				)
 			else:
 				link_options[fieldname] = frappe.get_all(
 					linked_doctype,
 					fields=["name as value", f"{title_field} as label"],
-					limit_page_length=0
+					limit_page_length=500
 				)
 		except Exception:
 			link_options[fieldname] = frappe.get_all(
 				linked_doctype,
 				fields=["name as value", "name as label"],
-				limit_page_length=0
+				limit_page_length=500
 			)
 
 	# Department options (explicit)
@@ -167,7 +168,7 @@ def get_travel_fields(doc_name=None):
 		departments = frappe.get_all(
 			"Department_prornd",
 			fields=["name as value", "dept_name as label"],
-			limit_page_length=0,
+			limit_page_length=500,
 		)
 		link_options["department_travel"] = departments
 	except Exception:
@@ -207,6 +208,13 @@ def get_travel_fields(doc_name=None):
 	except Exception:
 		pass
 
+	# Inject live SCL balance into the HTML field so React sees real data
+	scl_html = _build_scl_balance_html(current_user)
+	for f in fields:
+		if f["fieldname"] == "travel_leave_balance_html":
+			f["options"] = scl_html
+			break
+
 	return {
 		"fields": fields,
 		"prefill_data": prefill_data,
@@ -214,6 +222,7 @@ def get_travel_fields(doc_name=None):
 		"related_data": related_data,
 		"client_scripts": client_scripts,
 		"child_table_meta": child_table_meta,
+		"scl_balance": _get_raw_scl_balance(current_user),
 	}
 
 
@@ -254,6 +263,75 @@ def get_user_details_travel(user_email):
 
 
 @frappe.whitelist()
+def get_special_leave_balance_for_travel(employee=None):
+	"""
+	Thin proxy so the Travel form can call a single endpoint.
+	Delegates to the canonical implementation in special_leave_balance.py.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import (
+		get_special_leave_balance,
+	)
+	return get_special_leave_balance(employee)
+
+
+def _get_raw_scl_balance(employee):
+	"""Return raw SCL balance dict for the employee (no throw on error)."""
+	try:
+		from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import (
+			get_special_leave_balance,
+		)
+		return get_special_leave_balance(employee)
+	except Exception:
+		return {"is_eligible": False}
+
+
+def _build_scl_balance_html(employee):
+	"""Build the HTML string for the SCL balance card shown in the Travel form."""
+	data = _get_raw_scl_balance(employee)
+
+	if not data or not data.get("is_eligible"):
+		return """
+		<div style="border:1px solid #d1d8dd;padding:12px;border-radius:6px;background:#f9f9f9;">
+			<strong>Special Casual Leave (SCL)</strong><br>
+			<span style="color:#888;">Not eligible for SCL.</span>
+		</div>"""
+
+	available = data.get("available_balance", 0)
+	total    = data.get("total_credited", 0)
+	utilized = data.get("utilized_balance", 0)
+	year     = data.get("year", "")
+	color    = "#1a7f37" if available > 0 else "#cf1322"
+	icon     = "✅" if available > 0 else "⚠️"
+	exhausted_msg = ""
+	if available == 0:
+		exhausted_msg = f"""
+		<div style="margin-top:8px;padding:6px 10px;background:#fff1f0;
+		            border-radius:4px;color:#cf1322;font-size:12px;">
+			You have exhausted your SCL quota for {year}.
+		</div>"""
+
+	return f"""
+	<div style="border:1px solid #d1d8dd;padding:12px;border-radius:6px;background:#fff;">
+		<strong style="font-size:14px;">Special Casual Leave (SCL) — {year}</strong>
+		<table style="margin-top:8px;width:100%;border-collapse:collapse;font-size:13px;">
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Total Credited</td>
+				<td style="padding:2px 0;font-weight:600;">{total} days</td>
+			</tr>
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Utilized</td>
+				<td style="padding:2px 0;font-weight:600;">{utilized} days</td>
+			</tr>
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Available</td>
+				<td style="padding:2px 0;font-weight:700;color:{color};">{available} days {icon}</td>
+			</tr>
+		</table>
+		{exhausted_msg}
+	</div>"""
+
+
+@frappe.whitelist()
 def save_travel(doc_data):
 	"""Saves or updates the Travel data from the React form.
 	Handles file uploads for Attach fields.
@@ -270,8 +348,12 @@ def save_travel(doc_data):
 		# 1. Initialize Document
 		if doc_name and frappe.db.exists("Travel", doc_name):
 			doc = frappe.get_doc("Travel", doc_name)
-			if doc.docstatus != 0:
-				frappe.throw(_("Cannot edit a submitted or cancelled document."))
+			if doc.workflow_state != "Draft":
+				frappe.throw(_("Cannot edit a document that is already under review or approved."))
+			# Fix documents incorrectly submitted via the old doc.submit() path.
+			if doc.docstatus == 1:
+				frappe.db.set_value("Travel", doc_name, "docstatus", 0)
+				doc.docstatus = 0
 		else:
 			doc = frappe.new_doc("Travel")
 			is_new = True
@@ -301,6 +383,7 @@ def save_travel(doc_data):
 
 		# 3. Create/Save Initial Document to get Name (if new)
 		doc.flags.ignore_permissions = True
+		doc.flags.ignore_version = True
 		if is_new:
 			doc.insert(ignore_mandatory=True)
 			print(f"Created new Travel doc: {doc.name}")
@@ -374,6 +457,9 @@ def save_travel(doc_data):
 
 		return {"status": "success", "docname": doc.name}
 
+	except frappe.ValidationError:
+		frappe.db.rollback()
+		raise
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Travel Save Error")
 		frappe.db.rollback()
@@ -383,35 +469,54 @@ def save_travel(doc_data):
 @frappe.whitelist()
 def submit_travel(docname):
 	"""
-	Submit a Travel document.
+	Apply the 'Submit' workflow transition on a Travel document (Draft → Pending Approval).
+	Does not call doc.submit() — the workflow keeps docstatus=0 throughout.
 	"""
+	from frappe.model.workflow import get_workflow, get_transitions
+
 	try:
 		doc = frappe.get_doc("Travel", docname)
-		
-		if doc.docstatus == 0:
-			doc.submit()
-			frappe.db.commit()
-			return {
-				"status": "success",
-				"message": f"Travel '{docname}' submitted successfully.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		elif doc.docstatus == 1:
+
+		if doc.workflow_state != "Draft":
 			return {
 				"status": "info",
-				"message": f"Travel '{docname}' is already submitted.",
+				"message": f"Travel '{docname}' is already submitted (state: {doc.workflow_state}).",
 				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		else:
-			return {
-				"status": "error",
-				"message": f"Travel '{docname}' is cancelled and cannot be submitted.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
+				"workflow_state": doc.workflow_state,
 			}
 
+		# Fix documents incorrectly left with docstatus=1 by the old doc.submit() path.
+		# All workflow states have doc_status=0 so the document must stay as draft.
+		# Must update the DB first and reload so check_docstatus_transition sees 0→0.
+		if doc.docstatus == 1:
+			frappe.db.sql("UPDATE `tabTravel` SET docstatus=0 WHERE name=%s", docname)
+			doc = frappe.get_doc("Travel", docname)
+
+		workflow = get_workflow("Travel")
+		transitions = get_transitions(doc, workflow)
+		transition = next((t for t in transitions if t["action"] == "Submit"), None)
+
+		if not transition:
+			frappe.throw(_("Submit action is not available for your role on this document."))
+
+		next_state = next(s for s in workflow.states if s.state == transition["next_state"])
+
+		doc.set(workflow.workflow_state_field, next_state.state)
+		doc.flags.ignore_validate_update_after_submit = True
+		doc.save(ignore_permissions=True)
+		doc.add_comment("Workflow", _(next_state.state))
+
+		frappe.db.commit()
+		return {
+			"status": "success",
+			"message": f"Travel '{docname}' submitted successfully.",
+			"docname": docname,
+			"workflow_state": doc.workflow_state,
+		}
+
+	except frappe.ValidationError:
+		frappe.db.rollback()
+		raise
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Travel Submit Error")
@@ -561,6 +666,10 @@ def perform_travel_action(docname, action):
 		else:
 			doc.save(ignore_permissions=True)
 
+		# --- Special Casual Leave deduction on Approval ---
+		if next_state == "Approved" and doc.travel_special_casual_leave == "Required":
+			_deduct_scl_on_approval(doc)
+
 		# Kafka publish on Dean / Associate Dean approval
 		if next_state == "Approved":
 			frappe.logger().info(f"[Travel Kafka] Approval triggered for {docname}. Searching for staged commits.")
@@ -633,3 +742,104 @@ def perform_travel_action(docname, action):
 		frappe.log_error(frappe.get_traceback(), "Travel Action Error")
 		return {"status": "error", "message": str(e)}
 
+
+# ---------------------------------------------------------------------------
+# SCL helpers
+# ---------------------------------------------------------------------------
+
+def _calculate_scl_days(doc):
+	"""Return the number of SCL days requested in this Travel doc."""
+	if not doc.travel_leave_from_date or not doc.travel_leave_to_date:
+		return 0
+	delta = date_diff(doc.travel_leave_to_date, doc.travel_leave_from_date)
+	return max(0, delta + 1)
+
+
+def _deduct_scl_on_approval(doc):
+	"""
+	Called when a Travel application moves to Approved and SCL is Required.
+	Deducts days from the employee's special_leave_balance for the year of
+	travel_leave_from_date (or current year as fallback).
+	Logs a warning in Frappe error log if balance is insufficient but does
+	NOT block approval — raise frappe.throw() here if you prefer hard block.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import deduct_leaves
+
+	employee = doc.webmail_id_travel
+	if not employee:
+		frappe.log_error(
+			f"[SCL] Cannot deduct: webmail_id_travel is empty on Travel {doc.name}",
+			"SCL Deduction Warning"
+		)
+		return
+
+	days = _calculate_scl_days(doc)
+	if days <= 0:
+		frappe.log_error(
+			f"[SCL] Cannot deduct: leave dates missing or invalid on Travel {doc.name}",
+			"SCL Deduction Warning"
+		)
+		return
+
+	# Use the year of the leave start date
+	year = getdate(doc.travel_leave_from_date).year
+
+	success = deduct_leaves(
+		employee=employee,
+		year=year,
+		days=days,
+		reference_doctype="Travel",
+		reference_name=doc.name,
+	)
+
+	if not success:
+		# Warn in error log; optionally notify approver
+		frappe.log_error(
+			f"[SCL] Insufficient balance for {employee} in {year}. "
+			f"Requested {days} days but balance is exhausted. Travel: {doc.name}",
+			"SCL Insufficient Balance"
+		)
+		# --- Uncomment the line below to HARD BLOCK approval instead of warning ---
+		# frappe.throw(_(f"Insufficient Special Casual Leave balance. Requested {days} days exceeds available balance."))
+	else:
+		frappe.logger().info(
+			f"[SCL] Deducted {days} day(s) from {employee} ({year}) for Travel {doc.name}"
+		)
+
+
+@frappe.whitelist()
+def cancel_travel_scl(docname):
+	"""
+	Reverses the SCL deduction when a Travel application is cancelled.
+	Call this from the frontend cancel flow after cancelling the doc.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import reverse_leaves
+
+	if not frappe.db.exists("Travel", docname):
+		return {"status": "error", "message": "Travel document not found."}
+
+	doc = frappe.get_doc("Travel", docname)
+
+	if doc.travel_special_casual_leave != "Required":
+		return {"status": "skipped", "message": "SCL was not required for this travel."}
+
+	employee = doc.webmail_id_travel
+	days = _calculate_scl_days(doc)
+
+	if not employee or days <= 0:
+		return {"status": "skipped", "message": "No valid employee/dates to reverse."}
+
+	year = getdate(doc.travel_leave_from_date).year
+
+	reverse_leaves(
+		employee=employee,
+		year=year,
+		days=days,
+		reference_doctype="Travel",
+		reference_name=docname,
+	)
+
+	return {
+		"status": "success",
+		"message": f"Reversed {days} SCL day(s) for {employee} ({year}).",
+	}

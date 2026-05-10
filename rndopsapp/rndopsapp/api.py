@@ -509,58 +509,8 @@ def get_user_details(user_email):
 			except Exception:
 				pass  # Keep original value if lookup fails
 		
-		# Append Universal Registration data — only PI / Co-PI (External only) type
-		try:
-			from rndopsapp.rndopsapp.doctype.universal_registration__.universal_registration__ import get_external_profile
-			ur_result = get_external_profile(search=user_email)
-			if ur_result.get("status") == "success" and ur_result.get("data"):
-				profile = ur_result["data"][0]
-				ur_type = frappe.db.get_value(
-					"Universal Registration__",
-					{"email_address_u_r": profile.get("email_address_u_r")},
-					"profile_type_u_r"
-				)
-				if ur_type == "PI / Co-PI (External only)":
-					institution = (profile.get("institution_details_u_r") or [{}])[0]
-					if not user_dict.get("full_name"):
-						user_dict["full_name"]         = profile.get("full_name_u_r")
-					if not user_dict.get("mobile_no"):
-						user_dict["mobile_no"]         = profile.get("mobile_number_u_r")
-					if not user_dict.get("designation_name"):
-						user_dict["designation_name"]  = institution.get("designation_u_r")
-					if not user_dict.get("department_name"):
-						user_dict["department_name"]   = institution.get("department_u_r")
-					if not user_dict.get("inst_name_address"):
-						user_dict["inst_name_address"] = institution.get("address_institution_u_r")
-		except Exception:
-			pass
-
 		return user_dict
 	except frappe.DoesNotExistError:
-		# Frappe User not found — fall back to Universal Registration (PI / Co-PI only)
-		try:
-			from rndopsapp.rndopsapp.doctype.universal_registration__.universal_registration__ import get_external_profile
-			ur_result = get_external_profile(search=user_email)
-			if ur_result.get("status") == "success" and ur_result.get("data"):
-				profile = ur_result["data"][0]
-				ur_type = frappe.db.get_value(
-					"Universal Registration__",
-					{"email_address_u_r": profile.get("email_address_u_r")},
-					"profile_type_u_r"
-				)
-				if ur_type == "PI / Co-PI (External only)":
-					institution = (profile.get("institution_details_u_r") or [{}])[0]
-					return {
-						"name":             profile.get("email_address_u_r"),
-						"email":            profile.get("email_address_u_r"),
-						"full_name":        profile.get("full_name_u_r"),
-						"mobile_no":        profile.get("mobile_number_u_r"),
-						"designation_name": institution.get("designation_u_r"),
-						"department_name":  institution.get("department_u_r"),
-						"inst_name_address":institution.get("address_institution_u_r")
-					}
-		except Exception:
-			pass
 		return None
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), _("Error fetching user details"))
@@ -982,7 +932,7 @@ def clear_mattermost_channel(
 		return {"status": "error", "error": str(exc)}
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist()
 def get_document_activity(doctype, docname):
 	"""
 	Returns a unified, chronologically-sorted activity timeline for a document.
@@ -997,6 +947,9 @@ def get_document_activity(doctype, docname):
 	"""
 	if not frappe.db.exists(doctype, docname):
 		frappe.throw(f"{doctype} '{docname}' not found.", frappe.DoesNotExistError)
+
+	if not frappe.has_permission(doctype, "read", docname):
+		frappe.throw("Not permitted.", frappe.PermissionError)
 
 	# --- 1. Fetch all Comment rows for this document ---
 	comment_type_map = {
@@ -1019,7 +972,6 @@ def get_document_activity(doctype, docname):
 		filters={"reference_doctype": doctype, "reference_name": docname},
 		fields=["owner", "creation", "content", "comment_type"],
 		order_by="creation desc",
-		ignore_permissions=True,
 	)
 
 	# --- 2. Fetch last Version entry (for "last edited" when no Edit comment exists) ---
@@ -1032,7 +984,6 @@ def get_document_activity(doctype, docname):
 			fields=["owner", "creation"],
 			order_by="creation desc",
 			limit=1,
-			ignore_permissions=True,
 		)
 		if versions:
 			last_version = versions[0]
@@ -1054,7 +1005,6 @@ def get_document_activity(doctype, docname):
 			"User",
 			filters={"name": ["in", list(all_owners)]},
 			fields=["name", "full_name"],
-			ignore_permissions=True,
 		)
 		name_map = {r.name: r.full_name or r.name for r in rows}
 
@@ -1128,3 +1078,85 @@ def auto_clear_old_mattermost_posts():
 	frappe.logger("mattermost").info(
 		f"auto_clear_old_mattermost_posts complete — total deleted: {total_deleted}"
 	)
+
+
+# ============================================================
+# Travel multi-target Put Back — workflow setup
+# ============================================================
+# Adds explicit "Put Back to <Role>" transitions on Travel_Workflow so
+# Dean / Ado / HoS / Staff / Head can pick which previous state to send
+# the doc back to. Run once after deploy:
+#     bench --site <site> execute rndopsapp.rndopsapp.api.setup_travel_putback_transitions
+# Idempotent — re-running has no effect.
+
+@frappe.whitelist()
+def setup_travel_putback_transitions():
+    """Install fan-out Put Back transitions on Travel_Workflow."""
+    workflow_name = "Travel_Workflow"
+    if not frappe.db.exists("Workflow", workflow_name):
+        frappe.throw(f"Workflow '{workflow_name}' not found")
+
+    # (state, action_label, next_state, allowed_role)
+    desired = [
+        # Pending Dean Approval
+        ("Pending Dean Approval", "Put Back to HoS",   "Pending HoS Approval",     "Dean, RnD"),
+        ("Pending Dean Approval", "Put Back to Staff", "Pending Staff Approval",   "Dean, RnD"),
+        ("Pending Dean Approval", "Put Back to Head",  "Pending Head Approval",    "Dean, RnD"),
+        ("Pending Dean Approval", "Put Back to PI",    "Pending PI Approval",      "Dean, RnD"),
+        # Pending Associate Dean
+        ("Pending Associate Dean", "Put Back to HoS",   "Pending HoS Approval",    "Ado_RnD"),
+        ("Pending Associate Dean", "Put Back to Staff", "Pending Staff Approval",  "Ado_RnD"),
+        ("Pending Associate Dean", "Put Back to Head",  "Pending Head Approval",   "Ado_RnD"),
+        ("Pending Associate Dean", "Put Back to PI",    "Pending PI Approval",     "Ado_RnD"),
+        # Pending HoS Approval
+        ("Pending HoS Approval", "Put Back to Staff", "Pending Staff Approval",    "Hos, RnD (Head of Section, RnD)"),
+        ("Pending HoS Approval", "Put Back to Head",  "Pending Head Approval",     "Hos, RnD (Head of Section, RnD)"),
+        ("Pending HoS Approval", "Put Back to PI",    "Pending PI Approval",       "Hos, RnD (Head of Section, RnD)"),
+        # Pending Staff Approval
+        ("Pending Staff Approval", "Put Back to Head", "Pending Head Approval",   "staff, RnD"),
+        ("Pending Staff Approval", "Put Back to PI",   "Pending PI Approval",     "staff, RnD"),
+        # Pending Head Approval
+        ("Pending Head Approval", "Put Back to PI", "Pending PI Approval",        "head_approver_1"),
+    ]
+
+    # Ensure each new action name exists as a Workflow Action Master,
+    # otherwise the Workflow Transition link-validation will fail.
+    unique_actions = {action for _, action, _, _ in desired}
+    for action_name in unique_actions:
+        if not frappe.db.exists("Workflow Action Master", action_name):
+            frappe.get_doc({
+                "doctype": "Workflow Action Master",
+                "workflow_action_name": action_name,
+            }).insert(ignore_permissions=True)
+
+    wf = frappe.get_doc("Workflow", workflow_name)
+    existing = {
+        (t.state, t.action, t.next_state, t.allowed)
+        for t in wf.transitions
+    }
+
+    added = []
+    for state, action, next_state, allowed in desired:
+        key = (state, action, next_state, allowed)
+        if key in existing:
+            continue
+        wf.append("transitions", {
+            "state": state,
+            "action": action,
+            "next_state": next_state,
+            "allowed": allowed,
+            "allow_self_approval": 1,
+            "send_email_to_creator": 0,
+        })
+        added.append(f"{state} --[{action}]--> {next_state} ({allowed})")
+
+    if added:
+        wf.save(ignore_permissions=True)
+        frappe.db.commit()
+
+    return {
+        "status": "success",
+        "added": added,
+        "skipped_existing": len(desired) - len(added),
+    }
+# ============================================================

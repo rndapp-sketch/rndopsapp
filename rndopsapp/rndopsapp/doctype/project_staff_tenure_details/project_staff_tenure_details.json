@@ -1,0 +1,90 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-09 13:23:16.619905",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "pstd_joining_date",
+  "pstd_term_completion_date",
+  "pstd_basic_salary",
+  "pstd_increment",
+  "pstd_hra",
+  "pstd_extension_sought",
+  "pstd_joining_number",
+  "pstd_pi_extension_sought",
+  "pstd_staff_extension_sought",
+  "pstd_tentative_joining_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "pstd_joining_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Joining Date"
+  },
+  {
+   "fieldname": "pstd_term_completion_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Term Completion Date"
+  },
+  {
+   "fieldname": "pstd_basic_salary",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Basic Salary"
+  },
+  {
+   "fieldname": "pstd_increment",
+   "fieldtype": "Data",
+   "label": "Increment"
+  },
+  {
+   "fieldname": "pstd_hra",
+   "fieldtype": "Data",
+   "label": "HRA"
+  },
+  {
+   "fieldname": "pstd_extension_sought",
+   "fieldtype": "Data",
+   "label": "Extension Sought"
+  },
+  {
+   "fieldname": "pstd_joining_number",
+   "fieldtype": "Data",
+   "label": "Joining Order Number"
+  },
+  {
+   "fieldname": "pstd_pi_extension_sought",
+   "fieldtype": "Data",
+   "label": "PI Extension Sought"
+  },
+  {
+   "fieldname": "pstd_staff_extension_sought",
+   "fieldtype": "Data",
+   "label": "Staff Extension Sought"
+  },
+  {
+   "fieldname": "pstd_tentative_joining_date",
+   "fieldtype": "Date",
+   "label": "Tentative Joining Date"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-09 13:31:18.998924",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "project_staff_tenure_details",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
