@@ -1,5 +1,4 @@
-# Copyright (c) 2026, RnD Operations and contributors
-# For license information, please see license.txt
+
 
 import frappe
 import json

@@ -500,7 +500,7 @@ def perform_selection_committee_report_action(docname, action):
 		print("frappe.db.commit() successful")
 
 		# On Submit: create Selection Candidate Details records from candidates JSON
-		if action == "Submit":
+		if action == "Approve":
 			print("Action is Submit — creating Selection Candidate Details records")
 			try:
 				_create_selection_candidate_details(updated_doc)
