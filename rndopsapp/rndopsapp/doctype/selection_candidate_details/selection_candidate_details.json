@@ -1,280 +1,297 @@
 {
-    "actions": [],
-    "allow_rename": 1,
-    "creation": "2026-05-10 00:00:00.000000",
-    "doctype": "DocType",
-    "engine": "InnoDB",
-    "field_order": [
-        "section_break_identity",
-        "candidate_id",
-        "interview_id",
-        "application_id",
-        "post_id",
-        "selection_status",
-        "wl_number",
-        "column_break_identity",
-        "candidate_name",
-        "candidate_surname",
-        "father_name",
-        "gender",
-        "marital_status",
-        "date_of_birth",
-        "citizenship",
-        "section_break_contact",
-        "phone_num",
-        "email",
-        "section_break_address",
-        "permanent_address",
-        "correspondence_address",
-        "section_break_references",
-        "educational_details_id",
-        "employment_details_id",
-        "section_break_committee",
-        "basic_pay_recommended_by_committee",
-        "increment_by_committee",
-        "duration_of_appointment_by_committee",
-        "column_break_committee",
-        "hra_required_by_committee",
-        "hra_amount_by_committee",
-        "medical_amount_by_committee",
-        "total_amount_by_committee",
-        "section_break_justification",
-        "justification_by_committee",
-        "section_break_orders",
-        "appointment_order_number",
-        "medical_report_number"
-    ],
-    "fields": [
-        {
-            "fieldname": "section_break_identity",
-            "fieldtype": "Section Break",
-            "label": "Candidate Identity"
-        },
-        {
-            "fieldname": "candidate_id",
-            "fieldtype": "Int",
-            "label": "Candidate ID",
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "interview_id",
-            "fieldtype": "Data",
-            "label": "Interview ID",
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "application_id",
-            "fieldtype": "Int",
-            "label": "Application ID"
-        },
-        {
-            "fieldname": "post_id",
-            "fieldtype": "Data",
-            "label": "Post ID"
-        },
-        {
-            "fieldname": "selection_status",
-            "fieldtype": "Data",
-            "label": "Selection Status",
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "wl_number",
-            "fieldtype": "Data",
-            "label": "WL Number"
-        },
-        {
-            "fieldname": "column_break_identity",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "candidate_name",
-            "fieldtype": "Data",
-            "label": "Candidate Name",
-            "in_list_view": 1
-        },
-        {
-            "fieldname": "candidate_surname",
-            "fieldtype": "Data",
-            "label": "Candidate Surname"
-        },
-        {
-            "fieldname": "father_name",
-            "fieldtype": "Data",
-            "label": "Father Name"
-        },
-        {
-            "fieldname": "gender",
-            "fieldtype": "Select",
-            "label": "Gender",
-            "options": "\nMale\nFemale\nOther"
-        },
-        {
-            "fieldname": "marital_status",
-            "fieldtype": "Select",
-            "label": "Marital Status",
-            "options": "\nSingle\nMarried\nDivorced\nWidowed"
-        },
-        {
-            "fieldname": "date_of_birth",
-            "fieldtype": "Data",
-            "label": "Date of Birth"
-        },
-        {
-            "fieldname": "citizenship",
-            "fieldtype": "Data",
-            "label": "Citizenship"
-        },
-        {
-            "fieldname": "section_break_contact",
-            "fieldtype": "Section Break",
-            "label": "Contact Details"
-        },
-        {
-            "fieldname": "phone_num",
-            "fieldtype": "Data",
-            "label": "Phone Number"
-        },
-        {
-            "fieldname": "email",
-            "fieldtype": "Data",
-            "label": "Email"
-        },
-        {
-            "fieldname": "section_break_address",
-            "fieldtype": "Section Break",
-            "label": "Address"
-        },
-        {
-            "fieldname": "permanent_address",
-            "fieldtype": "Text",
-            "label": "Permanent Address"
-        },
-        {
-            "fieldname": "correspondence_address",
-            "fieldtype": "Text",
-            "label": "Correspondence Address"
-        },
-        {
-            "fieldname": "section_break_references",
-            "fieldtype": "Section Break",
-            "label": "Background References"
-        },
-        {
-            "fieldname": "educational_details_id",
-            "fieldtype": "Data",
-            "label": "Educational Details ID"
-        },
-        {
-            "fieldname": "employment_details_id",
-            "fieldtype": "Data",
-            "label": "Employment Details ID"
-        },
-        {
-            "fieldname": "section_break_committee",
-            "fieldtype": "Section Break",
-            "label": "Committee Recommendations"
-        },
-        {
-            "fieldname": "basic_pay_recommended_by_committee",
-            "fieldtype": "Data",
-            "label": "Basic Pay Recommended by Committee"
-        },
-        {
-            "fieldname": "increment_by_committee",
-            "fieldtype": "Data",
-            "label": "Increment by Committee"
-        },
-        {
-            "fieldname": "duration_of_appointment_by_committee",
-            "fieldtype": "Data",
-            "label": "Duration of Appointment by Committee"
-        },
-        {
-            "fieldname": "column_break_committee",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "hra_required_by_committee",
-            "fieldtype": "Data",
-            "label": "HRA Required by Committee"
-        },
-        {
-            "fieldname": "hra_amount_by_committee",
-            "fieldtype": "Data",
-            "label": "HRA Amount by Committee"
-        },
-        {
-            "fieldname": "medical_amount_by_committee",
-            "fieldtype": "Data",
-            "label": "Medical Amount by Committee"
-        },
-        {
-            "fieldname": "total_amount_by_committee",
-            "fieldtype": "Data",
-            "label": "Total Amount by Committee"
-        },
-        {
-            "fieldname": "section_break_justification",
-            "fieldtype": "Section Break",
-            "label": "Justification"
-        },
-        {
-            "fieldname": "justification_by_committee",
-            "fieldtype": "Text",
-            "label": "Justification by Committee"
-        },
-        {
-            "fieldname": "section_break_orders",
-            "fieldtype": "Section Break",
-            "label": "Order Numbers"
-        },
-        {
-            "fieldname": "appointment_order_number",
-            "fieldtype": "Data",
-            "label": "Appointment Order Number"
-        },
-        {
-            "fieldname": "medical_report_number",
-            "fieldtype": "Data",
-            "label": "Medical Report Number"
-        }
-    ],
-    "index_web_pages_for_search": 1,
-    "links": [],
-    "modified": "2026-05-10 00:00:00.000000",
-    "modified_by": "Administrator",
-    "module": "Rndopsapp",
-    "name": "Selection Candidate Details",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "All_ProRnd_User",
-            "share": 1,
-            "write": 1
-        }
-    ],
-    "row_format": "Dynamic",
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-10 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_tgfx",
+  "scr_id",
+  "section_break_identity",
+  "candidate_id",
+  "interview_id",
+  "application_id",
+  "post_id",
+  "selection_status",
+  "wl_number",
+  "column_break_uubs",
+  "column_break_identity",
+  "candidate_name",
+  "candidate_surname",
+  "father_name",
+  "gender",
+  "marital_status",
+  "date_of_birth",
+  "citizenship",
+  "section_break_contact",
+  "phone_num",
+  "email",
+  "section_break_address",
+  "permanent_address",
+  "correspondence_address",
+  "section_break_references",
+  "educational_details_id",
+  "employment_details_id",
+  "section_break_committee",
+  "basic_pay_recommended_by_committee",
+  "increment_by_committee",
+  "duration_of_appointment_by_committee",
+  "column_break_committee",
+  "hra_required_by_committee",
+  "hra_amount_by_committee",
+  "medical_amount_by_committee",
+  "total_amount_by_committee",
+  "section_break_justification",
+  "justification_by_committee",
+  "section_break_orders",
+  "appointment_order_number",
+  "medical_report_number"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_identity",
+   "fieldtype": "Section Break",
+   "label": "Candidate Identity"
+  },
+  {
+   "fieldname": "candidate_id",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Candidate ID"
+  },
+  {
+   "fieldname": "interview_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Interview ID"
+  },
+  {
+   "fieldname": "application_id",
+   "fieldtype": "Int",
+   "label": "Application ID"
+  },
+  {
+   "fieldname": "post_id",
+   "fieldtype": "Data",
+   "label": "Post ID"
+  },
+  {
+   "fieldname": "selection_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Selection Status"
+  },
+  {
+   "fieldname": "wl_number",
+   "fieldtype": "Data",
+   "label": "WL Number"
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "candidate_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Candidate Name"
+  },
+  {
+   "fieldname": "candidate_surname",
+   "fieldtype": "Data",
+   "label": "Candidate Surname"
+  },
+  {
+   "fieldname": "father_name",
+   "fieldtype": "Data",
+   "label": "Father Name"
+  },
+  {
+   "fieldname": "gender",
+   "fieldtype": "Select",
+   "label": "Gender",
+   "options": "\nMale\nFemale\nOther"
+  },
+  {
+   "fieldname": "marital_status",
+   "fieldtype": "Select",
+   "label": "Marital Status",
+   "options": "\nSingle\nMarried\nDivorced\nWidowed"
+  },
+  {
+   "fieldname": "date_of_birth",
+   "fieldtype": "Data",
+   "label": "Date of Birth"
+  },
+  {
+   "fieldname": "citizenship",
+   "fieldtype": "Data",
+   "label": "Citizenship"
+  },
+  {
+   "fieldname": "section_break_contact",
+   "fieldtype": "Section Break",
+   "label": "Contact Details"
+  },
+  {
+   "fieldname": "phone_num",
+   "fieldtype": "Data",
+   "label": "Phone Number"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email"
+  },
+  {
+   "fieldname": "section_break_address",
+   "fieldtype": "Section Break",
+   "label": "Address"
+  },
+  {
+   "fieldname": "permanent_address",
+   "fieldtype": "Text",
+   "label": "Permanent Address"
+  },
+  {
+   "fieldname": "correspondence_address",
+   "fieldtype": "Text",
+   "label": "Correspondence Address"
+  },
+  {
+   "fieldname": "section_break_references",
+   "fieldtype": "Section Break",
+   "label": "Background References"
+  },
+  {
+   "fieldname": "educational_details_id",
+   "fieldtype": "Data",
+   "label": "Educational Details ID"
+  },
+  {
+   "fieldname": "employment_details_id",
+   "fieldtype": "Data",
+   "label": "Employment Details ID"
+  },
+  {
+   "fieldname": "section_break_committee",
+   "fieldtype": "Section Break",
+   "label": "Committee Recommendations"
+  },
+  {
+   "fieldname": "basic_pay_recommended_by_committee",
+   "fieldtype": "Data",
+   "label": "Basic Pay Recommended by Committee"
+  },
+  {
+   "fieldname": "increment_by_committee",
+   "fieldtype": "Data",
+   "label": "Increment by Committee"
+  },
+  {
+   "fieldname": "duration_of_appointment_by_committee",
+   "fieldtype": "Data",
+   "label": "Duration of Appointment by Committee"
+  },
+  {
+   "fieldname": "column_break_committee",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "hra_required_by_committee",
+   "fieldtype": "Data",
+   "label": "HRA Required by Committee"
+  },
+  {
+   "fieldname": "hra_amount_by_committee",
+   "fieldtype": "Data",
+   "label": "HRA Amount by Committee"
+  },
+  {
+   "fieldname": "medical_amount_by_committee",
+   "fieldtype": "Data",
+   "label": "Medical Amount by Committee"
+  },
+  {
+   "fieldname": "total_amount_by_committee",
+   "fieldtype": "Data",
+   "label": "Total Amount by Committee"
+  },
+  {
+   "fieldname": "section_break_justification",
+   "fieldtype": "Section Break",
+   "label": "Justification"
+  },
+  {
+   "fieldname": "justification_by_committee",
+   "fieldtype": "Text",
+   "label": "Justification by Committee"
+  },
+  {
+   "fieldname": "section_break_orders",
+   "fieldtype": "Section Break",
+   "label": "Order Numbers"
+  },
+  {
+   "fieldname": "appointment_order_number",
+   "fieldtype": "Data",
+   "label": "Appointment Order Number"
+  },
+  {
+   "fieldname": "medical_report_number",
+   "fieldtype": "Data",
+   "label": "Medical Report Number"
+  },
+  {
+   "fieldname": "column_break_uubs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_tgfx",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "scr_id",
+   "fieldtype": "Data",
+   "label": "SCR Id"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-14 11:49:49.480773",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Selection Candidate Details",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }
