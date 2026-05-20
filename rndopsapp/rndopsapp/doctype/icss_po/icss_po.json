@@ -1,0 +1,104 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-11 12:28:29.439455",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_number",
+  "icss_number",
+  "indent_type",
+  "po_number",
+  "po_date",
+  "icss_po_form",
+  "amc_po_table",
+  "add_of_gst_",
+  "gst_amount",
+  "grand_total"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "label": "Project Number"
+  },
+  {
+   "fieldname": "icss_number",
+   "fieldtype": "Data",
+   "label": "icss_number"
+  },
+  {
+   "fieldname": "po_number",
+   "fieldtype": "Data",
+   "label": "PO Number"
+  },
+  {
+   "fieldname": "po_date",
+   "fieldtype": "Date",
+   "label": "PO Date"
+  },
+  {
+   "fieldname": "icss_po_form",
+   "fieldtype": "HTML Editor",
+   "label": "ICSS_PO_form"
+  },
+  {
+   "fieldname": "indent_type",
+   "fieldtype": "Select",
+   "label": "Indent Type",
+   "options": "\nProprietary Purchase with Proprietary certificate from the OEM\nStanderdised/ Emergent Purchase\nRepair/ Repleacement\nAnnual Maintenance Contract\nRate Contract Purchase"
+  },
+  {
+   "depends_on": "eval:doc.indent_type == 'Annual Maintenance Contract'",
+   "fieldname": "amc_po_table",
+   "fieldtype": "Table",
+   "label": "AMC PO Table",
+   "options": "amc_po_table"
+  },
+  {
+   "depends_on": "eval:doc.indent_type == 'Annual Maintenance Contract'",
+   "fieldname": "add_of_gst_",
+   "fieldtype": "Data",
+   "label": "Add of GST %"
+  },
+  {
+   "depends_on": "eval:doc.indent_type == 'Annual Maintenance Contract'",
+   "fieldname": "gst_amount",
+   "fieldtype": "Data",
+   "label": "GST Amount"
+  },
+  {
+   "depends_on": "eval:doc.indent_type == 'Annual Maintenance Contract'",
+   "fieldname": "grand_total",
+   "fieldtype": "Data",
+   "label": "Grand Total"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-12 18:25:50.971589",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "ICSS_PO",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
