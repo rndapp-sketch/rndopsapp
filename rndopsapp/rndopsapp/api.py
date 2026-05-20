@@ -1055,6 +1055,58 @@ def get_document_activity(doctype, docname):
 	return entries
 
 
+# ============================================================
+# Delegate User API — whitelisted wrappers
+# All logic lives in delegate_user/delegate_user.py
+# Frontend calls: rndopsapp.rndopsapp.api.<method>
+# ============================================================
+
+@frappe.whitelist()
+def search_delegate_users(query=""):
+    from rndopsapp.rndopsapp.delegate_user.delegate_user import search_delegate_users as _impl
+    return _impl(query=query)
+
+
+@frappe.whitelist()
+def get_delegate_scope(user=None):
+    from rndopsapp.rndopsapp.delegate_user.delegate_user import get_delegate_scope as _impl
+    return _impl(user=user)
+
+
+@frappe.whitelist()
+def get_active_delegations(user=None):
+    from rndopsapp.rndopsapp.delegate_user.delegate_user import get_active_delegations as _impl
+    return _impl(user=user)
+
+
+@frappe.whitelist()
+def delegate_user(
+    delegate_user,
+    delegation_type=None,
+    scope_type=None,
+    project_names=None,
+    applications=None,
+    valid_from=None,
+    valid_to=None,
+):
+    from rndopsapp.rndopsapp.delegate_user.delegate_user import delegate_user as _impl
+    return _impl(
+        delegate_user=delegate_user,
+        delegation_type=delegation_type,
+        scope_type=scope_type,
+        project_names=project_names,
+        applications=applications,
+        valid_from=valid_from,
+        valid_to=valid_to,
+    )
+
+
+@frappe.whitelist()
+def undelegate_user(delegation_name):
+    from rndopsapp.rndopsapp.delegate_user.delegate_user import undelegate_user as _impl
+    return _impl(delegation_name=delegation_name)
+
+
 def auto_clear_old_mattermost_posts():
 	"""
 	Scheduled daily task.

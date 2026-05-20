@@ -6,6 +6,9 @@
  "engine": "InnoDB",
  "field_order": [
   "ps_basic_details",
+  "workflow_state",
+  "scr_id",
+  "pi_id",
   "ps_emp_id",
   "ps_first_name",
   "ps_middle_name",
@@ -23,7 +26,10 @@
   "ps_pan",
   "ps_aadhar_number",
   "ps_blood_group",
+  "ps_gender",
   "ps_maritial_status",
+  "ps_joining_date",
+  "ps_term_completion_date",
   "ps_basic_salary",
   "ps_hra",
   "ps_ma",
@@ -31,8 +37,13 @@
   "ps_citizenship",
   "ps_aon",
   "ps_mro",
+  "upload_section_section",
+  "ps_photo",
+  "ps_signature",
+  "ps_medical_certificate",
   "ps_tenure_details",
-  "table_ymed"
+  "table_ymed",
+  "amended_from"
  ],
  "fields": [
   {
@@ -154,7 +165,8 @@
   {
    "fieldname": "ps_mro",
    "fieldtype": "Data",
-   "label": "Medical Report Number"
+   "label": "Medical Report Number",
+   "hidden": 1
   },
   {
    "fieldname": "ps_emp_id",
@@ -175,7 +187,70 @@
    "fieldname": "table_ymed",
    "fieldtype": "Table",
    "label": "Tenure Details",
-   "options": "project_staff_tenure_details"
+   "options": "Project Staff Tenure Details",
+   "hidden": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Project Staff Details",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Workflow Status"
+  },
+  {
+   "fieldname": "scr_id",
+   "fieldtype": "Data",
+   "label": "SCR Id"
+  },
+  {
+   "fieldname": "pi_id",
+   "fieldtype": "Data",
+   "label": "PI Id"
+  },
+  {
+   "fieldname": "ps_gender",
+   "fieldtype": "Select",
+   "label": "Gender",
+   "options": "\nMale\nFemale"
+  },
+  {
+   "fieldname": "upload_section_section",
+   "fieldtype": "Section Break",
+   "label": "Upload Section"
+  },
+  {
+   "fieldname": "ps_photo",
+   "fieldtype": "Attach",
+   "label": "Photo"
+  },
+  {
+   "fieldname": "ps_signature",
+   "fieldtype": "Attach",
+   "label": "Signature"
+  },
+  {
+   "fieldname": "ps_medical_certificate",
+   "fieldtype": "Attach",
+   "label": "Medical Certificate"
+  },
+  {
+   "fieldname": "ps_joining_date",
+   "fieldtype": "Date",
+   "label": "Joining Date"
+  },
+  {
+   "fieldname": "ps_term_completion_date",
+   "fieldtype": "Date",
+   "label": "Term Completion Date"
   }
  ],
  "grid_page_length": 50,
@@ -184,7 +259,7 @@
  "modified": "2026-05-09 13:51:51.543454",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
- "name": "project_staff_details",
+ "name": "Project Staff Details",
  "owner": "Administrator",
  "permissions": [
   {
@@ -216,5 +291,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "is_submittable": 1
 }

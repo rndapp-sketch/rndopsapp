@@ -66,6 +66,7 @@
    "label": "Date of Sanctioned Letter"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sanctioned_budget_breakup",
    "fieldtype": "Table",
    "label": "Total Budget Break-up",
@@ -172,7 +173,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-15 13:49:14.783911",
+ "modified": "2026-05-14 16:21:28.245629",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Sanction",

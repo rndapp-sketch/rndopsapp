@@ -10,6 +10,7 @@
   "amended_from",
   "prjreg_title",
   "fund_received_ref_number",
+  "sanction_ref_no",
   "section_break_qyal",
   "fund_received_amt",
   "bank_account",
@@ -46,13 +47,15 @@
   {
    "fieldname": "fund_received_amt",
    "fieldtype": "Currency",
-   "label": "Fund Received Amount"
+   "label": "Fund Received Amount",
+   "reqd": 1
   },
   {
    "description": "*Where money is received",
    "fieldname": "bank_account",
    "fieldtype": "Data",
-   "label": "Bank Account Number / Scheme (Name / Number)"
+   "label": "Bank Account Number / Scheme (Name / Number)",
+   "reqd": 1
   },
   {
    "fieldname": "section_break_hchd",
@@ -110,13 +113,18 @@
    "fieldtype": "Data",
    "label": "Workflow State",
    "read_only": 1
+  },
+  {
+   "fieldname": "sanction_ref_no",
+   "fieldtype": "Data",
+   "label": "Sanction Ref No."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-20 22:22:03.470809",
+ "modified": "2026-05-14 17:09:51.962499",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Received",

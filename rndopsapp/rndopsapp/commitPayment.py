@@ -45,7 +45,7 @@ VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]
 def get_project_available_amounts(project_number):
     """
     Fetch available commit and payment amounts for a project from the external ledger API.
-    
+
     Returns:
         dict: {
             "projectNumber": str,
@@ -58,12 +58,12 @@ def get_project_available_amounts(project_number):
     """
     if not project_number:
         return {"status": "error", "message": "Project number is required"}
-    
+
     try:
         api_url = f"{LEDGER_API_BASE_URL}/total-available-amounts?projectNumber={project_number}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -90,15 +90,15 @@ def get_project_available_amounts(project_number):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Ledger API timeout", "Get Project Available Amounts Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Project Available Amounts Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Project Available Amounts Error")
         return {"status": "error", "message": str(e)}
@@ -115,21 +115,21 @@ TOPIC_PAYMENT_DLQ = 'account-head-payment-events-dlq'
 def get_payments_by_account_head(account_head_id):
     """
     Fetch payments by accountHeadId from the external ledger API.
-    
+
     Args:
         account_head_id: The account head ID to fetch payments for
-        
+
     Returns:
         dict: API response with payments data or error
     """
     if not account_head_id:
         return {"status": "error", "message": "Account Head ID is required"}
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_PAYMENTS_API_URL}/account-head/{account_head_id}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -146,15 +146,15 @@ def get_payments_by_account_head(account_head_id):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Payments API timeout", "Get Payments By Account Head Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Payments By Account Head Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Payments By Account Head Error")
         return {"status": "error", "message": str(e)}
@@ -165,28 +165,28 @@ def get_commits_by_status(status):
     """
     Fetch commits by status from the external ledger API.
     Valid statuses: SETTLED, PARTIALLY_PAID, OVERPAYMENT, PENDING
-    
+
     Args:
         status: The status to filter commits by
-        
+
     Returns:
         dict: API response with commits data or error
     """
     if not status:
         return {"status": "error", "message": "Status is required"}
-    
+
     status = status.upper()
     if status not in VALID_COMMIT_STATUSES:
         return {
-            "status": "error", 
+            "status": "error",
             "message": f"Invalid status. Must be one of: {', '.join(VALID_COMMIT_STATUSES)}"
         }
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-status/{status}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -203,15 +203,15 @@ def get_commits_by_status(status):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Commits By Status API timeout", "Get Commits By Status Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Commits By Status Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Commits By Status Error")
         return {"status": "error", "message": str(e)}
@@ -221,21 +221,21 @@ def get_commits_by_status(status):
 def get_commits_by_account_head(account_head_id):
     """
     Fetch commits by accountHeadId from the external ledger API.
-    
+
     Args:
         account_head_id: The account head ID to fetch commits for
-        
+
     Returns:
         dict: API response with commits data or error
     """
     if not account_head_id:
         return {"status": "error", "message": "Account Head ID is required"}
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-account-head/{account_head_id}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -252,15 +252,15 @@ def get_commits_by_account_head(account_head_id):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Commits By Account Head API timeout", "Get Commits By Account Head Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Commits By Account Head Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Commits By Account Head Error")
         return {"status": "error", "message": str(e)}
@@ -271,32 +271,32 @@ def get_commits_by_account_head_and_status(account_head_id, status):
     """
     Fetch commits by accountHeadId and status from the external ledger API.
     Valid statuses: SETTLED, PARTIALLY_PAID, OVERPAYMENT, PENDING
-    
+
     Args:
         account_head_id: The account head ID to fetch commits for
         status: The status to filter commits by
-        
+
     Returns:
         dict: API response with commits data or error
     """
     if not account_head_id:
         return {"status": "error", "message": "Account Head ID is required"}
-    
+
     if not status:
         return {"status": "error", "message": "Status is required"}
-    
+
     status = status.upper()
     if status not in VALID_COMMIT_STATUSES:
         return {
-            "status": "error", 
+            "status": "error",
             "message": f"Invalid status. Must be one of: {', '.join(VALID_COMMIT_STATUSES)}"
         }
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-account-head/{account_head_id}/status/{status}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -313,15 +313,15 @@ def get_commits_by_account_head_and_status(account_head_id, status):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Commits By Account Head and Status API timeout", "Get Commits By Account Head and Status Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Commits By Account Head and Status Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Commits By Account Head and Status Error")
         return {"status": "error", "message": str(e)}
@@ -406,7 +406,8 @@ def check_workflow_and_publish(doc, method=None):
         "Travel",
         "TA DA Settlement",
         "Recruitment Adhoc Contractual",
-        "Indent General Form"
+        "Indent General Form",
+        "Top Up Fellowship",
     ]
 
     if doc.doctype not in applicable_doctypes:
@@ -591,11 +592,11 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
         if not doc:
             is_new = True
             doc = frappe.new_doc(doctype)
-        
+
         # --- Populate Document Fields ---
         # Helper to prefer explicit arg, then form field, then existing doc value
         def get_val(arg_val, fieldname, default=None):
-            if arg_val is not None: 
+            if arg_val is not None:
                 return arg_val
             if fieldname in frappe.form_dict:
                 return frappe.form_dict[fieldname]
@@ -603,19 +604,19 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
 
         raw_project_ref = get_val(project_name, 'project_ref_number')
         resolved_project_ref = raw_project_ref
-        
+
         if raw_project_ref and not frappe.db.exists("Project Registration", raw_project_ref):
             found_proj = frappe.db.get_value("Project Registration", {"project_no": raw_project_ref}, "name")
             if found_proj:
                 resolved_project_ref = found_proj
-                
+
         doc.project_ref_number = resolved_project_ref
         doc.payment_amount = flt(get_val(payment_amount, 'payment_amount', 0))
-        
+
         # Resolve Budget Head to valid Link Name (PK)
         raw_budget_head = get_val(budget_head, 'budget_head')
         resolved_budget_head = raw_budget_head
-        
+
         # If value exists and is not already a valid PK, try to find the PK
         if raw_budget_head and not frappe.db.exists("Budget Head", raw_budget_head):
             # Try by 'budget_head' field (e.g. "Equipments")
@@ -623,13 +624,13 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             if not found_name:
                 # Try by 'id' field (if integer passed)
                 found_name = frappe.db.get_value("Budget Head", {"id": raw_budget_head}, "name")
-            
+
             if found_name:
                 resolved_budget_head = found_name
-        
+
         doc.budget_head = resolved_budget_head
         doc.payment_bmr = get_val(bmr, 'payment_bmr')
-        
+
         # Populate other fields from form_dict if present, supporting camelCase alternatives
         field_map = {
             'payment_particular': ['paymentParticular'],
@@ -639,8 +640,8 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             'bank_transaction_date': ['bankTransactionDate'],
             'commit_id': ['commitId', 'transactionCommitNumber']
         }
-        
-        for field in ['payment_date', 'payment_particular', 'payment_reference_details', 
+
+        for field in ['payment_date', 'payment_particular', 'payment_reference_details',
                       'payment_status', 'bank_transaction_number', 'bank_transaction_date', 'commit_id']:
             val = None
             if field in frappe.form_dict:
@@ -650,14 +651,14 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                     if alt_key in frappe.form_dict:
                         val = frappe.form_dict[alt_key]
                         break
-            
+
             if val is not None:
                 doc.set(field, val)
-        
+
         # Default status if not set
         if not doc.payment_status:
             doc.payment_status = "PENDING"
-            
+
         # Default dates if not set
         if not doc.payment_date:
             doc.payment_date = today()
@@ -668,7 +669,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                 return {"status": "error", "message": "Project Reference Number is required to create a Payment"}
             if not doc.budget_head:
                 return {"status": "error", "message": "Budget Head is required to create a Payment"}
-            
+
         # Save document to generate name/ID
         doc.flags.ignore_permissions = True
         print(f"[PAYMENT_DEBUG] Before save. is_new={is_new} doc.name={doc.name}")
@@ -676,7 +677,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             doc.insert()
         else:
             doc.save()
-            
+
         print(f"[PAYMENT_DEBUG] After save. doc.name={doc.name}")
 
         # Using the saved document for Kafka publishing
@@ -684,7 +685,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
         print(f"[PAYMENT_DEBUG] Calling kafka_publish_payment for {doc.name}")
         success = kafka_publish_payment(
             doc=doc,
-            project_name=None, 
+            project_name=None,
             payment_amount=None,
             budget_head=None,
             bmr=None,
@@ -730,7 +731,7 @@ def get_workflow_states(doctype):
         workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
         if not workflows:
             return {"status": "error", "message": "No active workflow found"}
-        
+
         states = frappe.get_all("Workflow Document State", filters={"parent": workflows[0]}, pluck="state")
         return {"status": "success", "data": list(set(states))}
     except Exception as e:

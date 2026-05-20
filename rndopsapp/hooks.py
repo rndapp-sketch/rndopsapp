@@ -117,10 +117,24 @@ app_license = "mit"
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
+_DU = "rndopsapp.rndopsapp.delegate_user.delegate_user"
+
+permission_query_conditions = {
+	"Project Registration":          f"{_DU}.project_registration_permission_query",
+	"Travel":                        f"{_DU}.travel_permission_query",
+	"TA DA Settlement":              f"{_DU}.ta_da_settlement_permission_query",
+	"Temporary Advance":             f"{_DU}.temporary_advance_permission_query",
+	"Advance Settlement":            f"{_DU}.advance_settlement_permission_query",
+	"Reimbursement":                 f"{_DU}.reimbursement_permission_query",
+	"Direct Purchase":               f"{_DU}.direct_purchase_permission_query",
+	"Disbursal of Consultancy":      f"{_DU}.disbursal_of_consultancy_permission_query",
+	"Disbursal of Honorarium":       f"{_DU}.disbursal_of_honorarium_permission_query",
+	"Loan Request":                  f"{_DU}.loan_request_permission_query",
+	"Indent General Form":           f"{_DU}.indent_general_form_permission_query",
+	"Indent Cum Sanction Sheet":     f"{_DU}.indent_cum_sanction_sheet_permission_query",
+	"Recruitment Adhoc Contractual": f"{_DU}.recruitment_adhoc_contractual_permission_query",
+}
+
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
