@@ -53,6 +53,19 @@ def map_frontend_fields_to_doctype(data):
 		"org_sub_type": "organization_sub_type_u_r",
 		"organization_sub_type": "organization_sub_type_u_r",
 		
+		# Identity / KYC (Individual)
+		"aadhaar_number": "aadhaar_number_u_r",
+		"aadhaar_expiry": "aadhaar_expiry_u_r",
+		"aadhaar_file": "aadhaar_file_u_r",
+		"aadhaar_file_back": "aadhaar_file_back_u_r",
+		"pan_number": "pan_number_u_r",
+		"pan_expiry": "pan_expiry_u_r",
+		"pan_file": "pan_file_u_r",
+		"other_identity_number": "other_identity_number_u_r",
+		"other_expiry": "other_expiry_u_r",
+		"other_file": "other_file_u_r",
+		"other_file_back": "other_file_back_u_r",
+		
 		# Financial & Documents
 		"bank_details": "bank_details_u_r",
 		"documents": "uploaded_documents_u_r",
@@ -69,7 +82,7 @@ def map_frontend_fields_to_doctype(data):
 		"type_of_business": "type_of_business_u_r",
 		"nature_of_org": "nature_of_org",
 		"organization_nature": "nature_of_org",
-		"pan_number": "pan_number_org_u_r",
+		"pan_number_org": "pan_number_org_u_r",
 		"gst_status": "gst_status_u_r",
 		"gst_number": "gst_number_u_r",
 		"other_registration": "other_registration_u_r",
@@ -390,6 +403,31 @@ def save_universal_registration___data(data=None, **kwargs):
 			else:
 				doc.owner = frappe.session.user
 
+		# Auto-populate uploaded_documents_u_r child table for Identity files
+		identity_docs_mapping = [
+			{"file": "aadhaar_file_u_r", "number": "aadhaar_number_u_r", "name": "Aadhaar Card", "expiry": "aadhaar_expiry_u_r"},
+			{"file": "pan_file_u_r", "number": "pan_number_u_r", "name": "PAN Card", "expiry": "pan_expiry_u_r"},
+			{"file": "other_file_u_r", "number": "other_identity_number_u_r", "name": "Other Identity", "expiry": "other_expiry_u_r"}
+		]
+		
+		for doc_map in identity_docs_mapping:
+			file_url = doc.get(doc_map["file"])
+			if file_url:
+				exists = False
+				for row in doc.get("uploaded_documents_u_r", []):
+					if row.document_name_u_r == doc_map["name"] and row.file_u_r == file_url:
+						exists = True
+						break
+				
+				if not exists:
+					doc.append("uploaded_documents_u_r", {
+						"document_name_u_r": doc_map["name"],
+						"document_type_u_r": "Identity",
+						"id_number_u_r": doc.get(doc_map["number"]),
+						"file_u_r": file_url,
+						"expiry_date_u_r": doc.get(doc_map["expiry"])
+					})
+
 		doc.flags.ignore_permissions = True
 		doc.save()
 		frappe.db.commit()
@@ -551,6 +589,31 @@ def update_universal_registration___data(docname, data):
 			# Standard fields
 			else:
 				doc.set(fieldname, value)
+
+		# Auto-populate uploaded_documents_u_r child table for Identity files
+		identity_docs_mapping = [
+			{"file": "aadhaar_file_u_r", "number": "aadhaar_number_u_r", "name": "Aadhaar Card", "expiry": "aadhaar_expiry_u_r"},
+			{"file": "pan_file_u_r", "number": "pan_number_u_r", "name": "PAN Card", "expiry": "pan_expiry_u_r"},
+			{"file": "other_file_u_r", "number": "other_identity_number_u_r", "name": "Other Identity", "expiry": "other_expiry_u_r"}
+		]
+		
+		for doc_map in identity_docs_mapping:
+			file_url = doc.get(doc_map["file"])
+			if file_url:
+				exists = False
+				for row in doc.get("uploaded_documents_u_r", []):
+					if row.document_name_u_r == doc_map["name"] and row.file_u_r == file_url:
+						exists = True
+						break
+				
+				if not exists:
+					doc.append("uploaded_documents_u_r", {
+						"document_name_u_r": doc_map["name"],
+						"document_type_u_r": "Identity",
+						"id_number_u_r": doc.get(doc_map["number"]),
+						"file_u_r": file_url,
+						"expiry_date_u_r": doc.get(doc_map["expiry"])
+					})
 
 		doc.flags.ignore_permissions = True
 		doc.save()

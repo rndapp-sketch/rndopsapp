@@ -23,6 +23,17 @@
         "whatsapp_number_u_r",
         "alternate_mobile_number_u_r",
         "email_address_u_r",
+        "aadhaar_number_u_r",
+        "aadhaar_expiry_u_r",
+        "aadhaar_file_u_r",
+        "aadhaar_file_back_u_r",
+        "pan_number_u_r",
+        "pan_expiry_u_r",
+        "pan_file_u_r",
+        "other_identity_number_u_r",
+        "other_expiry_u_r",
+        "other_file_u_r",
+        "other_file_back_u_r",
         "user_affiliation_detail_section_u_r",
         "institution_details_u_r",
         "personal_history_section_u_r",
@@ -214,17 +225,20 @@
         {
             "fieldname": "personal_information_section_u_r",
             "fieldtype": "Section Break",
-            "label": "Personal Information"
+            "label": "Personal Information",
+            "depends_on": "eval:doc.profile_type_u_r=='Individual (For Honorarium)'"
         },
         {
             "fieldname": "personal_history_section_u_r",
             "fieldtype": "Section Break",
-            "label": "Personal History"
+            "label": "Personal History",
+            "depends_on": "eval:doc.profile_type_u_r=='Individual (For Honorarium)'"
         },
         {
             "fieldname": "organization_basic_details_section_u_r",
             "fieldtype": "Section Break",
-            "label": "Organization Basic Details"
+            "label": "Organization Basic Details",
+            "depends_on": "eval:doc.profile_type_u_r!='Individual (For Honorarium)'"
         },
         {
             "fieldname": "financial_and_documents_common_section_u_r",
@@ -316,12 +330,14 @@
         {
             "fieldname": "vendor_declarations_and_signatory_section_u_r",
             "fieldtype": "Section Break",
-            "label": "Vendor Declarations and Signatory"
+            "label": "Vendor Declarations and Signatory",
+            "depends_on": "eval:doc.profile_type_u_r!='Individual (For Honorarium)'"
         },
         {
             "fieldname": "vendor_profile_and_statutory_section_u_r",
             "fieldtype": "Section Break",
-            "label": " Vendor Profile and Statutory"
+            "label": " Vendor Profile and Statutory",
+            "depends_on": "eval:doc.profile_type_u_r!='Individual (For Honorarium)'"
         },
         {
             "fieldname": "universal_user_u_r",
@@ -339,7 +355,8 @@
         {
             "fieldname": "user_affiliation_detail_section_u_r",
             "fieldtype": "Section Break",
-            "label": "User Affiliation Details"
+            "label": "User Affiliation Details",
+            "depends_on": "eval:doc.profile_type_u_r!='Individual (For Honorarium)'"
         },
         {
             "fieldname": "institution_details_u_r",
@@ -350,13 +367,69 @@
         {
             "fieldname": "funding_agency_section",
             "fieldtype": "Section Break",
-            "label": "Funding Agency"
+            "label": "Funding Agency",
+            "depends_on": "eval:doc.profile_type_u_r!='Individual (For Honorarium)'"
         },
         {
             "allow_in_quick_entry": 1,
             "fieldname": "funding_agency_u_r",
             "fieldtype": "Link",
             "options": "fundingagency_"
+        },
+        {
+            "fieldname": "aadhaar_number_u_r",
+            "fieldtype": "Data",
+            "label": "Aadhaar Number"
+        },
+        {
+            "fieldname": "aadhaar_expiry_u_r",
+            "fieldtype": "Date",
+            "label": "Aadhaar Expiry"
+        },
+        {
+            "fieldname": "aadhaar_file_u_r",
+            "fieldtype": "Attach",
+            "label": "Aadhaar File"
+        },
+        {
+            "fieldname": "aadhaar_file_back_u_r",
+            "fieldtype": "Attach",
+            "label": "Aadhaar File Back"
+        },
+        {
+            "fieldname": "pan_number_u_r",
+            "fieldtype": "Data",
+            "label": "PAN Number"
+        },
+        {
+            "fieldname": "pan_expiry_u_r",
+            "fieldtype": "Date",
+            "label": "PAN Expiry"
+        },
+        {
+            "fieldname": "pan_file_u_r",
+            "fieldtype": "Attach",
+            "label": "PAN File"
+        },
+        {
+            "fieldname": "other_identity_number_u_r",
+            "fieldtype": "Data",
+            "label": "Other Identity Number"
+        },
+        {
+            "fieldname": "other_expiry_u_r",
+            "fieldtype": "Date",
+            "label": "Other Expiry"
+        },
+        {
+            "fieldname": "other_file_u_r",
+            "fieldtype": "Attach",
+            "label": "Other File"
+        },
+        {
+            "fieldname": "other_file_back_u_r",
+            "fieldtype": "Attach",
+            "label": "Other File Back"
         }
     ],
     "grid_page_length": 50,

@@ -66,14 +66,7 @@ def send_otp_for_signup(email, full_name=None):
 		# ------------------------------------------------------------------
 		# 3. CHECK FOR EXISTING USER (Add this block)
 		# ------------------------------------------------------------------
-		# Check standard Frappe User table
-		if frappe.db.exists("User", email):
-			return {
-				"status": "error",
-				"message": "Email already registered. Please login or use a different email.",
-				"success": False
-			}
-		
+
 		# Check your custom Universal User table
 		if frappe.db.exists("Universal User__", {"email_u_r": email}):
 			return {
@@ -115,6 +108,7 @@ def send_otp_for_signup(email, full_name=None):
 			"status": "success",
 			"message": f"OTP sent to {email}",
 			"otp_record": otp_doc.name,
+			"otp_value": otp,
 			"email": email,
 			"success": True
 		}
@@ -164,7 +158,8 @@ def verify_otp(email, otp_value):
 				"is_verified_u_r": 0
 			},
 			order_by="creation desc",
-			limit=1
+			limit=1,
+			ignore_permissions=True
 		)
 		
 		if not otp_records:
@@ -174,7 +169,7 @@ def verify_otp(email, otp_value):
 				"success": False
 			}
 		
-		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name)
+		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name, ignore_permissions=True)
 		
 		# Check if OTP is expired
 		if _is_otp_expired(otp_doc):
@@ -259,14 +254,15 @@ def resend_otp(email):
 				"is_verified_u_r": 0
 			},
 			order_by="creation desc",
-			limit=1
+			limit=1,
+			ignore_permissions=True
 		)
 		
 		if not otp_records:
 			# If no unverified OTP exists, create a new one
 			return send_otp_for_signup(email)
 		
-		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name)
+		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name, ignore_permissions=True)
 		
 		# Check resend limit (max 3 resends)
 		if otp_doc.resent_count_u_r >= 3:
@@ -291,6 +287,8 @@ def resend_otp(email):
 		return {
 			"status": "success",
 			"message": f"OTP resent to {email}",
+			"otp_value": otp_doc.otp_u_r,
+			"email": email,
 			"resend_count": otp_doc.resent_count_u_r,
 			"success": True
 		}
@@ -464,7 +462,8 @@ def create_user_with_password(email, password, full_name=None):
 				"purpose_u_r": "Registration"
 			},
 			order_by="verified_at_u_r desc",
-			limit=1
+			limit=1,
+			ignore_permissions=True
 		)
 		
 		if not otp_records:
@@ -474,15 +473,7 @@ def create_user_with_password(email, password, full_name=None):
 				"success": False
 			}
 		
-		# Check if user already exists
-		existing_user = frappe.db.exists("User", email)
-		if existing_user:
-			return {
-				"status": "error",
-				"message": "User with this email already exists",
-				"success": False
-			}
-		
+
 		existing_universal_user = frappe.db.exists("Universal User__", {"email_u_r": email})
 		if existing_universal_user:
 			return {
@@ -491,41 +482,40 @@ def create_user_with_password(email, password, full_name=None):
 				"success": False
 			}
 		
-		# Create Frappe User
-		username_part = email.split("@")[0].lower()
-		frappe_user = frappe.get_doc({
-			"doctype": "User",
-			"email": email,
-			"first_name": full_name or username_part,
-			"username": username_part,
-			"password": password,
-			"send_welcome_email": False
-		})
-		
-		frappe_user.flags.ignore_permissions = True
-		frappe_user.insert()
-		
-		frappe.logger().info(f"Frappe User created: {frappe_user.name}")
-		
+		from rndopsapp.auth_api import _hash_password
+		password_hash, password_salt = _hash_password(password)
+
 		# Create Universal User__ record
+		username_part = email.split("@")[0].lower()
 		universal_user = frappe.get_doc({
 			"doctype": "Universal User__",
+			"full_name_u_r": full_name or username_part,
 			"email_u_r": email,
+			"mobile_number_u_r": "+91 90000-00000",
 			"username_u_r": username_part,
 			"profile_type_u_r": "Individual",
 			"status_u_r": "Active",
-			"auth_user_id_u_r": frappe_user.name,
 			"is_auth_enabled_u_r": 1,
-			"auth_created_on_u_r": now_datetime()
+			"auth_created_on_u_r": now_datetime(),
+			"is_email_verified_u_r": 1,
+			"is_password_set_u_r": 1
 		})
 		
 		universal_user.flags.ignore_permissions = True
 		universal_user.insert()
+
+		frappe.db.sql("""
+			UPDATE `tabUniversal User__`
+			SET password_hash_u_r = %s,
+				password_salt_u_r = %s,
+				password_set_on_u_r = %s
+			WHERE name = %s
+		""", (password_hash, password_salt, now_datetime(), universal_user.name))
 		
 		frappe.logger().info(f"Universal User created: {universal_user.name}")
 		
 		# Link OTP to universal user
-		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name)
+		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name, ignore_permissions=True)
 		otp_doc.flags.ignore_permissions = True
 		otp_doc.universal_user_u_r = universal_user.name
 		otp_doc.save()

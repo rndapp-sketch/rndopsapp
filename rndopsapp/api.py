@@ -611,7 +611,7 @@ def _assemble_flat_child_rows(data):
 # ---- KYC / Identity flat-field assembler ----
 # The frontend sends Aadhaar / PAN / Other ID as flat fields at the top level.
 # The backend stores them as rows in the uploaded_documents_u_r child table
-# (Universal Documents__ doctype) using document_name_u_r + id_number_u_r.
+# (Universal Documents__ doctype) using document_name_u_r + id_number_u_r + file_u_r.
 
 _KYC_FLAT_FIELDS = {
 	# frontend key         : (document_name_u_r value, document_type_u_r value)
@@ -620,49 +620,91 @@ _KYC_FLAT_FIELDS = {
 	"other_identity_number": ("Other",  "Identity"),
 }
 
+# Maps frontend file/expiry keys → (document_name_u_r, child-table field to populate)
+_KYC_FILE_FIELDS = {
+	# Aadhaar files
+	"aadhaar_file":       ("Aadhaar", "file_u_r"),
+	"aadhaar_file_back":  ("Aadhaar (Back)", "file_u_r"),
+	# PAN file
+	"pan_file":           ("PAN", "file_u_r"),
+	# Other ID files
+	"other_file":         ("Other", "file_u_r"),
+	"other_file_back":    ("Other (Back)", "file_u_r"),
+}
+
+_KYC_EXPIRY_FIELDS = {
+	# frontend key        : document_name_u_r whose row gets the expiry
+	"aadhaar_expiry":     "Aadhaar",
+	"pan_expiry":         "PAN",
+	"other_expiry":       "Other",
+}
+
 
 def _assemble_kyc_child_rows(data):
 	"""
-	Convert flat KYC identity fields into rows inside the
-	uploaded_documents_u_r child table (Universal Documents__).
+	Convert flat KYC identity fields (number, file URL, expiry) into rows
+	inside the uploaded_documents_u_r child table (Universal Documents__).
 
-	For each KYC key found in data:
-	  - Remove the flat key from data
-	  - Add / update a row in data['uploaded_documents_u_r'] that has
-	    document_name_u_r = <name>, document_type_u_r = <type>,
-	    id_number_u_r = <value>
+	Handles:
+	  - aadhaar_number / pan_number / other_identity_number  → id_number_u_r
+	  - aadhaar_file / pan_file / other_file / *_back          → file_u_r
+	  - aadhaar_expiry / pan_expiry / other_expiry             → expiry_date_u_r
 
 	Mutates `data` in place and returns it.
 	"""
-	new_rows = []
-	for flat_key, (doc_name, doc_type) in _KYC_FLAT_FIELDS.items():
-		value = data.pop(flat_key, None)
-		if value not in (None, ""):
-			new_rows.append({
-				"document_name_u_r": doc_name,
-				"document_type_u_r": doc_type,
-				"id_number_u_r": str(value),
-			})
-
-	if not new_rows:
-		return data
-
 	existing = data.get("uploaded_documents_u_r", [])
 	if not isinstance(existing, list):
 		existing = []
 
-	# Build an index of already-present rows by document_name so we can update
-	# in-place rather than duplicate them.
+	# Build an index of already-present rows by document_name so we can
+	# update in-place rather than duplicate them.
 	existing_idx = {row.get("document_name_u_r"): i for i, row in enumerate(existing)}
 
-	for row in new_rows:
-		doc_name = row["document_name_u_r"]
+	def _upsert_row(doc_name, doc_type, field_name, field_value):
+		"""Insert or update a child-table row keyed by document_name_u_r."""
 		if doc_name in existing_idx:
-			existing[existing_idx[doc_name]].update(row)
+			existing[existing_idx[doc_name]][field_name] = field_value
 		else:
-			existing.append(row)
+			new_row = {
+				"document_name_u_r": doc_name,
+				"document_type_u_r": doc_type,
+				field_name: field_value,
+			}
+			existing_idx[doc_name] = len(existing)
+			existing.append(new_row)
 
-	data["uploaded_documents_u_r"] = existing
+	# 1. ID numbers (aadhaar_number, pan_number, other_identity_number)
+	for flat_key, (doc_name, doc_type) in _KYC_FLAT_FIELDS.items():
+		value = data.pop(flat_key, None)
+		if value not in (None, ""):
+			_upsert_row(doc_name, doc_type, "id_number_u_r", str(value))
+
+	# 2. File URLs (aadhaar_file, pan_file, other_file, *_back)
+	for flat_key, (doc_name, child_field) in _KYC_FILE_FIELDS.items():
+		value = data.pop(flat_key, None)
+		if value not in (None, ""):
+			# Determine doc_type from _KYC_FLAT_FIELDS or default to "Identity"
+			doc_type = "Identity"
+			for _, (dn, dt) in _KYC_FLAT_FIELDS.items():
+				if dn == doc_name or doc_name.startswith(dn):
+					doc_type = dt
+					break
+			_upsert_row(doc_name, doc_type, child_field, str(value))
+
+	# 3. Expiry dates (aadhaar_expiry, pan_expiry, other_expiry)
+	for flat_key, doc_name in _KYC_EXPIRY_FIELDS.items():
+		value = data.pop(flat_key, None)
+		if value not in (None, ""):
+			doc_type = "Identity"
+			for _, (dn, dt) in _KYC_FLAT_FIELDS.items():
+				if dn == doc_name:
+					doc_type = dt
+					break
+			_upsert_row(doc_name, doc_type, "expiry_date_u_r", str(value))
+
+	if existing:
+		data["uploaded_documents_u_r"] = existing
+
 	return data
 
 
@@ -1083,17 +1125,38 @@ def get_universal_registration_details(docname):
 		doc_dict = doc.as_dict()
 
 		# -- Inject flat KYC fields from uploaded_documents_u_r child rows --
-		# Map document_name_u_r → parent-level flat field name
-		_DOC_NAME_TO_FLAT = {
+		# Map document_name_u_r → parent-level flat field names
+		_DOC_NAME_TO_FLAT_NUMBER = {
 			"Aadhaar": "aadhaar_number_u_r",
 			"PAN":     "pan_number_u_r",
 			"Other":   "other_identity_number_u_r",
 		}
+		_DOC_NAME_TO_FLAT_FILE = {
+			"Aadhaar":        "aadhaar_file_u_r",
+			"Aadhaar (Back)": "aadhaar_file_back_u_r",
+			"PAN":            "pan_file_u_r",
+			"Other":          "other_file_u_r",
+			"Other (Back)":   "other_file_back_u_r",
+		}
+		_DOC_NAME_TO_FLAT_EXPIRY = {
+			"Aadhaar": "aadhaar_expiry_u_r",
+			"PAN":     "pan_expiry_u_r",
+			"Other":   "other_expiry_u_r",
+		}
 		for row in doc_dict.get("uploaded_documents_u_r", []):
 			doc_name = row.get("document_name_u_r", "")
-			flat_key = _DOC_NAME_TO_FLAT.get(doc_name)
+			# ID number
+			flat_key = _DOC_NAME_TO_FLAT_NUMBER.get(doc_name)
 			if flat_key and row.get("id_number_u_r"):
 				doc_dict[flat_key] = row["id_number_u_r"]
+			# File URL
+			flat_file_key = _DOC_NAME_TO_FLAT_FILE.get(doc_name)
+			if flat_file_key and row.get("file_u_r"):
+				doc_dict[flat_file_key] = row["file_u_r"]
+			# Expiry date
+			flat_expiry_key = _DOC_NAME_TO_FLAT_EXPIRY.get(doc_name)
+			if flat_expiry_key and row.get("expiry_date_u_r"):
+				doc_dict[flat_expiry_key] = row["expiry_date_u_r"]
 
 		return {
 			"status": "success",
