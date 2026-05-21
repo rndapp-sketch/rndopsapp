@@ -74,6 +74,14 @@ def send_otp_for_signup(email, full_name=None):
 				"message": "Email already registered. Please login or use a different email.",
 				"success": False
 			}
+
+		# Check Frappe core User table
+		if frappe.db.exists("User", email):
+			return {
+				"status": "error",
+				"message": "Email already registered in the system. Please login or use a different email.",
+				"success": False
+			}
 		# ------------------------------------------------------------------
 		
 		# 4. Generate OTP
@@ -226,12 +234,13 @@ def verify_otp(email, otp_value):
 
 
 @frappe.whitelist(allow_guest=True)
-def resend_otp(email):
+def resend_otp(email, purpose="Registration"):
 	"""
 	Resend OTP to user email
 	
 	Args:
 		email (str): User's email address
+		purpose (str): Purpose of OTP (Registration or Password Reset)
 	
 	Returns:
 		dict: Status of resend operation
@@ -250,7 +259,7 @@ def resend_otp(email):
 			"Email OTP__",
 			filters={
 				"email_u_r": email,
-				"purpose_u_r": "Registration",
+				"purpose_u_r": purpose,
 				"is_verified_u_r": 0
 			},
 			order_by="creation desc",
@@ -260,6 +269,8 @@ def resend_otp(email):
 		
 		if not otp_records:
 			# If no unverified OTP exists, create a new one
+			if purpose == "Password Reset":
+				return send_otp_for_forgot_password(email)
 			return send_otp_for_signup(email)
 		
 		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name, ignore_permissions=True)
@@ -482,6 +493,14 @@ def create_user_with_password(email, password, full_name=None):
 				"success": False
 			}
 		
+		existing_core_user = frappe.db.exists("User", email)
+		if existing_core_user:
+			return {
+				"status": "error",
+				"message": "User with this email already registered in the system",
+				"success": False
+			}
+		
 		from rndopsapp.auth_api import _hash_password
 		password_hash, password_salt = _hash_password(password)
 
@@ -543,4 +562,109 @@ def create_user_with_password(email, password, full_name=None):
 			"message": f"Failed to create account: {str(e)}",
 			"success": False
 		}
+
+@frappe.whitelist(allow_guest=True)
+def send_otp_for_forgot_password(email):
+	try:
+		if not email:
+			return {"status": "error", "message": "Email address is required", "success": False}
+		
+		# Check if user exists
+		user_records = frappe.db.get_list("Universal User__", filters={"email_u_r": email}, fields=["name", "full_name_u_r"], limit=1, ignore_permissions=True)
+		if not user_records:
+			return {"status": "error", "message": "No account found with this email address", "success": False}
+			
+		full_name = user_records[0].full_name_u_r
+		
+		otp = EmailOTP__.generate_otp(6)
+		expiry_time = add_to_date(now_datetime(), minutes=10)
+		
+		otp_doc = frappe.get_doc({
+			"doctype": "Email OTP__",
+			"email_u_r": email,
+			"otp_u_r": otp,
+			"purpose_u_r": "Password Reset",
+			"expiry_time_u_r": expiry_time,
+			"is_verified_u_r": 0,
+			"is_expired_u_r": 0,
+			"otp_attempts_u_r": 0,
+			"resent_count_u_r": 0,
+			"last_sent_at_u_r": now_datetime()
+		})
+		otp_doc.flags.ignore_permissions = True
+		otp_doc.insert()
+		
+		_send_otp_email(email, otp, expiry_time, full_name)
+		
+		return {
+			"status": "success",
+			"message": f"OTP sent to {email}",
+			"otp_value": otp,
+			"full_name": full_name,
+			"success": True
+		}
+	except frappe.PermissionError:
+		frappe.log_error(frappe.get_traceback(), "send_otp_for_forgot_password permission error")
+		return {"status": "error", "message": "Permission denied. Unable to process request.", "success": False}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "send_otp_for_forgot_password error")
+		msg = str(e) if str(e) else "An unknown error occurred"
+		return {"status": "error", "message": msg, "success": False}
+
+@frappe.whitelist(allow_guest=True)
+def reset_password_with_otp(email, otp_value, new_password, confirm_password):
+	try:
+		if new_password != confirm_password:
+			return {"status": "error", "message": "Passwords do not match", "success": False}
+			
+		if len(new_password) < 8:
+			return {"status": "error", "message": "Password must be at least 8 characters long", "success": False}
+			
+		# Find OTP record
+		otp_records = frappe.get_list("Email OTP__", filters={"email_u_r": email, "purpose_u_r": "Password Reset", "is_verified_u_r": 0}, order_by="creation desc", limit=1, ignore_permissions=True)
+		if not otp_records:
+			return {"status": "error", "message": "No valid OTP found. Please request a new one.", "success": False}
+			
+		otp_doc = frappe.get_doc("Email OTP__", otp_records[0].name, ignore_permissions=True)
+		
+		if _is_otp_expired(otp_doc):
+			return {"status": "error", "message": "OTP has expired. Please request a new one.", "success": False}
+			
+		if otp_doc.otp_attempts_u_r >= 3:
+			return {"status": "error", "message": "Maximum attempts exceeded. Please request a new one.", "success": False}
+			
+		if otp_doc.otp_u_r != str(otp_value):
+			otp_doc.flags.ignore_permissions = True
+			otp_doc.otp_attempts_u_r += 1
+			otp_doc.save()
+			return {"status": "error", "message": f"Invalid OTP. Attempts remaining: {3 - otp_doc.otp_attempts_u_r}", "success": False}
+			
+		# Valid OTP, update password
+		otp_doc.flags.ignore_permissions = True
+		otp_doc.is_verified_u_r = 1
+		otp_doc.verified_at_u_r = now_datetime()
+		otp_doc.save()
+		
+		user_records = frappe.get_list("Universal User__", filters={"email_u_r": email}, limit=1, ignore_permissions=True)
+		if not user_records:
+			return {"status": "error", "message": "User not found", "success": False}
+			
+		universal_user = frappe.get_doc("Universal User__", user_records[0].name, ignore_permissions=True)
+		
+		from rndopsapp.auth_api import _hash_password
+		password_hash, password_salt = _hash_password(new_password)
+		
+		frappe.db.sql("""
+			UPDATE `tabUniversal User__`
+			SET password_hash_u_r = %s,
+				password_salt_u_r = %s,
+				password_set_on_u_r = %s,
+				is_password_set_u_r = 1
+			WHERE name = %s
+		""", (password_hash, password_salt, now_datetime(), universal_user.name))
+		
+		return {"status": "success", "message": "Password reset successfully", "success": True}
+		
+	except Exception as e:
+		return {"status": "error", "message": str(e), "success": False}
 
