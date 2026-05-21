@@ -45,7 +45,8 @@
   "justification_by_committee",
   "section_break_orders",
   "appointment_order_number",
-  "medical_report_number"
+  "medical_report_number",
+  "joining_report_number"
  ],
  "fields": [
   {
@@ -254,11 +255,16 @@
    "fieldname": "scr_id",
    "fieldtype": "Data",
    "label": "SCR Id"
+  },
+  {
+   "fieldname": "joining_report_number",
+   "fieldtype": "Data",
+   "label": "Joining Report Number"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-14 11:49:49.480773",
+ "modified": "2026-05-21 22:25:34.221121",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Selection Candidate Details",

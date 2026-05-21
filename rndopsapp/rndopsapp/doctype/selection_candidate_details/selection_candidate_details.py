@@ -338,6 +338,12 @@ def update_medical_report_number(docname, medical_report_number):
 
 
 @frappe.whitelist()
+def update_joining_report_number(docname, joining_report_number):
+    """Update only the joining_report_number field."""
+    return _update_single_field(docname, "joining_report_number", joining_report_number)
+
+
+@frappe.whitelist()
 def update_wl_number(docname, wl_number):
     """Update only the wl_number (waitlist number) field."""
     return _update_single_field(docname, "wl_number", wl_number)

@@ -9,6 +9,8 @@
   "workflow_state",
   "scr_id",
   "pi_id",
+  "application_id",
+  "project_no",
   "ps_emp_id",
   "ps_first_name",
   "ps_middle_name",
@@ -25,6 +27,7 @@
   "ps_permanent_address",
   "ps_pan",
   "ps_aadhar_number",
+  "bank_account_number",
   "ps_blood_group",
   "ps_gender",
   "ps_maritial_status",
@@ -33,10 +36,10 @@
   "ps_basic_salary",
   "ps_hra",
   "ps_ma",
+  "ps_ta",
+  "ps_ta_amount",
   "ps_hostel",
   "ps_citizenship",
-  "ps_aon",
-  "ps_mro",
   "upload_section_section",
   "ps_photo",
   "ps_signature",
@@ -158,17 +161,6 @@
    "label": "Citizenship"
   },
   {
-   "fieldname": "ps_aon",
-   "fieldtype": "Data",
-   "label": "Appointment Order Number"
-  },
-  {
-   "fieldname": "ps_mro",
-   "fieldtype": "Data",
-   "hidden": 1,
-   "label": "Medical Report Number"
-  },
-  {
    "fieldname": "ps_emp_id",
    "fieldtype": "Data",
    "label": "Employee Id"
@@ -217,6 +209,12 @@
    "label": "PI Id"
   },
   {
+   "fieldname": "application_id",
+   "fieldtype": "Data",
+   "label": "Application Id",
+   "read_only": 1
+  },
+  {
    "fieldname": "ps_gender",
    "fieldtype": "Select",
    "label": "Gender",
@@ -251,13 +249,35 @@
    "fieldname": "ps_term_completion_date",
    "fieldtype": "Date",
    "label": "Term Completion Date"
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number"
+  },
+  {
+   "fieldname": "bank_account_number",
+   "fieldtype": "Data",
+   "label": "Bank Account Number"
+  },
+  {
+   "fieldname": "ps_ta",
+   "fieldtype": "Select",
+   "label": "If Travel Allowance Needed",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.ps_ta == \"Yes\";",
+   "fieldname": "ps_ta_amount",
+   "fieldtype": "Data",
+   "label": "Travel Allowance Amount"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-14 16:01:11.926029",
+ "modified": "2026-05-21 22:31:45.721511",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Staff Details",

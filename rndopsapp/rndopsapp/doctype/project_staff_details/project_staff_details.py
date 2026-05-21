@@ -138,11 +138,28 @@ def save_project_staff_details_data(data):
 			if doc.docstatus == 1:
 				frappe.throw(_("Cannot edit a submitted document. Use the workflow action endpoint instead."))
 		else:
+			# Enforce a single Joining Form per candidate. If a Project Staff Details
+			# already exists for this candidate (application_id), do not create a
+			# second one — the existing record must be opened instead.
+			application_id = data.get("application_id")
+			if application_id:
+				existing = frappe.db.get_value(
+					"Project Staff Details",
+					{"application_id": application_id},
+					["name", "workflow_state"],
+					as_dict=True,
+				)
+				if existing:
+					frappe.throw(
+						_("A Joining Form already exists for this candidate ({0}). Open the existing record instead of creating a new one.").format(existing.name)
+					)
 			doc = frappe.new_doc("Project Staff Details")
 
 		field_mapping = [
 			"scr_id",
 			"pi_id",
+			"application_id",
+			"project_no",
 			"ps_emp_id",
 			"ps_first_name",
 			"ps_middle_name",
@@ -165,10 +182,14 @@ def save_project_staff_details_data(data):
 			"ps_basic_salary",
 			"ps_hra",
 			"ps_ma",
+			"ps_ta",
+			"ps_ta_amount",
 			"ps_hostel",
 			"ps_citizenship",
 			"ps_aon",
 			"ps_mro",
+			"ps_jrn",
+			"bank_account_number",
 			"workflow_state",
 			"amended_from",
 		]
@@ -256,6 +277,7 @@ def get_project_staff_details_list(filters=None, limit=100):
 				"name",
 				"scr_id",
 				"pi_id",
+				"project_no",
 				"ps_emp_id",
 				"ps_first_name",
 				"ps_middle_name",
@@ -269,6 +291,8 @@ def get_project_staff_details_list(filters=None, limit=100):
 				"ps_joining_date",
 				"ps_term_completion_date",
 				"ps_aon",
+				"ps_jrn",
+				"bank_account_number",
 				"workflow_state",
 				"docstatus",
 				"modified",
@@ -281,6 +305,66 @@ def get_project_staff_details_list(filters=None, limit=100):
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Project Staff Details List Error")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_joining_by_application(application_id):
+	"""
+	Returns the existing Joining Form (Project Staff Details) for a candidate,
+	identified by application_id, or None. Used by the form to load the existing
+	record (view/edit) instead of creating a duplicate.
+	"""
+	if not application_id:
+		return {"status": "success", "data": None}
+
+	rec = frappe.db.get_value(
+		"Project Staff Details",
+		{"application_id": application_id},
+		["name", "workflow_state", "docstatus"],
+		as_dict=True,
+	)
+	# A doc is considered "submitted" (view-only) once it has moved past Draft.
+	is_submitted = bool(rec) and (
+		int(rec.docstatus or 0) >= 1
+		or (rec.workflow_state or "").strip().lower() not in ("", "draft")
+	)
+	return {
+		"status": "success",
+		"data": (
+			{
+				"docname": rec.name,
+				"workflow_state": rec.workflow_state,
+				"docstatus": rec.docstatus,
+				"is_submitted": is_submitted,
+			}
+			if rec
+			else None
+		),
+	}
+
+
+@frappe.whitelist()
+def update_joining_report_number(docname, ps_jrn):
+	"""
+	Update only the joining report number (ps_jrn) on a Project Staff Details doc.
+	Uses db.set_value so it works even when the document is submitted, mirroring
+	the appointment/medical report number update endpoints on Selection Candidate
+	Details.
+	"""
+	if not docname:
+		return {"status": "error", "message": "docname is required"}
+
+	if not frappe.db.exists("Project Staff Details", docname):
+		return {"status": "error", "message": f"Document '{docname}' not found"}
+
+	try:
+		frappe.db.set_value("Project Staff Details", docname, "ps_jrn", ps_jrn)
+		frappe.db.commit()
+		return {"status": "success", "docname": docname, "ps_jrn": ps_jrn}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), f"update ps_jrn failed for {docname}")
 		return {"status": "error", "message": str(e)}
 
 
@@ -397,6 +481,30 @@ def _sync_project_staff_to_user(doc):
 	}
 
 	save_user_data(payload)
+
+
+def _update_single_field(docname, fieldname, value):
+	"""Internal helper: update exactly one field on a Project Staff Details doc."""
+	if not docname:
+		return {"status": "error", "message": "docname is required"}
+
+	if not frappe.db.exists("Project Staff Details", docname):
+		return {"status": "error", "message": f"Document '{docname}' not found"}
+
+	try:
+		frappe.db.set_value("Project Staff Details", docname, fieldname, value)
+		frappe.db.commit()
+		return {"status": "success", "docname": docname, fieldname: value}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), f"update {fieldname} failed for {docname}")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def update_joining_report_number(docname, joining_report_number):
+	"""Update only the ps_jrn (Joining Report Number) field."""
+	return _update_single_field(docname, "ps_jrn", joining_report_number)
 
 
 @frappe.whitelist()
