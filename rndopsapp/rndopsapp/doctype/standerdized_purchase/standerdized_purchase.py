@@ -43,7 +43,7 @@ class standerdized_purchase(Document):
 	def calculate_totals(self):
 		"""Calculate row amounts for the items table and overall totals."""
 		total_basic = 0
-		for row in self.get("details_of_items_to_be_purchased", []):
+		for row in (self.get("details_of_items_to_be_purchased") or []):
 			base = flt(row.icss_qty) * flt(row.icss_rate)
 			discount = base * flt(row.icss_discount_percent) / 100
 			gst = (base - discount) * flt(row.icss_gst_percent) / 100

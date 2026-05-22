@@ -98,7 +98,7 @@ def get_rate_contract_fields(doc_name=None):
 				if hasattr(doc, field["fieldname"]):
 					prefill_data[field["fieldname"]] = getattr(doc, field["fieldname"])
 			# Include child table data
-			prefill_data["items"] = [row.as_dict() for row in doc.get("items", [])]
+			prefill_data["items"] = [row.as_dict() for row in (doc.get("items") or [])]
 
 	# Prefill current user data
 	current_user = frappe.session.user
@@ -455,4 +455,3 @@ def get_form_type_config():
 			]
 		}
 	}
-

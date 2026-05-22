@@ -1222,6 +1222,7 @@ Fetches user details (name, department, designation) for auto-populating Purchas
 | `save_icss_standardized_purchase_data` | `data` | Specific save method for Standardized Indents. |
 | `save_icss_repair_replacement_data` | `data` | Specific save method for Repair/Replacement. |
 | `get_icss_workflow_actions` | `docname` | Returns available workflow actions based on document state. |
+| `get_icss_commit_details` | `docname` | Returns project, account head, amount, and child-reference data for the shared commit panel flow. |
 | `perform_icss_action` | `docname`, `action` | Executes a workflow transition. |
 | `submit_icss` | `docname` | Shortcut helper that executes "Submit". |
 | `get_user_details_icss` | `user_email` | Returns auto-fill details for a given webmail ID. |

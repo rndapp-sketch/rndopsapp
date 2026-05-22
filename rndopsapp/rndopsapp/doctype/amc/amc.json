@@ -7,6 +7,11 @@
  "field_order": [
   "section_break_qwzc",
   "amended_from",
+  "indent_cum_sanction_sheet_id",
+  "project_no",
+  "project_ref",
+  "indent_type",
+  "workflow_state",
   "form_heading",
   "amc_po_number",
   "amc_date",
@@ -22,10 +27,11 @@
   "amc_gst",
   "amc_grand_total",
   "grand_total_in_words",
-  "section_break_gruc",
+  "section_break_xjlr",
   "html_ugvp",
   "amc_proposal_no",
   "amc_quotation_dated",
+  "section_break_gruc",
   "amc_service_provider",
   "amc_contact_service",
   "amc_email_service",
@@ -55,6 +61,42 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "indent_cum_sanction_sheet_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Indent Cum Sanction Sheet ID",
+   "options": "Indent Cum Sanction Sheet",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_ref",
+   "fieldtype": "Link",
+   "label": "Project Reference",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "indent_type",
+   "fieldtype": "Data",
+   "label": "Indent Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Workflow State",
+   "options": "Workflow State",
+   "read_only": 1
   },
   {
    "fieldname": "form_heading",
@@ -106,10 +148,10 @@
    "label": "Duration of AMC (in No. of Years)"
   },
   {
-   "description": "@___________ % of BV",
+   "description": "% of BV",
    "fieldname": "amc_value",
    "fieldtype": "Data",
-   "label": "Value of the AMC"
+   "label": "Value of the AMC @"
   },
   {
    "fieldname": "amc_other_charges",
@@ -117,10 +159,10 @@
    "label": "Add: Other Charges (Rs)"
   },
   {
-   "description": "@ _______ %",
+   "description": "%",
    "fieldname": "amc_gst",
    "fieldtype": "Data",
-   "label": "Add: GST"
+   "label": "Add: GST @"
   },
   {
    "fieldname": "amc_grand_total",
@@ -219,13 +261,17 @@
    "fieldname": "amc_declaration_1",
    "fieldtype": "Check",
    "label": "All prices/ amounts mentioned in the form are in India Rupee (INR)."
+  },
+  {
+   "fieldname": "section_break_xjlr",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-28 01:27:10.506501",
+ "modified": "2026-05-08 15:38:22.341558",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "AMC",

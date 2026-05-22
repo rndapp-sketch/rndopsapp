@@ -139,7 +139,7 @@ def get_pending_task(page_name="pending-task"):
 				actionable_states.add(transition_row.state)
 
 		# Exclude terminal/approved states — no pending action needed
-		for excluded in ("Draft", "Endorsement Approved", "Sanction Approved"):
+		for excluded in ("Draft", "Endorsement Approved", "Sanction Approved", "PO Delivered"):
 			actionable_states.discard(excluded)
 
 		# Ado_RnD: restrict strictly to Associate-Dean pending states so the

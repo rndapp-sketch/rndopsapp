@@ -103,6 +103,25 @@ def get_module_id(doctype_name: str, page_name: str = "pending-task") -> Optiona
         return None
 
 
+def resolve_module_id_override(module_id) -> Optional[int]:
+    """
+    Resolve a staged moduleId/module_id override from payload data.
+
+    Args:
+        module_id: Module ID supplied by frontend/staging payload
+
+    Returns:
+        int or None: Valid module ID override, if supplied
+    """
+    if module_id in (None, ""):
+        return None
+
+    try:
+        return int(module_id)
+    except (TypeError, ValueError):
+        return None
+
+
 def resolve_budget_head_id(budget_head) -> Optional[int]:
     """
     Resolve Budget Head ID from name or string.
@@ -195,7 +214,8 @@ class AccountHeadCommitMapper:
         bmr: Optional[str] = None,
         bill_amount: Optional[float] = None,
         frap_app_id: Optional[str] = None,
-        ref_details: Optional[str] = None
+        ref_details: Optional[str] = None,
+        module_id: Optional[int] = None
     ) -> AccountHeadCommitDTO:
         """
         Map Frappe Reimbursement document to AccountHeadCommitDTO.
@@ -208,6 +228,7 @@ class AccountHeadCommitMapper:
             bmr: BMR number (optional)
             bill_amount: Bill amount (optional)
             frap_app_id: Frap App ID (optional, defaults to project_name)
+            module_id: Optional Module Registry ID override from staged payload
 
         Returns:
             AccountHeadCommitDTO: Mapped DTO ready for validation and publishing
@@ -234,10 +255,16 @@ class AccountHeadCommitMapper:
         print(f"[COMMIT_MAPPER] final particulars_list={particulars_list}")
         particulars = ", ".join(particulars_list) if particulars_list else f"Commitment for {doc.name}"
 
-        # Get module information
-        doctype_name = getattr(doc, 'doctype', '')
-        module_id = get_module_id(doctype_name) or 7 # Default to 8 if not found
-        print(f"[COMMIT_MAPPER] Mapping doctype '{doctype_name}' to module_id: {module_id}")
+        # Get module information. Payload override is required for ICSS PO
+        # re-commit where the business module differs from the parent doctype.
+        override_module_id = resolve_module_id_override(module_id)
+        if override_module_id is not None:
+            resolved_module_id = override_module_id
+            print(f"[COMMIT_MAPPER] Using staged module_id override: {resolved_module_id}")
+        else:
+            doctype_name = getattr(doc, 'doctype', '')
+            resolved_module_id = get_module_id(doctype_name) or 7
+            print(f"[COMMIT_MAPPER] Mapping doctype '{doctype_name}' to module_id: {resolved_module_id}")
 
         # Use explicit frap_app_id if provided, otherwise fall back to project_name
         resolved_frap_app_id = frap_app_id if frap_app_id is not None else (project_name or "")
@@ -253,7 +280,7 @@ class AccountHeadCommitMapper:
             commitAmount=flt(commit_amount),
             status="COMMITTED",
             frapAppId=resolved_frap_app_id,
-            moduleId=module_id,
+            moduleId=resolved_module_id,
             billAmount=flt(bill_amount) if bill_amount is not None else None
         )
 
@@ -269,7 +296,8 @@ class AccountHeadCommitMapper:
         bmr: Optional[str] = None,
         bill_amount: Optional[float] = None,
         frap_app_id: Optional[str] = None,
-        ref_details: Optional[str] = None
+        ref_details: Optional[str] = None,
+        module_id: Optional[int] = None
     ) -> AccountHeadCommitEvent:
         """
         Map Frappe Reimbursement document to AccountHeadCommitEvent.
@@ -283,11 +311,22 @@ class AccountHeadCommitMapper:
             bmr: BMR number (optional)
             bill_amount: Bill amount (optional)
             frap_app_id: Frap App ID (optional, defaults to project_name)
+            module_id: Optional Module Registry ID override from staged payload
 
         Returns:
             AccountHeadCommitEvent: Event wrapper ready for Kafka publishing
         """
-        dto = cls.map_to_dto(doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details)
+        dto = cls.map_to_dto(
+            doc,
+            commit_amount,
+            budget_head,
+            project_name,
+            bmr,
+            bill_amount,
+            frap_app_id,
+            ref_details,
+            module_id
+        )
         return AccountHeadCommitEvent(dto)
 
 

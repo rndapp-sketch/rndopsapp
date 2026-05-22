@@ -333,13 +333,13 @@ def get_commits_by_account_head_and_status(account_head_id, status):
 # ==========================================
 
 @frappe.whitelist()
-def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None):
+def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None, moduleId=None, module_id=None):
     """
     Submit commit data by staging it in Kafka Commit Staging.
     It will be published to Kafka later upon workflow reaching 'Approved' (Dean Approval).
     Works for Reimbursement, Travel, Temporary Advance, Advance Settlement, etc.
     """
-    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular}")
+    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular} moduleId={moduleId} module_id={module_id}")
     try:
         # Basic validation
         if not frappe.db.exists(doctype, name):
@@ -357,6 +357,9 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
             "ref_details": refDetails,
             "commit_particular": commitParticular
         }
+        module_override = moduleId if moduleId is not None else module_id
+        if module_override is not None:
+            payload["moduleId"] = module_override
         print(f"[COMMIT_STAGING] Payload built: {payload}")
 
         # Check if a staging doc already exists for this reference
@@ -393,7 +396,8 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
 
 def check_workflow_and_publish(doc, method=None):
     """
-    Centralized workflow hook to publish staged commit data when approved by Dean (state: Approved).
+    Centralized workflow hook to publish staged commit data when the document
+    reaches its approval-complete workflow state.
     Triggered on_update of documents.
     """
     applicable_doctypes = [
@@ -406,6 +410,7 @@ def check_workflow_and_publish(doc, method=None):
         "Travel",
         "TA DA Settlement",
         "Recruitment Adhoc Contractual",
+        "Indent Cum Sanction Sheet",
         "Indent General Form"
     ]
 
@@ -415,16 +420,23 @@ def check_workflow_and_publish(doc, method=None):
     current_state = doc.get("workflow_state")
     print(f"[CHECK_WORKFLOW] doctype={doc.doctype} name={doc.name} current_state={current_state}")
 
-    if current_state != "Approved":
-        print(f"[CHECK_WORKFLOW] Skipping — state is '{current_state}', not Approved")
+    # Most modules publish on "Approved". ICSS now routes Dean / Associate Dean
+    # approval to "Pending PO Generation", so treat that as the publish trigger
+    # while keeping "Approved" for backward compatibility.
+    trigger_states = {"Approved"}
+    if doc.doctype == "Indent Cum Sanction Sheet":
+        trigger_states = {"Approved", "Pending PO Generation"}
+
+    if current_state not in trigger_states:
+        print(f"[CHECK_WORKFLOW] Skipping — state is '{current_state}', not in publish trigger states {sorted(trigger_states)}")
         return
 
-    # Idempotency: only publish when transitioning INTO Approved
+    # Idempotency: only publish when transitioning INTO a trigger state
     doc_before = doc.get_doc_before_save()
     prev_state = doc_before.get("workflow_state") if doc_before else None
     print(f"[CHECK_WORKFLOW] prev_state={prev_state}")
-    if doc_before and prev_state == "Approved":
-        print(f"[CHECK_WORKFLOW] Skipping — was already Approved before save (idempotency guard)")
+    if doc_before and prev_state in trigger_states:
+        print(f"[CHECK_WORKFLOW] Skipping — was already in a publish trigger state before save (idempotency guard)")
         return
 
     # Look for pending staging docs
@@ -464,7 +476,8 @@ def check_workflow_and_publish(doc, method=None):
                 bmr=payload.get("bmr"),
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
-                ref_details=payload.get("ref_details")
+                ref_details=payload.get("ref_details"),
+                module_id=payload.get("moduleId") or payload.get("module_id")
             )
             print(f"[CHECK_WORKFLOW] kafka_publish_commit returned: {success}")
 
@@ -533,7 +546,8 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
                 bmr=payload.get("bmr"),
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
-                ref_details=payload.get("ref_details")
+                ref_details=payload.get("ref_details"),
+                module_id=payload.get("moduleId") or payload.get("module_id")
             )
             print(f"[MANUAL_PUBLISH] kafka_publish_commit returned: {success}")
 

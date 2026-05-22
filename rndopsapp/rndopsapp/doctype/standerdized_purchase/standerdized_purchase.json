@@ -11,7 +11,6 @@
   "project_no",
   "project_ref",
   "indent_type",
-  "workflow_state",
   "standardized_item_details",
   "sp_manufacturer_name",
   "sp_reasons_not_accept",
@@ -78,14 +77,6 @@
    "fieldname": "indent_type",
    "fieldtype": "Data",
    "label": "Indent Type",
-   "read_only": 1
-  },
-  {
-   "fieldname": "workflow_state",
-   "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Workflow State",
-   "options": "Workflow State",
    "read_only": 1
   },
   {

@@ -8,17 +8,12 @@
  "field_order": [
   "section_break_jmgm",
   "amended_from",
+  "indent_cum_sanction_sheet_id",
+  "project_no",
+  "project_ref",
+  "indent_type",
   "section_break_eyku",
   "select_form_type",
-  "section_break_ivll",
-  "email_id",
-  "employee_class",
-  "indentor",
-  "applicant_designation",
-  "applicant_department",
-  "is_project_of_other_pi",
-  "pi_head_mentor_user_id",
-  "current_approver",
   "section_break_piwc",
   "project_number",
   "account_head",
@@ -56,8 +51,7 @@
   "rate_contract_total",
   "rate_contract_packing",
   "rate_contract_grand_total",
-  "amount_in_words",
-  "workflow_state"
+  "amount_in_words"
  ],
  "fields": [
   {
@@ -75,45 +69,37 @@
    "search_index": 1
   },
   {
-   "depends_on": "eval: doc.select_form_type == \"P4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)\" || doc.select_form_type == \"P3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\"\n",
-   "fieldname": "section_break_ivll",
-   "fieldtype": "Section Break"
+   "fieldname": "indent_cum_sanction_sheet_id",
+   "fieldtype": "Link",
+   "label": "Indent Cum Sanction Sheet ID",
+   "options": "Indent Cum Sanction Sheet",
+   "read_only": 1,
+   "reqd": 1
   },
   {
-   "default": "Select",
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_ref",
+   "fieldtype": "Link",
+   "label": "Project Reference",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "indent_type",
+   "fieldtype": "Data",
+   "label": "Indent Type",
+   "read_only": 1
+  },
+  {
    "fieldname": "select_form_type",
    "fieldtype": "Select",
    "label": "Select Form Type",
-   "options": "Select\nP3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\nP4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)"
-  },
-  {
-   "fetch_from": "email_id.full_name",
-   "fieldname": "indentor",
-   "fieldtype": "Data",
-   "label": "Indentor",
-   "options": "User",
-   "read_only_depends_on": "eval:doc.email_id && doc.indentor"
-  },
-  {
-   "fieldname": "email_id",
-   "fieldtype": "Link",
-   "label": "Email ID",
-   "options": "User"
-  },
-  {
-   "default": "Select",
-   "fetch_from": "email_id.designation_name",
-   "fieldname": "applicant_designation",
-   "fieldtype": "Data",
-   "label": "Designation",
-   "read_only_depends_on": "eval:doc.email_id && doc.applicant_designation"
-  },
-  {
-   "fetch_from": "email_id.department_name",
-   "fieldname": "applicant_department",
-   "fieldtype": "Data",
-   "label": "Department / Centre / Section",
-   "read_only_depends_on": "eval:doc.email_id && doc.applicant_department"
+   "options": "\nP3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\nP4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)"
   },
   {
    "fieldname": "project_number",
@@ -336,19 +322,6 @@
    "label": "Name of other PI"
   },
   {
-   "fieldname": "is_project_of_other_pi",
-   "fieldtype": "Select",
-   "label": "Is Project of other PI?",
-   "options": "\nYes\nNo"
-  },
-  {
-   "fetch_from": "email_id.empclass",
-   "fieldname": "employee_class",
-   "fieldtype": "Data",
-   "label": "Employee Class",
-   "read_only": 1
-  },
-  {
    "fetch_from": "other_pi_email.empclass",
    "fieldname": "emp_class_other_pi",
    "fieldtype": "Data",
@@ -363,29 +336,10 @@
    "read_only": 1
   },
   {
-   "fetch_from": "email_id.piheadmentor_user_id",
-   "fieldname": "pi_head_mentor_user_id",
-   "fieldtype": "Select",
-   "label": "PI/Head/Mentor User Id",
-   "read_only": 1
-  },
-  {
    "fetch_from": "other_pi_email.piheadmentor_user_id",
    "fieldname": "piheadmentor_user_id_other_pi",
    "fieldtype": "Select",
    "label": "PI/Head/Mentor User Id (Other PI)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "current_approver",
-   "fieldtype": "Link",
-   "label": "Current Approver",
-   "options": "User"
-  },
-  {
-   "fieldname": "workflow_state",
-   "fieldtype": "Data",
-   "label": "Workflow State",
    "read_only": 1
   }
  ],
@@ -393,7 +347,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 14:20:47.193446",
+ "modified": "2026-05-08 16:17:52.631741",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Rate Contract",

@@ -42,9 +42,7 @@ class repair_replacement(Document):
 
 	def calculate_totals(self):
 		"""Calculate repair grand total = repair expenditure + other charges."""
-		# rr_other_charges is a Column Break (layout only), not a data field.
-		# Grand total is sum of repair expenditure (no addable other-charges field).
-		self.rr_grand_total = flt(self.rr_repair_expenditure)
+		self.rr_grand_total = flt(self.rr_repair_expenditure) + flt(self.rr_other_charges)
 
 
 # =============================================================================

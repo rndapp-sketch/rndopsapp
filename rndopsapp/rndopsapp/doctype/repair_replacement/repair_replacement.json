@@ -7,10 +7,11 @@
  "field_order": [
   "section_break_5hhb",
   "amended_from",
+  "indent_cum_sanction_sheet_id",
   "project_no",
   "project_ref",
+  "indent_type",
   "section_rr",
-  "rr_other_charges",
   "rr_item_name",
   "rr_po_number",
   "rr_justification",
@@ -21,6 +22,7 @@
   "rr_indentor_contact",
   "rr_proposed_carrier",
   "rr_repair_expenditure",
+  "rr_other_charges",
   "rr_grand_total",
   "rr_mode_of_payment",
   "file_upload_section",
@@ -28,8 +30,7 @@
   "rr_upload_estimate",
   "rr_upload_service_report",
   "declaration_section",
-  "rr_dec_1",
-  "workflow_state"
+  "rr_dec_1"
  ],
  "fields": [
   {
@@ -47,14 +48,32 @@
    "search_index": 1
   },
   {
+   "fieldname": "indent_cum_sanction_sheet_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Indent Cum Sanction Sheet ID",
+   "options": "Indent Cum Sanction Sheet",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
    "fieldname": "project_no",
    "fieldtype": "Data",
-   "label": "project_no"
+   "label": "Project Number",
+   "read_only": 1
   },
   {
    "fieldname": "project_ref",
+   "fieldtype": "Link",
+   "label": "Project Reference",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "indent_type",
    "fieldtype": "Data",
-   "label": "project_ref"
+   "label": "Indent Type",
+   "read_only": 1
   },
   {
    "fieldname": "section_rr",
@@ -114,12 +133,12 @@
   },
   {
    "fieldname": "rr_other_charges",
-   "fieldtype": "Column Break",
+   "fieldtype": "Currency",
    "label": "Add: Other Charges (Freight, Custom Duty, etc.)"
   },
   {
    "fieldname": "rr_grand_total",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
    "label": "Grand Total (Rs)"
   },
   {
@@ -157,19 +176,13 @@
    "fieldname": "rr_dec_1",
    "fieldtype": "Check",
    "label": " All prices/ amounts mentioned in the form are in India Rupee (INR)."
-  },
-  {
-   "fieldname": "workflow_state",
-   "fieldtype": "Data",
-   "label": "Workflow State",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 14:20:46.387454",
+ "modified": "2026-05-08 15:23:00.756047",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "repair_replacement",
