@@ -425,6 +425,11 @@ def perform_project_staff_details_action(docname, action):
 		if action == "Approve" and "Ado_RnD" in frappe.get_roles():
 			_sync_project_staff_to_user(updated)
 
+		# Once the document reaches the 'Approved' state, capture a tenure row
+		# (joining date / term completion date / basic salary) in the child table.
+		if (updated.workflow_state or "") == "Approved":
+			_populate_tenure_on_approval(updated)
+
 		frappe.db.commit()
 
 		return {
@@ -439,6 +444,35 @@ def perform_project_staff_details_action(docname, action):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Project Staff Details Action Error")
 		return {"status": "error", "message": str(e)}
+
+
+def _populate_tenure_on_approval(doc):
+	"""
+	On approval, add a row to the 'Project Staff Tenure Details' (table_ymed)
+	child table capturing the joining date, term completion date and basic salary
+	from the parent. Other child fields are left blank. Idempotent: skips if a row
+	with the same joining date already exists.
+	"""
+	joining_date = doc.get("ps_joining_date")
+	term_completion_date = doc.get("ps_term_completion_date")
+	basic_salary = doc.get("ps_basic_salary")
+
+	# Nothing meaningful to record.
+	if not (joining_date or term_completion_date or basic_salary):
+		return
+
+	# Avoid duplicating the row if approval is re-triggered.
+	for row in (doc.get("table_ymed") or []):
+		if str(row.pstd_joining_date or "") == str(joining_date or "") and \
+			str(row.pstd_basic_salary or "") == str(basic_salary or ""):
+			return
+
+	doc.append("table_ymed", {
+		"pstd_joining_date": joining_date,
+		"pstd_term_completion_date": term_completion_date,
+		"pstd_basic_salary": basic_salary,
+	})
+	doc.save(ignore_permissions=True)
 
 
 def _sync_project_staff_to_user(doc):

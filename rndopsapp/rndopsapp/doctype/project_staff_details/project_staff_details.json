@@ -178,7 +178,6 @@
   {
    "fieldname": "table_ymed",
    "fieldtype": "Table",
-   "hidden": 1,
    "label": "Tenure Details",
    "options": "Project Staff Tenure Details"
   },
@@ -277,7 +276,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-21 22:31:45.721511",
+ "modified": "2026-05-22 13:05:45.671309",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Staff Details",
