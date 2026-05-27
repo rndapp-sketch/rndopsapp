@@ -17,24 +17,27 @@ def _extract_eval(expression):
 
 
 class ProjectStaffDetails(Document):
-	def before_insert(self):
-		if not self.ps_emp_id:
-			self.ps_emp_id = generate_emp_id()
+	# Employee ID is allocated when the staff submits the joining form
+	# (see `submit_project_staff_details`), not at draft-insert time, so
+	# abandoned drafts don't burn numbers in the series.
+	pass
 
 
 def generate_emp_id():
+	"""
+	Allocate the next Employee ID for the current calendar year in the format
+	YYYYTS0001 (e.g. 2026TS0001, 2026TS0002 ...).
+
+	Uses Frappe's `make_autoname` which atomically increments the underlying
+	`tabSeries` row, so two concurrent submissions can't collide on the same
+	number. The series row is auto-created on first use.
+	"""
 	from frappe.utils import nowdate
+	from frappe.model.naming import make_autoname
 
 	year = nowdate()[:4]
-	series_key = f"{year}PS"
-
-	if not frappe.db.exists("Series", series_key):
-		frappe.db.sql("INSERT INTO `tabSeries` (name, current) VALUES (%s, 0)", series_key)
-
-	frappe.db.sql("UPDATE `tabSeries` SET current = current + 1 WHERE name = %s", series_key)
-	current = frappe.db.sql("SELECT current FROM `tabSeries` WHERE name = %s", series_key)[0][0]
-
-	return f"{series_key}{str(current).zfill(4)}"
+	# ".####" -> 4-digit zero-padded counter scoped to the "{year}TS" prefix.
+	return make_autoname(f"{year}TS.####")
 
 
 @frappe.whitelist()
@@ -42,7 +45,7 @@ def get_next_emp_id():
 	from frappe.utils import nowdate
 
 	year = nowdate()[:4]
-	series_key = f"{year}PS"
+	series_key = f"{year}TS"
 	current = frappe.db.sql("SELECT current FROM `tabSeries` WHERE name = %s", series_key)
 	next_num = (current[0][0] if current else 0) + 1
 	return f"{series_key}{str(next_num).zfill(4)}"
@@ -155,12 +158,17 @@ def save_project_staff_details_data(data):
 					)
 			doc = frappe.new_doc("Project Staff Details")
 
+		# NOTE: ps_emp_id is intentionally NOT in this list. It is server-owned
+		# and gets allocated exactly once on the first successful Submit (see
+		# `submit_project_staff_details`). Accepting it from the client caused
+		# the preview value (e.g. 2026TS0001) to be persisted on save, which
+		# then short-circuited the real allocation at submit time and made
+		# every candidate end up with the same ID.
 		field_mapping = [
 			"scr_id",
 			"pi_id",
 			"application_id",
 			"project_no",
-			"ps_emp_id",
 			"ps_first_name",
 			"ps_middle_name",
 			"ps_last_name",
@@ -232,13 +240,24 @@ def save_project_staff_details_data(data):
 			doc.insert(ignore_permissions=True)
 
 		# Now that the doc has a name, save any base64 file uploads and link them.
+		# Frontend sends `file_data` as pure base64 (no data URL prefix). One bad
+		# attachment must not abort the entire save — log and continue.
 		attachments_updated = False
 		for field in attach_fields:
 			value = data.get(field)
-			if isinstance(value, dict) and value.get("file_data"):
+			if not (isinstance(value, dict) and value.get("file_data")):
+				continue
+
+			file_data = value["file_data"]
+			# Defensive: strip a `data:<mime>;base64,` prefix in case an older
+			# client sends a data URL. save_file(decode=True) cannot handle it.
+			if isinstance(file_data, str) and file_data.startswith("data:") and "," in file_data:
+				file_data = file_data.split(",", 1)[1]
+
+			try:
 				saved_file = save_file(
 					value.get("file_name", "attachment"),
-					value["file_data"],
+					file_data,
 					"Project Staff Details",
 					doc.name,
 					decode=True,
@@ -247,6 +266,16 @@ def save_project_staff_details_data(data):
 				)
 				doc.set(field, saved_file.file_url)
 				attachments_updated = True
+			except Exception as upload_err:
+				frappe.log_error(
+					frappe.get_traceback(),
+					f"PSD attach upload failed for field {field} on {doc.name}",
+				)
+				# Surface as a non-fatal message; keep going with the save.
+				frappe.msgprint(
+					_("Could not save attachment for {0}: {1}").format(field, upload_err),
+					indicator="orange",
+				)
 
 		if attachments_updated:
 			doc.save(ignore_permissions=True)
@@ -544,6 +573,41 @@ def update_joining_report_number(docname, joining_report_number):
 @frappe.whitelist()
 def submit_project_staff_details(docname):
 	"""
-	Convenience endpoint to trigger the 'Submit' workflow action (Draft → Pending HoS Approval).
+	Staff-facing submit endpoint. Triggers the 'Submit' workflow action
+	(Draft -> Pending HoS Approval) and, on the *first* submit, allocates a
+	fresh Employee ID for the candidate (idempotent: re-submitting an already
+	allotted record reuses the existing ps_emp_id rather than burning a new
+	one from the series).
+
+	Returns the allotted `ps_emp_id` alongside the workflow result so the UI
+	can surface it in the post-submit confirmation alert without an extra
+	round trip.
 	"""
-	return perform_project_staff_details_action(docname, "Submit")
+	if not docname:
+		return {"status": "error", "message": "docname is required"}
+
+	if not frappe.db.exists("Project Staff Details", docname):
+		return {"status": "error", "message": f"Document '{docname}' not found"}
+
+	# Capture the workflow state BEFORE we attempt the transition. We only
+	# allocate a fresh Employee ID when this call is the doc's first Submit
+	# (was Draft / blank going in). Doing the allocation AFTER apply_workflow
+	# succeeds means a failed/forbidden transition can't burn a series number.
+	before_state = (
+		frappe.db.get_value("Project Staff Details", docname, "workflow_state") or ""
+	).strip().lower()
+
+	result = perform_project_staff_details_action(docname, "Submit")
+
+	if isinstance(result, dict) and result.get("status") == "success":
+		if before_state in ("", "draft"):
+			# First successful Submit — allocate a fresh ID, overwriting any
+			# stale preview value (e.g. "2026TS0001") that earlier client builds
+			# may have written into ps_emp_id via the save handler.
+			emp_id = generate_emp_id()
+			frappe.db.set_value("Project Staff Details", docname, "ps_emp_id", emp_id)
+			frappe.db.commit()
+		else:
+			emp_id = frappe.db.get_value("Project Staff Details", docname, "ps_emp_id")
+		result["ps_emp_id"] = emp_id
+	return result
