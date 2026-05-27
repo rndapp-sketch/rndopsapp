@@ -25,6 +25,7 @@
   "ps_fathers_name",
   "ps_present_address",
   "ps_permanent_address",
+  "erp_mail",
   "ps_pan",
   "ps_aadhar_number",
   "bank_account_number",
@@ -270,13 +271,18 @@
    "fieldname": "ps_ta_amount",
    "fieldtype": "Data",
    "label": "Travel Allowance Amount"
+  },
+  {
+   "fieldname": "erp_mail",
+   "fieldtype": "Data",
+   "label": "ERP Mail"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-22 13:05:45.671309",
+ "modified": "2026-05-27 12:30:21.472670",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Staff Details",

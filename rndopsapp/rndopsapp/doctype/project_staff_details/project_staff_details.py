@@ -198,6 +198,7 @@ def save_project_staff_details_data(data):
 			"ps_mro",
 			"ps_jrn",
 			"bank_account_number",
+			"erp_mail",
 			"workflow_state",
 			"amended_from",
 		]
@@ -322,6 +323,7 @@ def get_project_staff_details_list(filters=None, limit=100):
 				"ps_aon",
 				"ps_jrn",
 				"bank_account_number",
+				"erp_mail",
 				"workflow_state",
 				"docstatus",
 				"modified",
@@ -508,8 +510,8 @@ def _sync_project_staff_to_user(doc):
 	"""
 	Creates (or updates) a Frappe User from an approved Project Staff Details doc.
 	Field mapping:
-	  email                -> ps_email_id
-	  username             -> part of email before '@'
+	  email                -> erp_mail               (full ERP mail address)
+	  username             -> erp_mail.split('@')[0] (local part of ERP mail)
 	  first/middle/last    -> ps_first_name / ps_middle_name / ps_last_name
 	  full_name            -> first + middle + last
 	  employee_id          -> ps_emp_id
@@ -519,10 +521,10 @@ def _sync_project_staff_to_user(doc):
 	"""
 	from rndopsapp.rndopsapp.user_api.user_api import save_user_data
 
-	email = (doc.ps_email_id or "").strip()
-	if not email:
+	erp_mail = (doc.erp_mail or "").strip()
+	if not erp_mail or "@" not in erp_mail:
 		frappe.log_error(
-			"Project Staff Details {0} has no email; skipping User creation.".format(doc.name),
+			"Project Staff Details {0} has no valid erp_mail; skipping User creation.".format(doc.name),
 			"Project Staff User Sync",
 		)
 		return
@@ -530,8 +532,8 @@ def _sync_project_staff_to_user(doc):
 	full_name = " ".join(p for p in [doc.ps_first_name, doc.ps_middle_name, doc.ps_last_name] if p)
 
 	payload = {
-		"email": email,
-		"username": email.split("@")[0],
+		"email": erp_mail,
+		"username": erp_mail.split("@", 1)[0],
 		"first_name": doc.ps_first_name,
 		"middle_name": doc.ps_middle_name,
 		"last_name": doc.ps_last_name,
