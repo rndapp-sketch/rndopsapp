@@ -50,7 +50,7 @@ class WorkflowManager:
 			frappe.throw(_("Could not load {0} '{1}'").format(self.doctype, docname), exc=WorkflowError)
 
 		# ensure we read a usable current state
-		self.current_state: str = getattr(self.doc, "workflow_state", None) or "Draft"
+		self.current_state: Optional[str] = getattr(self.doc, "workflow_state", None) or "Draft"
 		self.user: str = frappe.session.user
 		self.user_roles: List[str] = frappe.get_roles(self.user) or []
 		self.workflow = self._get_workflow_doc()
@@ -60,7 +60,10 @@ class WorkflowManager:
 	# -------------------------
 	def _get_workflow_doc(self) -> Optional[frappe]:
 		"""Return Workflow doc for this doctype or None."""
-		wf_name = frappe.get_value("Workflow", {"document_type": self.doc.doctype}, "name")
+		if self.doc.doctype == "Cancellation Request" and getattr(self.doc, "source_workflow", None):
+			wf_name = f"cancel_{self.doc.source_workflow}"
+		else:
+			wf_name = frappe.get_value("Workflow", {"document_type": self.doc.doctype}, "name")
 		if not wf_name:
 			return None
 		try:
@@ -83,14 +86,13 @@ class WorkflowManager:
 		if isinstance(raw, list):
 			return [str(r).strip() for r in raw if r]
 		if isinstance(raw, str):
-			parts = []
+			raw_str = raw.strip()
+			# Keep the full unsplit string first to support roles containing commas (e.g. 'staff, RnD')
+			parts = [raw_str]
 			for sep in [",", "\n", ";"]:
-				if sep in raw:
-					parts = [p.strip() for p in raw.split(sep) if p.strip()]
-					break
-			if not parts:
-				parts = [raw.strip()]
-			return parts
+				if sep in raw_str:
+					parts.extend([p.strip() for p in raw_str.split(sep) if p.strip()])
+			return list(dict.fromkeys(p for p in parts if p))
 		return [str(raw).strip()]
 
 	def _get_state_row(self):
@@ -345,38 +347,36 @@ def get_workflow_actions(docname: str, doctype: Optional[str] = None):
 # 	wf = WorkflowManager(docname, doctype)
 # 	wf.log_debug_info()
 
+
 @frappe.whitelist()
 def log_available_workflow_actions(docname: str, doctype: Optional[str] = None):
-    """
-    Return detailed workflow debug info as a JSON object.
-    Usage: /api/method/path.to.module.log_available_workflow_actions
-    """
-    wf = WorkflowManager(docname, doctype)
-    
-    # Fetch workflow metadata
-    wf_name = frappe.get_value("Workflow", {"document_type": wf.doc.doctype}, "name")
-    
-    # specific state permissions
-    allowed_roles = wf._get_state_allowed_roles()
-    
-    # transitions valid for this state
-    transitions = wf.get_valid_transitions()
+	"""
+	Return detailed workflow debug info as a JSON object.
+	Usage: /api/method/path.to.module.log_available_workflow_actions
+	"""
+	wf = WorkflowManager(docname, doctype)
 
-    return {
-        "meta": {
-            "workflow_name": wf_name,
-            "doctype": wf.doctype,
-            "docname": wf.docname,
-            "current_state": wf.current_state
-        },
-        "user_context": {
-            "user": wf.user,
-            "roles": wf.user_roles,
-            "is_system_manager": wf._is_system_manager()
-        },
-        "permissions": {
-            "roles_allowed_to_edit_state": allowed_roles,
-            "can_user_act": wf._can_user_act()
-        },
-        "available_transitions": transitions
-    }
+	# Fetch workflow metadata
+	wf_name = frappe.get_value("Workflow", {"document_type": wf.doc.doctype}, "name")
+
+	# specific state permissions
+	allowed_roles = wf._get_state_allowed_roles()
+
+	# transitions valid for this state
+	transitions = wf.get_valid_transitions()
+
+	return {
+		"meta": {
+			"workflow_name": wf_name,
+			"doctype": wf.doctype,
+			"docname": wf.docname,
+			"current_state": wf.current_state,
+		},
+		"user_context": {
+			"user": wf.user,
+			"roles": wf.user_roles,
+			"is_system_manager": wf._is_system_manager(),
+		},
+		"permissions": {"roles_allowed_to_edit_state": allowed_roles, "can_user_act": wf._can_user_act()},
+		"available_transitions": transitions,
+	}

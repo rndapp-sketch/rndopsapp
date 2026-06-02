@@ -175,22 +175,22 @@ def get_recruitment_adhoc_contractual_fields(doc_name=None):
 def save_recruitment_adhoc_contractual_data(data):
     if isinstance(data, str):
         data = json.loads(data)
-    
+
     try:
         # Create or Get Doc
         if data.get("name"):
             doc = frappe.get_doc("Recruitment Adhoc Contractual", data.get("name"))
         else:
             doc = frappe.new_doc("Recruitment Adhoc Contractual")
-        
+
         # Fetch meta to map fields properly
         meta = frappe.get_meta("Recruitment Adhoc Contractual")
-        
+
         # Map Fields
         for f in meta.fields:
             if f.fieldtype != "Table" and f.fieldname in data:
                 doc.set(f.fieldname, data[f.fieldname])
-        
+
         if "workflow_state" in data:
             doc.set("workflow_state", data["workflow_state"])
 
@@ -261,17 +261,17 @@ def save_recruitment_adhoc_contractual_data(data):
 def get_recruitment_adhoc_contractual_workflow_actions(docname):
     """
     Get available workflow actions for the current user based on document state.
-    Utilizes standard Frappe workflow transition logic to ensure conditions and roles 
+    Utilizes standard Frappe workflow transition logic to ensure conditions and roles
     are handled consistently with the desk view.
     """
-    
-    
+
+
     doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
     transitions = get_transitions(doc)
-    
+
     # Extract unique action names
     actions = list(dict.fromkeys([t.get("action") for t in transitions]))
-    
+
     return actions
 
 
@@ -283,7 +283,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
     """
     print(f"\n--- [START] perform_recruitment_adhoc_contractual_action ---")
     print(f"Docname: {docname} | Action requested: {action}")
-    
+
     try:
         doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
         current_state = doc.workflow_state or "Draft"
@@ -312,14 +312,14 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
         print("Iterating over workflow transitions...")
         for t in workflow.transitions:
             print(f"  Checking Transition -> State: '{t.state}', Action: '{t.action}'")
-            
+
             if t.state == current_state and t.action == action:
                 print(f"    [MATCH] State & Action match found!")
-                
+
                 allowed_roles = t.get("allowed") or []
                 if isinstance(allowed_roles, str):
                     allowed_roles = [allowed_roles]
-                
+
                 print(f"    Allowed roles for transition: {allowed_roles}")
 
                 if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
@@ -418,7 +418,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
             "workflow_state": next_state,
             "next_actions": get_recruitment_adhoc_contractual_workflow_actions(docname)
         }
-        
+
     except Exception as e:
         frappe.db.rollback()
         print(f"\n--- [EXCEPTION] perform_recruitment_adhoc_contractual_action ---")
@@ -444,35 +444,12 @@ def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, 
 	"""
 	Get all Recruitment Adhoc Contractual documents for a specific PI mail and project_no.
 	"""
-	# Handle legacy parameter if passed by frontend
-	if webmail_id and not pi_mail:
-		pi_mail = webmail_id
-		
-	try:
-		filters = {}
-		if pi_mail:
-			filters["webmail_id"] = pi_mail
-		if project_no:
-			filters["upfa_project_code"] = project_no
-		if status:
-			# Remove any quotes if passed directly from URL and format (e.g. "approved" -> "Approved")
-			status_clean = status.strip('"').strip("'").title()
-			filters["workflow_state"] = status_clean
-			
-		doc_names = frappe.get_all(
-			"Recruitment Adhoc Contractual",
-			filters=filters,
-			pluck="name"
-		)
-		
-		docs = [frappe.get_doc("Recruitment Adhoc Contractual", name).as_dict() for name in doc_names]
-			
-		return {
-			"status": "success",
-			"data": docs
-		}
-	except Exception as e:
-		return {"status": "error", "message": str(e)}
+	return get_recruitment_adhoc_contractual_with_project_info(
+		pi_mail=pi_mail,
+		project_no=project_no,
+		webmail_id=webmail_id,
+		status=status,
+	)
 # END OF EDIT — MKY | 2026-05-05 12:28 IST
 # ============================================================
 
@@ -554,10 +531,53 @@ def get_recruitment_adhoc_contractual_with_project_info(pi_mail=None, project_no
 			project_cache[project_code] = info
 			return info
 
+		PARENT_FIELDS = [
+			"name",
+			"owner",
+			"creation",
+			"workflow_state",
+			"upfa_appointment_type",
+			"webmail_id",
+			"upfa_project_title",
+			"upfa_project_code",
+			"upfa_project_duration",
+			"upfa_interview_date",
+			"upfa_interview_time",
+			"mode_of_interview",
+			"upfa_interview_venue",
+			"upfa_pi_contact",
+			"last_date_of_appllication",
+			"walk_in",
+			"upfa_declaration_advertisement",
+			"doctype",
+			"upfa_selection_committee",
+		]
+
+		POST_DETAIL_FIELDS = [
+			"name",
+			"upfa_designation",
+			"upfa_vacancies",
+			"upfa_basic_pay",
+			"upfa_hra_percent",
+			"upfa_medical_required",
+			"upfa_total_amount",
+			"month_days",
+			"upfa_duration_months",
+			"upfa_qualification",
+			"upfa_justification",
+			"parent",
+			"parenttype",
+		]
+
 		docs = []
 		for name in doc_names:
-			doc_dict = frappe.get_doc("Recruitment Adhoc Contractual", name).as_dict()
-			doc_dict["project_info"] = resolve_project_info(doc_dict.get("upfa_project_code"))
+			full = frappe.get_doc("Recruitment Adhoc Contractual", name).as_dict()
+			doc_dict = {k: full.get(k) for k in PARENT_FIELDS}
+			doc_dict["upfa_post_details"] = [
+				{k: row.get(k) for k in POST_DETAIL_FIELDS}
+				for row in (full.get("upfa_post_details") or [])
+			]
+			doc_dict["project_info"] = resolve_project_info(full.get("upfa_project_code"))
 			docs.append(doc_dict)
 
 		return {"status": "success", "data": docs}

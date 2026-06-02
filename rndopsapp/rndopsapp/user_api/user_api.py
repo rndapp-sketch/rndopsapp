@@ -1,3 +1,4 @@
+# START MKY Edit - Create User API wrapper - 2026-05-19 12:35 IST
 # Copyright (c) 2026, rndops and contributors
 # For license information, please see license.txt
 
@@ -336,3 +337,4 @@ def delete_user(docname):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "User Delete Error")
 		return {"status": "error", "message": str(e)}
+# END MKY Edit - Create User API wrapper - 2026-05-19 12:35 IST

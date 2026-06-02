@@ -8,10 +8,10 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
 
-
 # =============================================================================
 # HELPER
 # =============================================================================
+
 
 def extract_eval_expression(expression):
 	"""
@@ -69,8 +69,8 @@ WORKFLOW_MAP = {
 # DOCUMENT CONTROLLER
 # =============================================================================
 
-class IndentCumSanctionSheet(Document):
 
+class IndentCumSanctionSheet(Document):
 	def before_insert(self):
 		"""Hook before document insertion."""
 		self._validate_indent_type()
@@ -84,19 +84,53 @@ class IndentCumSanctionSheet(Document):
 		self.calculate_amc_total()
 
 	def before_save(self):
-		"""Hook before saving - create or update sub-doctype."""
-		if self.icss_indent_type:
+		"""Hook before saving - update sub-doctype only for existing records."""
+		if self.get("icss_indent_type") and not self.is_new():
 			self._sync_sub_doctype()
+
+	def after_insert(self):
+		"""Hook after insertion - create sub-doctype once parent exists in DB."""
+		if self.get("icss_indent_type"):
+			self._sync_sub_doctype()
+		self._log_lifecycle_event("Created")
+
+	def on_update(self):
+		"""Hook after save/update - publish save or workflow events."""
+		workflow_action = getattr(self.flags, "icss_workflow_action", None)
+		if workflow_action:
+			self._log_lifecycle_event(f"Workflow Action: {workflow_action}")
+			self.flags.icss_workflow_action = None
+			return
+
+		if not self.is_new():
+			self._log_lifecycle_event("Saved")
 
 	def on_submit(self):
 		"""Hook on document submission - trigger sub-doctype workflow."""
-		if self.sub_doctype_reference and self.icss_indent_type:
+		if self.get("sub_doctype_reference") and self.get("icss_indent_type"):
 			self._perform_sub_doctype_workflow_action("Submit")
+		workflow_action = getattr(self.flags, "icss_workflow_action", None)
+		event_label = f"Workflow Action: {workflow_action}" if workflow_action else "Submitted"
+		self._log_lifecycle_event(event_label)
+		self.flags.icss_workflow_action = None
+
+	def on_cancel(self):
+		"""Hook on cancellation - publish cancel or workflow events."""
+		workflow_action = getattr(self.flags, "icss_workflow_action", None)
+		event_label = f"Workflow Action: {workflow_action}" if workflow_action else "Cancelled"
+		self._log_lifecycle_event(event_label)
+		self.flags.icss_workflow_action = None
 
 	def on_update_after_submit(self):
 		"""Hook after update on submitted document."""
-		if self.sub_doctype_reference and self.icss_indent_type:
+		if self.get("sub_doctype_reference") and self.get("icss_indent_type"):
 			self._sync_sub_doctype_after_submit()
+		workflow_action = getattr(self.flags, "icss_workflow_action", None)
+		if workflow_action:
+			self._log_lifecycle_event(f"Workflow Action: {workflow_action}")
+			self.flags.icss_workflow_action = None
+			return
+		self._log_lifecycle_event("Updated After Submit")
 
 	# -------------------------------------------------------------------------
 	# CORE DESIGN RULE: CENTRALIZED SUB-DOCTYPE MANAGEMENT
@@ -104,11 +138,11 @@ class IndentCumSanctionSheet(Document):
 
 	def _validate_indent_type(self):
 		"""Validate that indent_type is set and valid."""
-		if not self.icss_indent_type:
+		if not self.get("icss_indent_type"):
 			return
 
-		if self.icss_indent_type not in INDENT_TYPES:
-			frappe.throw(_("Invalid Indent Type: {0}").format(self.icss_indent_type))
+		if self.get("icss_indent_type") not in INDENT_TYPES:
+			frappe.throw(_("Invalid Indent Type: {0}").format(self.get("icss_indent_type")))
 
 	def _validate_indent_type_change(self):
 		"""Block indent_type changes after submission."""
@@ -120,19 +154,19 @@ class IndentCumSanctionSheet(Document):
 		Create or update the sub-doctype record automatically.
 		This is the single controller method for all sub-doctype operations.
 		"""
-		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.icss_indent_type)
+		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.get("icss_indent_type"))
 
 		if not sub_doctype_name:
 			frappe.log_error(
-				f"No sub-doctype mapping found for indent type: {self.icss_indent_type}",
-				"ICSS Sub-DocType Sync Error"
+				f"No sub-doctype mapping found for indent type: {self.get('icss_indent_type')}",
+				"ICSS Sub-DocType Sync Error",
 			)
 			return
 
 		# Check if sub-doctype record already exists
-		if self.sub_doctype_reference:
+		if self.get("sub_doctype_reference"):
 			try:
-				sub_doc = frappe.get_doc(sub_doctype_name, self.sub_doctype_reference)
+				sub_doc = frappe.get_doc(sub_doctype_name, self.get("sub_doctype_reference"))
 			except frappe.DoesNotExistError:
 				sub_doc = None
 		else:
@@ -149,7 +183,7 @@ class IndentCumSanctionSheet(Document):
 		self._save_sub_doctype(sub_doc)
 
 		# Update parent reference
-		if not self.sub_doctype_reference:
+		if not self.get("sub_doctype_reference"):
 			self.db_set("sub_doctype_reference", sub_doc.name, update_modified=False)
 
 	def _create_sub_doctype_record(self, sub_doctype_name):
@@ -161,16 +195,14 @@ class IndentCumSanctionSheet(Document):
 
 		# Assign mandatory linkage fields
 		sub_doc.indent_cum_sanction_sheet_id = self.name
-		sub_doc.project_ref = self.project_ref
-		sub_doc.project_no = self.project_no
-		sub_doc.indent_type = self.icss_indent_type
+		sub_doc.project_ref = self.get("project_ref")
+		sub_doc.project_no = self.get("project_no")
+		sub_doc.indent_type = self.get("icss_indent_type")
 
 		# Map parent data to sub-doctype
 		self._map_parent_data_to_subdoctype(sub_doc)
 
-		frappe.logger().info(
-			f"ICSS: Created sub-doctype {sub_doctype_name} for parent {self.name}"
-		)
+		frappe.logger().info(f"ICSS: Created sub-doctype {sub_doctype_name} for parent {self.name}")
 
 		return sub_doc
 
@@ -181,17 +213,15 @@ class IndentCumSanctionSheet(Document):
 		"""
 		# Common fields mapping
 		if hasattr(sub_doc, "project_ref"):
-			sub_doc.project_ref = self.project_ref
+			sub_doc.project_ref = self.get("project_ref")
 		if hasattr(sub_doc, "project_no"):
-			sub_doc.project_no = self.project_no
+			sub_doc.project_no = self.get("project_no")
 		if hasattr(sub_doc, "indent_cum_sanction_sheet_id"):
 			sub_doc.indent_cum_sanction_sheet_id = self.name
 		if hasattr(sub_doc, "indent_type"):
-			sub_doc.indent_type = self.icss_indent_type
+			sub_doc.indent_type = self.get("icss_indent_type")
 
-		frappe.logger().info(
-			f"ICSS: Mapped parent data to sub-doctype {sub_doc.doctype} - {sub_doc.name}"
-		)
+		frappe.logger().info(f"ICSS: Mapped parent data to sub-doctype {sub_doc.doctype} - {sub_doc.name}")
 
 	def _save_sub_doctype(self, sub_doc):
 		"""
@@ -205,13 +235,11 @@ class IndentCumSanctionSheet(Document):
 			else:
 				sub_doc.save(ignore_permissions=True)
 
-			frappe.logger().info(
-				f"ICSS: Saved sub-doctype {sub_doc.doctype} - {sub_doc.name}"
-			)
+			frappe.logger().info(f"ICSS: Saved sub-doctype {sub_doc.doctype} - {sub_doc.name}")
 		except Exception as e:
 			frappe.log_error(
 				f"Error saving sub-doctype {sub_doc.doctype}: {str(e)}\n{frappe.get_traceback()}",
-				"ICSS Sub-DocType Save Error"
+				"ICSS Sub-DocType Save Error",
 			)
 			frappe.throw(_("Failed to save sub-doctype record: {0}").format(str(e)))
 
@@ -220,29 +248,27 @@ class IndentCumSanctionSheet(Document):
 		Internal method: Trigger workflow transition on the sub-doctype.
 		Must be called only from parent controller.
 		"""
-		if not self.sub_doctype_reference:
+		if not self.get("sub_doctype_reference"):
 			return
 
-		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.icss_indent_type)
+		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.get("icss_indent_type"))
 		if not sub_doctype_name:
 			return
 
 		try:
-			sub_doc = frappe.get_doc(sub_doctype_name, self.sub_doctype_reference)
+			sub_doc = frappe.get_doc(sub_doctype_name, self.get("sub_doctype_reference"))
 
 			# Get workflow for the sub-doctype
-			workflow_name = WORKFLOW_MAP.get(self.icss_indent_type)
+			workflow_name = WORKFLOW_MAP.get(self.get("icss_indent_type"))
 			if not workflow_name:
 				frappe.logger().info(
-					f"ICSS: No workflow mapping found for indent type: {self.icss_indent_type}"
+					f"ICSS: No workflow mapping found for indent type: {self.get('icss_indent_type')}"
 				)
 				return
 
 			# Check if workflow exists
 			if not frappe.db.exists("Workflow", {"document_type": sub_doctype_name, "is_active": 1}):
-				frappe.logger().info(
-					f"ICSS: No active workflow found for {sub_doctype_name}"
-				)
+				frappe.logger().info(f"ICSS: No active workflow found for {sub_doctype_name}")
 				return
 
 			# Apply workflow action
@@ -272,7 +298,7 @@ class IndentCumSanctionSheet(Document):
 		except Exception as e:
 			frappe.log_error(
 				f"Error performing workflow action on sub-doctype: {str(e)}\n{frappe.get_traceback()}",
-				"ICSS Sub-DocType Workflow Error"
+				"ICSS Sub-DocType Workflow Error",
 			)
 
 	def _sync_sub_doctype_after_submit(self):
@@ -280,30 +306,47 @@ class IndentCumSanctionSheet(Document):
 		Internal method: Sync sub-doctype after parent update.
 		Must be called only from parent controller.
 		"""
-		if not self.sub_doctype_reference:
+		if not self.get("sub_doctype_reference"):
 			return
 
-		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.icss_indent_type)
+		sub_doctype_name = SUB_DOCTYPE_MAP.get(self.get("icss_indent_type"))
 		if not sub_doctype_name:
 			return
 
 		try:
-			sub_doc = frappe.get_doc(sub_doctype_name, self.sub_doctype_reference)
+			sub_doc = frappe.get_doc(sub_doctype_name, self.get("sub_doctype_reference"))
 			self._map_parent_data_to_subdoctype(sub_doc)
 
 			# Update without changing docstatus
 			sub_doc.flags.ignore_permissions = True
 			sub_doc.save(ignore_permissions=True)
 
-			frappe.logger().info(
-				f"ICSS: Synced sub-doctype after submit {sub_doc.doctype} - {sub_doc.name}"
-			)
+			frappe.logger().info(f"ICSS: Synced sub-doctype after submit {sub_doc.doctype} - {sub_doc.name}")
 
 		except Exception as e:
 			frappe.log_error(
 				f"Error syncing sub-doctype after submit: {str(e)}\n{frappe.get_traceback()}",
-				"ICSS Sub-DocType Sync Error"
+				"ICSS Sub-DocType Sync Error",
 			)
+
+	def _log_lifecycle_event(self, event_label):
+		"""Write ICSS lifecycle changes to server logs for debugging."""
+		try:
+			user_id = frappe.session.user if frappe.session.user and frappe.session.user != "Guest" else None
+			user_display = user_id or "System"
+			log_payload = {
+				"event": event_label,
+				"document": self.name,
+				"workflow_state": self.workflow_state or "Draft",
+				"docstatus": self.docstatus,
+				"indent_type": self.get("icss_indent_type"),
+				"project_ref": self.get("project_ref"),
+				"project_no": self.get("project_no"),
+				"triggered_by": user_display,
+			}
+			frappe.logger("icss_lifecycle").info(json.dumps(log_payload, default=str))
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "ICSS Lifecycle Log Error")
 
 	# -------------------------------------------------------------------------
 	# CALCULATION METHODS (Existing)
@@ -312,7 +355,8 @@ class IndentCumSanctionSheet(Document):
 	def calculate_item_totals(self):
 		"""Calculate row amounts for the items table and overall basic value."""
 		total_basic = 0
-		for row in self.get("icss_items", []):
+		items = self.get("icss_items") or []
+		for row in items:
 			base = flt(row.icss_qty) * flt(row.icss_rate)
 			discount = base * flt(row.icss_discount_percent) / 100
 			gst = (base - discount) * flt(row.icss_gst_percent) / 100
@@ -324,22 +368,21 @@ class IndentCumSanctionSheet(Document):
 		# Grand total = basic + packing + freight + other
 		self.icss_grand_total = (
 			flt(self.icss_total_basic_value)
-			+ flt(self.icss_packing_charges)
-			+ flt(self.icss_freight_charges)
-			+ flt(self.icss_other_charges)
+			+ flt(self.get("icss_packing_charges"))
+			+ flt(self.get("icss_freight_charges"))
+			+ flt(self.get("icss_other_charges"))
 		)
 
 	def calculate_repair_total(self):
 		"""Grand total for repair section."""
-		self.icss_repair_grand_total = (
-			flt(self.icss_repair_expenditure)
-			+ flt(self.icss_repair_other_charges)
+		self.icss_repair_grand_total = flt(self.get("icss_repair_expenditure")) + flt(
+			self.get("icss_repair_other_charges")
 		)
 
 	def calculate_amc_total(self):
 		"""Grand total for AMC section."""
-		amc_subtotal = flt(self.icss_amc_value) + flt(self.icss_amc_other_charges)
-		gst_amount = amc_subtotal * flt(self.icss_amc_gst_percent) / 100
+		amc_subtotal = flt(self.get("icss_amc_value")) + flt(self.get("icss_amc_other_charges"))
+		gst_amount = amc_subtotal * flt(self.get("icss_amc_gst_percent")) / 100
 		self.icss_amc_grand_total = amc_subtotal + gst_amount
 
 
@@ -371,9 +414,7 @@ def get_icss_indent_types():
 
 		return {
 			"status": "success",
-			"indent_types": [
-				{"value": opt, "label": opt} for opt in options
-			],
+			"indent_types": [{"value": opt, "label": opt} for opt in options],
 		}
 
 	except Exception as e:
@@ -384,6 +425,7 @@ def get_icss_indent_types():
 # ---------------------------------------------------------------------------
 # GET FIELDS  (Standard metadata API)
 # ---------------------------------------------------------------------------
+
 
 @frappe.whitelist()
 def get_icss_fields(doc_name=None):
@@ -486,8 +528,7 @@ def get_icss_fields(doc_name=None):
 			limit_page_length=0,
 		)
 		link_options["icss_account_head"] = [
-			{"value": r["value"], "label": r.get("label") or r["value"]}
-			for r in account_heads
+			{"value": r["value"], "label": r.get("label") or r["value"]} for r in account_heads
 		]
 	except Exception:
 		link_options["icss_account_head"] = []
@@ -527,11 +568,13 @@ def get_icss_fields(doc_name=None):
 			fields=["name", "script", "view"],
 		)
 		for script in scripts:
-			client_scripts.append({
-				"name": script.name,
-				"script": script.script,
-				"view": script.view,
-			})
+			client_scripts.append(
+				{
+					"name": script.name,
+					"script": script.script,
+					"view": script.view,
+				}
+			)
 	except Exception:
 		pass
 
@@ -621,6 +664,7 @@ def get_icss_fields(doc_name=None):
 # SAVE DATA  (Generic create / update)
 # ---------------------------------------------------------------------------
 
+
 @frappe.whitelist()
 def save_icss_data(data):
 	"""
@@ -687,12 +731,13 @@ def save_icss_data(data):
 		for fieldname, value in deferred_fields:
 			df = meta.get_field(fieldname)
 
-			if df.fieldtype == "Table" and isinstance(value, list):
-				doc.set(fieldname, [])  # Clear existing rows
+			if df.fieldtype == "Table":
+				rows = value if isinstance(value, list) else []
+				doc.set(fieldname, [])
 				child_meta = frappe.get_meta(df.options)
 
-				for child_row in value:
-					row_dict = child_row.copy()
+				for child_row in rows:
+					row_dict = dict(child_row or {})
 
 					# Handle file uploads inside child rows
 					for cf in child_meta.fields:
@@ -752,9 +797,19 @@ def save_icss_data(data):
 		frappe.throw(_("Failed to save Indent Cum Sanction Sheet: {0}").format(str(e)))
 
 
+@frappe.whitelist()
+def save_icss_composite_data(data):
+	"""
+	Backward-compatible API alias for legacy clients.
+	Delegates to ``save_icss_data``.
+	"""
+	return save_icss_data(data)
+
+
 # ---------------------------------------------------------------------------
 # INDENT-TYPE-SPECIFIC SAVE APIs
 # ---------------------------------------------------------------------------
+
 
 @frappe.whitelist()
 def save_icss_proprietary_purchase_data(data):
@@ -792,9 +847,7 @@ def save_icss_proprietary_purchase_data(data):
 		if not data.get("icss_items") or len(data.get("icss_items", [])) == 0:
 			frappe.throw(_("At least one item is required in the Items table."))
 
-		frappe.logger().info(
-			f"ICSS Proprietary Purchase: Creating/updating for user {frappe.session.user}"
-		)
+		frappe.logger().info(f"ICSS Proprietary Purchase: Creating/updating for user {frappe.session.user}")
 
 		return save_icss_data(data)
 
@@ -842,9 +895,7 @@ def save_icss_standardized_purchase_data(data):
 		if not data.get("icss_standardized_reasons") or len(data.get("icss_standardized_reasons", [])) == 0:
 			frappe.throw(_("At least one reason is required in the Standardized Reasons table."))
 
-		frappe.logger().info(
-			f"ICSS Standardized Purchase: Creating/updating for user {frappe.session.user}"
-		)
+		frappe.logger().info(f"ICSS Standardized Purchase: Creating/updating for user {frappe.session.user}")
 
 		return save_icss_data(data)
 
@@ -892,9 +943,7 @@ def save_icss_repair_replacement_data(data):
 		if not data.get("icss_repair_justification"):
 			frappe.throw(_("Justification is required for Repair/Replacement indent."))
 
-		frappe.logger().info(
-			f"ICSS Repair/Replacement: Creating/updating for user {frappe.session.user}"
-		)
+		frappe.logger().info(f"ICSS Repair/Replacement: Creating/updating for user {frappe.session.user}")
 
 		return save_icss_data(data)
 
@@ -906,6 +955,7 @@ def save_icss_repair_replacement_data(data):
 # ---------------------------------------------------------------------------
 # WORKFLOW ACTIONS
 # ---------------------------------------------------------------------------
+
 
 @frappe.whitelist()
 def get_icss_workflow_actions(docname):
@@ -999,10 +1049,7 @@ def perform_icss_action(docname, action):
 				if isinstance(allowed_roles, str):
 					allowed_roles = [allowed_roles]
 
-				if not (
-					any(role in user_roles for role in allowed_roles)
-					or "System Manager" in user_roles
-				):
+				if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
 					continue
 
 				if t.condition:
@@ -1022,16 +1069,17 @@ def perform_icss_action(docname, action):
 
 		if not next_state:
 			frappe.throw(
-				_("No valid transition found for action '{0}' from state "
-				  "'{1}' matching your role and conditions.").format(action, current_state)
+				_(
+					"No valid transition found for action '{0}' from state "
+					"'{1}' matching your role and conditions."
+				).format(action, current_state)
 			)
 
 		doc.workflow_state = next_state
+		doc.flags.icss_workflow_action = action
 
 		# Handle docstatus transitions (submit / cancel)
-		state_doc = next(
-			(s for s in workflow.states if s.state == next_state), None
-		)
+		state_doc = next((s for s in workflow.states if s.state == next_state), None)
 
 		if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
 			doc.submit()
@@ -1076,6 +1124,7 @@ def submit_icss(docname):
 # ---------------------------------------------------------------------------
 # USER DETAILS HELPER
 # ---------------------------------------------------------------------------
+
 
 @frappe.whitelist()
 def get_user_details_icss(user_email):

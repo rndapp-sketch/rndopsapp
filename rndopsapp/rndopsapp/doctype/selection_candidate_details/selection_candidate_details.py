@@ -3,7 +3,9 @@
 import frappe
 import json
 from frappe.model.document import Document
-from frappe.model.workflow import get_transitions
+# EDITED BY OJS | 2026-05-13 15:38 IST
+# Description: Removed frappe.model.workflow import
+# END OF EDIT — OJS | 2026-05-13 15:38 IST
 
 
 class SelectionCandidateDetails(Document):
@@ -126,8 +128,9 @@ def save_selection_candidate_details_data(data):
             if f.fieldtype not in ("Table", "Section Break", "Column Break") and f.fieldname in data:
                 doc.set(f.fieldname, data[f.fieldname])
 
-        if "workflow_state" in data:
-            doc.set("workflow_state", data["workflow_state"])
+        # EDITED BY OJS | 2026-05-13 15:38 IST
+        # Description: Removed workflow_state mapping since workflow is not required
+        # END OF EDIT — OJS | 2026-05-13 15:38 IST
 
         doc.save(ignore_permissions=True)
         frappe.db.commit()
@@ -139,116 +142,9 @@ def save_selection_candidate_details_data(data):
         return {"status": "error", "message": str(e)}
 
 
-# ─────────────────────────────────────────────────────────────
-# WORKFLOW ACTIONS
-# ─────────────────────────────────────────────────────────────
-
-@frappe.whitelist()
-def get_selection_candidate_details_workflow_actions(docname):
-    """
-    Returns the list of available workflow actions for the current user
-    based on the document's current state.
-    """
-    doc = frappe.get_doc("Selection Candidate Details", docname)
-    transitions = get_transitions(doc)
-    actions = list(dict.fromkeys([t.get("action") for t in transitions]))
-    return actions
-
-
-@frappe.whitelist()
-def perform_selection_candidate_details_action(docname, action):
-    """
-    Executes a workflow action on a Selection Candidate Details document
-    and returns the updated state plus next available actions.
-    """
-    try:
-        doc = frappe.get_doc("Selection Candidate Details", docname)
-        current_state = doc.workflow_state or "Draft"
-        user_roles = frappe.get_roles(frappe.session.user)
-
-        workflow_name = frappe.db.get_value(
-            "Workflow",
-            {"document_type": "Selection Candidate Details", "is_active": 1},
-            "name",
-        )
-
-        if not workflow_name:
-            frappe.throw("No active workflow found for Selection Candidate Details.")
-
-        workflow = frappe.get_doc("Workflow", workflow_name)
-
-        next_state = None
-        for t in workflow.transitions:
-            if t.state != current_state or t.action != action:
-                continue
-
-            allowed_roles = t.get("allowed") or []
-            if isinstance(allowed_roles, str):
-                allowed_roles = [allowed_roles]
-
-            if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
-                continue
-
-            if t.condition:
-                try:
-                    eval_context = {
-                        "doc":    doc,
-                        "flt":    frappe.utils.flt,
-                        "cint":   frappe.utils.cint,
-                        "frappe": frappe._dict(
-                            db=frappe._dict(
-                                get_value=frappe.db.get_value,
-                                get_list=frappe.db.get_list,
-                                get_single_value=frappe.db.get_single_value,
-                            ),
-                            utils=frappe._dict(flt=frappe.utils.flt, cint=frappe.utils.cint),
-                            session=frappe.session,
-                        ),
-                    }
-                    if not frappe.safe_eval(t.condition, None, eval_context):
-                        continue
-                except Exception:
-                    continue
-
-            next_state = t.next_state
-            break
-
-        if not next_state:
-            frappe.throw(
-                f"No valid transition found for action '{action}' from state "
-                f"'{current_state}' matching your role and conditions."
-            )
-
-        doc.workflow_state = next_state
-        state_doc = next((s for s in workflow.states if s.state == next_state), None)
-
-        if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
-            doc.submit()
-        elif state_doc and state_doc.doc_status == "2" and doc.docstatus == 1:
-            doc.cancel()
-        else:
-            frappe.db.set_value("Selection Candidate Details", docname, "workflow_state", next_state)
-
-        frappe.db.commit()
-
-        return {
-            "status":       "success",
-            "message":      f"Action '{action}' completed. New State: {next_state}",
-            "docname":      docname,
-            "workflow_state": next_state,
-            "next_actions": get_selection_candidate_details_workflow_actions(docname),
-        }
-
-    except Exception as e:
-        frappe.db.rollback()
-        frappe.log_error(frappe.get_traceback(), f"Workflow Action Failed: {action} on {docname}")
-        return {"status": "error", "message": str(e)}
-
-
-@frappe.whitelist()
-def submit_selection_candidate_details(docname):
-    """Submit a Selection Candidate Details document via workflow."""
-    return perform_selection_candidate_details_action(docname, "Submit")
+# EDITED BY OJS | 2026-05-13 15:38 IST
+# Description: Removed WORKFLOW ACTIONS since Selection Candidate Details only requires save
+# END OF EDIT — OJS | 2026-05-13 15:38 IST
 
 
 # ─────────────────────────────────────────────────────────────

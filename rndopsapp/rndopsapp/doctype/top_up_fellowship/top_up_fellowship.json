@@ -1,26 +1,25 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}TF{#####}",
  "creation": "2025-12-19 10:36:03.772564",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_d4hp",
   "amended_from",
-  "application_for_part_time_employment_of_students_section",
-  "name_of_student",
-  "roll_number",
-  "dept_centre",
-  "contact_number",
-  "account_number",
-  "bank_name",
-  "ifsc",
-  "branch_code",
-  "account_holder_name",
-  "programme",
-  "webmail",
+  "students_section",
+  "students",
+  "project_details_section",
+  "project_code",
+  "project_title",
+  "account_head",
   "details_of_supervisor_section",
   "pi_webmail",
+  "coordinating_pi_webmail",
+  "faculty_admission_section",
+  "send_to_faculty_admission",
+  "faculty_admission_pdf",
   "declaration_section",
   "checkbox1",
   "checkbox2",
@@ -42,67 +41,77 @@
    "search_index": 1
   },
   {
-   "fieldname": "application_for_part_time_employment_of_students_section",
+   "fieldname": "students_section",
    "fieldtype": "Section Break",
-   "label": "Application for Part Time Employment of Students  "
+   "label": "Students"
   },
   {
-   "fieldname": "name_of_student",
-   "fieldtype": "Small Text",
-   "label": "Name of the Student"
-  },
-  {
-   "fieldname": "roll_number",
-   "fieldtype": "Small Text",
-   "label": "Roll Number"
-  },
-  {
-   "fieldname": "dept_centre",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Department / Centre (where student is currently enrolled)",
-   "options": "Department_prornd",
+   "fieldname": "students",
+   "fieldtype": "Table",
+   "label": "Students",
+   "options": "Top Up Fellowship Student",
    "reqd": 1
   },
   {
-   "fieldname": "contact_number",
-   "fieldtype": "Small Text",
-   "label": "Contact Number"
+   "fieldname": "project_details_section",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
   },
   {
-   "fieldname": "account_number",
-   "fieldtype": "Small Text",
-   "label": "Bank Account No."
+   "fieldname": "project_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Project Code",
+   "options": "Project Registration",
+   "reqd": 1
   },
   {
-   "fieldname": "bank_name",
-   "fieldtype": "Small Text",
-   "label": "Bank Name"
+   "fieldname": "project_title",
+   "fieldtype": "Long Text",
+   "label": "Project Title",
+   "read_only": 1
   },
   {
-   "fieldname": "ifsc",
-   "fieldtype": "Small Text",
-   "label": "IFSC Code"
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head"
   },
   {
-   "fieldname": "branch_code",
-   "fieldtype": "Small Text",
-   "label": "Bank Branch Code"
+   "fieldname": "details_of_supervisor_section",
+   "fieldtype": "Section Break",
+   "label": "Details of Supervisor"
   },
   {
-   "fieldname": "account_holder_name",
-   "fieldtype": "Small Text",
-   "label": "Account Holder Name"
-  },
-  {
-   "fieldname": "programme",
+   "fieldname": "pi_webmail",
    "fieldtype": "Data",
-   "label": "Select Programme"
+   "label": "Webmail ID of Supervisor / Faculty Adviser"
   },
   {
-   "fieldname": "webmail",
+   "fieldname": "coordinating_pi_webmail",
    "fieldtype": "Data",
-   "label": "Webmail ID"
+   "label": "Webmail ID of the PI / Coordinating Faculty of the Project / Course"
+  },
+  {
+   "fieldname": "faculty_admission_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Faculty Admission"
+  },
+  {
+   "default": "0",
+   "fieldname": "send_to_faculty_admission",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Send to Faculty Admission",
+   "read_only": 1
+  },
+  {
+   "fieldname": "faculty_admission_pdf",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Faculty Admission Signed PDF",
+   "read_only": 1
   },
   {
    "fieldname": "declaration_section",
@@ -126,26 +135,17 @@
    "fieldname": "checkbox3",
    "fieldtype": "Check",
    "label": "This part-time employment can be cancelled by the competent authority without giving any notice period. "
-  },
-  {
-   "fieldname": "pi_webmail",
-   "fieldtype": "Data",
-   "label": "Webmail ID of Supervisor/ Faculty Adviser"
-  },
-  {
-   "fieldname": "details_of_supervisor_section",
-   "fieldtype": "Section Break",
-   "label": "Details of Supervisor"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-16 11:19:40.501847",
+ "modified": "2026-05-21 12:31:57.177475",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Top Up Fellowship",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {

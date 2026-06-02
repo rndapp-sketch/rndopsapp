@@ -69,6 +69,10 @@ def _create_selection_candidate_details(doc):
 		if not candidate_id:
 			continue
 
+		# Only insert Recommended and Waiting List candidates
+		if (candidate.get("recommendation") or "").strip().lower() not in ("recommended", "waiting list"):
+			continue
+
 		# Fetch external profile
 		profile = _fetch_candidate_profile(candidate_id)
 
@@ -462,6 +466,12 @@ def get_selection_committee_report_workflow_actions(docname):
 	# Extract unique action names
 	actions = list(dict.fromkeys([t.get("action") for t in transitions]))
 
+	# START MKY 2026-05-14 14:00 IST Hide Approve for Contractual in Pending Dean Approval
+	if (doc.workflow_state or "") == "Pending Dean Approval" and (doc.get("recruitment_type") or "").strip().lower() != "adhoc":
+		if "Approve" in actions:
+			actions.remove("Approve")
+	# END MKY
+
 	return actions
 
 
@@ -479,18 +489,24 @@ def perform_selection_committee_report_action(docname, action):
 		doc = frappe.get_doc("Selection Committee Report", docname)
 		print(f"Fetched doc: {doc.name}, current state: {doc.workflow_state}")
 
-		# Director-PDF gate: SCR cannot be Approved by Dean
+		# START MKY 2026-05-14 14:00 IST Prevent direct Dean approval for Contractual
+		if action == "Approve" and (doc.workflow_state or "") == "Pending Dean Approval" and (doc.get("recruitment_type") or "").strip().lower() != "adhoc":
+			frappe.throw("Contractual recruitment requires Director Approval. Use the Send for Director Approval action instead.")
+		# END MKY
+
+		# Director-PDF gate: SCR cannot be Approved
 		# until Staff has uploaded the Director-signed scan (if flagged).
+		# START MKY 2026-05-14 14:00 IST Update PDF gate state to Pending Director Approval
 		if (
 			action == "Approve"
-			and (doc.workflow_state or "") == "Pending Dean Approval"
-			and frappe.utils.cint(doc.get("send_to_director")) == 1
+			and (doc.workflow_state or "") == "Pending Director Approval"
 			and not (doc.get("director_signed_pdf") or "").strip()
 		):
 			frappe.throw(
 				"Cannot approve: the Director-signed PDF has not been uploaded "
 				"by Staff yet."
 			)
+		# END MKY
 
 		# apply_workflow handles transitions, permissions, and status updates
 		updated_doc = apply_workflow(doc, action)
@@ -588,15 +604,25 @@ def update_send_to_director_scr(docname, send_to_director):
 	if doc.docstatus != 0:
 		frappe.throw("Cannot update Director Approval flag after document is submitted.")
 
+	# START MKY 2026-05-14 13:45 IST Ensure it only applies to Contractual
+	if (doc.get("recruitment_type") or "").strip().lower() == "adhoc":
+		frappe.throw("Director Approval flow is only applicable for Contractual recruitment.")
+	# END MKY
+
 	if frappe.utils.cint(doc.get("send_to_director")):
 		return {"status": "success", "docname": docname, "send_to_director": 1}
 
 	if not frappe.utils.cint(send_to_director):
 		frappe.throw("send_to_director can only be set, not cleared.")
 
+	# START MKY 2026-05-14 13:35 IST Update workflow_state when send_to_director is set
 	frappe.db.set_value(
-		"Selection Committee Report", docname, "send_to_director", 1
+		"Selection Committee Report", docname, {
+			"send_to_director": 1,
+			"workflow_state": "Pending Director Approval"
+		}
 	)
+	# END MKY
 	frappe.db.commit()
 	return {"status": "success", "docname": docname, "send_to_director": 1}
 
@@ -633,6 +659,109 @@ def attach_director_pdf_scr(docname, file_url):
 
 
 @frappe.whitelist()
+def backfill_selection_candidate_details(dry_run=False):
+	"""
+	One-time backfill: for every submitted SCR that has candidates data,
+	create missing Selection Candidate Details records.
+
+	dry_run=True  → only report which SCRs/candidates would be processed,
+	               nothing is inserted.
+
+	Restricted to System Manager.
+	Call via:
+	  bench execute rndopsapp.rndopsapp.doctype.selection_committee_report.selection_committee_report.backfill_selection_candidate_details
+	or the whitelisted API (System Manager only).
+	"""
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "System Manager" not in user_roles:
+		frappe.throw("Not permitted", frappe.PermissionError)
+
+	dry_run = bool(dry_run)
+
+	# Fetch every SCR that has candidates data
+	all_scr = frappe.get_all(
+		"Selection Committee Report",
+		filters=[["candidates", "is", "set"]],
+		fields=["name", "workflow_state", "candidates"],
+		limit_page_length=0,
+	)
+
+	results = []
+	inserted_total = 0
+	skipped_total = 0
+
+	for scr_row in all_scr:
+		docname = scr_row["name"]
+		candidates_raw = scr_row.get("candidates") or ""
+		if not candidates_raw:
+			continue
+
+		try:
+			candidates = json.loads(candidates_raw) if isinstance(candidates_raw, str) else candidates_raw
+		except Exception:
+			results.append({"name": docname, "error": "Could not parse candidates JSON"})
+			continue
+
+		if not isinstance(candidates, list):
+			continue
+
+		doc_inserted = 0
+		doc_skipped = 0
+
+		for candidate in candidates:
+			candidate_id = candidate.get("candidate_id")
+			application_id = candidate.get("application_id")
+			if not candidate_id:
+				continue
+
+			already_exists = frappe.db.exists(
+				"Selection Candidate Details",
+				{"candidate_id": int(candidate_id), "application_id": int(application_id or 0)},
+			)
+			if already_exists:
+				doc_skipped += 1
+				continue
+
+			doc_inserted += 1
+			if not dry_run:
+				# Re-use the full creation logic by calling the helper with the full doc
+				pass
+
+		if doc_inserted > 0 and not dry_run:
+			try:
+				doc = frappe.get_doc("Selection Committee Report", docname)
+				_create_selection_candidate_details(doc)
+			except Exception as e:
+				import traceback as _tb
+				results.append({
+					"name": docname,
+					"error": str(e),
+					"traceback": _tb.format_exc(),
+				})
+				continue
+
+		inserted_total += doc_inserted
+		skipped_total += doc_skipped
+		results.append({
+			"name": docname,
+			"workflow_state": scr_row.get("workflow_state"),
+			"candidates_count": len(candidates),
+			"would_insert" if dry_run else "inserted": doc_inserted,
+			"skipped_existing": doc_skipped,
+		})
+
+	return {
+		"status": "success",
+		"dry_run": dry_run,
+		"scr_processed": len(results),
+		"total_inserted": 0 if dry_run else inserted_total,
+		"total_would_insert": inserted_total if dry_run else None,
+		"total_skipped_existing": skipped_total,
+		"details": results,
+	}
+
+
+@frappe.whitelist()
 def get_pending_director_uploads_scr():
 	"""
 	Returns SCR docs that Dean has flagged for Director approval.
@@ -641,11 +770,13 @@ def get_pending_director_uploads_scr():
 	"""
 	docs = frappe.get_all(
 		"Selection Committee Report",
+		# START MKY 2026-05-14 13:35 IST Support the new Pending Director Approval state
 		filters={
 			"send_to_director": 1,
-			"workflow_state": "Pending Dean Approval",
+			"workflow_state": ["in", ["Pending Dean Approval", "Pending Director Approval"]],
 			"docstatus": 0,
 		},
+		# END MKY
 		fields=[
 			"name",
 			"interview_id",

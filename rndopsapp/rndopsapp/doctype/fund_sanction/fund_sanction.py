@@ -420,6 +420,26 @@ def save_fund_sanction_data(files=None, **data):
 		project_reg = data.pop("project_reg", None)
 		data.pop("project_no", None)
 
+		# --- START EDIT BY MKY ---
+		# Date: 2026-05-19
+		# Time: 16:35 IST
+		# Description: Auto-detect existing draft to prevent duplication when frontend does not pass name
+		if not data.get("name") and data.get("project_proposal"):
+			existing_draft = frappe.db.get_value(
+				"Fund Sanction",
+				{
+					"project_proposal": data.get("project_proposal"),
+					"docstatus": 0,
+					"owner": frappe.session.user
+				},
+				"name",
+				order_by="creation desc"
+			)
+			if existing_draft:
+				data["name"] = existing_draft
+				print(f"🔄 Found existing draft {existing_draft} for project {data.get('project_proposal')}. Updating instead of creating a new one.")
+		# --- END EDIT BY MKY ---
+
 		# Create or fetch the main Fund Sanction document
 		if data.get("name"):
 			# Logic for updating an existing document
@@ -855,6 +875,10 @@ def perform_fund_sanction_action(docname, action):
 		return {"status": "error", "message": str(e)}
 
 
+# --- START EDIT BY MKY ---
+# Date: 2026-05-19
+# Time: 16:35 IST
+# Description: Fix typo in submit_fund_sanction (profund_sanctionject_no -> project_no, save__data -> save_fund_sanction_data) and pass sanction_name to data
 @frappe.whitelist()
 def submit_fund_sanction(sanction_name=None, save=None, files=None, project_reg=None, project_no=None, **data):
 	"""
@@ -865,9 +889,11 @@ def submit_fund_sanction(sanction_name=None, save=None, files=None, project_reg=
 		# Pass explicit parameters back into data for save_fund_sanction_data
 		if project_reg is not None:
 			data["project_reg"] = project_reg
-		if profund_sanctionject_no is not None:
+		if project_no is not None:
 			data["project_no"] = project_no
-		res = save__data(files, **data)
+		if sanction_name:
+			data["name"] = sanction_name
+		res = save_fund_sanction_data(files, **data)
 		if isinstance(res, dict) and res.get("status") == "success":
 			sanction_name = res.get("docname") or res.get("name")
 		else:
@@ -877,6 +903,7 @@ def submit_fund_sanction(sanction_name=None, save=None, files=None, project_reg=
 		frappe.throw("Sanction name is required to submit.")
 
 	return perform_fund_sanction_action(sanction_name, "Submit")
+# --- END EDIT BY MKY ---
 
 
 @frappe.whitelist()

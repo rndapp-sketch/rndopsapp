@@ -210,7 +210,7 @@
   {
    "fieldname": "pi_webmail",
    "fieldtype": "Link",
-   "label": "If you are registering this project on behalf of other, please enter the email Id of the Principal Investigator",
+   "label": "Enter the email Id of the Principal Investigator",
    "options": "User",
    "placeholder": "example@iitg.ac.in"
   },
@@ -259,6 +259,9 @@
    "allow_on_submit": 1,
    "fieldname": "implementation_department",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Department/Centre where the project will be implemented",
    "options": "Department_prornd",
    "reqd": 1
@@ -922,7 +925,7 @@
    "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_address",
    "fieldname": "address_street_village_locality",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "label": "Street/Locality Address",
    "read_only": 1
   },
@@ -1283,8 +1286,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-07 00:10:43.548666",
- "modified_by": "Administrator",
+ "modified": "2026-05-21 15:59:59.116359",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Project Registration",
  "naming_rule": "Expression",

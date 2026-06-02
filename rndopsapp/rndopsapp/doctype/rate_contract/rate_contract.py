@@ -221,7 +221,7 @@ def save_rate_contract(doc_data):
 		# Handle child table - items
 		if "items" in data:
 			doc.set("items", [])  # Clear existing items
-			for item in data["items"]:
+			for item in (data.get("items") or []):
 				if item.get("item_description") or item.get("cat_no"):
 					doc.append(
 						"items",

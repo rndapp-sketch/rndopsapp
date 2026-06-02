@@ -1,0 +1,629 @@
+# Copyright (c) 2026, rndops and contributors
+# For license information, please see license.txt
+
+"""
+Cancellation API Module
+
+Provides whitelisted API endpoints for:
+1. Fetching all pending applications for the current user ("My Applications" / "Form Application")
+2. Creating cancellation requests that clone the original module's workflow
+3. Checking cancellation status for a given document
+"""
+
+import frappe
+from frappe import _
+from frappe.utils import now_datetime
+
+# ─── Terminal/final workflow states that should NOT appear in "Form Application" ───
+TERMINAL_STATES = {
+	"approved",
+	"cancelled",
+	"rejected",
+	"sanction approved",
+	"endorsement approved",
+	"completed",
+	"closed",
+}
+
+
+def _is_terminal_state(state):
+	"""Check if a workflow state is a terminal (final) state."""
+	if not state:
+		return False
+	return state.strip().lower() in TERMINAL_STATES
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. GET MY APPLICATIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@frappe.whitelist()
+def get_my_applications():
+	"""
+	Fetch all applications/forms created by the current user that are still in a
+	pending (non-terminal) workflow state.
+
+	Returns all rndopsapp module doctypes where:
+	- owner = current user
+	- workflow_state is NOT in a terminal state (Approved, Cancelled, Rejected, etc.)
+	- docstatus < 2 (not cancelled via Frappe)
+
+	Response format:
+	{
+		"success": True,
+		"user": "user@example.com",
+		"total_applications": 5,
+		"results": [
+			{
+				"doctype": "Reimbursement",
+				"count": 2,
+				"records": [
+					{
+						"name": "REIMB-0001",
+						"title": "...",
+						"status": "PI Submitted",
+						"creation": "...",
+						"modified": "...",
+						"has_pending_cancellation": false
+					}
+				]
+			}
+		]
+	}
+	"""
+	current_user = frappe.session.user
+
+	if current_user in ["Administrator", "Guest"]:
+		return {"success": False, "message": "Invalid user", "results": []}
+
+	# Get all doctypes in the rndopsapp module (non-child-table, non-single)
+	rndops_doctypes = frappe.get_all(
+		"DocType",
+		filters=[["module", "like", "%rndopsapp%"]],
+		fields=["name", "module"],
+	)
+
+	if not rndops_doctypes:
+		# Fallback exact match
+		rndops_doctypes = frappe.get_all(
+			"DocType",
+			filters={"module": "Rndopsapp"},
+			fields=["name", "module"],
+		)
+
+	results = []
+
+	for dt_info in rndops_doctypes:
+		dt_name = dt_info.name
+
+		# Skip the Cancellation Request doctype itself
+		if dt_name == "Cancellation Request":
+			continue
+
+		if not frappe.db.exists("DocType", dt_name):
+			continue
+
+		meta = frappe.get_meta(dt_name)
+
+		# Skip child tables, single doctypes, and virtual doctypes
+		if meta.istable or meta.issingle:
+			continue
+
+		# Must have a workflow_state field (meaning it's a workflow-enabled form)
+		status_field = None
+		for field_name in ["workflow_state", "status", "state"]:
+			if meta.has_field(field_name):
+				status_field = field_name
+				break
+
+		if not status_field:
+			continue
+
+		# Check read permission
+		try:
+			if not frappe.has_permission(dt_name, "read"):
+				continue
+		except Exception:
+			continue
+
+		# Fetch documents owned by the current user
+		try:
+			fields_to_fetch = ["name", "creation", "modified", "owner", "docstatus"]
+			if status_field:
+				fields_to_fetch.append(status_field)
+
+			# Get title field
+			title_field = (
+				meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name")
+			)
+			if title_field != "name" and title_field not in fields_to_fetch:
+				fields_to_fetch.append(title_field)
+
+			records = frappe.get_list(
+				dt_name,
+				filters={
+					"owner": current_user,
+					"docstatus": ["<", 2],  # Exclude Frappe-cancelled
+				},
+				fields=fields_to_fetch,
+				order_by="modified desc",
+				limit_page_length=200,
+			)
+
+			# Filter out records in terminal states
+			pending_records = []
+			for record in records:
+				state_value = record.get(status_field, "")
+				if _is_terminal_state(state_value):
+					continue
+
+				# Also skip "Draft" state — these haven't been submitted yet
+				if state_value and state_value.strip().lower() == "draft":
+					continue
+
+				pending_records.append(record)
+
+			if not pending_records:
+				continue
+
+			# Check for pending cancellation requests for each record
+			pending_cancel_names = set()
+			try:
+				cancellations = frappe.get_all(
+					"Cancellation Request",
+					filters={
+						"reference_doctype": dt_name,
+						"reference_name": ["in", [r.name for r in pending_records]],
+						"status": "Pending",
+						"docstatus": ["<", 2],
+					},
+					fields=["reference_name"],
+				)
+				pending_cancel_names = {c.reference_name for c in cancellations}
+			except Exception:
+				# Cancellation Request doctype might not exist yet
+				pass
+
+			# Map records to response format
+			mapped = []
+			for r in pending_records:
+				title_value = r.get(title_field, r.name) if title_field != "name" else r.name
+				mapped.append(
+					{
+						"name": r.name,
+						"title": title_value or r.name,
+						"status": r.get(status_field, "Unknown"),
+						"creation": r.creation,
+						"modified": r.modified,
+						"owner": r.owner,
+						"docstatus": r.docstatus,
+						"has_pending_cancellation": r.name in pending_cancel_names,
+					}
+				)
+
+			if mapped:
+				results.append(
+					{
+						"doctype": dt_name,
+						"count": len(mapped),
+						"records": mapped,
+					}
+				)
+
+		except Exception as e:
+			# Skip doctypes that cause errors (schema mismatches, etc.)
+			frappe.log_error(
+				f"Error fetching {dt_name} for user {current_user}: {str(e)}",
+				"get_my_applications error",
+			)
+			continue
+
+	# Sort by doctype name
+	results.sort(key=lambda x: x["doctype"])
+
+	return {
+		"success": True,
+		"user": current_user,
+		"total_applications": sum(r["count"] for r in results),
+		"results": results,
+	}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. CREATE CANCELLATION REQUEST
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@frappe.whitelist()
+def create_cancellation_request(reference_doctype, reference_name, cancellation_reason):
+	"""
+	Create a new Cancellation Request document.
+
+	The cancellation request will:
+	1. Reference the original document
+	2. Store the user's cancellation reason
+	3. Be assigned the same workflow as the original doctype
+	4. Start moving through the approval chain
+
+	Args:
+		reference_doctype (str): The doctype of the document being cancelled
+		reference_name (str): The name of the document being cancelled
+		cancellation_reason (str): The user's reason for cancellation
+
+	Returns:
+		dict: Success/error status and the created cancellation request name
+	"""
+	try:
+		current_user = frappe.session.user
+
+		# Validate inputs
+		if not reference_doctype or not reference_name:
+			frappe.throw(_("Reference document is required."))
+		if not cancellation_reason or not cancellation_reason.strip():
+			frappe.throw(_("Cancellation reason is required."))
+
+		# Verify the referenced document exists
+		if not frappe.db.exists(reference_doctype, reference_name):
+			frappe.throw(_("Document {0} ({1}) does not exist.").format(reference_name, reference_doctype))
+
+		# Verify the user owns the document (or is System Manager)
+		ref_doc = frappe.get_doc(reference_doctype, reference_name)
+		user_roles = frappe.get_roles(current_user)
+		if ref_doc.owner != current_user and "System Manager" not in user_roles:
+			frappe.throw(_("You can only cancel documents that you own."))
+
+		# Check the document is not already in a terminal state
+		ref_state = getattr(ref_doc, "workflow_state", None)
+		if _is_terminal_state(ref_state):
+			frappe.throw(
+				_("This document is already in a final state ({0}) and cannot be cancelled.").format(
+					ref_state
+				)
+			)
+
+		# Check for existing pending cancellation request
+		existing = frappe.get_all(
+			"Cancellation Request",
+			filters={
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"status": "Pending",
+				"docstatus": ["<", 2],
+			},
+			limit=1,
+		)
+		if existing:
+			frappe.throw(
+				_("A pending cancellation request already exists for this document ({0}).").format(
+					existing[0].name
+				)
+			)
+
+		# Find the workflow for the reference doctype
+		source_workflow = frappe.get_value("Workflow", {"document_type": reference_doctype}, "name")
+
+		# Setup and activate the workflow before insertion so that insert() runs under it
+		if source_workflow:
+			_setup_cancellation_workflow(source_workflow)
+			target_wf = f"cancel_{source_workflow}"
+			if frappe.db.exists("Workflow", target_wf):
+				frappe.db.sql(
+					"""
+					UPDATE `tabWorkflow`
+					SET is_active = (CASE WHEN name = %s THEN 1 ELSE 0 END)
+					WHERE document_type = 'Cancellation Request'
+				""",
+					(target_wf,),
+				)
+				frappe.clear_cache(doctype="Cancellation Request")
+
+		# Create the Cancellation Request
+		cancel_doc = frappe.new_doc("Cancellation Request")
+		cancel_doc.reference_doctype = reference_doctype
+		cancel_doc.reference_name = reference_name
+		cancel_doc.reference_owner = ref_doc.owner
+		cancel_doc.cancellation_reason = cancellation_reason.strip()
+		cancel_doc.requested_by = current_user
+		cancel_doc.request_date = now_datetime()
+		cancel_doc.source_workflow = source_workflow or ""
+		cancel_doc.status = "Pending"
+
+		# Generate short doctype name for auto-naming
+		words = reference_doctype.replace("_", " ").split()
+		if len(words) == 1:
+			cancel_doc.reference_doctype_short = words[0][:4].upper()
+		else:
+			cancel_doc.reference_doctype_short = "".join(w[0].upper() for w in words[:4])
+
+		cancel_doc.flags.ignore_permissions = True
+		cancel_doc.insert()
+
+		# If a workflow exists for the reference doctype, we need to set up the
+		# cancellation request's workflow. We do this by creating/reusing a
+		# workflow for "Cancellation Request" that mirrors the source workflow.
+		if source_workflow:
+			_setup_cancellation_workflow(source_workflow)
+
+			# Move the cancellation request from "Draft" to the first submitted/pending state
+			try:
+				wf_doc = frappe.get_doc("Workflow", f"cancel_{source_workflow}")
+				action = _get_first_transition_action(wf_doc)
+				if action:
+					from frappe.model.workflow import apply_workflow
+
+					# Since the document was just inserted as Draft, we apply the workflow action
+					# to move it to the first submitted/pending state.
+					cancel_doc.flags.ignore_permissions = True
+					apply_workflow(cancel_doc, action)
+					cancel_doc.reload()
+			except Exception as e:
+				frappe.log_error(
+					frappe.get_traceback(),
+					_("Error moving cancellation request {0} to next state: {1}").format(
+						cancel_doc.name, str(e)
+					),
+				)
+
+		frappe.db.commit()
+
+		# Add audit comment on the original document
+		try:
+			ref_doc.add_comment(
+				"Info",
+				_("Cancellation requested by {0}. Reason: {1}. Request ID: {2}").format(
+					current_user, cancellation_reason.strip(), cancel_doc.name
+				),
+			)
+		except Exception:
+			pass
+
+		return {
+			"status": "success",
+			"message": _("Cancellation request created successfully."),
+			"cancellation_request": cancel_doc.name,
+			"workflow_state": getattr(cancel_doc, "workflow_state", "Pending"),
+		}
+
+	except frappe.ValidationError:
+		raise
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Create Cancellation Request Error")
+		return {"status": "error", "message": str(e)}
+
+
+def _setup_cancellation_workflow(source_workflow_name):
+	"""
+	Set up workflow for the Cancellation Request by creating/reusing a
+	workflow that mirrors the source workflow.
+
+	The cancellation workflow will have the same states and transitions
+	as the original document's workflow, allowing it to go through the
+	same approval chain.
+	"""
+	try:
+		cancel_wf_name = f"cancel_{source_workflow_name}"
+
+		# Check if cancellation workflow already exists
+		if frappe.db.exists("Workflow", cancel_wf_name):
+			return
+
+		# Create a new workflow for Cancellation Request mirroring the source
+		source_wf = frappe.get_doc("Workflow", source_workflow_name)
+
+		new_wf = frappe.new_doc("Workflow")
+		new_wf.workflow_name = cancel_wf_name
+		new_wf.document_type = "Cancellation Request"
+		new_wf.is_active = 1
+		new_wf.workflow_state_field = "workflow_state"
+
+		# Copy all states from the source workflow
+		for state in source_wf.states:
+			new_wf.append(
+				"states",
+				{
+					"state": state.state,
+					"doc_status": state.doc_status,
+					"allow_edit": state.allow_edit,
+					"is_optional_state": getattr(state, "is_optional_state", 0),
+				},
+			)
+
+		# Copy all transitions from the source workflow
+		for transition in source_wf.transitions:
+			new_wf.append(
+				"transitions",
+				{
+					"state": transition.state,
+					"action": transition.action,
+					"next_state": transition.next_state,
+					"allowed": transition.allowed,
+					"allow_self_approval": getattr(transition, "allow_self_approval", 1),
+				},
+			)
+
+		new_wf.flags.ignore_permissions = True
+		new_wf.insert()
+
+	except Exception as e:
+		frappe.log_error(
+			frappe.get_traceback(), f"Error setting up cancellation workflow for {source_workflow_name}"
+		)
+		# Even if workflow setup fails, the cancellation request is still created
+		# It just won't have automated workflow transitions
+
+
+def _get_first_submitted_state(workflow_doc):
+	"""
+	Get the first state after Draft in the workflow.
+	This is the state the cancellation should start at (simulating submission).
+	"""
+	# Look for the transition from Draft
+	for transition in workflow_doc.transitions:
+		if transition.state and transition.state.strip().lower() == "draft":
+			return transition.next_state
+
+	# Fallback: return the second state in the states list (first is usually Draft)
+	if len(workflow_doc.states) > 1:
+		return workflow_doc.states[1].state
+
+	# Final fallback
+	return workflow_doc.states[0].state if workflow_doc.states else None
+
+
+def _get_first_transition_action(workflow_doc):
+	"""
+	Get the action name that transitions the document from Draft.
+	"""
+	for transition in workflow_doc.transitions:
+		if transition.state and transition.state.strip().lower() == "draft":
+			return transition.action
+
+	# Fallback: check if there's any transition at all
+	if workflow_doc.transitions:
+		return workflow_doc.transitions[0].action
+
+	return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. GET CANCELLATION STATUS
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@frappe.whitelist()
+def get_cancellation_status(reference_doctype, reference_name):
+	"""
+	Check if a cancellation request exists for a given document.
+
+	Returns:
+		dict: {
+			"has_cancellation": True/False,
+			"cancellation_requests": [...],
+		}
+	"""
+	try:
+		cancellations = frappe.get_all(
+			"Cancellation Request",
+			filters={
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"docstatus": ["<", 2],
+			},
+			fields=[
+				"name",
+				"status",
+				"cancellation_reason",
+				"requested_by",
+				"request_date",
+				"workflow_state",
+				"creation",
+				"modified",
+			],
+			order_by="creation desc",
+		)
+
+		return {
+			"has_cancellation": len(cancellations) > 0,
+			"has_pending": any(c.status == "Pending" for c in cancellations),
+			"cancellation_requests": cancellations,
+		}
+
+	except Exception:
+		# Cancellation Request doctype might not exist yet
+		return {
+			"has_cancellation": False,
+			"has_pending": False,
+			"cancellation_requests": [],
+		}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. GET CANCELLATION REQUEST DETAILS (for the approver view)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@frappe.whitelist()
+def get_cancellation_request_details(cancellation_name):
+	"""
+	Get full details of a cancellation request for the approver view.
+
+	Args:
+		cancellation_name (str): Name of the Cancellation Request document
+
+	Returns:
+		dict: Full cancellation request details including original document info
+	"""
+	try:
+		cancel_doc = frappe.get_doc("Cancellation Request", cancellation_name)
+
+		# Get reference document details
+		ref_details = {}
+		try:
+			ref_doc = frappe.get_doc(cancel_doc.reference_doctype, cancel_doc.reference_name)
+			ref_details = {
+				"name": ref_doc.name,
+				"doctype": cancel_doc.reference_doctype,
+				"owner": ref_doc.owner,
+				"workflow_state": getattr(ref_doc, "workflow_state", "Unknown"),
+				"creation": ref_doc.creation,
+				"modified": ref_doc.modified,
+			}
+			# Try to get title
+			meta = frappe.get_meta(cancel_doc.reference_doctype)
+			title_field = meta.title_field or ("title" if meta.has_field("title") else "name")
+			ref_details["title"] = getattr(ref_doc, title_field, ref_doc.name)
+		except Exception:
+			ref_details = {
+				"name": cancel_doc.reference_name,
+				"doctype": cancel_doc.reference_doctype,
+				"error": "Could not fetch reference document details",
+			}
+
+		# Get available workflow actions for the current user
+		workflow_actions = []
+		try:
+			from rndopsapp.workflow_pipeline import get_available_workflow_actions
+
+			actions = get_available_workflow_actions(cancellation_name, "Cancellation Request")
+			workflow_actions = actions if isinstance(actions, list) else []
+		except Exception:
+			pass
+
+		# Get requester details
+		requester_info = {}
+		try:
+			user_doc = frappe.get_doc("User", cancel_doc.requested_by)
+			requester_info = {
+				"email": user_doc.email,
+				"full_name": user_doc.full_name,
+			}
+		except Exception:
+			requester_info = {"email": cancel_doc.requested_by}
+
+		return {
+			"success": True,
+			"cancellation_request": {
+				"name": cancel_doc.name,
+				"reference_doctype": cancel_doc.reference_doctype,
+				"reference_name": cancel_doc.reference_name,
+				"cancellation_reason": cancel_doc.cancellation_reason,
+				"requested_by": cancel_doc.requested_by,
+				"requester_info": requester_info,
+				"request_date": cancel_doc.request_date,
+				"status": cancel_doc.status,
+				"workflow_state": getattr(cancel_doc, "workflow_state", None),
+				"source_workflow": cancel_doc.source_workflow,
+				"creation": cancel_doc.creation,
+				"modified": cancel_doc.modified,
+			},
+			"reference_document": ref_details,
+			"available_actions": workflow_actions,
+		}
+
+	except frappe.DoesNotExistError:
+		return {"success": False, "message": "Cancellation request not found."}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Get Cancellation Details Error")
+		return {"success": False, "message": str(e)}

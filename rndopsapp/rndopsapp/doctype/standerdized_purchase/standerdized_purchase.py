@@ -43,7 +43,7 @@ class standerdized_purchase(Document):
 	def calculate_totals(self):
 		"""Calculate row amounts for the items table and overall totals."""
 		total_basic = 0
-		for row in self.get("details_of_items_to_be_purchased", []):
+		for row in (self.get("details_of_items_to_be_purchased") or []):
 			base = flt(row.icss_qty) * flt(row.icss_rate)
 			discount = base * flt(row.icss_discount_percent) / 100
 			gst = (base - discount) * flt(row.icss_gst_percent) / 100
@@ -273,12 +273,13 @@ def save_standerdized_purchase_data(data):
 		for fieldname, value in deferred_fields:
 			df = meta.get_field(fieldname)
 
-			if df.fieldtype == "Table" and isinstance(value, list):
+			if df.fieldtype == "Table":
+				rows = value if isinstance(value, list) else []
 				doc.set(fieldname, [])
 				child_meta = frappe.get_meta(df.options)
 
-				for child_row in value:
-					row_dict = child_row.copy()
+				for child_row in rows:
+					row_dict = dict(child_row or {})
 
 					for cf in child_meta.fields:
 						if cf.fieldtype in ("Attach", "Attach Image") and row_dict.get(cf.fieldname):
