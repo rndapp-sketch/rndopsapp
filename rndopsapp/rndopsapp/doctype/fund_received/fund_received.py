@@ -1284,3 +1284,239 @@ def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=No
 		frappe.throw("Document name is required to submit.")
 
 	return perform_fund_received_action(docname, "Submit")
+
+
+# ── OJS EDIT START ──────────────────────────────────────────────────────────
+# Author      : OJS
+# Date        : 2026-06-01
+# Time        : 15:29 IST
+# Description : New endpoint – update_fund_received
+#               Updates an existing Fund Received document.
+#               Accepts: bank_account, fund_transactions (with per-row file
+#               upload to MinIO), received_amt_breakup, and an optional new
+#               document_upload file. All file uploads follow the same MinIO
+#               path convention as save_fund_received.
+# ────────────────────────────────────────────────────────────────────────────
+@frappe.whitelist()
+def update_fund_received(docname, doc_data, project_reg=None):
+	"""
+	Update fields on an existing Fund Received document.
+
+	Expected ``doc_data`` JSON keys (all optional – only supplied keys are
+	updated):
+
+	Scalar fields
+	─────────────
+	  bank_account            – Bank Account Number / Scheme
+	  fund_received_amt       – Total fund received amount
+	  gst_invoice_issued      – Yes / No
+	  invoice_no              – Invoice number (when GST is issued)
+	  sanction_ref_no         – Sanction reference number
+
+	Main document file
+	──────────────────
+	  document_upload_name    – Filename for the supporting document
+	  document_upload_data    – Base-64 encoded file content (data-URI ok)
+
+	Sanction Transaction Details  (fund_transactions child table)
+	──────────────────────────────────────────────────────────────
+	  fund_transactions : list of dicts, each with:
+	    transaction_number    – UTR / Grant transaction number (required)
+	    transaction_date      – Date string (YYYY-MM-DD)
+	    amount                – Amount (₹)
+	    file_name             – (optional) filename for row attachment
+	    file_data             – (optional) base-64 content for row attachment
+
+	  When provided the ENTIRE child table is replaced (same as save logic).
+
+	Budget Breakup of the Received Amount  (received_amt_breakup child table)
+	─────────────────────────────────────────────────────────────────────────
+	  received_amt_breakup : list of dicts, each with:
+	    account_head          – Budget Head label or doc name
+	    amount_received       – Amount (₹)
+	    budget_year_funds_receive – (optional, default 1)
+	    remarks               – (optional)
+
+	  When provided the ENTIRE child table is replaced.
+
+	Returns
+	───────
+	  {"status": "success", "docname": "<name>"}  on success.
+	  Raises on error.
+	"""
+	try:
+		# ── 1. Parse incoming data ────────────────────────────────────────────
+		if isinstance(doc_data, str):
+			data = json.loads(doc_data)
+		else:
+			data = doc_data
+
+		print(f"[update_fund_received] docname={docname}, keys={list(data.keys())}")
+
+		# ── 2. Load the existing document ────────────────────────────────────
+		if not frappe.db.exists("Fund Received", docname):
+			frappe.throw(f"Fund Received '{docname}' not found.")
+
+		doc = frappe.get_doc("Fund Received", docname)
+
+		# ── 3. Update scalar fields (only if supplied in payload) ─────────────
+		scalar_fields = [
+			"bank_account",
+			"fund_received_amt",
+			"gst_invoice_issued",
+			"invoice_no",
+			"sanction_ref_no",
+			"prjreg_title",
+		]
+		for field in scalar_fields:
+			if field in data and data[field] not in [None, ""]:
+				doc.set(field, data[field])
+
+		# ── 4. Handle main document_upload file → MinIO ───────────────────────
+		if data.get("document_upload_name") and data.get("document_upload_data"):
+			try:
+				from rndopsapp.minio import get_rnd_file_service
+
+				file_data_uri = data["document_upload_data"]
+				if file_data_uri.startswith("data:"):
+					file_data_uri = file_data_uri.split(",", 1)[1]
+				file_bytes = base64.b64decode(file_data_uri)
+
+				upload_result = get_rnd_file_service().save_file(
+					filename=data["document_upload_name"],
+					content=file_bytes,
+					is_private=True,
+					doctype="Project Registration",
+					docname=project_reg or doc.prjreg_title,
+					folder="fund_received",
+				)
+
+				if upload_result.get("status"):
+					doc.document_upload = upload_result.get("data", {}).get("file_url")
+					print(f"✅ document_upload updated in MinIO: {doc.document_upload}")
+				else:
+					frappe.log_error(
+						f"MinIO upload failed for document_upload (update): {upload_result.get('message')}",
+						"Fund Received Update – Document Upload",
+					)
+			except Exception as _upload_err:
+				frappe.log_error(frappe.get_traceback(), "Fund Received Update – Document Upload Error")
+				print(f"❌ document_upload MinIO error (update): {_upload_err}")
+
+		# ── 5. Replace fund_transactions child table (Sanction Txn Details) ───
+		if "fund_transactions" in data:
+			# Build Budget Head lookup (needed for resolving account_head labels)
+			doc.set("fund_transactions", [])  # clear existing rows
+
+			for transaction in data["fund_transactions"]:
+				# Skip completely empty rows
+				if (
+					transaction.get("transaction_number") in [None, ""]
+					and transaction.get("amount", 0) == 0
+				):
+					continue
+
+				attachment_url = None
+
+				# Upload per-row attachment to MinIO if provided
+				if transaction.get("file_data") and transaction.get("file_name"):
+					try:
+						from rndopsapp.minio import get_rnd_file_service
+
+						file_data_uri = transaction["file_data"]
+						if file_data_uri.startswith("data:"):
+							file_data_uri = file_data_uri.split(",", 1)[1]
+						file_bytes = base64.b64decode(file_data_uri)
+
+						upload_result = get_rnd_file_service().save_file(
+							filename=transaction["file_name"],
+							content=file_bytes,
+							is_private=True,
+							doctype="Project Registration",
+							docname=project_reg or doc.prjreg_title,
+							folder="fundreceived",
+						)
+
+						if upload_result.get("status"):
+							attachment_url = upload_result.get("data", {}).get("file_url")
+							print(f"✅ fund_transactions row file uploaded: {attachment_url}")
+						else:
+							frappe.log_error(
+								f"MinIO upload failed for transaction row: {upload_result.get('message')}",
+								"Fund Received Update – Transaction File Upload",
+							)
+					except Exception as _trx_err:
+						frappe.log_error(
+							frappe.get_traceback(),
+							"Fund Received Update – Transaction File Upload Error",
+						)
+						print(f"❌ Transaction row MinIO error: {_trx_err}")
+
+				row_data = {
+					"transaction_number": transaction.get("transaction_number") or "",
+					"transaction_date": transaction.get("transaction_date"),
+					"amount": transaction.get("amount", 0),
+				}
+				if attachment_url:
+					row_data["attachment"] = attachment_url
+
+				doc.append("fund_transactions", row_data)
+
+		# ── 6. Replace received_amt_breakup child table (Budget Breakup) ──────
+		if "received_amt_breakup" in data:
+			# Build Budget Head label → name lookup
+			try:
+				budget_heads = frappe.get_all("Budget Head", fields=["name", "budget_head"])
+				bh_label_to_name = {b.budget_head: b.name for b in budget_heads}
+			except Exception as _bh_err:
+				print(f"DEBUG: Error fetching Budget Head lookup (update): {_bh_err}")
+				bh_label_to_name = {}
+
+			doc.set("received_amt_breakup", [])  # clear existing rows
+
+			for breakup in data["received_amt_breakup"]:
+				if (
+					breakup.get("account_head") in [None, ""]
+					and breakup.get("amount_received", 0) == 0
+				):
+					continue
+
+				raw_account_head = breakup.get("account_head") or ""
+
+				# Resolve label to Budget Head document name (same logic as save)
+				account_head_name = raw_account_head
+				if raw_account_head in bh_label_to_name:
+					account_head_name = bh_label_to_name[raw_account_head]
+					print(f"DEBUG (update): Resolved account_head '{raw_account_head}' → '{account_head_name}'")
+				else:
+					for label, name in bh_label_to_name.items():
+						if label.lower() == raw_account_head.lower():
+							account_head_name = name
+							print(
+								f"DEBUG (update): Case-insensitive match '{raw_account_head}' → '{account_head_name}'"
+							)
+							break
+
+				doc.append(
+					"received_amt_breakup",
+					{
+						"account_head": account_head_name,
+						"amount_received": breakup.get("amount_received", 0),
+						"budget_year_funds_receive": breakup.get("budget_year_funds_receive", 1),
+						"remarks": breakup.get("remarks") or "",
+					},
+				)
+
+		# ── 7. Save and commit ────────────────────────────────────────────────
+		doc.flags.ignore_validate = False
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		print(f"[update_fund_received] Successfully updated: {doc.name}")
+		return {"status": "success", "docname": doc.name}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Fund Received Update Error")
+		frappe.db.rollback()
+		frappe.throw(f"Failed to update Fund Received: {str(e)}")
+# ── OJS EDIT END ─────────────────────────────────────────────────────────────

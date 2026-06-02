@@ -236,12 +236,13 @@ def save_repair_replacement_data(data):
 		for fieldname, value in deferred_fields:
 			df = meta.get_field(fieldname)
 
-			if df.fieldtype == "Table" and isinstance(value, list):
+			if df.fieldtype == "Table":
+				rows = value if isinstance(value, list) else []
 				doc.set(fieldname, [])
 				child_meta = frappe.get_meta(df.options)
 
-				for child_row in value:
-					row_dict = child_row.copy()
+				for child_row in rows:
+					row_dict = dict(child_row or {})
 
 					for cf in child_meta.fields:
 						if cf.fieldtype in ("Attach", "Attach Image") and row_dict.get(cf.fieldname):

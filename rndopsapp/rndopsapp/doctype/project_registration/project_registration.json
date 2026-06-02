@@ -210,7 +210,7 @@
   {
    "fieldname": "pi_webmail",
    "fieldtype": "Link",
-   "label": "If you are registering this project on behalf of other, please enter the email Id of the Principal Investigator",
+   "label": "Enter the email Id of the Principal Investigator",
    "options": "User",
    "placeholder": "example@iitg.ac.in"
   },
@@ -1286,7 +1286,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-19 11:33:00.893227",
+ "modified": "2026-05-21 15:59:59.116359",
  "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Project Registration",

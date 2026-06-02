@@ -317,9 +317,46 @@ def submit_project_registration(docname):
 		if "Head Approval" in next_state and not doc.head_approver:
 			frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
 
-		# ✅ Update workflow and submit
+		# START MKY 2026-05-29 12:52:00 IST - If submitting user IS the dept head, skip
+		# "Pending Head Approval" and jump directly to the next state (e.g. Pending Staff Approval).
+		# Uses pre-set-then-reload so validate_workflow sees no in-flight transition → no role error.
+		submitting_user = frappe.session.user
+		is_head_submitting = (
+			submitting_user == doc.head_approver
+			or submitting_user == doc.department_head
+		)
+
+		if is_head_submitting and "Head Approval" in next_state:
+			# Walk the workflow to find the state AFTER "Pending Head Approval"
+			post_head_state = None
+			for t in workflow_doc.transitions:
+				if t.state == next_state:
+					post_head_state = t.next_state
+					break
+			if post_head_state:
+				print(
+					f"[submit_project_registration] Head '{submitting_user}' is submitting — "
+					f"skipping '{next_state}' → going directly to '{post_head_state}'"
+				)
+				next_state = post_head_state
+
+		# Pre-set target workflow_state in DB so validate_workflow sees no transition
+		# (in-memory state == DB state → role check on the transition is not triggered).
+		frappe.db.set_value(
+			"Project Registration", docname, "workflow_state", next_state, update_modified=False
+		)
+		frappe.db.commit()
+
+		# Reload so in-memory doc matches the DB state before submit()
+		doc = frappe.get_doc("Project Registration", docname)
 		doc.workflow_state = next_state
+		doc.department_head = dept_doc.dept_head
+		doc.head_approver = dept_doc.dept_head
+
+		# ✅ Submit — validate_workflow passes since state already matches DB
+		doc.flags.ignore_mandatory = True
 		doc.submit()
+		# END MKY
 
 		notify_mattermost(
 			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
@@ -1184,6 +1221,8 @@ def save_project_data(doc, html_content=None):
 	# print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
 	# print(doc)
 	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc}")
+	upload_events = []
+	new_project = None
 	try:
 		# The 'doc' argument from the frontend is a JSON string, so we parse it.
 		# If the frontend sends an object directly, Frappe might auto-parse it.
@@ -1231,16 +1270,35 @@ def save_project_data(doc, html_content=None):
 									folder="attachments",
 								)
 								if upload_result.get("status"):
+									file_url = upload_result.get("data", {}).get("file_url")
+									upload_events.append({
+										"filename": attachment.get("file_name"),
+										"fieldname": fieldname,
+										"status": "success",
+										"file_url": file_url,
+									})
 									child_row = dict(child_row)
-									child_row["attachment"] = upload_result.get("data", {}).get("file_url")
+									child_row["attachment"] = file_url
 								else:
+									upload_events.append({
+										"filename": attachment.get("file_name"),
+										"fieldname": fieldname,
+										"status": "failed",
+										"message": upload_result.get("message"),
+									})
 									frappe.log_error(
 										upload_result.get("message"),
 										f"Supporting doc upload failed for {new_project.name}"
 									)
 									child_row = dict(child_row)
 									child_row.pop("attachment", None)
-							except Exception:
+							except Exception as upload_error:
+								upload_events.append({
+									"filename": attachment.get("file_name"),
+									"fieldname": fieldname,
+									"status": "error",
+									"message": str(upload_error),
+								})
 								frappe.log_error(frappe.get_traceback(), f"Supporting doc upload error for {new_project.name}")
 								child_row = dict(child_row)
 								child_row.pop("attachment", None)
@@ -1269,9 +1327,22 @@ def save_project_data(doc, html_content=None):
 					)
 
 					if upload_result.get("status"):
+						file_url = upload_result.get("data", {}).get("file_url")
+						upload_events.append({
+							"filename": value.get("file_name"),
+							"fieldname": fieldname,
+							"status": "success",
+							"file_url": file_url,
+						})
 						# Set the field to the MinIO file URL instead of the Base64 dict
-						new_project.set(fieldname, upload_result.get("data", {}).get("file_url"))
+						new_project.set(fieldname, file_url)
 					else:
+						upload_events.append({
+							"filename": value.get("file_name"),
+							"fieldname": fieldname,
+							"status": "failed",
+							"message": upload_result.get("message"),
+						})
 						frappe.log_error(f"File upload failed: {upload_result.get('message')}",
 							f"Attach Field Upload Failed for {fieldname}")
 				else:
@@ -1319,8 +1390,20 @@ def save_project_data(doc, html_content=None):
 				)
 
 				if html_result.get("status"):
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "success",
+						"file_url": html_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"HTML file saved to MinIO: {html_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "failed",
+						"message": html_result.get("message"),
+					})
 					frappe.log_error(f"HTML upload failed: {html_result.get('message')}",
 						f"save_project_data: HTML Upload Failed for {new_project.name}")
 
@@ -1336,12 +1419,30 @@ def save_project_data(doc, html_content=None):
 				)
 
 				if pdf_result.get("status"):
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "success",
+						"file_url": pdf_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"PDF file saved to MinIO: {pdf_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "failed",
+						"message": pdf_result.get("message"),
+					})
 					frappe.log_error(f"PDF upload failed: {pdf_result.get('message')}",
 						f"save_project_data: PDF Upload Failed for {new_project.name}")
 
 			except Exception as pdf_error:
+				upload_events.append({
+					"filename": f"{new_project.name}.html / {new_project.name}.pdf",
+					"fieldname": "html_content",
+					"status": "error",
+					"message": str(pdf_error),
+				})
 				frappe.log_error(
 					frappe.get_traceback(),
 					f"save_project_data: PDF conversion/save error for {new_project.name}",
@@ -1377,13 +1478,40 @@ def save_project_data(doc, html_content=None):
 		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost success notification for save_project_data
 		# ============================================================
+		uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+		else:
+			files_block = "   (no uploaded file paths)"
+
+		if upload_events:
+			upload_status_lines = []
+			for event in upload_events:
+				line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+				if event.get("file_url"):
+					line += f" -> {event.get('file_url')}"
+				if event.get("message"):
+					line += f" ({event.get('message')})"
+				upload_status_lines.append(line)
+			upload_status_block = "\n".join(upload_status_lines)
+		else:
+			upload_status_block = "   (no file uploads attempted)"
+
 		notify_mattermost(
-			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
-			f"✅ [save_project_data] SUCCESS ✅\n"
-			f"Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Docname : {new_project.name}\n"
-			f"User    : {frappe.session.user}\n"
-			f"Message : Project Registration Successful"
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ✅ [save_project_data] SUCCESS              │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname : {new_project.name}\n"
+			f" User    : {frappe.session.user}\n"
+			f" Uploads : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			" Upload Status:\n"
+			f"{upload_status_block}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```"
 		)
 		# END OF EDIT — OJS | 2026-04-21 01:43 IST
 		# ============================================================
@@ -1402,13 +1530,44 @@ def save_project_data(doc, html_content=None):
 		# EDITED BY OJS | 2026-04-21 01:46 IST
 		# START OF EDIT — Error notification: actual exception first
 		# ============================================================
+		docname = new_project.name if new_project and getattr(new_project, "name", None) else "N/A"
+		uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+		else:
+			files_block = "   (no uploaded file paths)"
+
+		if upload_events:
+			upload_status_lines = []
+			for event in upload_events:
+				line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+				if event.get("file_url"):
+					line += f" -> {event.get('file_url')}"
+				if event.get("message"):
+					line += f" ({event.get('message')})"
+				upload_status_lines.append(line)
+			upload_status_block = "\n".join(upload_status_lines)
+		else:
+			upload_status_block = "   (no file uploads attempted)"
+
 		notify_mattermost(
-			f"❌ -=-=-=-=-=-=❌-=-=-=-=-=-❌=-=-=-=-=-=-=-=❌-=-=-=-=-=-❌ \n"
-			f"❌ [save_project_data] ERROR ❌\n"
-			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Exception : {type(e).__name__}: {str(e)}\n"
-			f"User      : {frappe.session.user}\n"
-			f"---TRACEBACK---\n{_tb}",
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ❌ [save_project_data] ERROR                │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname   : {docname}\n"
+			f" User      : {frappe.session.user}\n"
+			f" Exception : {type(e).__name__}: {str(e)}\n"
+			f" Uploads   : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			" Upload Status:\n"
+			f"{upload_status_block}\n"
+			" Traceback:\n"
+			f"{_tb}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```",
 			urgent=True,
 		)
 		# END OF EDIT — OJS | 2026-04-21 01:46 IST
@@ -1546,6 +1705,8 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 
 	# Now 'data' is a dictionary
 	frappe.logger().warning(f"Jimmy Logging Debug save project data keys: {list(data.keys())}")
+	upload_events = []
+	doc = None
 	
 	if data.get("implementation_department"):
 		# --- Fetch linked Department_prornd document ---
@@ -1794,13 +1955,32 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 								folder=get_file_category_for_doctype(doc.doctype, "upload_supporting_docs"),
 							)
 							if upload_result.get("status"):
-								update_data["project_file"] = upload_result["data"]["file_url"]
+								file_url = upload_result["data"]["file_url"]
+								upload_events.append({
+									"filename": file_entry["filename"],
+									"fieldname": table_fieldname,
+									"status": "success",
+									"file_url": file_url,
+								})
+								update_data["project_file"] = file_url
 							else:
+								upload_events.append({
+									"filename": file_entry["filename"],
+									"fieldname": table_fieldname,
+									"status": "failed",
+									"message": upload_result.get("message"),
+								})
 								frappe.log_error(
 									upload_result.get("message"),
 									f"Supporting doc upload failed for {doc.name}"
 								)
-						except Exception:
+						except Exception as upload_error:
+							upload_events.append({
+								"filename": file_entry.get("filename") if isinstance(file_entry, dict) else row_filename,
+								"fieldname": table_fieldname,
+								"status": "error",
+								"message": str(upload_error),
+							})
 							frappe.log_error(frappe.get_traceback(), f"Supporting doc upload error for {doc.name}")
 
 				child = doc.append(table_fieldname, {})
@@ -1916,12 +2096,30 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 					# ============================================================
 
 					if upload_result.get("status"):
+						upload_events.append({
+							"filename": filename,
+							"fieldname": _field_for_category,
+							"status": "success",
+							"file_url": upload_result.get("data", {}).get("file_url"),
+						})
 						frappe.logger().info(f"File uploaded to MinIO: {filename} -> {upload_result.get('data', {}).get('file_url')}")
 					else:
+						upload_events.append({
+							"filename": filename,
+							"fieldname": _field_for_category,
+							"status": "failed",
+							"message": upload_result.get("message"),
+						})
 						frappe.log_error(f"MinIO upload failed: {upload_result.get('message')}",
 							f"save_project_draft: file upload error for {filename}")
 
 				except Exception as fe:
+						upload_events.append({
+							"filename": f.get("filename") or f.get("file_name") or f.get("name"),
+							"fieldname": f.get("fieldname") or "attachments",
+							"status": "error",
+							"message": str(fe),
+						})
 						frappe.log_error(
 							frappe.get_traceback(),
 							f"save_project_draft: file upload error for {f.get('filename')}",
@@ -1956,8 +2154,20 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				)
 
 				if html_result.get("status"):
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "success",
+						"file_url": html_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"HTML file saved to MinIO: {html_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "failed",
+						"message": html_result.get("message"),
+					})
 					frappe.log_error(f"HTML upload failed: {html_result.get('message')}",
 						f"save_project_draft: HTML Upload Failed for {doc.name}")
 
@@ -1972,8 +2182,20 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				)
 
 				if pdf_result.get("status"):
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "success",
+						"file_url": pdf_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"PDF file saved to MinIO: {pdf_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "failed",
+						"message": pdf_result.get("message"),
+					})
 					frappe.log_error(f"PDF upload failed: {pdf_result.get('message')}",
 						f"save_project_draft: PDF Upload Failed for {doc.name}")
 
@@ -1997,6 +2219,12 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				frappe.db.commit()
 
 			except Exception as pdf_error:
+				upload_events.append({
+					"filename": f"{doc.name}.html / {doc.name}.pdf",
+					"fieldname": "html_content",
+					"status": "error",
+					"message": str(pdf_error),
+				})
 				print(f"DEBUG ERROR: PDF conversion/save error: {str(pdf_error)}")
 				frappe.log_error(
 					frappe.get_traceback(),
@@ -2010,13 +2238,40 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost success notification for save_project_draft
 		# ============================================================
+		uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+		else:
+			files_block = "   (no uploaded file paths)"
+
+		if upload_events:
+			upload_status_lines = []
+			for event in upload_events:
+				line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+				if event.get("file_url"):
+					line += f" -> {event.get('file_url')}"
+				if event.get("message"):
+					line += f" ({event.get('message')})"
+				upload_status_lines.append(line)
+			upload_status_block = "\n".join(upload_status_lines)
+		else:
+			upload_status_block = "   (no file uploads attempted)"
+
 		notify_mattermost(
-			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
-			f"✅ [save_project_draft] SUCCESS ✅\n"
-			f"Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Docname : {doc.name}\n"
-			f"User    : {frappe.session.user}\n"
-			f"Status  : Draft saved successfully"
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ✅ [save_project_draft] SUCCESS             │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname : {doc.name}\n"
+			f" User    : {frappe.session.user}\n"
+			f" Uploads : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			" Upload Status:\n"
+			f"{upload_status_block}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```"
 		)
 		# END OF EDIT — OJS | 2026-04-21 01:43 IST
 		# ============================================================
@@ -2029,13 +2284,44 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost error notification for save_project_draft
 		# ============================================================
+		docname = doc.name if doc and getattr(doc, "name", None) else (docname or data.get("name") or "N/A")
+		uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+		else:
+			files_block = "   (no uploaded file paths)"
+
+		if upload_events:
+			upload_status_lines = []
+			for event in upload_events:
+				line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+				if event.get("file_url"):
+					line += f" -> {event.get('file_url')}"
+				if event.get("message"):
+					line += f" ({event.get('message')})"
+				upload_status_lines.append(line)
+			upload_status_block = "\n".join(upload_status_lines)
+		else:
+			upload_status_block = "   (no file uploads attempted)"
+
 		notify_mattermost(
-			f"❌ -=-=-=-=-=-=❌-=-=-=-=-=-❌=-=-=-=-=-=-=-=❌-=-=-=-=-=-❌ \n"
-			f"❌ [save_project_draft] ERROR ❌\n"
-			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Exception : {type(e).__name__}: {str(e)}\n"
-			f"User      : {frappe.session.user}\n"
-			f"---TRACEBACK---\n{_tb}",
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ❌ [save_project_draft] ERROR               │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname   : {docname}\n"
+			f" User      : {frappe.session.user}\n"
+			f" Exception : {type(e).__name__}: {str(e)}\n"
+			f" Uploads   : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			" Upload Status:\n"
+			f"{upload_status_block}\n"
+			" Traceback:\n"
+			f"{_tb}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```",
 			urgent=True,
 		)
 		# END OF EDIT — OJS | 2026-04-21 01:43 IST

@@ -1,12 +1,3 @@
-// Copyright (c) 2025, rndops and contributors
-// For license information, please see license.txt
-
-// frappe.ui.form.on("Indent Cum Sanction Sheet", {
-// 	refresh(frm) {
-
-// 	},
-// });
-
 frappe.listview_settings["Indent Cum Sanction Sheet"] = {
 	add_fields: ["workflow_state"],
 	has_indicator_for_draft: true,

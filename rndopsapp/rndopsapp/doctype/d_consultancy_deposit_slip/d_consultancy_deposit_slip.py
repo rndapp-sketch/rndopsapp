@@ -247,7 +247,7 @@ def save_d_consultancy_deposit_slip(doc_data):
 		frappe.db.commit()
 
 		print(f"Successfully saved D Consultancy Deposit Slip: {doc.name}")
-		return {"status": "success", "docname": doc.name}
+		return {"status": "success", "name": doc.name, "docname": doc.name}
 
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "D Consultancy Deposit Slip Save Error")
@@ -292,38 +292,32 @@ def submit_d_consultancy_deposit_slip(docname):
 
 
 @frappe.whitelist()
-def get_d_consultancy_deposit_slip_workflow_actions():
-	"""Returns available workflow actions based on user role."""
+def get_d_consultancy_deposit_slip_workflow_actions(doc_name):
+	"""Returns available workflow actions for the current doc state and user role."""
+	doc = frappe.get_doc("D Consultancy Deposit Slip", doc_name)
 	user_roles = frappe.get_roles(frappe.session.user)
-	workflow_name = "D_Consultancy_Deposit_Slip_Workflow"
-	
-	if not frappe.db.exists("Workflow", workflow_name):
+	workflow_name = frappe.db.get_value("Workflow", {"document_type": "D Consultancy Deposit Slip"}, "name")
+
+	if not workflow_name:
 		return []
 
-	workflow = frappe.get_doc("Workflow", workflow_name)
-	actions = []
-
-	for transition in workflow.transitions:
-		if transition.allowed in user_roles:
-			actions.append({
-				"action": transition.action,
-				"state": transition.state,
-				"next_state": transition.next_state,
-				"allowed": transition.allowed,
-			})
-
-	return actions
+	transitions = frappe.get_all(
+		"Workflow Transition",
+		filters={"parent": workflow_name, "state": doc.workflow_state},
+		fields=["action", "next_state", "allowed"],
+	)
+	return [t for t in transitions if t.allowed in user_roles]
 
 
 @frappe.whitelist()
 def perform_d_consultancy_deposit_slip_workflow_action(docname, action):
 	"""Perform a workflow action on a D Consultancy Deposit Slip document."""
 	try:
+		from frappe.model.workflow import apply_workflow
 		doc = frappe.get_doc("D Consultancy Deposit Slip", docname)
-		doc.run_method("apply_workflow", action)
-		doc.save(ignore_permissions=True)
+		apply_workflow(doc, action)
 		frappe.db.commit()
-		
+
 		return {
 			"status": "success",
 			"message": f"Action '{action}' performed successfully.",

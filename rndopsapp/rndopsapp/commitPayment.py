@@ -2,7 +2,8 @@ import frappe
 import requests
 import json
 import threading
-from frappe.utils import today, flt
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from frappe.utils import today, flt, getdate
 from datetime import datetime
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
 from rndopsapp.rndopsapp.kafka_sync import publish_message, KAFKA_AVAILABLE
@@ -39,6 +40,225 @@ ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.134.81:18080/api/account-head-commi
 
 # Valid commit statuses
 VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]
+SALARY_COMMIT_STATUSES = ["COMMITTED", "PARTIALLY_PAID", "OVERPAYMENT"]
+
+
+def _get_project_title_by_number(project_number):
+    if not project_number:
+        return None
+
+    project_meta = frappe.get_meta("Project Registration")
+    project_number_field = "project_number" if project_meta.has_field("project_number") else "project_no"
+
+    return frappe.db.get_value(
+        "Project Registration",
+        {project_number_field: project_number},
+        "project_title"
+    )
+
+
+def _fetch_account_head_commits_by_status(status):
+    response = requests.get(
+        f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-status/{status}",
+        timeout=10,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    if isinstance(data, list):
+        return data
+
+    if isinstance(data, dict):
+        for key in ("data", "message", "results"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+
+    return []
+
+
+def _json_contains_ps_emp_id(value, ps_emp_id):
+    if isinstance(value, dict):
+        if str(value.get("ps_emp_id")) == str(ps_emp_id):
+            return True
+        return any(_json_contains_ps_emp_id(item, ps_emp_id) for item in value.values())
+
+    if isinstance(value, list):
+        return any(_json_contains_ps_emp_id(item, ps_emp_id) for item in value)
+
+    return False
+
+
+def _salary_staging_has_ps_emp_id(ps_emp_id):
+    staged_records = frappe.get_all(
+        "Salary Staging",
+        fields=["name", "salary_record"],
+        limit_page_length=0,
+    )
+
+    for staged_record in staged_records:
+        salary_record = staged_record.get("salary_record")
+        if not salary_record:
+            continue
+
+        for line in str(salary_record).splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                payload = json.loads(line)
+            except Exception:
+                continue
+
+            if _json_contains_ps_emp_id(payload, ps_emp_id):
+                return True
+
+    return False
+
+
+@frappe.whitelist(allow_guest=True)
+def salary_payment_data(ps_emp_id):
+    """
+    Return active salary tenure data for a Project Staff employee.
+    """
+    if not ps_emp_id:
+        return {"status": "error", "message": "Employee ID is required"}
+
+    try:
+        if _salary_staging_has_ps_emp_id(ps_emp_id):
+            return {"status": "Pending Approval in Account Portal", "message": "Salary already initiated"}
+
+        staff_records = frappe.get_all(
+            "Project Staff Details",
+            filters={"ps_emp_id": ps_emp_id},
+            fields=["name", "scr_id", "project_no"],
+        )
+
+        if not staff_records:
+            return {
+                "status": "error",
+                "message": "No Project Staff Details found for the given Employee ID",
+            }
+
+        current_date = getdate(today())
+        valid_records = []
+
+        for staff_record in staff_records:
+            staff_doc = frappe.get_doc("Project Staff Details", staff_record.name)
+            valid_tenures = []
+
+            for tenure in staff_doc.get("table_ymed") or []:
+                term_completion_date = tenure.get("pstd_term_completion_date")
+                if not term_completion_date:
+                    continue
+
+                term_completion_date = getdate(term_completion_date)
+                if current_date > term_completion_date:
+                    continue
+
+                joining_date = tenure.get("pstd_joining_date")
+                basic_salary = flt(tenure.get("pstd_basic_salary"))
+                valid_tenures.append({
+                    "joining_date": joining_date,
+                    "term_completion_date": term_completion_date,
+                    "basic_salary": basic_salary,
+                })
+
+            if not valid_tenures:
+                continue
+
+            latest_tenure = max(
+                valid_tenures,
+                key=lambda row: (
+                    getdate(row.get("joining_date")) if row.get("joining_date") else getdate("1900-01-01"),
+                    getdate(row.get("term_completion_date")),
+                ),
+            )
+
+            valid_records.append({
+                "staff_doc": staff_doc,
+                "valid_tenures": valid_tenures,
+                "latest_tenure": latest_tenure,
+            })
+
+        if not valid_records:
+            return {
+                "status": "error",
+                "message": "No active tenure found for the given Employee ID",
+            }
+
+        latest_record = max(
+            valid_records,
+            key=lambda row: (
+                getdate(row["latest_tenure"].get("joining_date"))
+                if row["latest_tenure"].get("joining_date")
+                else getdate("1900-01-01"),
+                getdate(row["latest_tenure"].get("term_completion_date")),
+            ),
+        )
+
+        staff_doc = latest_record["staff_doc"]
+        scr_id = staff_doc.get("scr_id")
+        project_no = staff_doc.get("project_no")
+        interview_id = None
+
+        if scr_id and frappe.db.exists("Selection Committee Report", scr_id):
+            interview_id = frappe.db.get_value("Selection Committee Report", scr_id, "interview_id")
+
+        recruitment_doc_name = interview_id
+        if not recruitment_doc_name or not frappe.db.exists("Recruitment Adhoc Contractual", recruitment_doc_name):
+            return []
+
+        merged_commit_records = []
+        with ThreadPoolExecutor(max_workers=len(SALARY_COMMIT_STATUSES)) as executor:
+            future_to_status = {
+                executor.submit(_fetch_account_head_commits_by_status, status): status
+                for status in SALARY_COMMIT_STATUSES
+            }
+
+            for future in as_completed(future_to_status):
+                status = future_to_status[future]
+                try:
+                    merged_commit_records.extend(future.result())
+                except Exception:
+                    frappe.log_error(
+                        frappe.get_traceback(),
+                        f"Salary Account Head Commit API Error: {status}"
+                    )
+
+        filtered_records = []
+        project_title_by_number = {}
+
+        for record in merged_commit_records:
+            if not isinstance(record, dict):
+                continue
+
+            project_number = record.get("projectNumber")
+            if (
+                str(record.get("moduleId")) != "11"
+                or str(record.get("frapAppId")) != str(recruitment_doc_name)
+                or str(project_number) != str(project_no)
+            ):
+                continue
+
+            if project_number not in project_title_by_number:
+                project_title_by_number[project_number] = _get_project_title_by_number(project_number)
+
+            filtered_record = {"projectNumber": project_number}
+            filtered_record["projectTitle"] = project_title_by_number.get(project_number)
+            filtered_record.update({
+                key: value
+                for key, value in record.items()
+                if key != "projectNumber"
+            })
+            filtered_records.append(filtered_record)
+
+        return filtered_records
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Salary Payment Data Error")
+        return {"status": "error", "message": str(e)}
 
 
 @frappe.whitelist()
@@ -569,13 +789,140 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
         return {"status": "error", "message": str(e)}
 
 
+def _get_form_value(*keys):
+    for key in keys:
+        value = frappe.form_dict.get(key)
+        if value not in (None, "", "None", "null", "undefined"):
+            return value
+    return None
+
+
+def _is_recruitment_salary_payment(doctype=None, frapAppId=None, moduleName=None, moduleId=None):
+    doctype = doctype or _get_form_value("doctype", "reference_doctype")
+    moduleName = moduleName or _get_form_value("moduleName", "module_name")
+    moduleId = moduleId or _get_form_value("moduleId", "module_id")
+    frapAppId = frapAppId or _get_form_value("frapAppId", "frap_app_id")
+
+    return (
+        doctype == "Recruitment Adhoc Contractual"
+        or moduleName == "Recruitment Adhoc Contractual"
+        or str(moduleName) == "11"
+        or str(moduleId) == "11"
+        or (frapAppId and frappe.db.exists("Recruitment Adhoc Contractual", frapAppId))
+    )
+
+
+def _append_salary_staging_record(salary_year_month, payload):
+    # START MKY 2026-05-29 12:32:00 IST - Fixed salary_record to store as JSON array (was JSON Lines which fails MariaDB CHECK json_valid() constraint)
+    if not salary_year_month:
+        return {"status": "error", "message": "salary_year_month is required"}
+
+    try:
+        created = False
+        print(f"[SALARY_STAGING] Attempting to stage salary_year_month={salary_year_month}")
+        print(f"[SALARY_STAGING] Payload keys: {list(payload.keys())}")
+
+        if frappe.db.exists("Salary Staging", salary_year_month):
+            print(f"[SALARY_STAGING] Existing staging doc found — updating")
+            staging_doc = frappe.get_doc("Salary Staging", salary_year_month)
+
+            # Parse existing salary_record as JSON array
+            existing_raw = staging_doc.get("salary_record") or "[]"
+            try:
+                existing_records = json.loads(existing_raw)
+                if not isinstance(existing_records, list):
+                    existing_records = [existing_records]
+            except Exception:
+                existing_records = []
+
+            # Append new payload and serialize back as a valid JSON array
+            existing_records.append(payload)
+            staging_doc.salary_record = json.dumps(existing_records, default=str)
+            staging_doc.save(ignore_permissions=True)
+            print(f"[SALARY_STAGING] Updated staging doc: {staging_doc.name} (total records: {len(existing_records)})")
+        else:
+            print(f"[SALARY_STAGING] No existing doc — creating new staging doc")
+            # Store as a JSON array with one element so json_valid() constraint passes
+            salary_record_json = json.dumps([payload], default=str)
+            staging_doc = frappe.get_doc({
+                "doctype": "Salary Staging",
+                "name": salary_year_month,
+                "salary_record": salary_record_json,
+            })
+            if frappe.get_meta("Salary Staging").has_field("salary_year_month"):
+                staging_doc.salary_year_month = salary_year_month
+            staging_doc.name = salary_year_month
+            staging_doc.flags.name_set = True  # bypass DocType autoname (format:{YYYY}_{MMMM})
+            staging_doc.insert(ignore_permissions=True)
+            created = True
+            print(f"[SALARY_STAGING] Inserted new staging doc: {staging_doc.name}")
+
+        frappe.db.commit()
+        print(f"[SALARY_STAGING] db.commit() done. created={created}")
+
+        return {
+            "status": "success",
+            "message": "Salary record appended",
+            "name": staging_doc.name,
+            "created": created,
+        }
+
+    except Exception as e:
+        print(f"[SALARY_STAGING] EXCEPTION: {str(e)}")
+        frappe.log_error(frappe.get_traceback(), "Append Salary Staging Record Error")
+        return {"status": "error", "message": str(e)}
+    # END MKY
+
+
 @frappe.whitelist()
-def submit_payment_data(doctype=None, name=None, project_name=None, payment_amount=None, budget_head=None, bmr=None, refDetails=None, frapAppId=None, moduleName=None):
+def submit_payment_data(doctype=None, name=None, project_name=None, payment_amount=None, budget_head=None, bmr=None, refDetails=None, frapAppId=None, moduleName=None, salary_year_month=None):
     """
     Submit payment data using new Kafka producer.
     Works for doctype.
     """
     try:
+        if _is_recruitment_salary_payment(doctype=doctype, frapAppId=frapAppId, moduleName=moduleName):
+            salary_year_month = salary_year_month or _get_form_value(
+                "salary_year_month",
+                "salaryYearMonth",
+                "year_month",
+                "yearMonth"
+            )
+            salary_payload = dict(frappe.form_dict)
+            # START OJS 2026-05-29 12:17:00 IST - Added project_no and account_number to salary staging payload
+            _salary_backend = frappe.form_dict.get("salary_backend_details") or {}
+            if isinstance(_salary_backend, str):
+                try:
+                    import json as _json
+                    _salary_backend = _json.loads(_salary_backend)
+                except Exception:
+                    _salary_backend = {}
+
+            salary_payload.update({
+                "doctype": doctype,
+                "name": name,
+                "project_name": project_name,
+                "payment_amount": payment_amount,
+                "budget_head": budget_head,
+                "bmr": bmr,
+                "refDetails": refDetails,
+                "frapAppId": frapAppId,
+                "moduleName": moduleName,
+                "salary_year_month": salary_year_month,
+                "status": "PENDING_APPROVAL",
+                "project_no": _get_form_value("project_no") or _salary_backend.get("project_no"),
+                "account_number": _get_form_value("account_number"),
+            })
+            # END OJS
+            salary_payload.pop("cmd", None)
+            staging_result = _append_salary_staging_record(salary_year_month, salary_payload)
+            print(f"[PAYMENT_DEBUG] Salary staging result: {staging_result}")
+            if staging_result.get("status") == "error":
+                return staging_result
+            # START OJS 2026-05-29 12:20:00 IST - Return after successful salary staging; do not fall through to AccountHeadPayment creation
+            # return staging_result
+            # END OJS
+
         # Normalize name: treat "None", "null", empty string as actual None
         if not name or name in ("None", "null", "undefined", ""):
             name = None
@@ -724,7 +1071,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
         frappe.log_error(frappe.get_traceback(), "Submit Payment Data Error")
         return {"status": "error", "message": str(e)}
 
-# START MKY 2026-04-23 12:45:00 IST - Added endpoints to fetch workflow states securely
+# START OJS 2026-04-23 12:45:00 IST - Added endpoints to fetch workflow states securely
 @frappe.whitelist()
 def get_workflow_states(doctype):
     try:
@@ -758,4 +1105,4 @@ def set_workflow_state(doctype, docname, state):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "set_workflow_state failed")
         return {"status": "error", "message": str(e)}
-# END MKY
+# END OJS

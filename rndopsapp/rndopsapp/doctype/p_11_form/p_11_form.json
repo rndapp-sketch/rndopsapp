@@ -21,7 +21,8 @@
   "freight",
   "other_charges",
   "grand_total",
-  "declaration"
+  "declaration",
+  "attachment_if_any"
  ],
  "fields": [
   {
@@ -116,13 +117,18 @@
    "hidden": 1,
    "label": "Workflow Status",
    "read_only": 1
+  },
+  {
+   "fieldname": "attachment_if_any",
+   "fieldtype": "Attach",
+   "label": "Attachment if any"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-01 20:39:17.759948",
+ "modified": "2026-05-25 16:58:41.225671",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "P_11 Form",
