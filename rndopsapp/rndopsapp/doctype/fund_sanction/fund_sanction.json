@@ -77,6 +77,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sanction_related_files",
    "fieldtype": "Table",
    "label": "Upload Sanction Related Files",
