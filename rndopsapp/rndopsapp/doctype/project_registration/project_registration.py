@@ -2880,7 +2880,12 @@ def delete_draft_project(docname):
                 "message": "You can only delete your own draft projects"
             }
 
-        frappe.delete_doc("Project Registration", docname, ignore_permissions=True)
+        # Cancel first if docstatus=1 (submitted but workflow_state shows Draft — state mismatch)
+        if doc.docstatus == 1:
+            doc.flags.ignore_permissions = True
+            doc.cancel()
+
+        frappe.delete_doc("Project Registration", docname, ignore_permissions=True, force=True)
         frappe.db.commit()
 
         return {"status": "success", "message": f"Project '{docname}' deleted successfully"}

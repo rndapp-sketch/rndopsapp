@@ -41,12 +41,13 @@ class ResearchDepositSlip(Document):
 			target_states = ["Approved", "Verified", "Submitted"]
 
 			# Trigger if entering target state (and not already there)
-			# OR if submitting (docstatus becomes 1)
-			if (new_state in target_states and old_state != new_state):
+			if new_state in target_states and old_state != new_state:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
 				publish_research_deposit_slip(self)
-			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0):
-				# Fallback if workflow state not used but doc submitted
+			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0) and new_state not in target_states:
+				# Fallback for direct submission without a workflow state transition.
+				# Guard: skip if workflow state already triggered the publish above
+				# (e.g. save→Approved fires first, then submit fires this elif — double publish).
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for Submit")
 				publish_research_deposit_slip(self)
 

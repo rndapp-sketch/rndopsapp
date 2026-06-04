@@ -32,10 +32,13 @@
   "institute_share_amount",
   "total_overhead_institute_share",
   "credit_distribution_section",
+  "idf_percentage",
+  "column_break_umfm",
   "idf_amount",
-  "dpf_amount",
-  "staff_welfare_amount",
+  "section_break_rwhj",
+  "dpf_credit_distributions",
   "student_welfare_amount",
+  "staff_welfare_amount",
   "final_totals",
   "balance_consultancy_fee",
   "balance_operation_charge",
@@ -46,9 +49,10 @@
   {
    "fieldname": "consultancy_title",
    "fieldtype": "Data",
-   "label": "Consultancy Title"
+   "label": "Project Title"
   },
   {
+   "default": "Category D",
    "fieldname": "category_d",
    "fieldtype": "Data",
    "label": "Category"
@@ -56,7 +60,7 @@
   {
    "fieldname": "principal_consultant",
    "fieldtype": "Link",
-   "label": "Principal Consultant",
+   "label": "Principal Investigator/Consultant",
    "options": "User"
   },
   {
@@ -83,7 +87,7 @@
   {
    "fieldname": "bank",
    "fieldtype": "Data",
-   "label": "Bank"
+   "label": "Bank Name"
   },
   {
    "fieldname": "ecs_ac_no",
@@ -117,7 +121,7 @@
    "label": "Amount after GST TDS @ 2%"
   },
   {
-   "description": "Total Cost X (Balance after GST Deduction)",
+   "description": "Total Cost X (Balance after GST Deduction from amount received)",
    "fieldname": "total_cost_x",
    "fieldtype": "Currency",
    "label": "Total Cost X"
@@ -214,34 +218,47 @@
    "label": "COL 1"
   },
   {
-   "description": "(40% of Overhead + Institute Share)",
+   "description": "(IDF %age of Overhead + Institute Share)",
    "fieldname": "idf_amount",
    "fieldtype": "Currency",
-   "label": "IDF"
-  },
-  {
-   "description": "(50% of Overhead + Institute Share)",
-   "fieldname": "dpf_amount",
-   "fieldtype": "Currency",
-   "label": "DPF/CE"
+   "label": "IDF Amount"
   },
   {
    "description": "(5% of Overhead + Institute Share)",
    "fieldname": "staff_welfare_amount",
    "fieldtype": "Currency",
-   "label": "Staff welfare Amount"
+   "label": "(D) Staff welfare Amount"
   },
   {
    "description": "(5% of Overhead + Institute Share)",
    "fieldname": "student_welfare_amount",
    "fieldtype": "Currency",
-   "label": "Student welfare Amount"
+   "label": "(C) Student welfare Amount"
+  },
+  {
+   "fieldname": "idf_percentage",
+   "fieldtype": "Float",
+   "label": "(A) IDF % age"
+  },
+  {
+   "fieldname": "column_break_umfm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_rwhj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dpf_credit_distributions",
+   "fieldtype": "Table",
+   "label": "(B) DPF Credit Distribution",
+   "options": "DPF Credit Distribution"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-16 11:19:29.529368",
+ "modified": "2026-06-04 10:51:57.572765",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "D Consultancy Deposit Slip",

@@ -77,21 +77,65 @@ class FundSanctionMapper:
         """
         project_number = ""
         project_ref = doc.refnum_prj_num or doc.project_proposal
-        
+
         if project_ref:
             try:
-                # Check if it is a link to Project Registration
-                # by trying to fetch project_no from it
                 project_number = frappe.db.get_value(
-                    "Project Registration", 
-                    project_ref, 
+                    "Project Registration",
+                    project_ref,
                     "project_no"
                 ) or ""
             except Exception:
-                # If fetch fails, return empty string
                 project_number = ""
-        
+
         return project_number
+
+    @staticmethod
+    def get_account_type_fields(doc):
+        """
+        Fetch PFMS / bank-account fields from the linked Project Registration.
+
+        Project Registration uses:
+          - is_the_account_type_pfms (Yes/No) to distinguish PFMS vs. bank
+          - scheme_name / enter_scheme_number when PFMS
+          - bank_name / account_number when ordinary bank
+
+        Returns:
+            Tuple: (is_pfms, scheme_name_or_bank_name, scheme_number_or_account_number)
+        """
+        project_ref = doc.refnum_prj_num or doc.project_proposal
+        if not project_ref:
+            return False, None, None
+
+        try:
+            pr = frappe.db.get_value(
+                "Project Registration",
+                project_ref,
+                [
+                    "is_the_account_type_pfms",
+                    "scheme_name",
+                    "enter_scheme_number",
+                    "bank_name",
+                    "account_number",
+                ],
+                as_dict=True,
+            )
+        except Exception:
+            return False, None, None
+
+        if not pr:
+            return False, None, None
+
+        is_pfms = (pr.get("is_the_account_type_pfms") or "").strip().lower() == "yes"
+
+        if is_pfms:
+            scheme_name_bank_name = pr.get("scheme_name") or None
+            scheme_number_account_number = pr.get("enter_scheme_number") or None
+        else:
+            scheme_name_bank_name = pr.get("bank_name") or None
+            scheme_number_account_number = pr.get("account_number") or None
+
+        return is_pfms, scheme_name_bank_name, scheme_number_account_number
 
     @classmethod
     def map_to_dto(cls, doc) -> FundSanctionDTO:
@@ -108,6 +152,10 @@ class FundSanctionMapper:
         project_number = cls.get_project_number(doc)
         sanction_letter_no = doc.sanctioned_letter_no
 
+        # Get PFMS / bank-account fields from linked Project Registration
+        is_pfms, scheme_name_bank_name, scheme_number_account_number = \
+            cls.get_account_type_fields(doc)
+
         # Map budget breakups
         budget_breakups = cls.map_budget_breakups(doc)
 
@@ -116,6 +164,9 @@ class FundSanctionMapper:
             sanctionLetterNo=sanction_letter_no,
             sanctionLetterDate=str(doc.sanctioned_letter_date) if doc.sanctioned_letter_date else None,
             totalSanctionAmount=float(doc.total_sanctioned_amount or 0),
+            isPfms=is_pfms,
+            schemeNameBankName=scheme_name_bank_name,
+            schemeNumberAccountNumber=scheme_number_account_number,
             budgetBreakups=budget_breakups
         )
 

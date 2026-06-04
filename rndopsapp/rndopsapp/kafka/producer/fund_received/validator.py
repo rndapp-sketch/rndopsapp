@@ -33,6 +33,18 @@ class FundReceivedValidator:
         if not dto.fundReceivedRefNumberFap:
             errors.append("fundReceivedRefNumberFap is required")
 
+        if not dto.sanctionLetterNo:
+            errors.append(
+                "sanctionLetterNo is required — consumer cannot locate "
+                "ProjectSanctionDetails without it"
+            )
+
+        if not dto.sanctionNumber:
+            errors.append(
+                "sanctionNumber is required — consumer uses this to link "
+                "ProjectFundReceivedDetails to the sanction"
+            )
+
         if not dto.projectNumber:
             errors.append("projectNumber is recommended but missing")
 

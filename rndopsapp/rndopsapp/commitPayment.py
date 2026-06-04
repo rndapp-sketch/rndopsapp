@@ -1075,9 +1075,12 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
 @frappe.whitelist()
 def get_workflow_states(doctype):
     try:
+        # Prefer active workflow; fall back to any workflow for the doctype
         workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
         if not workflows:
-            return {"status": "error", "message": "No active workflow found"}
+            workflows = frappe.get_all("Workflow", filters={"document_type": doctype}, pluck="name")
+        if not workflows:
+            return {"status": "error", "message": "No workflow found"}
 
         states = frappe.get_all("Workflow Document State", filters={"parent": workflows[0]}, pluck="state")
         return {"status": "success", "data": list(set(states))}
@@ -1095,13 +1098,40 @@ def get_document_state(doctype, docname):
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def set_workflow_state(doctype, docname, state):
+def set_workflow_state(doctype, docname, state, comment=None):
     try:
         if not frappe.db.exists(doctype, docname):
             return {"status": "error", "message": "Document not found"}
+
+        prev_state = frappe.db.get_value(doctype, docname, "workflow_state") or "Unknown"
+        user = frappe.session.user
+        comment = (comment or "").strip()
+
         frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
+
+        # Activity log comment
+        reason_text = f" | Reason: {comment}" if comment else ""
+        frappe.get_doc({
+            "doctype": "Comment",
+            "comment_type": "Workflow",
+            "reference_doctype": doctype,
+            "reference_name": docname,
+            "content": (
+                f"[Manual Override] Workflow state changed by {user} "
+                f"via Kafka Control: {prev_state} → {state}{reason_text}"
+            ),
+        }).insert(ignore_permissions=True)
+
         frappe.db.commit()
-        return {"status": "success", "message": f"{docname} → {state}"}
+
+        return {
+            "status": "success",
+            "message": f"{docname} → {state}",
+            "from_state": prev_state,
+            "to_state": state,
+            "changed_by": user,
+            "comment": comment or None,
+        }
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "set_workflow_state failed")
         return {"status": "error", "message": str(e)}
