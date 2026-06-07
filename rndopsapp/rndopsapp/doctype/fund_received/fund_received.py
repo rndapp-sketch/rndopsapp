@@ -11,6 +11,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, sanitize_html
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_received
+from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
 
 
 class FundReceived(Document):
@@ -695,15 +696,18 @@ def get_fund_received_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_fund_received_action(docname, action, deposit_slip_data=None):
+def perform_fund_received_action(docname, action, deposit_slip_data=None, deposit_slip_type=None):
 	"""
 	Executes the selected workflow action and updates the document state.
-	
+
 	Args:
 		docname (str): Name of the Fund Received document.
 		action (str): Workflow action to perform.
-		deposit_slip_data (json/dict, optional): Data to create a new Deposit Slip 
+		deposit_slip_data (json/dict, optional): Data to create a new Deposit Slip
 												 if transitioning to HoS Approval.
+		deposit_slip_type (str, optional): Explicit deposit slip type from frontend
+										   (e.g. 'e_non_routine', 'research', 'd_consultancy').
+										   Takes priority over project-type inference.
 	"""
 	try:
 		print("=========================================================================")
@@ -828,7 +832,7 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		if next_state == "Pending HoS Approval": 
 			print(f"DEBUG: Transitioning to HoS Approval. Data present: {bool(deposit_slip_data)}")
 			if deposit_slip_data:
-				create_deposit_slip_from_data(deposit_slip_data, doc)
+				create_deposit_slip_from_data(deposit_slip_data, doc, deposit_slip_type=deposit_slip_type)
 			else:
 				print(f"Warning: transitioning to {next_state} without deposit_slip_data")
 
@@ -886,27 +890,69 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		# (Send Fund Received data to Kafka when moving to PENDING_APPROVAL state)
 		if next_state == "PENDING_APPROVAL":
 			try:
+				import datetime
 				success = publish_fund_received(doc)
 				if success:
 					frappe.msgprint(_("Fund Received data synced to Kafka successfully."), indicator='green')
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  📡 [Kafka Publish] Fund Received SUCCESS      │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {doc.name}\n"
+						f" State    : {next_state}\n"
+						f" User     : {frappe.session.user}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```"
+					)
 				else:
 					frappe.msgprint(_("Kafka sync returned False."), indicator='orange')
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  ⚠️ [Kafka Publish] Fund Received FAILED       │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {doc.name}\n"
+						f" State    : {next_state}\n"
+						f" User     : {frappe.session.user}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```",
+						urgent=True,
+					)
 			except Exception as k_err:
+				import datetime
 				print(f"Kafka sync error: {k_err}")
 				frappe.log_error(frappe.get_traceback(), "Fund Received Workflow Kafka Sync Error")
 				frappe.msgprint(_("Failed to sync with Kafka: {}").format(str(k_err)), indicator='red')
+				notify_mattermost(
+					"```\n"
+					"┌──────────────────────────────────────────────┐\n"
+					"│  🔴 [ERROR] Fund Received Kafka Sync           │\n"
+					"├──────────────────────────────────────────────┤\n"
+					f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+					f" Docname  : {docname}\n"
+					f" Action   : {action}\n"
+					f" User     : {frappe.session.user}\n"
+					f" Error    : {str(k_err)}\n"
+					"└──────────────────────────────────────────────┘\n"
+					"```",
+					urgent=True,
+				)
 
 		# 3. When Fund Received is Approved by HoS -> Auto-Approve Deposit Slip & Sync to Kafka
 		if next_state == "Approved":
 			try:
+				import datetime
 				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 				print("|||||||||||||||||||||||KAFKA|||||||||||||||||||||||||||||||||")
 				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				
+
 				# List of potential Deposit Slip doctypes
 				deposit_doctypes = [
 					"Research Deposit Slip",
-					"Research Consultancy Deposit Slip", 
+					"Research Consultancy Deposit Slip",
 					"D Consultancy Deposit Slip",
 					"E Non Routine Deposit Slip",
 					"Other Event Deposit Slip",
@@ -916,47 +962,126 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 				# Find linked Deposit Slip in any of the potential doctypes
 				ds_name = None
 				found_doctype = None
-				
+
 				for dt in deposit_doctypes:
 					ds_name = frappe.db.get_value(dt, {"fund_received_ref": doc.name}, "name")
 					if ds_name:
 						found_doctype = dt
 						break
-				
+
 				if ds_name and found_doctype:
 					print(f"DEBUG: Found linked Deposit Slip {ds_name} of type {found_doctype}. Auto-approving and Syncing...")
 					ds_doc = frappe.get_doc(found_doctype, ds_name)
-					
-					# Get current workflow_state (Data field, not Frappe workflow)
-					# Use get() for safe access since it's a Data field
+
 					current_ds_state = ds_doc.get("workflow_state") or ""
 					print(f"DEBUG: Current Deposit Slip state: '{current_ds_state}'")
-					
+
 					# Update State to Approved if not already
+					# skip_kafka_sync flag tells on_update to skip its own publish
+					# so we can publish explicitly below with proper error handling
 					if current_ds_state != "Approved":
 						ds_doc.workflow_state = "Approved"
 						ds_doc.flags.ignore_validate = True
+						ds_doc.flags.skip_kafka_sync = True
 						ds_doc.save(ignore_permissions=True)
 						print(f"DEBUG: Deposit Slip {ds_name} state updated to 'Approved'")
-						
+
 					# Submit if not submitted
 					if ds_doc.docstatus == 0:
 						ds_doc.flags.ignore_validate = True
+						ds_doc.flags.skip_kafka_sync = True
 						ds_doc.submit()
 						print(f"DEBUG: Deposit Slip {ds_name} submitted")
-					
-					# Note: Kafka sync is handled by the on_update() hook in Research Consultancy Deposit Slip
-					# when save() is called with workflow_state = "Approved"
-					frappe.msgprint(_(f"Linked {found_doctype} Approved and Synced to Kafka."), indicator='green')
+
+					# --- Explicit Kafka publish with proper success/failure handling ---
+					# Use the canonical publisher that handles all 6 deposit slip types
+					# with key-based partitioning and structured logging
+					kafka_result = False
+					kafka_error = None
+					try:
+						from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip
+						kafka_result = publish_deposit_slip(ds_doc)
+					except Exception as kafka_exc:
+						kafka_error = str(kafka_exc)
+						kafka_result = False
+						print(f"DEBUG: Kafka publish exception: {kafka_exc}")
+						print(frappe.get_traceback())
+						frappe.log_error(frappe.get_traceback(), "Deposit Slip Kafka Publish Error")
+
+					if kafka_result:
+						frappe.msgprint(_(f"Linked {found_doctype} Approved and published to Kafka."), indicator='green')
+						print(f"DEBUG: Kafka publish SUCCESS for {ds_name}")
+						try:
+							notify_mattermost(
+								"```\n"
+								"┌──────────────────────────────────────────────┐\n"
+								"│  ✅ [Kafka Publish] Deposit Slip Approved      │\n"
+								"├──────────────────────────────────────────────┤\n"
+								f" Time        : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+								f" Fund Rcvd   : {doc.name}\n"
+								f" Deposit Slip: {ds_name}\n"
+								f" Type        : {found_doctype}\n"
+								f" User        : {frappe.session.user}\n"
+								"└──────────────────────────────────────────────┘\n"
+								"```"
+							)
+						except Exception as mm_exc:
+							print(f"DEBUG: Mattermost notify failed (success path): {mm_exc}")
+					else:
+						err_detail = kafka_error or "publish_deposit_slip returned False (check validation errors in Frappe Error Log)"
+						frappe.msgprint(_(f"Deposit Slip approved but Kafka publish failed: {err_detail}"), indicator='orange')
+						print(f"DEBUG: Kafka publish FAILED for {ds_name}: {err_detail}")
+						try:
+							notify_mattermost(
+								"```\n"
+								"┌──────────────────────────────────────────────┐\n"
+								"│  ⚠️ [Kafka Publish] Deposit Slip FAILED        │\n"
+								"├──────────────────────────────────────────────┤\n"
+								f" Time        : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+								f" Fund Rcvd   : {doc.name}\n"
+								f" Deposit Slip: {ds_name}\n"
+								f" Type        : {found_doctype}\n"
+								f" User        : {frappe.session.user}\n"
+								f" Error       : {err_detail}\n"
+								"└──────────────────────────────────────────────┘\n"
+								"```",
+								urgent=True,
+							)
+						except Exception as mm_exc:
+							print(f"DEBUG: Mattermost notify failed (failure path): {mm_exc}")
 				else:
 					print("DEBUG: No linked Deposit Slip found.")
-					
+
 				print("|||||||||||||||||||||||KAFKA end|||||||||||||||||||||||||||||||||")
 			except Exception as ds_err:
+				import datetime
 				print(f"DEBUG: Error auto-processing Deposit Slip: {ds_err}")
 				print(frappe.get_traceback())
 				frappe.log_error(frappe.get_traceback(), "Auto Deposit Slip Sync Error")
 				frappe.msgprint(_("Error processing Deposit Slip: {}").format(str(ds_err)), indicator='red')
+				# Ensure FR state is committed even if deposit slip processing failed
+				try:
+					doc.db_set("workflow_state", next_state)
+					frappe.db.commit()
+				except Exception:
+					pass
+				try:
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  🔴 [ERROR] Deposit Slip Auto-Approve/Kafka    │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {docname}\n"
+						f" Action   : {action}\n"
+						f" User     : {frappe.session.user}\n"
+						f" Error    : {str(ds_err)}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```",
+						urgent=True,
+					)
+				except Exception as mm_exc:
+					print(f"DEBUG: Mattermost notify failed (error path): {mm_exc}")
 		
 		print("DEBUG: End of function success")
 		return {
@@ -968,14 +1093,29 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		}
 
 	except Exception as e:
+		import datetime
 		frappe.db.rollback()
 		print(f"DEBUG: Exception in perform_fund_received_action: {e}")
 		print(frappe.get_traceback())
 		frappe.log_error(frappe.get_traceback(), "Fund Received Action Error")
+		notify_mattermost(
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  🔴 [ERROR] Fund Received Action Failed        │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname  : {docname}\n"
+			f" Action   : {action}\n"
+			f" User     : {frappe.session.user}\n"
+			f" Error    : {str(e)}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```",
+			urgent=True,
+		)
 		return {"status": "error", "message": str(e)}
 
 
-def create_deposit_slip_from_data(data_json, fund_received_doc):
+def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_type=None):
 	"""
 	Helper to create a fresh Deposit Slip document linked to the Fund Received doc.
 	Reuse logic similar to save_deposit_slip but internal.
@@ -1003,49 +1143,73 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 		print(f"Creating Deposit Slip for FR: {fund_received_doc.name}")
 
 		# Determine Doctype based on Category
-		category = data.get("category", "")
-		
-		# If category is empty, try to infer from Fund Received document
-		if not category:
-			# Try to get project type from the linked project registration
-			if fund_received_doc.prjreg_title:
-				try:
-					project_type = frappe.db.get_value(
-						"Project Registration", 
-						fund_received_doc.prjreg_title, 
-						"project_type"
-					)
-					if project_type:
-						project_type_upper = (project_type or "").upper()
-						if "RESEARCH" in project_type_upper and "CONSULTANCY" not in project_type_upper:
-							category = "RESEARCH"
-						elif "CONSULTANCY" in project_type_upper:
-							if "D" in project_type_upper or "D_CONSULTANCY" in project_type_upper:
-								category = "D_CONSULTANCY"
-							elif "E" in project_type_upper or "NON" in project_type_upper:
-								category = "E_NON_ROUTINE"
-							elif "T" in project_type_upper or "TEST" in project_type_upper:
-								category = "T_TESTING"
+		# Priority: 1) explicit deposit_slip_type from frontend  2) 'category' key in data
+		# 3) category-specific field keys in data  4) project-type inference (last resort)
+
+		# Map from frontend deposit_slip_type values to internal category keys
+		_type_to_category = {
+			"e_non_routine":        "E_NON_ROUTINE",
+			"d_consultancy":        "D_CONSULTANCY",
+			"t_testing":            "T_TESTING",
+			"other_event":          "OTHER_EVENT",
+			"research":             "RESEARCH",
+			"research_consultancy": "CONSULTANCY",
+		}
+
+		project_type = None  # kept for log_category_inference below
+
+		if deposit_slip_type and deposit_slip_type.lower() in _type_to_category:
+			category = _type_to_category[deposit_slip_type.lower()]
+			print(f"Category resolved from deposit_slip_type='{deposit_slip_type}': {category}")
+		else:
+			category = data.get("category", "")
+
+			# Detect category from category-specific field keys when 'category' is absent
+			if not category:
+				if data.get("category_e"):
+					category = "E_NON_ROUTINE"
+				elif data.get("category_d"):
+					category = "D_CONSULTANCY"
+
+			# Last resort: infer from project_type on the linked Project Registration
+			if not category:
+				if fund_received_doc.prjreg_title:
+					try:
+						project_type = frappe.db.get_value(
+							"Project Registration",
+							fund_received_doc.prjreg_title,
+							"project_type"
+						)
+						if project_type:
+							project_type_upper = (project_type or "").upper()
+							if "RESEARCH" in project_type_upper and "CONSULTANCY" not in project_type_upper:
+								category = "RESEARCH"
+							elif "CONSULTANCY" in project_type_upper:
+								if "D" in project_type_upper or "D_CONSULTANCY" in project_type_upper:
+									category = "D_CONSULTANCY"
+								elif "E" in project_type_upper or "NON" in project_type_upper:
+									category = "E_NON_ROUTINE"
+								elif "T" in project_type_upper or "TEST" in project_type_upper:
+									category = "T_TESTING"
+								else:
+									category = "CONSULTANCY"
 							else:
-								category = "CONSULTANCY"
+								category = "RESEARCH"
 						else:
-							category = "RESEARCH"  # Default to Research
-					else:
-						category = "RESEARCH"  # Default to Research
-				except Exception as e:
-					print(f"Warning: Could not get project type: {e}")
-					category = "RESEARCH"  # Default to Research
-			else:
-				category = "RESEARCH"  # Default to Research if no project linked
-			
-			print(f"Inferred category from project: {category}")
-			# Log category inference
-			log_category_inference(
-				fund_received_doc.name,
-				fund_received_doc.prjreg_title,
-				project_type if 'project_type' in dir() else None,
-				category
-			)
+							category = "RESEARCH"
+					except Exception as e:
+						print(f"Warning: Could not get project type: {e}")
+						category = "RESEARCH"
+				else:
+					category = "RESEARCH"
+
+				print(f"Inferred category from project: {category}")
+				log_category_inference(
+					fund_received_doc.name,
+					fund_received_doc.prjreg_title,
+					project_type,
+					category
+				)
 		
 		# Simple mapping based on known categories
 		# Adjust keys as per exact frontend inputs
@@ -1084,8 +1248,11 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			"bank": "bank",
 			
 			# Mappings to new fieldnames (Research Consultancy Deposit Slip)
+			# NOTE: falls back to original key when target field missing (e.g. E Non Routine uses amount_inclusive_of_gst)
 			"amount_inclusive_of_gst": "amount_inclusive_gst_capital",
 			"amount_inclusive_gst_capital": "amount_inclusive_gst_capital",
+
+			"consultancy_fee_x": "consultancy_fee_x",
 			
 			"ecs_acc_no": "ecs_ac_no",
 			"ecs_ac_no": "ecs_ac_no",
@@ -1109,6 +1276,33 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			"staff_welfare_amount": "staff_welfare_amount",
 			"student_welfare_amount": "student_welfare_amount",
 			
+			# D Consultancy Deposit Slip specific fields
+			"consultancy_title": "consultancy_title",
+			"principal_consultant": "principal_consultant",
+			"igst_18_on_consultancy": "igst_18_on_consultancy",
+			"amount_after_gst_tds": "amount_after_gst_tds",
+			"total_cost_x": "total_cost_x",
+			"consultancy_charge_y": "consultancy_charge_y",
+			"operational_charge_z": "operational_charge_z",
+			"idf_percentage": "idf_percentage",
+			"iitg_invoice_no": "iitg_invoice_no",
+
+			# Other Event Deposit Slip specific fields
+			"event_title": "event_title",
+			"principal_organizer": "principal_organizer",
+			"gstin_no": "gstin_no",
+			"gst_multiplier": "gst_multiplier",
+			"gst_amount": "gst_amount",
+			"training_fee": "training_fee",
+			"gst_final": "gst_final",
+			"total": "total",
+
+			# T Testing Deposit Slip specific fields
+			"idf_t_testing_fee": "idf_t_testing_fee",
+			"dpf_t_testing_fee": "dpf_t_testing_fee",
+			"staff_welfare_t_testing_fund": "staff_welfare_t_testing_fund",
+			"student_welfare_t_testing_fund": "student_welfare_t_testing_fund",
+
 			# Research Deposit Slip specific fields
 			"deposit_date": "deposit_date",
 			"total_amount": "total_amount",
@@ -1121,10 +1315,15 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			"project_no": "project_no",
 			"project_account_balance": "project_account_balance",
 			"grand_total": "grand_total",
+			"staff_welfare_fund_percent": "staff_welfare_fund_percent",
+			"student_welfare_fund_percent": "student_welfare_fund_percent",
+
+			# Research Consultancy Deposit Slip specific fields
+			"project_number": "project_number",
 		}
 		
-		# Fields to skip (can cause link validation errors)
-		skip_fields = ["funding_agency", "gstin_of_funding_agency"]
+		# Fields to skip (funding_agency is a Link field — validated separately below)
+		skip_fields = ["funding_agency"]
 		
 		# Handle date fields - convert "Today" string to actual date
 		date_fields = ["deposit_date"]
@@ -1141,7 +1340,13 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 				continue
 			if form_field in data and data[form_field] not in [None, ""]:
 				try:
-					new_doc.set(doctype_field, data[form_field])
+					# If the mapped target field doesn't exist on this doctype, fall back to the original key name
+					actual_field = doctype_field
+					if (doctype_field != form_field
+							and not new_doc.meta.has_field(doctype_field)
+							and new_doc.meta.has_field(form_field)):
+						actual_field = form_field
+					new_doc.set(actual_field, data[form_field])
 				except Exception as e:
 					print(f"Warning: Could not set field {doctype_field}: {e}")
 

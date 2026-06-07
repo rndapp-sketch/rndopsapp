@@ -27,7 +27,8 @@
   "additional_project_credits",
   "totals_section",
   "total_gst",
-  "total_budget"
+  "total_budget",
+  "fund_received_ref"
  ],
  "fields": [
   {
@@ -149,6 +150,12 @@
    "fieldname": "category_e",
    "fieldtype": "Data",
    "label": "Category"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

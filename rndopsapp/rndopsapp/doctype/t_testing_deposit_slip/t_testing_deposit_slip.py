@@ -20,7 +20,7 @@ def extract_eval_expression(expression):
 	return expression
 
 
-from rndopsapp.rndopsapp.fund_deposits.consultancy import publish_consultancy_deposit_slip
+from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip as publish_consultancy_deposit_slip
 
 class TTestingDepositSlip(Document):
 	def autoname(self):
@@ -30,12 +30,14 @@ class TTestingDepositSlip(Document):
 		"""
 		Trigger Kafka sync on workflow state change.
 		"""
+		if self.flags.get('skip_kafka_sync'):
+			return
 		try:
 			doc_before_save = self.get_doc_before_save()
 			old_state = doc_before_save.workflow_state if doc_before_save else None
 			new_state = self.workflow_state
 			target_states = ["Approved", "Verified", "Submitted"]
-			
+
 			if (new_state in target_states and old_state != new_state):
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (T-Test) for state {new_state}")
 				publish_consultancy_deposit_slip(self)

@@ -26,24 +26,20 @@ class ResearchConsultancyDepositSlip(Document):
 		"""
 		Trigger Kafka sync on workflow state change to 'Approved' or 'Verified'.
 		"""
+		if self.flags.get('skip_kafka_sync'):
+			return
 		try:
-			# Check for state transition
 			doc_before_save = self.get_doc_before_save()
 			old_state = doc_before_save.workflow_state if doc_before_save else None
 			new_state = self.workflow_state
-			
-			# Define states that trigger sync (User requirement: HoS Approve/Verify)
 			target_states = ["Approved", "Verified", "Submitted"]
-			
-			# Trigger if entering target state (and not already there)
+
 			if new_state in target_states and old_state != new_state:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
 				publish_research_consultancy_deposit_slip(self)
-				
+
 		except Exception as e:
 			frappe.log_error(f"Error in Deposit Slip on_update: {e}", "Research Consultancy Deposit Slip Error")
-			# Don't throw error to block save, just log? Or throw if critical?
-			# Usually better to log for background syncs, but user wants confirmation.
 			pass
 
 

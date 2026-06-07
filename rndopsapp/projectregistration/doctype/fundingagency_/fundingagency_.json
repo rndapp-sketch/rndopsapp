@@ -34,6 +34,7 @@
   {
    "fieldname": "funding_agency_id",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Funding Agency ID",
    "unique": 1
   },
@@ -151,21 +152,22 @@
    "label": "GSTIN of Funding Agency"
   },
   {
+   "depends_on": "eval:doc.funding_agency_type_1 == \"Others\"",
    "fieldname": "specify_other_funding_agency_type",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "label": "Specify Other Funding Agency Type"
   },
   {
-   "depends_on": "eval:doc.funding_agency_type_1 == \"Government\"",
+   "depends_on": "eval:doc.ministry_funding_agency == \"Others\"",
    "fieldname": "specify_other_ministry",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "label": "Specify Other Ministry"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-27 17:20:47.037037",
+ "modified": "2026-06-04 17:42:54.264280",
  "modified_by": "Administrator",
  "module": "projectRegistration",
  "name": "fundingagency_",

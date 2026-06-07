@@ -1488,6 +1488,17 @@ def perform_icss_action(docname, action):
         frappe.db.commit()
 
         doc.reload()
+
+        # db.set_value bypasses on_update hooks, so check_workflow_and_publish never fires
+        # naturally. Explicitly call it here so Kafka staging docs are published when the
+        # workflow state matches their trigger_state (e.g. "Pending PO Generation").
+        try:
+            from rndopsapp.rndopsapp.commitPayment import check_workflow_and_publish as _kafka_check
+            doc._doc_before_save = None  # clear so idempotency guard doesn't block this explicit call
+            _kafka_check(doc)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "ICSS Kafka Publish Error")
+
         response_data = doc.as_dict()
 
         # Include nested child data

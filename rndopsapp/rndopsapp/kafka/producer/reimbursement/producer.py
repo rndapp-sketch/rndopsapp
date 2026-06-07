@@ -43,7 +43,8 @@ class AccountHeadCommitProducer:
         validate: bool = True,
         log_errors: bool = True,
         frap_app_id: Optional[str] = None,
-        ref_details: Optional[str] = None
+        ref_details: Optional[str] = None,
+        module_id: Optional[int] = None
     ) -> bool:
         """
         Publish Account Head Commit to Kafka.
@@ -58,6 +59,7 @@ class AccountHeadCommitProducer:
             validate: Whether to validate before publishing
             log_errors: Whether to log validation errors
             frap_app_id: Frap App ID (optional, defaults to project_name in mapper)
+            module_id: optional int override (e.g. 14 for ICSS PO re-commit)
 
         Returns:
             bool: True if successful, False otherwise
@@ -83,7 +85,7 @@ class AccountHeadCommitProducer:
 
             # Map to event DTO
             event = AccountHeadCommitMapper.map_to_event(
-                doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details
+                doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details, module_id
             )
 
             # Validate
@@ -294,7 +296,8 @@ def publish_commit(
     validate: bool = True,
     log_errors: bool = True,
     frap_app_id: Optional[str] = None,
-    ref_details: Optional[str] = None
+    ref_details: Optional[str] = None,
+    module_id: Optional[int] = None
 ) -> bool:
     """
     Convenience function to publish Account Head Commit.
@@ -309,12 +312,13 @@ def publish_commit(
         validate: Whether to validate before publishing
         log_errors: Whether to log validation errors
         frap_app_id: Frap App ID (optional, defaults to project_name in mapper)
+        module_id: optional int override (e.g. 14 for ICSS PO re-commit)
 
     Returns:
         bool: True if successful, False otherwise
     """
     return AccountHeadCommitProducer.publish(
-        doc, commit_amount, budget_head, project_name, bmr, bill_amount, validate, log_errors, frap_app_id, ref_details
+        doc, commit_amount, budget_head, project_name, bmr, bill_amount, validate, log_errors, frap_app_id, ref_details, module_id
     )
 
 

@@ -553,20 +553,24 @@ def get_commits_by_account_head_and_status(account_head_id, status):
 # ==========================================
 
 @frappe.whitelist()
-def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None):
+def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None, moduleId=None, trigger_state=None):
     """
     Submit commit data by staging it in Kafka Commit Staging.
-    It will be published to Kafka later upon workflow reaching 'Approved' (Dean Approval).
-    Works for Reimbursement, Travel, Temporary Advance, Advance Settlement, etc.
+    Published to Kafka when workflow reaches trigger_state (default: 'Approved').
+
+    moduleId: optional int override sent to Kafka (e.g. 14 for ICSS PO re-commit)
+    trigger_state: workflow state that fires publishing (e.g. 'Pending PO Generation' for ICSS)
     """
-    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular}")
+    resolved_trigger_state = trigger_state or "Approved"
+    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular} moduleId={moduleId} trigger_state={resolved_trigger_state}")
     try:
         # Basic validation
         if not frappe.db.exists(doctype, name):
             print(f"[COMMIT_STAGING] ERROR: Document {doctype} {name} not found")
             return {"status": "error", "message": f"Document {doctype} {name} not found"}
 
-        # Create Payload
+        # Build payload — trigger_state and moduleId stored here so check_workflow_and_publish
+        # can read them without requiring a separate doctype field.
         payload = {
             "commit_amount": flt(commit_amount),
             "budget_head": budget_head,
@@ -575,23 +579,37 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
             "bill_amount": flt(bill_amount) if bill_amount else None,
             "frap_app_id": frapAppId,
             "ref_details": refDetails,
-            "commit_particular": commitParticular
+            "commit_particular": commitParticular,
+            "trigger_state": resolved_trigger_state
         }
+        if moduleId is not None:
+            payload["moduleId"] = int(moduleId)
         print(f"[COMMIT_STAGING] Payload built: {payload}")
 
-        # Check if a staging doc already exists for this reference
+        # Match existing staging row for the same reference + trigger_state so that
+        # a PO re-commit (different trigger_state) does not overwrite the initial commit.
         existing_staging = frappe.get_all("Kafka Commit Staging", filters={
             "reference_doctype": doctype,
             "reference_name": name,
             "status": "PENDING_APPROVAL"
-        }, limit=1)
+        }, fields=["name", "payload"], limit=10)
         print(f"[COMMIT_STAGING] Existing staging docs: {existing_staging}")
 
-        if existing_staging:
-            staging_doc = frappe.get_doc("Kafka Commit Staging", existing_staging[0].name)
+        matched = None
+        for row in existing_staging:
+            try:
+                row_payload = json.loads(row.payload or "{}")
+                if row_payload.get("trigger_state", "Approved") == resolved_trigger_state:
+                    matched = row
+                    break
+            except Exception:
+                pass
+
+        if matched:
+            staging_doc = frappe.get_doc("Kafka Commit Staging", matched.name)
             staging_doc.payload = json.dumps(payload)
             staging_doc.save(ignore_permissions=True)
-            print(f"[COMMIT_STAGING] Updated existing staging doc: {existing_staging[0].name}")
+            print(f"[COMMIT_STAGING] Updated existing staging doc: {matched.name}")
         else:
             staging_doc = frappe.get_doc({
                 "doctype": "Kafka Commit Staging",
@@ -613,42 +631,26 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
 
 def check_workflow_and_publish(doc, method=None):
     """
-    Centralized workflow hook to publish staged commit data when approved by Dean (state: Approved).
-    Triggered on_update of documents.
-    """
-    applicable_doctypes = [
-        "Reimbursement",
-        "Temporary Advance",
-        "Disbursal of Honorarium",
-        "Disbursal of Consultancy",
-        "Direct Purchase",
-        "Advance Settlement",
-        "Travel",
-        "TA DA Settlement",
-        "Recruitment Adhoc Contractual",
-        "Indent General Form",
-        "Top Up Fellowship",
-    ]
+    Centralized workflow hook to publish staged commit data when the document reaches
+    the trigger_state stored inside each Kafka Commit Staging payload.
 
-    if doc.doctype not in applicable_doctypes:
+    Previously gated by a hardcoded applicable_doctypes list.  Now fully dynamic:
+    any doctype that stages a row via submit_commit_data will be published here once
+    its workflow_state matches the trigger_state in that staging row's payload.
+    Default trigger_state is "Approved" (backward-compatible with all existing modules).
+    ICSS uses trigger_state="Pending PO Generation".
+    """
+    current_state = doc.get("workflow_state")
+    if not current_state:
         return
 
-    current_state = doc.get("workflow_state")
     print(f"[CHECK_WORKFLOW] doctype={doc.doctype} name={doc.name} current_state={current_state}")
 
-    if current_state != "Approved":
-        print(f"[CHECK_WORKFLOW] Skipping — state is '{current_state}', not Approved")
-        return
-
-    # Idempotency: only publish when transitioning INTO Approved
     doc_before = doc.get_doc_before_save()
     prev_state = doc_before.get("workflow_state") if doc_before else None
     print(f"[CHECK_WORKFLOW] prev_state={prev_state}")
-    if doc_before and prev_state == "Approved":
-        print(f"[CHECK_WORKFLOW] Skipping — was already Approved before save (idempotency guard)")
-        return
 
-    # Look for pending staging docs
+    # Look for all pending/failed staging docs for this document
     staging_docs = frappe.get_all("Kafka Commit Staging", filters={
         "reference_doctype": doc.doctype,
         "reference_name": doc.name,
@@ -657,7 +659,6 @@ def check_workflow_and_publish(doc, method=None):
     print(f"[CHECK_WORKFLOW] Found {len(staging_docs)} staging doc(s) for {doc.doctype}/{doc.name}")
 
     if not staging_docs:
-        print(f"[CHECK_WORKFLOW] No staging docs found — nothing to publish")
         return
 
     for st in staging_docs:
@@ -666,6 +667,18 @@ def check_workflow_and_publish(doc, method=None):
         try:
             payload = json.loads(staging_doc.payload)
             print(f"[CHECK_WORKFLOW] Parsed payload: {payload}")
+
+            # Each staging row carries its own trigger_state (default "Approved")
+            trigger_state = payload.get("trigger_state") or "Approved"
+
+            if current_state != trigger_state:
+                print(f"[CHECK_WORKFLOW] Skipping {staging_doc.name} — state '{current_state}' != trigger '{trigger_state}'")
+                continue
+
+            # Idempotency: skip if document was already in trigger_state before this save
+            if doc_before and prev_state == trigger_state:
+                print(f"[CHECK_WORKFLOW] Skipping {staging_doc.name} — was already '{trigger_state}' (idempotency guard)")
+                continue
 
             # For Indent General Form, resolve project_no from the linked Project Registration
             if doc.doctype == "Indent General Form":
@@ -676,6 +689,9 @@ def check_workflow_and_publish(doc, method=None):
                         print(f"[CHECK_WORKFLOW] IGF: resolved project_no={project_no} from igf_project_title={igf_project_title}")
                         payload["project_name"] = project_no
 
+            # Pass moduleId override from payload so ICSS PO re-commit uses module 14
+            module_id_override = payload.get("moduleId") or payload.get("module_id")
+
             # Publish to Kafka
             success = kafka_publish_commit(
                 doc=doc,
@@ -685,7 +701,8 @@ def check_workflow_and_publish(doc, method=None):
                 bmr=payload.get("bmr"),
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
-                ref_details=payload.get("ref_details")
+                ref_details=payload.get("ref_details"),
+                module_id=module_id_override
             )
             print(f"[CHECK_WORKFLOW] kafka_publish_commit returned: {success}")
 
@@ -746,6 +763,8 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
             payload = json.loads(staging_doc.payload)
             print(f"[MANUAL_PUBLISH] Publishing staging doc {staging_doc.name} payload={payload}")
 
+            module_id_override = payload.get("moduleId") or payload.get("module_id")
+
             success = kafka_publish_commit(
                 doc=doc,
                 commit_amount=payload.get("commit_amount"),
@@ -754,7 +773,8 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
                 bmr=payload.get("bmr"),
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
-                ref_details=payload.get("ref_details")
+                ref_details=payload.get("ref_details"),
+                module_id=module_id_override
             )
             print(f"[MANUAL_PUBLISH] kafka_publish_commit returned: {success}")
 

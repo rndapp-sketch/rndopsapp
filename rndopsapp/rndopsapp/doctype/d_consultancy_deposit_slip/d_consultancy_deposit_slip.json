@@ -43,7 +43,8 @@
   "balance_consultancy_fee",
   "balance_operation_charge",
   "total_gst",
-  "total_amount"
+  "total_amount",
+  "fund_received_ref"
  ],
  "fields": [
   {
@@ -253,6 +254,12 @@
    "fieldtype": "Table",
    "label": "(B) DPF Credit Distribution",
    "options": "DPF Credit Distribution"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

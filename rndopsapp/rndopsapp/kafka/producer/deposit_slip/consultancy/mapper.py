@@ -23,6 +23,29 @@ from .dto import (
 
 
 # ==========================================
+# Event Wrapper Class
+# ==========================================
+
+class ConsultancyDepositSlipEvent:
+    """
+    Event wrapper for Consultancy Deposit Slip DTO.
+    Provides the interface expected by the producer.
+    """
+
+    def __init__(self, dto: ConsultancyDepositSlipDTO):
+        self.data = dto
+        self.eventType = "DEPOSIT_SLIP"
+
+    def to_kafka_payload(self, schema_version: str = "1.0") -> dict:
+        return {
+            "schemaVersion": schema_version,
+            "eventType": self.eventType,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": self.data.to_dict()
+        }
+
+
+# ==========================================
 # Utility Functions
 # ==========================================
 
@@ -227,7 +250,7 @@ class ConsultancyDepositSlipMapper:
         if hasattr(doc, "ecs_dates"):
             for row in doc.ecs_dates:
                 if getattr(row, 'ecs_date', None):
-                    ecs_dates.append(fmt_date(row.ecs_date))
+                    ecs_dates.append(str(row.ecs_date)[:10])
         return ecs_dates
 
     @staticmethod
@@ -481,3 +504,12 @@ class ConsultancyDepositSlipMapper:
         # dto.fundReceivedRefNumberFap = getattr(doc, 'fund_received_ref', '') or ''
 
         return dto
+
+    @classmethod
+    def map_to_event(cls, doc) -> ConsultancyDepositSlipEvent:
+        """
+        Map Frappe Consultancy Deposit Slip document to ConsultancyDepositSlipEvent.
+        Wraps the DTO in an event envelope for Kafka publishing.
+        """
+        dto = cls.map_to_dto(doc)
+        return ConsultancyDepositSlipEvent(dto)

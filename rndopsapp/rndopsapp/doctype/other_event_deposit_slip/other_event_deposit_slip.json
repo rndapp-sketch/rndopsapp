@@ -26,7 +26,8 @@
   "additional_project_credits",
   "totals_section",
   "gst_final",
-  "total"
+  "total",
+  "fund_received_ref"
  ],
  "fields": [
   {
@@ -143,6 +144,12 @@
    "fieldname": "total",
    "fieldtype": "Currency",
    "label": "Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
    "read_only": 1
   }
  ],
