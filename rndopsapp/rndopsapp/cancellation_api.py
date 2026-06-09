@@ -151,12 +151,17 @@ def get_my_applications():
 				limit_page_length=200,
 			)
 
-			# Filter out records in terminal states
+			# Filter out records in terminal states, except approved states
 			pending_records = []
 			for record in records:
 				state_value = record.get(status_field, "")
 				if _is_terminal_state(state_value):
-					continue
+					if not state_value or state_value.strip().lower() not in [
+						"approved",
+						"sanction approved",
+						"endorsement approved",
+					]:
+						continue
 
 				# Also skip "Draft" state — these haven't been submitted yet
 				if state_value and state_value.strip().lower() == "draft":
@@ -273,14 +278,20 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 		if ref_doc.owner != current_user and "System Manager" not in user_roles:
 			frappe.throw(_("You can only cancel documents that you own."))
 
-		# Check the document is not already in a terminal state
+		# Check the document is not already in a terminal state, unless it is approved
 		ref_state = getattr(ref_doc, "workflow_state", None)
 		if _is_terminal_state(ref_state):
-			frappe.throw(
-				_("This document is already in a final state ({0}) and cannot be cancelled.").format(
-					ref_state
+			is_approved_state = ref_state and ref_state.strip().lower() in [
+				"approved",
+				"sanction approved",
+				"endorsement approved",
+			]
+			if not is_approved_state:
+				frappe.throw(
+					_("This document is already in a final state ({0}) and cannot be cancelled.").format(
+						ref_state
+					)
 				)
-			)
 
 		# Check for existing pending cancellation request
 		existing = frappe.get_all(
@@ -405,12 +416,15 @@ def _setup_cancellation_workflow(source_workflow_name):
 	try:
 		cancel_wf_name = f"cancel_{source_workflow_name}"
 
+		source_wf = frappe.get_doc("Workflow", source_workflow_name)
+
 		# Check if cancellation workflow already exists
 		if frappe.db.exists("Workflow", cancel_wf_name):
-			return
-
-		# Create a new workflow for Cancellation Request mirroring the source
-		source_wf = frappe.get_doc("Workflow", source_workflow_name)
+			if source_wf.document_type == "Reimbursement":
+				frappe.delete_doc("Workflow", cancel_wf_name, ignore_permissions=True)
+				frappe.clear_cache(doctype="Cancellation Request")
+			else:
+				return
 
 		new_wf = frappe.new_doc("Workflow")
 		new_wf.workflow_name = cancel_wf_name
@@ -432,12 +446,32 @@ def _setup_cancellation_workflow(source_workflow_name):
 
 		# Copy all transitions from the source workflow
 		for transition in source_wf.transitions:
+			next_state = transition.next_state
+			action = transition.action
+			if (
+				source_wf.document_type == "Reimbursement"
+				and transition.state == "Pending Staff Approval"
+				and transition.action in ["Verify (With Hardcopy)", "Approve"]
+			):
+				# Find the terminal approved state name from the source workflow
+				approved_state_name = "Approved"
+				for s in source_wf.states:
+					if s.state and s.state.strip().lower() in [
+						"approved",
+						"sanction approved",
+						"endorsement approved",
+					]:
+						approved_state_name = s.state
+						break
+				next_state = approved_state_name
+				action = "Approve"
+
 			new_wf.append(
 				"transitions",
 				{
 					"state": transition.state,
-					"action": transition.action,
-					"next_state": transition.next_state,
+					"action": action,
+					"next_state": next_state,
 					"allowed": transition.allowed,
 					"allow_self_approval": getattr(transition, "allow_self_approval", 1),
 				},
@@ -558,6 +592,10 @@ def get_cancellation_request_details(cancellation_name):
 	try:
 		cancel_doc = frappe.get_doc("Cancellation Request", cancellation_name)
 
+		# Self-healing: ensure the cancellation workflow is updated/recreated with latest rules
+		if cancel_doc.source_workflow:
+			_setup_cancellation_workflow(cancel_doc.source_workflow)
+
 		# Get reference document details
 		ref_details = {}
 		try:
@@ -627,3 +665,59 @@ def get_cancellation_request_details(cancellation_name):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Get Cancellation Details Error")
 		return {"success": False, "message": str(e)}
+
+
+def validate_original_document_not_locked(doc, method=None):
+	"""
+	Prevent any updates or workflow progression on the original document
+	if there is a pending cancellation request for it.
+	"""
+	if doc.doctype == "Cancellation Request":
+		return
+
+	try:
+		if frappe.db.exists("DocType", "Cancellation Request"):
+			pending_cancel = frappe.db.exists(
+				"Cancellation Request",
+				{
+					"reference_doctype": doc.doctype,
+					"reference_name": doc.name,
+					"status": "Pending",
+					"docstatus": ["<", 2],
+				},
+			)
+			if pending_cancel:
+				frappe.throw(
+					_(
+						"This application is locked because a cancellation request ({0}) is pending approval."
+					).format(pending_cancel)
+				)
+	except Exception:
+		pass
+
+
+@frappe.whitelist()
+def get_original_commitment(reference_doctype, reference_name):
+	"""
+	Retrieve the original commitment details from Kafka Commit Staging.
+	Only allowed if the user has read access to the original document.
+	"""
+	if not reference_doctype or not reference_name:
+		frappe.throw(_("Reference Doctype and Reference Name are required."))
+
+	# Verify user has read permission on the original document
+	if not frappe.has_permission(reference_doctype, "read", doc=reference_name):
+		frappe.throw(
+			_("You do not have permission to view this document's commitment details."),
+			frappe.PermissionError,
+		)
+
+	# Fetch the staging record bypassing standard user permission filters
+	records = frappe.get_all(
+		"Kafka Commit Staging",
+		filters={"reference_name": reference_name},
+		fields=["*"],
+		limit=1,
+	)
+
+	return records[0] if records else None

@@ -451,7 +451,8 @@
    "depends_on": "eval:doc.project_type == 'Other'",
    "fieldname": "other_project_type_name",
    "fieldtype": "Data",
-   "label": "*Mention the (Other Project Type)"
+   "label": "*Mention the (Other Project Type)",
+   "placeholder": "Technology Transfer (TOT), Travel Grant, etc"
   },
   {
    "depends_on": "eval:doc.project_type == 'Research'",
@@ -1286,7 +1287,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-21 15:59:59.116359",
+ "modified": "2026-06-03 16:29:54.914946",
  "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Project Registration",

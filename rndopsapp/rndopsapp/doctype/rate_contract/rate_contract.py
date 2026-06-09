@@ -309,7 +309,7 @@ def get_principal_suppliers_by_item_type(item_type=None):
 		"Principal Supplier",
 		filters={"item_type": item_type},
 		fields=["name as value", "principal_supplier_name as label", "addres", "agreement_no"],
-		limit=200
+		limit=0
 	)
 	return suppliers
 
@@ -325,9 +325,9 @@ def get_local_suppliers_by_principal(principal_supplier=None):
 	
 	suppliers = frappe.get_all(
 		"Local Supplier Detail",
-		filters={"parent": principal_supplier},
+		filters={"parent": principal_supplier, "parenttype": "Principal Supplier"},
 		fields=["name as value", "local_supplier_name as label", "address", "email"],
-		limit=200
+		limit=0
 	)
 	return suppliers
 
@@ -348,7 +348,7 @@ def get_vendors_by_p4_item_type(p4_item_type=None):
 		"Principal Supplier",
 		filters={"item_type": p4_item_type},
 		fields=["name as value", "principal_supplier_name as label", "addres", "email"],
-		limit=200
+		limit=0
 	)
 	return vendors
 

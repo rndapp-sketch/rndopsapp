@@ -31,22 +31,18 @@ class ResearchDepositSlip(Document):
 		"""
 		Trigger Kafka sync on workflow state change to 'Approved' or 'Verified'.
 		"""
+		if self.flags.get('skip_kafka_sync'):
+			return
 		try:
-			# Check for state transition
 			doc_before_save = self.get_doc_before_save()
 			old_state = doc_before_save.workflow_state if doc_before_save else None
 			new_state = self.workflow_state
-
-			# Define states that trigger sync
 			target_states = ["Approved", "Verified", "Submitted"]
 
-			# Trigger if entering target state (and not already there)
-			# OR if submitting (docstatus becomes 1)
-			if (new_state in target_states and old_state != new_state):
+			if new_state in target_states and old_state != new_state:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
 				publish_research_deposit_slip(self)
-			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0):
-				# Fallback if workflow state not used but doc submitted
+			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0) and new_state not in target_states:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for Submit")
 				publish_research_deposit_slip(self)
 

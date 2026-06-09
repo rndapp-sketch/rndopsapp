@@ -462,6 +462,7 @@ def save_fund_sanction_data(files=None, **data):
 		doc.flags.ignore_validate = True
 		doc.flags.ignore_mandatory = True
 		doc.flags.ignore_links = True
+		doc.flags.ignore_validate_update_after_submit = True
 
 		# --- Save main document first ---
 		doc.save(ignore_permissions=True)

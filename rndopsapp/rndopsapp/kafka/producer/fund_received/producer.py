@@ -74,6 +74,39 @@ class FundReceivedProducer:
                     "prjreg_title is empty"
                 )
 
+            # Pre-flight: verify sanctionLetterNo is available before mapping.
+            # The accounts consumer cannot create ProjectFundReceivedDetails without
+            # a valid sanctionLetterNo to look up ProjectSanctionDetails.
+            sanction_ref = getattr(doc, 'sanction_ref_no', None)
+            sanction_letter_no = getattr(doc, 'sanctioned_letter_no', None)
+            if sanction_ref and not sanction_letter_no:
+                try:
+                    row = frappe.db.get_value(
+                        "Fund Sanction", sanction_ref, "sanctioned_letter_no"
+                    )
+                    sanction_letter_no = row or None
+                except Exception:
+                    sanction_letter_no = None
+
+            if not sanction_letter_no:
+                msg = (
+                    f"sanctionLetterNo is missing for Fund Received {doc.name} "
+                    f"(linked sanction: {sanction_ref or 'none'}) — "
+                    "publish aborted to prevent consumer ProjectSanctionDetails lookup failure"
+                )
+                log_producer_event("FUND_RECEIVED", doc.name, cls.TOPIC, "ABORTED", msg)
+                frappe.log_error(msg, "Fund Received Kafka Pre-flight Error")
+                return False
+
+            if not sanction_ref:
+                msg = (
+                    f"sanctionNumber (sanction_ref_no) is missing for Fund Received {doc.name} — "
+                    "publish aborted to prevent consumer null-identifier on ProjectFundReceivedDetails"
+                )
+                log_producer_event("FUND_RECEIVED", doc.name, cls.TOPIC, "ABORTED", msg)
+                frappe.log_error(msg, "Fund Received Kafka Pre-flight Error")
+                return False
+
             # Step 2: Map Frappe document to Event DTO
             event = FundReceivedMapper.map_to_event(doc)
 

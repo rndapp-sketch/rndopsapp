@@ -186,7 +186,7 @@ class DepositSlipProducer:
             bool: True if successful, False otherwise
         """
         doctype = doc.doctype
-        category = ConsultancyDepositSlipMapper.get_category(doctype)
+        category = ConsultancyDepositSlipMapper.get_category(doc)
 
         if not is_kafka_available():
             log_producer_event(

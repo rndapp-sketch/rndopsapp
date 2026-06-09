@@ -114,6 +114,89 @@ class CancellationRequest(Document):
 			# Update our status
 			self.db_set("status", "Approved", update_modified=True)
 
+			# Call external ledger API to cancel the commit
+			try:
+				import json
+
+				import requests
+
+				frap_app_id = self.reference_name
+				project_number = None
+
+				# Try to get frap_app_id and project_number from Kafka Commit Staging
+				staging_records = frappe.get_all(
+					"Kafka Commit Staging",
+					filters={
+						"reference_doctype": self.reference_doctype,
+						"reference_name": self.reference_name,
+					},
+					fields=["name", "payload"],
+				)
+				for st in staging_records:
+					frappe.db.set_value(
+						"Kafka Commit Staging", st.name, "status", "CANCELLED", update_modified=True
+					)
+
+					if st.payload:
+						try:
+							payload = json.loads(st.payload)
+							if payload.get("frap_app_id"):
+								frap_app_id = payload.get("frap_app_id")
+							if payload.get("project_name"):
+								project_number = payload.get("project_name")
+						except Exception:
+							pass
+
+				# Fallback to ref_doc fields if project_number not resolved from staging payload
+				if not project_number:
+					project_number = (
+						ref_doc.get("project_no")
+						or ref_doc.get("project_code")
+						or ref_doc.get("project_name")
+						or ref_doc.get("upfa_project_code")
+					)
+
+				# Resolve project_number (database ID) to the actual human-readable project number/code
+				if project_number:
+					resolved_proj = frappe.db.get_value("Project Registration", project_number, "project_no")
+					if resolved_proj:
+						project_number = resolved_proj
+
+				if project_number:
+					api_url = "http://172.16.134.81:18080/api/account-head-commit/status/by-project-frap"
+					headers = {"Content-Type": "application/json"}
+					body = {
+						"projectNumber": str(project_number),
+						"frapAppId": str(frap_app_id),
+						"status": "CANCELLED",
+					}
+					frappe.log_error(
+						title="Cancel Commit API Request",
+						message=f"Calling cancel commit API: URL={api_url}, Body={json.dumps(body)}",
+					)
+					response = requests.patch(api_url, headers=headers, json=body, timeout=10)
+					if response.status_code == 200:
+						frappe.log_error(
+							title="Cancel Commit API Success",
+							message=f"Cancel commit API success: {response.text}",
+						)
+					else:
+						frappe.log_error(
+							title="Cancel Commit API Error",
+							message=f"Cancel commit API returned status {response.status_code}: {response.text}",
+						)
+				else:
+					frappe.log_error(
+						title="Cancel Commit Resolve Error",
+						message=f"Could not resolve project number for {self.reference_name} to cancel commit.",
+					)
+
+			except Exception as api_err:
+				frappe.log_error(
+					title="Cancel Commit API Exception",
+					message=f"Exception while calling cancel commit API: {str(api_err)}",
+				)
+
 			# Add audit comment on the original document
 			ref_doc.add_comment(
 				"Info",

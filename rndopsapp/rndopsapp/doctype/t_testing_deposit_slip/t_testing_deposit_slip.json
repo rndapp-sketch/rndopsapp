@@ -28,7 +28,8 @@
   "student_welfare_t_testing_fund",
   "totals_section",
   "total_gst",
-  "total_budget"
+  "total_budget",
+  "fund_received_ref"
  ],
  "fields": [
   {
@@ -157,6 +158,12 @@
    "fieldname": "student_welfare_t_testing_fund",
    "fieldtype": "Data",
    "label": "(d.) Student Welfare fund"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
