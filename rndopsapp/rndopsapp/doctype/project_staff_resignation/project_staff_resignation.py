@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.html_utils import sanitize_html
 
 
 def extract_eval_expression(expression):
@@ -67,8 +68,10 @@ def get_project_staff_resignation_fields(doc_name=None):
 		# Clean input
 		doc_name = str(doc_name).strip('"').strip("'")
 
-		# Fetch existing Project Staff Resignation document for editing
+		# Fetch existing record — ignore_permissions because project staff role has no
+		# direct read access to this doctype; access is controlled by the whitelist.
 		doc = frappe.get_doc("Project Staff Resignation", doc_name)
+		doc.flags.ignore_permissions = True
 		if doc:
 			related_data = doc.as_dict()
 			# Copy fields for prefill
@@ -105,7 +108,8 @@ def get_project_staff_resignation_fields(doc_name=None):
 		limit=200
 	)
 	link_options["amended_from"] = frappe.get_all(
-		"Project Staff Resignation", fields=["name as value", "name as label"], limit=200
+		"Project Staff Resignation", fields=["name as value", "name as label"], limit=200,
+		ignore_permissions=True,
 	)
 
 	return {
@@ -127,6 +131,7 @@ def save_project_staff_resignation(doc_data):
 		doc_name = data.get("name")
 		if doc_name:
 			doc = frappe.get_doc("Project Staff Resignation", doc_name)
+			doc.flags.ignore_permissions = True
 			if doc.docstatus != 0:
 				frappe.throw(_("Cannot edit a submitted or cancelled document."))
 		else:
@@ -173,7 +178,8 @@ def submit_project_staff_resignation(docname):
 	"""
 	try:
 		doc = frappe.get_doc("Project Staff Resignation", docname)
-		
+		doc.flags.ignore_permissions = True
+
 		if doc.docstatus == 0:
 			doc.submit()
 			frappe.db.commit()
@@ -220,12 +226,142 @@ def get_project_staff_resignation_list():
 				"applicant_designation",
 				"applicant_department",
 				"resignation_date",
+				"workflow_state",
 				"docstatus",
-				"modified"
+				"modified",
 			],
-			order_by="modified desc"
+			order_by="modified desc",
+			ignore_permissions=True,
 		)
 		return {"status": "success", "data": resignations}
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Error fetching Project Staff Resignation list")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_project_staff_resignation_workflow_actions(docname):
+	"""
+	Returns the workflow actions available to the current user for this document,
+	based on its current workflow_state and the user's roles.
+	"""
+	try:
+		doc = frappe.get_doc("Project Staff Resignation", docname)
+		doc.flags.ignore_permissions = True
+		current_state = doc.workflow_state or "Draft"
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		workflow_name = frappe.db.get_value(
+			"Workflow",
+			{"document_type": "Project Staff Resignation", "is_active": 1},
+			"name",
+		)
+		if not workflow_name:
+			return {"status": "success", "actions": [], "workflow_state": current_state, "docstatus": doc.docstatus}
+
+		workflow = frappe.get_doc("Workflow", workflow_name)
+		allowed_actions = []
+
+		for transition in workflow.get("transitions", []):
+			if transition.state != current_state:
+				continue
+			allowed_roles = transition.get("allowed") or []
+			if isinstance(allowed_roles, str):
+				allowed_roles = [allowed_roles]
+			if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
+				allowed_actions.append(transition.action)
+
+		return {
+			"status": "success",
+			"actions": list(dict.fromkeys(allowed_actions)),
+			"workflow_state": current_state,
+			"docstatus": doc.docstatus,
+		}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Project Staff Resignation Workflow Actions Error")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def perform_project_staff_resignation_action(docname, action, comment=""):
+	"""
+	Executes a workflow action on a Project Staff Resignation document.
+
+	A comment is required from every actor at each workflow step so there is
+	a clear audit trail of why the document was approved / rejected / forwarded.
+	The comment is saved to the document's Comment log before the state transition.
+
+	Args:
+		docname: Name of the Project Staff Resignation document.
+		action:  Workflow action to perform (e.g. "Submit", "Approve", "Reject").
+		comment: Mandatory reason / note left by the acting user.
+	"""
+	try:
+		if not comment or not str(comment).strip():
+			frappe.throw(_("A comment is required before performing this action."))
+
+		doc = frappe.get_doc("Project Staff Resignation", docname)
+		doc.flags.ignore_permissions = True
+		current_state = doc.workflow_state or "Draft"
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		workflow_name = frappe.db.get_value(
+			"Workflow",
+			{"document_type": "Project Staff Resignation", "is_active": 1},
+			"name",
+		)
+		if not workflow_name:
+			frappe.throw(_("No active workflow found for Project Staff Resignation."))
+
+		workflow = frappe.get_doc("Workflow", workflow_name)
+
+		next_state = None
+		for t in workflow.transitions:
+			if t.state != current_state or t.action != action:
+				continue
+			allowed_roles = t.get("allowed") or []
+			if isinstance(allowed_roles, str):
+				allowed_roles = [allowed_roles]
+			if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
+				next_state = t.next_state
+				break
+
+		if not next_state:
+			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
+
+		# Record the actor's comment before changing state so the log is always intact
+		doc.add_comment(
+			"Workflow",
+			sanitize_html(f"[{action}] {comment}"),
+		)
+
+		# Advance the workflow state
+		doc.workflow_state = next_state
+
+		state_meta = next((s for s in workflow.states if s.state == next_state), None)
+		if state_meta and int(state_meta.doc_status or 0) == 1 and doc.docstatus == 0:
+			doc.flags.ignore_permissions = True
+			doc.submit()
+		elif state_meta and int(state_meta.doc_status or 0) == 2 and doc.docstatus != 2:
+			doc.flags.ignore_permissions = True
+			doc.cancel()
+		else:
+			doc.save(ignore_permissions=True)
+
+		frappe.db.commit()
+
+		next_actions_resp = get_project_staff_resignation_workflow_actions(docname)
+		return {
+			"status": "success",
+			"message": _(f"Action '{action}' completed. New state: {next_state}"),
+			"docname": docname,
+			"workflow_state": next_state,
+			"docstatus": doc.docstatus,
+			"next_actions": next_actions_resp.get("actions", []),
+		}
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Project Staff Resignation Action Error")
 		return {"status": "error", "message": str(e)}

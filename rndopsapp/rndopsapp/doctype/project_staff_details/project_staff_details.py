@@ -576,14 +576,12 @@ def get_project_staff_details_fields(doc_name=None):
 	if doc_name:
 		doc_name = str(doc_name).strip('"').strip("'")
 		doc = frappe.get_doc("Project Staff Details", doc_name)
-		doc = frappe.get_doc("Project Staff Details", doc_name)
 		prefill_data = doc.as_dict()
 
 	client_scripts = []
 	try:
 		scripts = frappe.get_all(
 			"Client Script",
-			filters={"dt": "Project Staff Details", "enabled": 1},
 			filters={"dt": "Project Staff Details", "enabled": 1},
 			fields=["name", "script", "view"],
 		)
@@ -1258,3 +1256,95 @@ def submit_project_staff_details(docname):
 			emp_id = frappe.db.get_value("Project Staff Details", docname, "ps_emp_id")
 		result["ps_emp_id"] = emp_id
 	return result
+
+
+@frappe.whitelist()
+def get_my_project_staff_details():
+	"""
+	Return the Project Staff Details row whose `erp_mail` matches the
+	logged-in user's email. Uses session user server-side so the client
+	does not need List permission on Project Staff Details.
+	"""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Authentication required."), frappe.PermissionError)
+
+	rows = frappe.get_all(
+		"Project Staff Details",
+		filters={"erp_mail": user},
+		fields=[
+			"name",
+			"erp_mail",
+			"ps_first_name",
+			"ps_middle_name",
+			"ps_last_name",
+			"ps_department",
+			"ps_designation",
+			"project_no",
+			"bank_account_number",
+			"ps_aadhar_number",
+			"ps_pan",
+			"ps_joining_date",
+			"ps_term_completion_date",
+		],
+		limit=1,
+		ignore_permissions=True,
+	)
+	return rows[0] if rows else None
+
+
+@frappe.whitelist()
+def get_my_basic_details():
+	"""
+	Return Basic Details for the currently logged-in user by joining the
+	User doctype's `username` against the part of `erp_mail` before '@'
+	in Project Staff Details.
+	"""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Authentication required."), frappe.PermissionError)
+
+	rows = frappe.db.sql(
+		"""
+		SELECT
+			psd.name,
+			psd.erp_mail,
+			psd.ps_first_name,
+			psd.ps_middle_name,
+			psd.ps_last_name,
+			psd.ps_fathers_name,
+			psd.ps_gender,
+			psd.ps_date_of_birth,
+			psd.ps_blood_group,
+			psd.ps_maritial_status,
+			psd.ps_citizenship,
+			psd.ps_phone_number,
+			psd.ps_email_id,
+			psd.ps_present_address,
+			psd.ps_permanent_address,
+			psd.ps_department,
+			COALESCE(dept.dept_name, psd.ps_department) AS ps_department_name,
+			psd.ps_designation,
+			psd.ps_emp_id,
+			psd.project_no,
+			psd.ps_joining_date,
+			psd.ps_term_completion_date,
+			psd.bank_account_number,
+			psd.ps_aadhar_number,
+			psd.ps_pan,
+			psd.ps_photo,
+			u.username,
+			u.full_name,
+			u.email
+		FROM `tabProject Staff Details` psd
+		INNER JOIN `tabUser` u
+			ON u.username = SUBSTRING_INDEX(psd.erp_mail, '@', 1)
+		LEFT JOIN `tabDepartment_prornd` dept
+			ON dept.name = psd.ps_department
+		WHERE u.name = %(user)s
+		LIMIT 1
+		""",
+		{"user": user},
+		as_dict=True,
+	)
+	return rows[0] if rows else None

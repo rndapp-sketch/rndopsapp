@@ -64,6 +64,11 @@ _ACTIVE_FILTERS = {"enabled": 1, "revoked_at": ["is", "not set"]}
 
 def _active_rows_for_delegate(delegate_user):
     """All enabled, non-revoked User Delegation rows where delegate_user matches."""
+    # The User Delegation DocType may not be installed (e.g. fresh DB or
+    # pre-migration). In that case there are no delegations — return [] so
+    # permission queries and login don't crash with DoesNotExistError.
+    if not frappe.db.exists("DocType", "User Delegation"):
+        return []
     return frappe.get_all(
         "User Delegation",
         filters={"delegate_user": delegate_user, **_ACTIVE_FILTERS},
@@ -107,6 +112,9 @@ def is_active_delegation(
 
     action_type: "read" | "write" | "workflow"
     """
+    if not frappe.db.exists("DocType", "User Delegation"):
+        return False
+
     now = now_datetime()
 
     rows = frappe.get_all(
