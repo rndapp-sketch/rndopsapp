@@ -1103,6 +1103,7 @@ def perform_project_staff_details_action(docname, action):
 		# (joining date / term completion date / basic salary) in the child table.
 		if (updated.workflow_state or "") == "Approved":
 			_populate_tenure_on_approval(updated)
+			_allocate_leave_data_on_approval(updated)
 
 		frappe.db.commit()
 
@@ -1348,3 +1349,95 @@ def get_my_basic_details():
 		as_dict=True,
 	)
 	return rows[0] if rows else None
+
+
+
+#Added by sumit
+
+def get_tenure_months(joining_date, term_completion_date):
+	if not joining_date or not term_completion_date:
+		return 0
+	from frappe.utils import getdate
+
+	j_date = getdate(joining_date)
+	c_date = getdate(term_completion_date)
+	if c_date < j_date:
+		return 0
+	# Calculate days difference inclusively
+	days_diff = (c_date - j_date).days + 1
+	# Standard average days per month is 30.437
+	return int(round(days_diff / 30.437))
+
+
+def _allocate_leave_data_on_approval(doc):
+	try:
+		# Always reload key fields from DB — the in-memory doc may predate the
+		# ps_emp_id assignment that happens at Submit time.
+		ps_data = frappe.db.get_value(
+			"Project Staff Details",
+			doc.name,
+			["ps_emp_id", "erp_mail", "ps_joining_date", "ps_term_completion_date", "ps_department"],
+			as_dict=True,
+		)
+		if not ps_data:
+			frappe.log_error(
+				f"Cannot allocate leave for Project Staff Details {doc.name}: record not found in DB.",
+				"Leave Allocation Error",
+			)
+			return
+
+		emp_id = ps_data.ps_emp_id
+		if not emp_id:
+			frappe.log_error(
+				f"Cannot allocate leave for Project Staff Details {doc.name}: ps_emp_id is not set.",
+				"Leave Allocation Error",
+			)
+			return
+
+		joining_date = ps_data.ps_joining_date or doc.ps_joining_date
+		term_completion_date = ps_data.ps_term_completion_date or doc.ps_term_completion_date
+		tenure_months = get_tenure_months(joining_date, term_completion_date)
+		if tenure_months <= 0:
+			frappe.log_error(
+				f"Cannot allocate leave for Project Staff Details {doc.name}: tenure_months={tenure_months} (joining={joining_date}, completion={term_completion_date}).",
+				"Leave Allocation Error",
+			)
+			return
+
+		cl = round(tenure_months * 8.0 / 11.0, 2)
+		el = int(max(0, (tenure_months - 1) * 2.5))
+
+		# emp_username derived from erp_mail; optional — leave blank if not yet set.
+		erp_mail = (ps_data.erp_mail or "").strip()
+		emp_username = erp_mail.split("@", 1)[0] if "@" in erp_mail else ""
+
+		department = ps_data.ps_department or doc.ps_department or ""
+
+		# Check by both document name (autoname=field:emp_id) and by field value
+		# to handle any existing records that may have been named differently.
+		existing_name = frappe.db.get_value("Leave Data", {"emp_id": emp_id}, "name")
+
+		if existing_name:
+			leave_data_doc = frappe.get_doc("Leave Data", existing_name)
+			if emp_username:
+				leave_data_doc.emp_username = emp_username
+			leave_data_doc.emp_class = "Project Staff"
+			leave_data_doc.department = department
+			leave_data_doc.cl = cl
+			leave_data_doc.el = el
+			leave_data_doc.save(ignore_permissions=True)
+		else:
+			leave_data_doc = frappe.new_doc("Leave Data")
+			leave_data_doc.emp_id = emp_id
+			leave_data_doc.emp_username = emp_username
+			leave_data_doc.emp_class = "Project Staff"
+			leave_data_doc.department = department
+			leave_data_doc.cl = cl
+			leave_data_doc.el = el
+			leave_data_doc.insert(ignore_permissions=True)
+
+	except Exception:
+		frappe.log_error(
+			frappe.get_traceback(), f"Failed to allocate leave for Project Staff Details {doc.name}"
+		)
+
