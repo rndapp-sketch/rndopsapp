@@ -669,24 +669,28 @@ def get_pending_faculty_admission_uploads():
 	the Staff has already marked 'Send to Faculty Admission' (the PDF was
 	downloaded for signing) and are currently in 'Pending Staff Approval'.
 	Includes already-uploaded docs so Staff can replace the PDF if needed."""
+	filters = {
+		"send_to_faculty_admission": 1,
+		"docstatus": 0,
+	}
+	fields = [
+		"name",
+		"project_code",
+		"project_title",
+		"pi_webmail",
+		"coordinating_pi_webmail",
+		"send_to_faculty_admission",
+		"faculty_admission_pdf",
+		"modified",
+	]
+	if frappe.db.has_column(TOP_UP_DOCTYPE, "workflow_state"):
+		filters["workflow_state"] = "Pending Staff Approval"
+		fields.append("workflow_state")
+
 	docs = frappe.get_all(
 		TOP_UP_DOCTYPE,
-		filters={
-			"workflow_state": "Pending Staff Approval",
-			"send_to_faculty_admission": 1,
-			"docstatus": 0,
-		},
-		fields=[
-			"name",
-			"project_code",
-			"project_title",
-			"pi_webmail",
-			"coordinating_pi_webmail",
-			"send_to_faculty_admission",
-			"faculty_admission_pdf",
-			"workflow_state",
-			"modified",
-		],
+		filters=filters,
+		fields=fields,
 		order_by="modified desc",
 	)
 	return {"status": "success", "data": docs}

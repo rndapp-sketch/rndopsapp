@@ -4,7 +4,7 @@
 import frappe
 import requests
 
-RECRUITMENT_BASE_URL = "https://iitg.ac.in/rndproj/recruitment/api"
+RECRUITMENT_BASE_URL = "http://172.16.134.191:3000"
 
 
 def _get(path, timeout=15):

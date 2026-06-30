@@ -8,6 +8,7 @@
  "field_order": [
   "section_break_d4hp",
   "amended_from",
+  "workflow_state",
   "students_section",
   "students",
   "project_details_section",
@@ -39,6 +40,14 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Workflow State",
+   "read_only": 1
   },
   {
    "fieldname": "students_section",

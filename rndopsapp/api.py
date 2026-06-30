@@ -1297,3 +1297,95 @@ def get_universal_registration_by_profile_type(profile_type):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Get Registration by Profile Type Error")
 		return {"status": "error", "message": str(e)}
+
+
+# ============================================================================
+# DASHBOARD CONTEXT — Called on every dashboard load to determine user state
+# ============================================================================
+
+@frappe.whitelist()
+def get_dashboard_context():
+	"""
+	Dashboard state check — called on every dashboard visit.
+	Returns auth info, profile existence, employee class, and roles
+	so the frontend can decide which dashboard view to render.
+	"""
+	try:
+		current_user = frappe.session.user
+		if not current_user or current_user == "Guest":
+			return {"success": False, "message": "Not authenticated"}
+
+		# Get User doc fields
+		user_fields = frappe.db.get_value(
+			"User", current_user,
+			["full_name", "email", "empclass", "department_name",
+			 "designation_name", "piheadmentor_user_id", "enabled"],
+			as_dict=True
+		)
+		if not user_fields:
+			return {"success": False, "message": "User not found"}
+
+		# Resolve empclass ID → human-readable name
+		empclass_id = user_fields.get("empclass")
+		empclass_name = None
+		if empclass_id:
+			empclass_name = frappe.db.get_value(
+				"EmployeeClass_prornd", empclass_id, "empclass_name"
+			)
+
+		# Resolve department ID → human-readable name
+		dept_id = user_fields.get("department_name")
+		dept_name = None
+		if dept_id:
+			dept_name = frappe.db.get_value(
+				"Department_prornd", dept_id, "dept_name"
+			)
+
+		# Get user roles
+		roles = frappe.get_roles(current_user)
+
+		# Check if Universal User__ exists (custom auth layer)
+		uu = frappe.db.get_value(
+			"Universal User__",
+			{"email_u_r": current_user},
+			["name", "full_name_u_r", "is_email_verified_u_r", "is_password_set_u_r"],
+			as_dict=True
+		)
+
+		# Check if profile (Universal Registration__) exists
+		profile_exists = False
+		profile_name = None
+		if uu:
+			profile_name = frappe.db.get_value(
+				"Universal Registration__",
+				{"universal_user_u_r": uu.name},
+				"name"
+			)
+			profile_exists = bool(profile_name)
+
+		return {
+			"success": True,
+			"auth": {
+				"full_name": user_fields.get("full_name"),
+				"email": user_fields.get("email") or current_user,
+				"is_email_verified": uu.get("is_email_verified_u_r") if uu else None,
+				"is_password_set": uu.get("is_password_set_u_r") if uu else None,
+			},
+			"profile": {
+				"exists": profile_exists,
+				"profile_name": profile_name
+			},
+			"employee_class": {
+				"id": empclass_id,
+				"name": empclass_name,
+			},
+			"department": {
+				"id": dept_id,
+				"name": dept_name,
+			},
+			"roles": roles,
+		}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "get_dashboard_context")
+		return {"success": False, "message": str(e)}

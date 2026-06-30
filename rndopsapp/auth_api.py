@@ -943,6 +943,27 @@ def login(email, password, remember_me=False):
             "last_login": user_doc.last_login_at_u_r.isoformat() if user_doc.last_login_at_u_r else None
         }
         
+        # ===== ADD EMPLOYEE CLASS INFO FOR DASHBOARD ROUTING =====
+        frappe_user_id = user.get("auth_user_id_u_r")
+        if frappe_user_id and frappe.db.exists("User", frappe_user_id):
+            empclass_id = frappe.db.get_value("User", frappe_user_id, "empclass")
+            if empclass_id:
+                empclass_name = frappe.db.get_value(
+                    "EmployeeClass_prornd", empclass_id, "empclass_name"
+                )
+                response_data["empclass_id"] = empclass_id
+                response_data["empclass_name"] = empclass_name
+        
+        # Also try to resolve by email if auth_user_id_u_r is not set
+        if "empclass_id" not in response_data:
+            empclass_id = frappe.db.get_value("User", email, "empclass")
+            if empclass_id:
+                empclass_name = frappe.db.get_value(
+                    "EmployeeClass_prornd", empclass_id, "empclass_name"
+                )
+                response_data["empclass_id"] = empclass_id
+                response_data["empclass_name"] = empclass_name
+        
         if token:
             response_data["token"] = token
             response_data["token_type"] = "Bearer"

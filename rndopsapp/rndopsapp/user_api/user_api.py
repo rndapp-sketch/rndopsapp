@@ -256,6 +256,7 @@ def save_user_data(data):
 				)
 
 		if doc.is_new():
+			doc.flags.no_welcome_mail = True
 			doc.insert(ignore_permissions=True)
 		else:
 			doc.save(ignore_permissions=True)

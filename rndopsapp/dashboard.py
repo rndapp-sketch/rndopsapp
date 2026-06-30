@@ -726,3 +726,188 @@ def get_role_based_project_counts():
     results = frappe.db.sql(query, as_dict=True)
     return results
 
+
+@frappe.whitelist()
+def get_project_staff_dashboard_data(user=None):
+    """
+    Project Staff Dashboard — Backend API
+    Returns overview stats, project assignment info, leave balance,
+    pending tasks, and tenure details for a PS-category user.
+    """
+    if not user:
+        user = frappe.session.user
+
+    if user == "Guest":
+        return {}
+
+    from frappe.utils import flt, getdate, today
+
+    data = {}
+
+    # ─── 1. USER PROFILE ───────────────────────────────────────────────
+    user_doc = frappe.db.get_value(
+        "User", user,
+        ["full_name", "email", "empclass", "department_name",
+         "designation_name", "piheadmentor_user_id"],
+        as_dict=True
+    )
+
+    empclass_name = None
+    dept_name = None
+    pi_name = None
+
+    if user_doc:
+        if user_doc.get("empclass"):
+            empclass_name = frappe.db.get_value(
+                "EmployeeClass_prornd", user_doc["empclass"], "empclass_name"
+            )
+        if user_doc.get("department_name"):
+            dept_name = frappe.db.get_value(
+                "Department_prornd", user_doc["department_name"], "dept_name"
+            )
+        if user_doc.get("piheadmentor_user_id"):
+            pi_name = frappe.db.get_value(
+                "User", user_doc["piheadmentor_user_id"], "full_name"
+            )
+
+    data["user_profile"] = {
+        "full_name": user_doc.get("full_name") if user_doc else None,
+        "email": user_doc.get("email") if user_doc else user,
+        "employee_class": empclass_name,
+        "department": dept_name,
+        "designation": user_doc.get("designation_name") if user_doc else None,
+        "pi_mentor": pi_name,
+        "pi_mentor_email": user_doc.get("piheadmentor_user_id") if user_doc else None,
+    }
+
+    # ─── 2. PROJECT ASSIGNMENT (Project Staff Details) ─────────────────
+    staff_records = []
+    try:
+        staff_records = frappe.get_all(
+            "Project Staff Details",
+            filters={"email": user},
+            fields=["name", "project", "designation", "date_of_joining",
+                     "workflow_state"],
+            ignore_permissions=True
+        )
+    except Exception:
+        # DocType may not have all expected fields — degrade gracefully
+        try:
+            staff_records = frappe.get_all(
+                "Project Staff Details",
+                filters={"email": user},
+                fields=["name", "workflow_state"],
+                ignore_permissions=True
+            )
+        except Exception:
+            pass
+
+    # Enrich with tenure details if available
+    project_assignments = []
+    for sr in staff_records:
+        assignment = {
+            "staff_detail_name": sr.get("name"),
+            "project": sr.get("project"),
+            "designation": sr.get("designation"),
+            "date_of_joining": str(sr.get("date_of_joining")) if sr.get("date_of_joining") else None,
+            "workflow_state": sr.get("workflow_state"),
+            "tenure_details": [],
+        }
+
+        # Fetch tenure child table rows
+        try:
+            tenure_rows = frappe.get_all(
+                "Project Staff Tenure Details",
+                filters={"parent": sr.get("name")},
+                fields=["tenure_start_date", "tenure_end_date",
+                         "monthly_salary", "designation"],
+                order_by="tenure_start_date desc",
+                ignore_permissions=True
+            )
+            for t in tenure_rows:
+                assignment["tenure_details"].append({
+                    "start_date": str(t.get("tenure_start_date")) if t.get("tenure_start_date") else None,
+                    "end_date": str(t.get("tenure_end_date")) if t.get("tenure_end_date") else None,
+                    "monthly_salary": flt(t.get("monthly_salary")),
+                    "designation": t.get("designation"),
+                })
+        except Exception:
+            pass
+
+        project_assignments.append(assignment)
+
+    data["project_assignments"] = project_assignments
+    data["total_assignments"] = len(project_assignments)
+
+    # ─── 3. LEAVE BALANCE ──────────────────────────────────────────────
+    leave_data = {}
+    try:
+        leave_records = frappe.get_all(
+            "Leave Module",
+            filters={"email": user, "docstatus": ["<", 2]},
+            fields=["name", "leave_type", "from_date", "to_date",
+                     "total_days", "workflow_state"],
+            order_by="creation desc",
+            limit=10,
+            ignore_permissions=True
+        )
+
+        pending_leaves = [l for l in leave_records
+                          if l.get("workflow_state") and "pending" in l["workflow_state"].lower()]
+        approved_leaves = [l for l in leave_records
+                           if l.get("workflow_state") and "approved" in l["workflow_state"].lower()]
+
+        leave_data = {
+            "recent_leaves": [{
+                "name": l.name,
+                "leave_type": l.get("leave_type"),
+                "from_date": str(l.get("from_date")) if l.get("from_date") else None,
+                "to_date": str(l.get("to_date")) if l.get("to_date") else None,
+                "total_days": flt(l.get("total_days")),
+                "status": l.get("workflow_state"),
+            } for l in leave_records[:5]],
+            "pending_count": len(pending_leaves),
+            "approved_count": len(approved_leaves),
+        }
+    except Exception:
+        leave_data = {"recent_leaves": [], "pending_count": 0, "approved_count": 0}
+
+    data["leave_summary"] = leave_data
+
+    # ─── 4. PENDING TASKS (Temporary Advances, etc.) ───────────────────
+    pending_tasks = []
+
+    # Temporary Advances awaiting action
+    try:
+        advances = frappe.get_all(
+            "Temporary Advance",
+            filters={"owner": user, "docstatus": 0},
+            fields=["name", "workflow_state", "total_amount", "creation"],
+            order_by="creation desc",
+            limit=5,
+            ignore_permissions=True
+        )
+        for a in advances:
+            pending_tasks.append({
+                "doctype": "Temporary Advance",
+                "name": a.name,
+                "status": a.get("workflow_state"),
+                "amount": flt(a.get("total_amount")),
+                "creation": str(a.creation) if a.creation else None,
+            })
+    except Exception:
+        pass
+
+    data["pending_tasks"] = pending_tasks
+    data["pending_task_count"] = len(pending_tasks)
+
+    # ─── 5. QUICK STATS ───────────────────────────────────────────────
+    data["quick_stats"] = {
+        "total_projects": len(project_assignments),
+        "pending_leaves": leave_data.get("pending_count", 0),
+        "pending_tasks": len(pending_tasks),
+    }
+
+    return data
+
+
