@@ -18,9 +18,82 @@ from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_
 
 
 class FundSanction(Document):
+	def before_save(self):
+		if self.workflow_state:
+			self.sanction_workflow_status = self.workflow_state
+
 	def validate(self):
-		# Add any specific validation for Fund Sanction here
-		pass
+		self.validate_unique_sanctioned_letter_no()
+
+	def validate_unique_sanctioned_letter_no(self):
+		"""Block save if another Fund Sanction already uses this sanctioned_letter_no."""
+		if not self.sanctioned_letter_no:
+			return
+		duplicate = frappe.db.get_value(
+			"Fund Sanction",
+			{
+				"sanctioned_letter_no": self.sanctioned_letter_no,
+				"name": ["!=", self.name or ""],
+			},
+			"name",
+		)
+		if duplicate:
+			frappe.throw(
+				_(
+					"Sanctioned Letter No '{0}' is already used in Fund Sanction {1}. "
+					"It must be unique."
+				).format(self.sanctioned_letter_no, duplicate),
+				title=_("Duplicate Sanctioned Letter No"),
+			)
+
+
+def get_unique_sanctioned_letter_no(letter_no):
+	"""Generate a unique sanctioned_letter_no by appending an auto-incrementing
+	-SL00001 style suffix until no Fund Sanction uses the candidate."""
+	counter = 1
+	while True:
+		candidate = f"{letter_no}-SL{counter:05d}"
+		if not frappe.db.exists("Fund Sanction", {"sanctioned_letter_no": candidate}):
+			return candidate
+		counter += 1
+
+
+@frappe.whitelist()
+def check_sanctioned_letter_no(sanctioned_letter_no, docname=None):
+	"""Realtime duplicate check for sanctioned_letter_no.
+
+	Args:
+		sanctioned_letter_no: the value to check.
+		docname: optional — current Fund Sanction name, excluded from the
+			check so editing a doc doesn't flag itself as a duplicate.
+
+	Returns:
+		is_duplicate False  -> the value is free to use.
+		is_duplicate True   -> includes the conflicting doc and a unique
+			`suggested` value like "LTR123-SL00001" (suffix auto-increments).
+	"""
+	letter_no = (sanctioned_letter_no or "").strip()
+	if not letter_no:
+		return {"status": "error", "message": "sanctioned_letter_no is required"}
+
+	filters = {"sanctioned_letter_no": letter_no}
+	if docname:
+		filters["name"] = ["!=", docname]
+
+	existing = frappe.db.get_value("Fund Sanction", filters, "name")
+	if not existing:
+		return {
+			"status": "success",
+			"is_duplicate": False,
+			"sanctioned_letter_no": letter_no,
+		}
+
+	return {
+		"status": "success",
+		"is_duplicate": True,
+		"existing_doc": existing,
+		"suggested": get_unique_sanctioned_letter_no(letter_no),
+	}
 
 
 API_URL = "http://172.16.134.81:18080/api/sanction-details/addSanctionDetails"
@@ -439,6 +512,23 @@ def save_fund_sanction_data(files=None, **data):
 				data["name"] = existing_draft
 				print(f"🔄 Found existing draft {existing_draft} for project {data.get('project_proposal')}. Updating instead of creating a new one.")
 		# --- END EDIT BY MKY ---
+
+		# Enforce unique sanctioned_letter_no (doc.save below runs with
+		# ignore_validate, so the doctype-level check would be skipped)
+		letter_no = (data.get("sanctioned_letter_no") or "").strip()
+		if letter_no:
+			dup_filters = {"sanctioned_letter_no": letter_no}
+			if data.get("name"):
+				dup_filters["name"] = ["!=", data.get("name")]
+			duplicate = frappe.db.get_value("Fund Sanction", dup_filters, "name")
+			if duplicate:
+				frappe.throw(
+					_(
+						"Sanctioned Letter No '{0}' is already used in Fund Sanction {1}. "
+						"It must be unique."
+					).format(letter_no, duplicate),
+					title=_("Duplicate Sanctioned Letter No"),
+				)
 
 		# Create or fetch the main Fund Sanction document
 		if data.get("name"):
@@ -908,11 +998,10 @@ def submit_fund_sanction(sanction_name=None, save=None, files=None, project_reg=
 
 
 @frappe.whitelist()
-def update_sanctioned_budget_breakup(docname, rows):
+def update_sanctioned_budget_breakup(docname, rows, username=None):
     """
     Update or insert rows in the sanctioned_budget_breakup child table of a Fund Sanction.
     Works on both draft and submitted documents.
-    Resets workflow state to 'Draft' after saving.
 
     Args:
         docname (str): Fund Sanction document name.
@@ -921,6 +1010,8 @@ def update_sanctioned_budget_breakup(docname, rows):
             - head (str)               — alias for account_head
             - years (list[float])      — [yr1, yr2, yr3, yr4, yr5] shorthand
             - first_year_budget … fifth_year_budget (float)
+        username (str, optional): When provided, the document workflow state is preserved
+            as-is. When omitted, the document is reset to Draft.
     """
     import json as _json
 
@@ -975,7 +1066,13 @@ def update_sanctioned_budget_breakup(docname, rows):
             processed_rows.append(d)
             print(f"[SBB_UPDATE] row[{idx}] processed: account_head={d.get('account_head')} total={row_total}")
 
+        # Build sets of identifiers present in the incoming payload
+        incoming_names        = {r.get("name") for r in processed_rows if r.get("name")}
+        incoming_account_heads = {r.get("account_head") for r in processed_rows if r.get("account_head")}
+
         now = frappe.utils.now()
+        keep_state = bool(username)
+        print(f"[SBB_UPDATE] session_user={frappe.session.user} username={username} keep_state={keep_state}")
 
         if doc.docstatus == 1:
             print(f"[SBB_UPDATE] SUBMITTED: using direct DB update")
@@ -988,6 +1085,12 @@ def update_sanctioned_budget_breakup(docname, rows):
             by_account_head = {r["account_head"]: r["name"] for r in existing_rows}
             by_name        = {r["name"]: r["name"] for r in existing_rows}
             print(f"[SBB_UPDATE] existing rows: {[r['account_head'] for r in existing_rows]}")
+
+            # Delete rows that are no longer in the incoming list
+            for r in existing_rows:
+                if r["name"] not in incoming_names and r["account_head"] not in incoming_account_heads:
+                    frappe.db.delete(CHILD_DOCTYPE, {"name": r["name"]})
+                    print(f"[SBB_UPDATE] deleted row {r['name']} (account_head={r['account_head']})")
 
             for row in processed_rows:
                 existing_name = by_name.get(row.get("name")) or by_account_head.get(row.get("account_head"))
@@ -1010,7 +1113,7 @@ def update_sanctioned_budget_breakup(docname, rows):
                     child.db_insert()
                     print(f"[SBB_UPDATE] inserted new row idx={row['idx']} (account_head={row.get('account_head')})")
 
-            # Compute total_sanctioned_amount from all child rows after update
+            # Compute total from remaining rows after deletions and updates
             all_rows = frappe.db.get_all(
                 CHILD_DOCTYPE,
                 filters={"parent": docname, "parentfield": CHILD_FIELD, "parenttype": "Fund Sanction"},
@@ -1019,46 +1122,114 @@ def update_sanctioned_budget_breakup(docname, rows):
             total_sanctioned = sum(flt(r.get("total_proposal_of_heads", 0)) for r in all_rows)
             print(f"[SBB_UPDATE] total_sanctioned_amount={total_sanctioned}")
 
-            frappe.db.set_value(
-                "Fund Sanction", docname,
-                {
-                    "workflow_state": "Draft",
-                    "sanction_workflow_status": "Draft",
-                    "docstatus": 0,
-                    "total_sanctioned_amount": total_sanctioned,
-                },
-                update_modified=True,
-            )
-            print(f"[SBB_UPDATE] workflow reset to Draft (submitted → draft)")
+            if keep_state:
+                frappe.db.set_value(
+                    "Fund Sanction", docname,
+                    {"total_sanctioned_amount": total_sanctioned},
+                    update_modified=True,
+                )
+                print(f"[SBB_UPDATE] staff,RnD user — workflow_state kept as '{doc.workflow_state}' (no draft reset)")
+            else:
+                frappe.db.set_value(
+                    "Fund Sanction", docname,
+                    {
+                        "workflow_state": "Draft",
+                        "sanction_workflow_status": "Draft",
+                        "docstatus": 0,
+                        "total_sanctioned_amount": total_sanctioned,
+                    },
+                    update_modified=True,
+                )
+                print(f"[SBB_UPDATE] workflow reset to Draft (submitted → draft)")
 
         else:
-            print(f"[SBB_UPDATE] DRAFT: using doc.save()")
+            if keep_state:
+                print(f"[SBB_UPDATE] DRAFT + staff,RnD: using direct DB update (skip doc.save to avoid workflow validation)")
 
-            existing_by_ah   = {r.account_head: r for r in doc.sanctioned_budget_breakup}
-            existing_by_name = {r.name: r for r in doc.sanctioned_budget_breakup}
+                existing_rows = frappe.db.get_all(
+                    CHILD_DOCTYPE,
+                    filters={"parent": docname, "parentfield": CHILD_FIELD, "parenttype": "Fund Sanction"},
+                    fields=["name", "account_head"],
+                )
+                by_account_head = {r["account_head"]: r["name"] for r in existing_rows}
+                by_name         = {r["name"]: r["name"] for r in existing_rows}
+                print(f"[SBB_UPDATE] existing rows: {[r['account_head'] for r in existing_rows]}")
 
-            for row in processed_rows:
-                existing_row = existing_by_name.get(row.get("name")) or existing_by_ah.get(row.get("account_head"))
-                if existing_row:
-                    for k, v in row.items():
-                        if k not in ("name", "idx"):
-                            existing_row.set(k, v)
-                    print(f"[SBB_UPDATE] updated in-memory row (account_head={row.get('account_head')})")
-                else:
-                    doc.append(CHILD_FIELD, row)
-                    print(f"[SBB_UPDATE] appended new row (account_head={row.get('account_head')})")
+                for r in existing_rows:
+                    if r["name"] not in incoming_names and r["account_head"] not in incoming_account_heads:
+                        frappe.db.delete(CHILD_DOCTYPE, {"name": r["name"]})
+                        print(f"[SBB_UPDATE] deleted row {r['name']} (account_head={r['account_head']})")
 
-            # Compute total_sanctioned_amount from all rows now in memory
-            total_sanctioned = sum(flt(r.total_proposal_of_heads) for r in doc.sanctioned_budget_breakup)
-            doc.total_sanctioned_amount = total_sanctioned
-            print(f"[SBB_UPDATE] total_sanctioned_amount={total_sanctioned}")
+                for row in processed_rows:
+                    existing_name = by_name.get(row.get("name")) or by_account_head.get(row.get("account_head"))
+                    set_vals = {k: v for k, v in row.items() if k not in ("name", "idx")}
+                    set_vals.update({"modified": now, "modified_by": frappe.session.user})
 
-            doc.workflow_state = "Draft"
-            doc.sanction_workflow_status = "Draft"
-            doc.flags.ignore_validate = True
-            doc.flags.ignore_mandatory = True
-            doc.save(ignore_permissions=True)
-            print(f"[SBB_UPDATE] doc saved with workflow reset to Draft")
+                    if existing_name:
+                        frappe.db.set_value(CHILD_DOCTYPE, existing_name, set_vals, update_modified=False)
+                        print(f"[SBB_UPDATE] updated {existing_name} (account_head={row.get('account_head')})")
+                    else:
+                        child = frappe.get_doc({
+                            "doctype": CHILD_DOCTYPE,
+                            "parent": docname,
+                            "parentfield": CHILD_FIELD,
+                            "parenttype": "Fund Sanction",
+                            "creation": now,
+                            "owner": frappe.session.user,
+                            **row,
+                        })
+                        child.db_insert()
+                        print(f"[SBB_UPDATE] inserted new row idx={row['idx']} (account_head={row.get('account_head')})")
+
+                all_rows = frappe.db.get_all(
+                    CHILD_DOCTYPE,
+                    filters={"parent": docname, "parentfield": CHILD_FIELD, "parenttype": "Fund Sanction"},
+                    fields=["total_proposal_of_heads"],
+                )
+                total_sanctioned = sum(flt(r.get("total_proposal_of_heads", 0)) for r in all_rows)
+                frappe.db.set_value(
+                    "Fund Sanction", docname,
+                    {"total_sanctioned_amount": total_sanctioned},
+                    update_modified=True,
+                )
+                print(f"[SBB_UPDATE] staff,RnD draft: total={total_sanctioned}, workflow_state kept as '{doc.workflow_state}'")
+
+            else:
+                print(f"[SBB_UPDATE] DRAFT: using doc.save()")
+
+                # Remove rows from the in-memory table that are not in the incoming list;
+                # Frappe's doc.save() will delete them from DB automatically.
+                kept = []
+                for r in doc.sanctioned_budget_breakup:
+                    if r.name in incoming_names or r.account_head in incoming_account_heads:
+                        kept.append(r)
+                    else:
+                        print(f"[SBB_UPDATE] removing row {r.name} (account_head={r.account_head})")
+                doc.sanctioned_budget_breakup = kept
+
+                existing_by_ah   = {r.account_head: r for r in doc.sanctioned_budget_breakup}
+                existing_by_name = {r.name: r for r in doc.sanctioned_budget_breakup}
+
+                for row in processed_rows:
+                    existing_row = existing_by_name.get(row.get("name")) or existing_by_ah.get(row.get("account_head"))
+                    if existing_row:
+                        for k, v in row.items():
+                            if k not in ("name", "idx"):
+                                existing_row.set(k, v)
+                        print(f"[SBB_UPDATE] updated in-memory row (account_head={row.get('account_head')})")
+                    else:
+                        doc.append(CHILD_FIELD, row)
+                        print(f"[SBB_UPDATE] appended new row (account_head={row.get('account_head')})")
+
+                total_sanctioned = sum(flt(r.total_proposal_of_heads) for r in doc.sanctioned_budget_breakup)
+                doc.total_sanctioned_amount = total_sanctioned
+                doc.workflow_state = "Draft"
+                doc.sanction_workflow_status = "Draft"
+                doc.flags.ignore_validate = True
+                doc.flags.ignore_mandatory = True
+                doc.validate_workflow = lambda: None
+                doc.save(ignore_permissions=True)
+                print(f"[SBB_UPDATE] doc saved with workflow reset to Draft")
 
         frappe.db.commit()
         print(f"[SBB_UPDATE] COMMITTED successfully")
@@ -1066,7 +1237,7 @@ def update_sanctioned_budget_breakup(docname, rows):
         return {
             "status": "success",
             "docname": docname,
-            "workflow_state": "Draft",
+            "workflow_state": doc.workflow_state,
             "rows_updated": len(rows),
             "total_sanctioned_amount": total_sanctioned,
         }
@@ -1081,3 +1252,138 @@ def update_sanctioned_budget_breakup(docname, rows):
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), f"Update Sanctioned Budget Breakup Error for {docname}")
         return {"status": "error", "message": str(e), "traceback": tb}
+
+
+@frappe.whitelist()
+def update_fund_sanction_files(docname, files=None, existing_files=None, project_reg=None, replace=False):
+	"""
+	Upload new files (Base64 → MinIO) and/or update the sanction_related_files
+	child table of an existing Fund Sanction document.
+
+	Args:
+		docname       (str):        Fund Sanction name to update.
+		files         (list|str):   New files as base64 objects — same shape as
+		                            save_fund_sanction_data: [{filename, content,
+		                            description, is_private, fieldname}, ...].
+		existing_files (list|str):  Rows that already have a MinIO URL and should
+		                            be kept / updated: [{description, sanction_file}, ...].
+		                            Ignored when replace=True (the table is rebuilt
+		                            from existing_files + newly uploaded files).
+		project_reg   (str):        Project Registration name for MinIO path routing
+		                            (falls back to doc.project_proposal if omitted).
+		replace       (bool|str):   When truthy, clear the child table first then
+		                            repopulate from existing_files + new uploads.
+		                            Default False (append-only).
+	"""
+	import json
+
+	def _coerce_list(val):
+		if not val:
+			return []
+		if isinstance(val, str):
+			try:
+				val = json.loads(val)
+			except Exception:
+				return []
+		return val if isinstance(val, list) else []
+
+	replace = replace in (True, "true", "True", "1", 1)
+	files_payload = _coerce_list(files)
+	existing_rows = _coerce_list(existing_files)
+	uploaded_file_urls = []
+
+	try:
+		if not docname:
+			frappe.throw("docname is required")
+
+		doc = frappe.get_doc("Fund Sanction", docname)
+
+		doc.flags.ignore_validate = True
+		doc.flags.ignore_mandatory = True
+		doc.flags.ignore_validate_update_after_submit = True
+
+		if replace:
+			doc.set("sanction_related_files", [])
+
+		# Re-add / keep existing file rows
+		for row in existing_rows:
+			file_url = row.get("sanction_file")
+			if not file_url:
+				continue
+			doc.append("sanction_related_files", {
+				"description": row.get("description") or file_url,
+				"sanction_file": file_url,
+			})
+
+		# Upload new base64 files → MinIO
+		if files_payload:
+			file_service = get_rnd_file_service()
+			target_doctype = "Project Registration"
+			target_docname = project_reg or doc.project_proposal
+
+			for f in files_payload:
+				try:
+					filename = f.get("filename") or f.get("file_name") or f.get("name")
+					content_b64 = f.get("content") or f.get("file_data") or f.get("data") or ""
+					is_private = int(f.get("is_private") or 1)
+					description = f.get("description") or filename
+
+					if not (filename and content_b64):
+						continue
+
+					if content_b64.startswith("data:"):
+						content_b64 = content_b64.split(",", 1)[1]
+
+					file_content = base64.b64decode(content_b64)
+
+					fieldname_hint = f.get("fieldname")
+					if fieldname_hint:
+						folder = get_file_category_for_doctype(target_doctype, fieldname_hint)
+					else:
+						folder = "fund_sanction"
+
+					upload_result = file_service.save_file(
+						filename=filename,
+						content=file_content,
+						is_private=bool(is_private),
+						doctype=target_doctype,
+						docname=target_docname,
+						folder=folder,
+					)
+
+					if upload_result.get("status"):
+						file_url = upload_result.get("data", {}).get("file_url")
+						doc.append("sanction_related_files", {
+							"description": description,
+							"sanction_file": file_url,
+						})
+						if file_url:
+							uploaded_file_urls.append(file_url)
+						frappe.logger().info(f"File uploaded to MinIO: {filename} -> {file_url}")
+					else:
+						frappe.log_error(
+							f"MinIO upload failed: {upload_result.get('message')}",
+							f"update_fund_sanction_files: upload error for {filename}",
+						)
+
+				except Exception as fe:
+					frappe.log_error(
+						frappe.get_traceback(),
+						f"update_fund_sanction_files: upload error for {f.get('filename')}",
+					)
+					continue
+
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"docname": docname,
+			"uploaded_files": uploaded_file_urls,
+			"total_file_rows": len(doc.sanction_related_files),
+		}
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), f"update_fund_sanction_files error for {docname}")
+		frappe.throw(f"Failed to update files for Fund Sanction: {str(e)}")
