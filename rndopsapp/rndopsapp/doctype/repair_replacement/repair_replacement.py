@@ -38,13 +38,12 @@ class repair_replacement(Document):
 
 	def validate(self):
 		"""Server-side calculations: repair grand total."""
-		self.calculate_totals()
+		if not self.flags.get("skip_total_calculation"):
+			self.calculate_totals()
 
 	def calculate_totals(self):
 		"""Calculate repair grand total = repair expenditure + other charges."""
-		# rr_other_charges is a Column Break (layout only), not a data field.
-		# Grand total is sum of repair expenditure (no addable other-charges field).
-		self.rr_grand_total = flt(self.rr_repair_expenditure)
+		self.rr_grand_total = flt(self.get("rr_repair_expenditure")) + flt(self.get("rr_other_charges"))
 
 
 # =============================================================================

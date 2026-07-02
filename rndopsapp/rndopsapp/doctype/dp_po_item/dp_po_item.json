@@ -1,0 +1,83 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "creation": "2026-06-18 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "item_name",
+    "make",
+    "model",
+    "qty",
+    "unit_price",
+    "discount",
+    "gst",
+    "total"
+  ],
+  "fields": [
+    {
+      "fieldname": "item_name",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Item"
+    },
+    {
+      "fieldname": "make",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Make"
+    },
+    {
+      "fieldname": "model",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Model"
+    },
+    {
+      "fieldname": "qty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Qty"
+    },
+    {
+      "fieldname": "unit_price",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Unit Price"
+    },
+    {
+      "fieldname": "discount",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Discount"
+    },
+    {
+      "fieldname": "gst",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "GST"
+    },
+    {
+      "fieldname": "total",
+      "fieldtype": "Currency",
+      "in_list_view": 1,
+      "label": "Total"
+    }
+  ],
+  "grid_page_length": 50,
+  "index_web_pages_for_search": 1,
+  "istable": 1,
+  "links": [],
+  "modified": "2026-06-18 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Rndopsapp",
+  "name": "dp_po_item",
+  "owner": "Administrator",
+  "permissions": [],
+  "row_format": "Dynamic",
+  "rows_threshold_for_grid_search": 20,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

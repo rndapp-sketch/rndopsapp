@@ -109,8 +109,7 @@
   {
    "fieldname": "overhead_amount",
    "fieldtype": "Currency",
-   "label": "Overhead Amount",
-   "read_only": 1
+   "label": "Overhead Amount"
   },
   {
    "fieldname": "credit_distribution_section",
@@ -161,7 +160,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 10:56:09.465239",
+ "modified": "2026-06-24 12:42:25.468130",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "E Non Routine Deposit Slip",

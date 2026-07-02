@@ -553,6 +553,14 @@ def get_pending_task(page_name="pending-task"):
 	user_roles = frappe.get_roles(current_user)
 	is_system_manager = "System Manager" in user_roles
 
+	# Find departments this user heads — used for Travel "Pending Head Approval" filtering
+	_head_depts = frappe.db.sql(
+		"SELECT name FROM `tabDepartment_prornd` WHERE dept_head = %s",
+		current_user,
+		as_dict=True,
+	)
+	dept_head_values = {d.name for d in _head_depts}
+
 	print(f"\n--- DEBUG START: User '{current_user}' ---")
 	# print(f"Your Roles: {user_roles}") # Commented out to reduce noise
 
@@ -719,6 +727,8 @@ def get_pending_task(page_name="pending-task"):
 			head_field = None
 
 		extra_fields = [head_field] if head_field else []
+		if dt == "Travel" and meta.has_field("department_travel") and "department_travel" not in extra_fields:
+			extra_fields.append("department_travel")
 
 		try:
 			records = frappe.get_list(
@@ -743,6 +753,16 @@ def get_pending_task(page_name="pending-task"):
 			if head_field and r.get(status_field) == "Pending Head Approval" and not is_system_manager:
 				head_email = (r.get(head_field) or "").strip().lower()
 				if head_email != current_user.lower():
+					continue
+
+			# Travel: filter "Pending Head Approval" to the dept head of the document's department
+			if (
+				dt == "Travel"
+				and r.get(status_field) == "Pending Head Approval"
+				and not is_system_manager
+			):
+				doc_dept = (r.get("department_travel") or "").strip()
+				if doc_dept not in dept_head_values:
 					continue
 
 			mapped.append(
@@ -960,6 +980,38 @@ def get_task_registry(debug=0):
 			except Exception as e:
 				print(f"Workflow Action query error for {dt_name}: {str(e)}")
 
+			# Method 4: Workflow Comments — catches cases where Frappe left the
+			# Workflow Action as "Open"/no completed_by (known Frappe gap) but still
+			# wrote a Workflow-type Comment when the user triggered the transition.
+			wf_comment_docs = []
+			try:
+				wf_comments = frappe.get_all(
+					"Comment",
+					filters={
+						"reference_doctype": dt_name,
+						"comment_type": "Workflow",
+						"owner": current_user,
+					},
+					fields=["reference_name"],
+					limit_page_length=100,
+					ignore_permissions=True,
+				)
+
+				comment_names = {c.reference_name for c in wf_comments}
+				if comment_names:
+					placeholders = ", ".join(["%s"] * len(comment_names))
+					wf_comment_docs = frappe.db.sql(
+						f"""
+						SELECT {", ".join(fields_to_fetch)}
+						FROM `tab{dt_name}`
+						WHERE name IN ({placeholders}) AND docstatus < 2
+					""",
+						tuple(comment_names),
+						as_dict=True,
+					)
+			except Exception as e:
+				print(f"Workflow Comment query error for {dt_name}: {str(e)}")
+
 			# Combine and deduplicate
 			all_doc_names = set()
 			combined_docs = []
@@ -979,12 +1031,18 @@ def get_task_registry(debug=0):
 					all_doc_names.add(doc.name)
 					combined_docs.append(doc)
 
+			for doc in wf_comment_docs:
+				if doc.name not in all_doc_names:
+					all_doc_names.add(doc.name)
+					combined_docs.append(doc)
+
 			# Diagnostics: per-method counts for this doctype
 			has_workflow = bool(frappe.db.exists("Workflow", {"document_type": dt_name}))
 			method_counts = {
 				"method1_modified_by": len(modified_docs),
 				"method2_versions": len(version_docs),
 				"method3_workflow_action": len(wf_action_docs),
+				"method4_workflow_comment": len(wf_comment_docs),
 				"combined_unique": len(combined_docs),
 			}
 

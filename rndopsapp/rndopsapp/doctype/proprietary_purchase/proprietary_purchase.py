@@ -39,7 +39,8 @@ class proprietary_purchase(Document):
 	def validate(self):
 		"""Server-side calculations: row amounts and grand total."""
 		self._validate_parent_linkage()
-		self.calculate_totals()
+		if not self.flags.get("skip_total_calculation"):
+			self.calculate_totals()
 
 	def _validate_parent_linkage(self):
 		"""

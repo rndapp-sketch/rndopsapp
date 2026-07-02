@@ -152,7 +152,6 @@
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "other_traveler",
    "fieldtype": "Link",
-   "hidden": 1,
    "label": "Name of the traveler",
    "options": "User"
   },
@@ -160,7 +159,6 @@
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "other_traveler_address",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Designation and full address of traveler"
   },
   {
@@ -319,7 +317,7 @@
    "label": "Arrangement for Classes During the Proposed Leave"
   },
   {
-   "depends_on": "eval:doc.if_traveller == 'Self';",
+   "depends_on": "eval:doc.if_traveler == 'Self';",
    "fieldname": "travel_classes_arrangement",
    "fieldtype": "Int",
    "label": "Number of Classes",
@@ -487,7 +485,6 @@
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "traveler_webmail_id",
    "fieldtype": "Link",
-   "hidden": 1,
    "label": "Traveler Webmail Id",
    "options": "User"
   },
@@ -501,7 +498,7 @@
    "depends_on": "eval:doc.if_traveler == \"Other\"",
    "fieldname": "section_break_lgbn",
    "fieldtype": "Section Break",
-   "hidden": 1
+   "label": "Traveller Details"
   },
   {
    "fieldname": "account_head_details_section",
@@ -532,7 +529,6 @@
    "hidden": 1
   },
   {
-   "depends_on": "eval:doc.if_traveler == \"Other\"",
    "fieldname": "column_break_anji",
    "fieldtype": "Column Break"
   },
@@ -566,7 +562,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-03 13:24:05.992148",
+ "modified": "2026-06-08 11:05:30.766695",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Travel",

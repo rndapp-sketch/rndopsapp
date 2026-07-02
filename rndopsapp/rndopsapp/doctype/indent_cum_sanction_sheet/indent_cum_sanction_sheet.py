@@ -111,14 +111,33 @@ def extract_eval_expression(expression):
     return expression
 
 
+# Mapping: indent_type → (child_doctype, grand_total_field)
+# All amounts live in the linked sub-doctype — icss_grand_total is never used for routing.
+_ICSS_AMOUNT_SOURCE = {
+    INDENT_TYPE_PROPRIETARY:  ("proprietary_purchase",  "pp_grand_total"),
+    INDENT_TYPE_STANDARDIZED: ("standerdized_purchase", "sp_grand_total"),
+    INDENT_TYPE_REPAIR:       ("repair_replacement",    "rr_grand_total"),
+    INDENT_TYPE_AMC:          ("AMC",                   "amc_grand_total"),
+    INDENT_TYPE_RATE_CONTRACT:("Rate Contract",         "rate_contract_grand_total"),
+}
+
+
 def _get_icss_approval_amount(doc):
-    """Return normalized approval amount for workflow routing, based on indent type."""
+    """Return the approval amount for HoS routing by reading from the child sub-doctype.
+
+    icss_grand_total on the parent is NEVER used — it is unreliable because
+    validate() zeros it whenever icss_items is empty (all types store items in
+    their own sub-doctype, not in the ICSS parent).
+    """
     indent_type = doc.get("icss_indent_type") or ""
-    if indent_type == INDENT_TYPE_REPAIR:
-        return flt(doc.get("icss_repair_grand_total"))
-    if indent_type == INDENT_TYPE_AMC:
-        return flt(doc.get("icss_amc_grand_total"))
-    return flt(doc.get("icss_grand_total"))
+    source = _ICSS_AMOUNT_SOURCE.get(indent_type)
+    if not source:
+        return 0
+    child_doctype, amount_field = source
+    sub_ref = doc.get("sub_doctype_reference")
+    if not sub_ref:
+        return 0
+    return flt(frappe.db.get_value(child_doctype, sub_ref, amount_field))
 
 
 def _is_icss_director_approval_required(doc):
@@ -303,10 +322,17 @@ def _save_doc_from_payload(doctype, data, linkage_fields=None):
                 doc.set(fieldname, value)
 
     doc.flags.ignore_permissions = True
+    # Skip grand-total recalculation on the first intermediate save — items are
+    # not yet appended at this point (they're deferred). The final save below
+    # clears the flag and recomputes with the full item set.
+    has_deferred_tables = any(df.fieldtype == "Table" for _, _, df in deferred)
+    if has_deferred_tables:
+        doc.flags.skip_total_calculation = True
     if is_new:
         doc.insert(ignore_permissions=True)
     else:
         doc.save(ignore_permissions=True)
+    doc.flags.skip_total_calculation = False
 
     # Second pass: files and child tables
     for fieldname, value, df in deferred:
@@ -369,9 +395,10 @@ class IndentCumSanctionSheet(Document):
     def validate(self):
         self._validate_indent_type()
         self._validate_indent_type_change()
-        self.calculate_item_totals()
-        self.calculate_repair_total()
-        self.calculate_amc_total()
+        if not self.flags.get("skip_total_calculation"):
+            self.calculate_item_totals()
+            self.calculate_repair_total()
+            self.calculate_amc_total()
         self._update_director_approval_required()
 
     def before_save(self):

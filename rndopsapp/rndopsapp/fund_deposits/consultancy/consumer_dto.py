@@ -151,8 +151,8 @@ class ConsultancyDepositSlipUpdateMessageDTO:
 
         # Parse consultancy O (Other Event) details
         consultancy_o = None
-        if 'consultancyODetails' in data_dict and data_dict['consultancyODetails']:
-            co_dict = data_dict['consultancyODetails']
+        if 'consultancyOtherDetails' in data_dict and data_dict['consultancyOtherDetails']:
+            co_dict = data_dict['consultancyOtherDetails']
             consultancy_o = ConsultancyODetailsDTO(
                 consultancyFeeX_trainingFee=co_dict.get('consultancyFeeX_trainingFee', 0.0)
             )

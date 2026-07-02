@@ -153,7 +153,10 @@ permission_query_conditions = {
 
 doc_events = {
 	"*": {
-		"on_update": "rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish"
+		"on_update": [
+			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
+			"rndopsapp.rndopsapp.activity_logger.log_workflow_transition",
+		]
 	}
 }
 

@@ -3,9 +3,31 @@
 
 import json
 import time
+import threading
 import frappe
+import requests
 from datetime import datetime, date
 from typing import Optional, Any
+
+# --- MATTERMOST CONFIG ---
+_MM_URL = "http://172.16.135.118:8065/api/v4/posts"
+_MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
+_MM_KAFKA_CHANNEL = "yh7piky97iycjrdytia1hqy99a"  # "kafka logs" channel
+
+
+def mm_notify(message: str):
+    """Fire-and-forget Mattermost notification. Never blocks or raises."""
+    def _post():
+        try:
+            requests.post(
+                _MM_URL,
+                json={"channel_id": _MM_KAFKA_CHANNEL, "message": message},
+                headers={"Authorization": _MM_TOKEN, "Content-Type": "application/json"},
+                timeout=(2, 3),
+            )
+        except Exception:
+            pass
+    threading.Thread(target=_post, daemon=True).start()
 
 from .config import (
     KAFKA_BOOTSTRAP_SERVERS,

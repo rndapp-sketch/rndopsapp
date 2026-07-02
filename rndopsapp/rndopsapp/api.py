@@ -1,9 +1,15 @@
-import frappe
-from frappe.utils import sanitize_html
-from frappe.utils.file_manager import save_file
 import json
 import os
+
+import frappe
 from frappe import _
+from frappe.utils import sanitize_html
+from frappe.utils.file_manager import save_file
+
+# Re-export so callers using rndopsapp.rndopsapp.api.* still resolve correctly
+from rndopsapp.rndopsapp.doctype.fund_received.fund_received import (
+	get_fund_received_by_prjreg,
+)
 
 # -------------------------- SCRIPT-DRIVEN WORKFLOW FUNCTIONS {MKY-V1- 19-09-2025}-------------------------------
 
@@ -149,8 +155,6 @@ def get_user_empclass(user):
 	return {}
 
 
-
-
 def get_workflow_states(doctype):
 	"""
 	Fetches all workflow states for a given DocType.
@@ -167,14 +171,11 @@ def get_workflow_states(doctype):
 	workflow = frappe.get_doc("Workflow", workflow_name)
 	return [state.state for state in workflow.states]
 
-	
-
 
 # --- Helper functions for document sharing --- Jimmy
 def share_document(doctype, name, user):
 	"""Shares a document with a user, giving them read and write access."""
 	frappe.share.add(doctype, name, user, read=1, write=1, notify=1)
-
 
 
 # ---------- MKY 20-09-25 COMMENTED ABOVE AND REPLACED WITH BELOW (unshare_document)------------------
@@ -197,8 +198,6 @@ def unshare_document(doctype, name, user):
 
 
 # --- UTILITY FUNCTIONS (OPTIONAL BUT RECOMMENDED) --- jimmy
-
-
 
 
 @frappe.whitelist()
@@ -226,6 +225,31 @@ def get_project_activity(doctype, docname):
 		frappe.log_error(frappe.get_traceback(), "get_project_activity failed")
 		return []
 
+
+@frappe.whitelist(allow_guest=True)
+def get_activity_test(doctype, docname):
+	"""
+	Fetches all comments and communications for a given document.
+	"""
+	# Log the docname being fetched
+	frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: docname = {docname}")
+
+	try:
+		# Fetch comments for the given document
+		comments = frappe.get_all(
+			"Comment",
+			filters={"reference_doctype": doctype, "reference_name": docname},
+			fields=["content", "owner", "creation", "comment_type"],
+			order_by="creation desc",
+		)
+
+		# Log the fetched comments
+		frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: comments = {comments}")
+
+		return comments
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_project_activity failed")
+		return []
 
 
 @frappe.whitelist()
@@ -321,7 +345,6 @@ def create_research_project_and_approve(proposal_docname, id_components, comment
 	return new_project
 
 
-
 # ------------- Added by MKY (09/10/2025) --------------
 @frappe.whitelist()
 def get_fund_sanction_fields(project_proposal=None):
@@ -398,9 +421,9 @@ def get_fund_received_fields(fund_sanction):
 	}
 
 	return {"fields": fields, "prefill_data": prefill_data, "link_options": link_options}
+
+
 # ----------------------------------------
-
-
 
 
 @frappe.whitelist()
@@ -414,7 +437,7 @@ def get_project_details(docname):
 	try:
 		# 1. Fetch Project Registration Document
 		project_doc = frappe.get_doc("Project Registration", docname)
-		
+
 		# Extract basic project details
 		project_data = {
 			"name": project_doc.name,
@@ -426,22 +449,30 @@ def get_project_details(docname):
 			"implementation_department": project_doc.implementation_department,
 			"workflow_state": project_doc.workflow_state,
 			"total_budget_amount": project_doc.total_budget_amount,
-			"creation": project_doc.creation
+			"creation": project_doc.creation,
 		}
 
 		# 2. Fetch All Linked Fund Received Documents
 		# Filter by 'prjreg_title' which links to Project Registration
 		funds = frappe.get_all(
 			"Fund Received",
-			filters={"prjreg_title": docname, "docstatus": 0}, 
-			fields=["name", "fund_received_amt", "creation", "bank_account", "invoice_no", "gst_invoice_issued", "docstatus"]
+			filters={"prjreg_title": docname, "docstatus": 0},
+			fields=[
+				"name",
+				"fund_received_amt",
+				"creation",
+				"bank_account",
+				"invoice_no",
+				"gst_invoice_issued",
+				"docstatus",
+			],
 		)
-		
+
 		funds_data = []
 		for fund in funds:
 			# Fetch the full doc to get the child table 'received_amt_breakup'
 			fund_doc = frappe.get_doc("Fund Received", fund.name)
-			
+
 			fund_info = {
 				"name": fund_doc.name,
 				"fund_received_amt": fund_doc.fund_received_amt,
@@ -450,23 +481,22 @@ def get_project_details(docname):
 				"invoice_no": fund_doc.invoice_no,
 				"gst_invoice_issued": fund_doc.gst_invoice_issued,
 				"docstatus": fund_doc.docstatus,
-				"budget_breakup": []
+				"budget_breakup": [],
 			}
-			
+
 			# Extract child table details
 			for row in fund_doc.received_amt_breakup:
-				fund_info["budget_breakup"].append({
-					"account_head": row.account_head, 
-					"amount_received": row.amount_received,           
-					"remarks": row.remarks  
-				})
-			
+				fund_info["budget_breakup"].append(
+					{
+						"account_head": row.account_head,
+						"amount_received": row.amount_received,
+						"remarks": row.remarks,
+					}
+				)
+
 			funds_data.append(fund_info)
 
-		return {
-			"project_details": project_data,
-			"funds": funds_data
-		}
+		return {"project_details": project_data, "funds": funds_data}
 
 	except frappe.DoesNotExistError:
 		frappe.throw(_("Project Registration not found."), title="Not Found")
@@ -482,15 +512,15 @@ def get_user_details(user_email):
 	Returns the user document with resolved department name and employee class.
 	"""
 	from frappe import _
-	
+
 	if not user_email:
 		frappe.throw(_("User Email is required."))
-	
+
 	try:
 		user_email = str(user_email).strip('"').strip("'")
 		user_doc = frappe.get_doc("User", user_email)
 		user_dict = user_doc.as_dict()
-		
+
 		# Resolve department_name ID to actual department name from Department_prornd
 		dept_link = user_dict.get("department_name")
 		if dept_link:
@@ -499,7 +529,7 @@ def get_user_details(user_email):
 				user_dict["department_name"] = dept_doc.dept_name  # Replace ID with actual name
 			except Exception:
 				pass  # Keep original value if lookup fails
-		
+
 		# Resolve empclass ID to actual employee class name from EmployeeClass_prornd
 		empclass_link = user_dict.get("empclass")
 		if empclass_link:
@@ -508,7 +538,7 @@ def get_user_details(user_email):
 				user_dict["empclass"] = empclass_doc.empclass_name  # Replace ID with actual name
 			except Exception:
 				pass  # Keep original value if lookup fails
-		
+
 		return user_dict
 	except frappe.DoesNotExistError:
 		return None
@@ -524,17 +554,12 @@ def get_recruitment_adhoc_contractual_by_webmail(webmail_id):
 	"""
 	try:
 		doc_names = frappe.get_all(
-			"Recruitment Adhoc Contractual",
-			filters={"webmail_id": webmail_id},
-			pluck="name"
+			"Recruitment Adhoc Contractual", filters={"webmail_id": webmail_id}, pluck="name"
 		)
-		
+
 		docs = [frappe.get_doc("Recruitment Adhoc Contractual", name).as_dict() for name in doc_names]
-			
-		return {
-			"status": "success",
-			"data": docs
-		}
+
+		return {"status": "success", "data": docs}
 	except Exception as e:
 		return {"status": "error", "message": str(e)}
 
@@ -594,7 +619,8 @@ def delete_doctype_records(doctype, docnames):
 				frappe.db.commit()
 
 			frappe.delete_doc(
-				doctype, docname,
+				doctype,
+				docname,
 				ignore_permissions=True,
 				force=True,
 				ignore_on_trash=True,
@@ -618,11 +644,7 @@ def delete_doctype_records(doctype, docnames):
 			except Exception as e2:
 				errors.append(f"{docname}: frappe.delete_doc → {first_err} | raw SQL → {str(e2)}")
 
-	return {
-		"deleted": deleted,
-		"not_found": not_found,
-		"errors": errors
-	}
+	return {"deleted": deleted, "not_found": not_found, "errors": errors}
 
 
 @frappe.whitelist(allow_guest=True)
@@ -649,6 +671,69 @@ def execute_database_sql(sql_query):
 		return {"status": "error", "message": str(e)}
 
 
+# -------------------- PROJECT REGISTRATION FIELD UPDATE --------------------
+
+
+@frappe.whitelist()
+def update_project_registration(docname, fields):
+	"""
+	Update fields on a Project Registration document bypassing UpdateAfterSubmitError.
+	Uses frappe.db.set_value directly so submitted documents can be corrected.
+	Workflow state, docstatus, and other system fields are always protected.
+	"""
+	import json
+
+	PROTECTED = {
+		"workflow_state",
+		"workflow_action",
+		"docstatus",
+		"name",
+		"owner",
+		"creation",
+		"doctype",
+		"idx",
+		"amended_from",
+	}
+
+	if isinstance(fields, str):
+		fields = json.loads(fields)
+
+	if not docname or not fields:
+		return {"status": "error", "message": "docname and fields are required"}
+
+	if not frappe.db.exists("Project Registration", docname):
+		return {"status": "error", "message": f"Document '{docname}' not found"}
+
+	safe_fields = {k: v for k, v in fields.items() if k not in PROTECTED}
+
+	if not safe_fields:
+		return {"status": "error", "message": "No updatable fields after removing protected fields"}
+
+	try:
+		now = frappe.utils.now()
+		user = frappe.session.user
+
+		for field, value in safe_fields.items():
+			frappe.db.set_value("Project Registration", docname, field, value, update_modified=False)
+
+		frappe.db.set_value(
+			"Project Registration", docname, {"modified": now, "modified_by": user}, update_modified=False
+		)
+
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"updated_fields": list(safe_fields.keys()),
+			"modified": now,
+			"modified_by": user,
+		}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "update_project_registration failed")
+		return {"status": "error", "message": str(e)}
+
+
 # -------------------- MATTERMOST NOTIFICATION API (MKY) --------------------
 
 _MM_BASE = "http://172.16.135.118:8065/api/v4"
@@ -659,9 +744,9 @@ _MM_DEFAULT_CHANNEL = "ihmkbbfq9ibzugfpy9rncq5yke"
 
 # Channel name → Mattermost channel ID mapping (used for dropdowns)
 _MM_CHANNELS = {
-	"kafka logs":       "yh7piky97iycjrdytia1hqy99a",
-	"Feedback PRORND":  "jnkacpywbjnh9frhg1bb8gs85y",
-	"logs":             "ihmkbbfq9ibzugfpy9rncq5yke",
+	"kafka logs": "yh7piky97iycjrdytia1hqy99a",
+	"Feedback PRORND": "jnkacpywbjnh9frhg1bb8gs85y",
+	"logs": "ihmkbbfq9ibzugfpy9rncq5yke",
 }
 
 
@@ -747,9 +832,7 @@ def publish_to_mattermost(
 				timeout=(5, 15),
 			)
 			if upload_resp.ok:
-				file_ids.extend(
-					f["id"] for f in upload_resp.json().get("file_infos", [])
-				)
+				file_ids.extend(f["id"] for f in upload_resp.json().get("file_infos", []))
 			else:
 				frappe.log_error(
 					f"Mattermost file upload failed – {upload_resp.status_code}: {upload_resp.text[:300]}",
@@ -788,7 +871,7 @@ def publish_to_mattermost(
 		resp = _req.post(_MM_URL, json=payload, headers=headers, timeout=(2, 3))
 
 		if resp.ok:
-			is_feedback_channel = (channel_id == _MM_CHANNELS.get("Feedback PRORND"))
+			is_feedback_channel = channel_id == _MM_CHANNELS.get("Feedback PRORND")
 			if (feedback and current_user_email) or is_feedback_channel:
 				subject = "🚨 [URGENT] PRORND Feedback" if urgent else "PRORND Feedback"
 				sender_line = f"From: {current_user_email}\n\n" if current_user_email else ""
@@ -838,8 +921,9 @@ def clear_mattermost_channel(
 	  {"status": "cleared", "deleted": <int>}
 	  {"status": "error",   "error": …}
 	"""
-	import requests as _req
 	from datetime import datetime, timezone
+
+	import requests as _req
 
 	channel_name = (channel_name or "").strip()
 	if not channel_name:
@@ -849,10 +933,17 @@ def clear_mattermost_channel(
 	ts_from = None
 	ts_to = None
 	if date_from:
-		ts_from = int(datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
+		ts_from = int(
+			datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000
+		)
 	if date_to:
 		# Include the full last day (end of day 23:59:59)
-		ts_to = int(datetime.strptime(date_to + " 23:59:59", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp() * 1000)
+		ts_to = int(
+			datetime.strptime(date_to + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+			.replace(tzinfo=timezone.utc)
+			.timestamp()
+			* 1000
+		)
 
 	headers = {
 		"Authorization": _MM_TOKEN,
@@ -875,7 +966,11 @@ def clear_mattermost_channel(
 
 			channels = search_resp.json()
 			channel = next(
-				(c for c in channels if c.get("name") == channel_name or c.get("display_name") == channel_name),
+				(
+					c
+					for c in channels
+					if c.get("name") == channel_name or c.get("display_name") == channel_name
+				),
 				None,
 			)
 			if not channel:
@@ -953,18 +1048,18 @@ def get_document_activity(doctype, docname):
 
 	# --- 1. Fetch all Comment rows for this document ---
 	comment_type_map = {
-		"Comment":              ("comment",    "commented"),
-		"Edit":                 ("edit",       "edited this"),
-		"Info":                 ("edit",       "edited this"),
-		"Label":                ("edit",       "edited this"),
-		"Workflow":             ("workflow",   "updated the workflow"),
-		"Assigned":             ("assignment", "was assigned"),
+		"Comment": ("comment", "commented"),
+		"Edit": ("edit", "edited this"),
+		"Info": ("edit", "edited this"),
+		"Label": ("edit", "edited this"),
+		"Workflow": ("workflow", "updated the workflow"),
+		"Assigned": ("assignment", "was assigned"),
 		"Assignment Completed": ("assignment", "completed assignment"),
-		"Shared":               ("share",      "shared this"),
-		"Unshared":             ("share",      "unshared this"),
-		"Attachment":           ("attachment", "added an attachment"),
-		"Attachment Removed":   ("attachment", "removed an attachment"),
-		"Like":                 ("like",       "liked this"),
+		"Shared": ("share", "shared this"),
+		"Unshared": ("share", "unshared this"),
+		"Attachment": ("attachment", "added an attachment"),
+		"Attachment Removed": ("attachment", "removed an attachment"),
+		"Like": ("like", "liked this"),
 	}
 
 	raw_comments = frappe.get_all(
@@ -989,9 +1084,7 @@ def get_document_activity(doctype, docname):
 			last_version = versions[0]
 
 	# --- 3. Document creation row ---
-	doc_row = frappe.db.get_value(
-		doctype, docname, ["owner", "creation"], as_dict=True
-	)
+	doc_row = frappe.db.get_value(doctype, docname, ["owner", "creation"], as_dict=True)
 
 	# --- 4. Collect all unique owners so we can batch-resolve full names ---
 	all_owners = {c.owner for c in raw_comments}
@@ -1020,11 +1113,11 @@ def get_document_activity(doctype, docname):
 		if ctype == "edit":
 			has_edit_comment = True
 		entry = {
-			"type":       ctype,
-			"label":      clabel,
-			"user":       resolve(c.owner),
+			"type": ctype,
+			"label": clabel,
+			"user": resolve(c.owner),
 			"user_email": c.owner,
-			"timestamp":  str(c.creation),
+			"timestamp": str(c.creation),
 		}
 		if ctype in ("comment", "workflow", "assignment", "share", "attachment"):
 			entry["content"] = frappe.utils.strip_html_tags(c.content or "").strip()
@@ -1032,22 +1125,26 @@ def get_document_activity(doctype, docname):
 
 	# Add "last edited" from Version table only if no Edit comment already covers it
 	if last_version and not has_edit_comment:
-		entries.append({
-			"type":       "edit",
-			"label":      "last edited this",
-			"user":       resolve(last_version.owner),
-			"user_email": last_version.owner,
-			"timestamp":  str(last_version.creation),
-		})
+		entries.append(
+			{
+				"type": "edit",
+				"label": "last edited this",
+				"user": resolve(last_version.owner),
+				"user_email": last_version.owner,
+				"timestamp": str(last_version.creation),
+			}
+		)
 
 	# Creation entry always at the bottom
-	entries.append({
-		"type":       "creation",
-		"label":      "created this",
-		"user":       resolve(doc_row.owner),
-		"user_email": doc_row.owner,
-		"timestamp":  str(doc_row.creation),
-	})
+	entries.append(
+		{
+			"type": "creation",
+			"label": "created this",
+			"user": resolve(doc_row.owner),
+			"user_email": doc_row.owner,
+			"timestamp": str(doc_row.creation),
+		}
+	)
 
 	# Sort newest first
 	entries.sort(key=lambda x: x["timestamp"], reverse=True)
@@ -1061,50 +1158,56 @@ def get_document_activity(doctype, docname):
 # Frontend calls: rndopsapp.rndopsapp.api.<method>
 # ============================================================
 
+
 @frappe.whitelist()
 def search_delegate_users(query=""):
-    from rndopsapp.rndopsapp.delegate_user.delegate_user import search_delegate_users as _impl
-    return _impl(query=query)
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import search_delegate_users as _impl
+
+	return _impl(query=query)
 
 
 @frappe.whitelist()
 def get_delegate_scope(user=None):
-    from rndopsapp.rndopsapp.delegate_user.delegate_user import get_delegate_scope as _impl
-    return _impl(user=user)
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import get_delegate_scope as _impl
+
+	return _impl(user=user)
 
 
 @frappe.whitelist()
 def get_active_delegations(user=None):
-    from rndopsapp.rndopsapp.delegate_user.delegate_user import get_active_delegations as _impl
-    return _impl(user=user)
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import get_active_delegations as _impl
+
+	return _impl(user=user)
 
 
 @frappe.whitelist()
 def delegate_user(
-    delegate_user,
-    delegation_type=None,
-    scope_type=None,
-    project_names=None,
-    applications=None,
-    valid_from=None,
-    valid_to=None,
+	delegate_user,
+	delegation_type=None,
+	scope_type=None,
+	project_names=None,
+	applications=None,
+	valid_from=None,
+	valid_to=None,
 ):
-    from rndopsapp.rndopsapp.delegate_user.delegate_user import delegate_user as _impl
-    return _impl(
-        delegate_user=delegate_user,
-        delegation_type=delegation_type,
-        scope_type=scope_type,
-        project_names=project_names,
-        applications=applications,
-        valid_from=valid_from,
-        valid_to=valid_to,
-    )
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import delegate_user as _impl
+
+	return _impl(
+		delegate_user=delegate_user,
+		delegation_type=delegation_type,
+		scope_type=scope_type,
+		project_names=project_names,
+		applications=applications,
+		valid_from=valid_from,
+		valid_to=valid_to,
+	)
 
 
 @frappe.whitelist()
 def undelegate_user(delegation_name):
-    from rndopsapp.rndopsapp.delegate_user.delegate_user import undelegate_user as _impl
-    return _impl(delegation_name=delegation_name)
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import undelegate_user as _impl
+
+	return _impl(delegation_name=delegation_name)
 
 
 def auto_clear_old_mattermost_posts():
@@ -1112,7 +1215,7 @@ def auto_clear_old_mattermost_posts():
 	Scheduled daily task.
 	Permanently deletes posts older than 6 months from all channels in _MM_CHANNELS.
 	"""
-	from datetime import datetime, timezone, timedelta
+	from datetime import datetime, timedelta, timezone
 
 	cutoff = datetime.now(timezone.utc) - timedelta(days=180)
 	date_to = cutoff.strftime("%Y-%m-%d")
@@ -1141,74 +1244,104 @@ def auto_clear_old_mattermost_posts():
 #     bench --site <site> execute rndopsapp.rndopsapp.api.setup_travel_putback_transitions
 # Idempotent — re-running has no effect.
 
+
+@frappe.whitelist(allow_guest=True)
+def get_project_staff_details_count(filters=None):
+	"""
+	Returns the total number of entries in the "Project Staff Details" doctype.
+	Guest-accessible (no API token required) since it only reads a count.
+
+	Optional `filters` (JSON string or dict) can be passed to count a subset.
+	"""
+	if filters and isinstance(filters, str):
+		filters = frappe.parse_json(filters)
+
+	count = frappe.db.count("Project Staff Details", filters=filters or None)
+	return {"doctype": "Project Staff Details", "count": count}
+
+
 @frappe.whitelist()
 def setup_travel_putback_transitions():
-    """Install fan-out Put Back transitions on Travel_Workflow."""
-    workflow_name = "Travel_Workflow"
-    if not frappe.db.exists("Workflow", workflow_name):
-        frappe.throw(f"Workflow '{workflow_name}' not found")
+	"""Install fan-out Put Back transitions on Travel_Workflow."""
+	workflow_name = "Travel_Workflow"
+	if not frappe.db.exists("Workflow", workflow_name):
+		frappe.throw(f"Workflow '{workflow_name}' not found")
 
-    # (state, action_label, next_state, allowed_role)
-    desired = [
-        # Pending Dean Approval
-        ("Pending Dean Approval", "Put Back to HoS",   "Pending HoS Approval",     "Dean, RnD"),
-        ("Pending Dean Approval", "Put Back to Staff", "Pending Staff Approval",   "Dean, RnD"),
-        ("Pending Dean Approval", "Put Back to Head",  "Pending Head Approval",    "Dean, RnD"),
-        ("Pending Dean Approval", "Put Back to PI",    "Pending PI Approval",      "Dean, RnD"),
-        # Pending Associate Dean
-        ("Pending Associate Dean", "Put Back to HoS",   "Pending HoS Approval",    "Ado_RnD"),
-        ("Pending Associate Dean", "Put Back to Staff", "Pending Staff Approval",  "Ado_RnD"),
-        ("Pending Associate Dean", "Put Back to Head",  "Pending Head Approval",   "Ado_RnD"),
-        ("Pending Associate Dean", "Put Back to PI",    "Pending PI Approval",     "Ado_RnD"),
-        # Pending HoS Approval
-        ("Pending HoS Approval", "Put Back to Staff", "Pending Staff Approval",    "Hos, RnD (Head of Section, RnD)"),
-        ("Pending HoS Approval", "Put Back to Head",  "Pending Head Approval",     "Hos, RnD (Head of Section, RnD)"),
-        ("Pending HoS Approval", "Put Back to PI",    "Pending PI Approval",       "Hos, RnD (Head of Section, RnD)"),
-        # Pending Staff Approval
-        ("Pending Staff Approval", "Put Back to Head", "Pending Head Approval",   "staff, RnD"),
-        ("Pending Staff Approval", "Put Back to PI",   "Pending PI Approval",     "staff, RnD"),
-        # Pending Head Approval
-        ("Pending Head Approval", "Put Back to PI", "Pending PI Approval",        "head_approver_1"),
-    ]
+	# (state, action_label, next_state, allowed_role)
+	desired = [
+		# Pending Dean Approval
+		("Pending Dean Approval", "Put Back to HoS", "Pending HoS Approval", "Dean, RnD"),
+		("Pending Dean Approval", "Put Back to Staff", "Pending Staff Approval", "Dean, RnD"),
+		("Pending Dean Approval", "Put Back to Head", "Pending Head Approval", "Dean, RnD"),
+		("Pending Dean Approval", "Put Back to PI", "Pending PI Approval", "Dean, RnD"),
+		# Pending Associate Dean
+		("Pending Associate Dean", "Put Back to HoS", "Pending HoS Approval", "Ado_RnD"),
+		("Pending Associate Dean", "Put Back to Staff", "Pending Staff Approval", "Ado_RnD"),
+		("Pending Associate Dean", "Put Back to Head", "Pending Head Approval", "Ado_RnD"),
+		("Pending Associate Dean", "Put Back to PI", "Pending PI Approval", "Ado_RnD"),
+		# Pending HoS Approval
+		(
+			"Pending HoS Approval",
+			"Put Back to Staff",
+			"Pending Staff Approval",
+			"Hos, RnD (Head of Section, RnD)",
+		),
+		(
+			"Pending HoS Approval",
+			"Put Back to Head",
+			"Pending Head Approval",
+			"Hos, RnD (Head of Section, RnD)",
+		),
+		("Pending HoS Approval", "Put Back to PI", "Pending PI Approval", "Hos, RnD (Head of Section, RnD)"),
+		# Pending Staff Approval
+		("Pending Staff Approval", "Put Back to Head", "Pending Head Approval", "staff, RnD"),
+		("Pending Staff Approval", "Put Back to PI", "Pending PI Approval", "staff, RnD"),
+		# Pending Head Approval
+		("Pending Head Approval", "Put Back to PI", "Pending PI Approval", "head_approver_1"),
+	]
 
-    # Ensure each new action name exists as a Workflow Action Master,
-    # otherwise the Workflow Transition link-validation will fail.
-    unique_actions = {action for _, action, _, _ in desired}
-    for action_name in unique_actions:
-        if not frappe.db.exists("Workflow Action Master", action_name):
-            frappe.get_doc({
-                "doctype": "Workflow Action Master",
-                "workflow_action_name": action_name,
-            }).insert(ignore_permissions=True)
+	# Ensure each new action name exists as a Workflow Action Master,
+	# otherwise the Workflow Transition link-validation will fail.
+	unique_actions = {action for _, action, _, _ in desired}
+	for action_name in unique_actions:
+		if not frappe.db.exists("Workflow Action Master", action_name):
+			frappe.get_doc(
+				{
+					"doctype": "Workflow Action Master",
+					"workflow_action_name": action_name,
+				}
+			).insert(ignore_permissions=True)
 
-    wf = frappe.get_doc("Workflow", workflow_name)
-    existing = {
-        (t.state, t.action, t.next_state, t.allowed)
-        for t in wf.transitions
-    }
+	wf = frappe.get_doc("Workflow", workflow_name)
+	existing = {(t.state, t.action, t.next_state, t.allowed) for t in wf.transitions}
 
-    added = []
-    for state, action, next_state, allowed in desired:
-        key = (state, action, next_state, allowed)
-        if key in existing:
-            continue
-        wf.append("transitions", {
-            "state": state,
-            "action": action,
-            "next_state": next_state,
-            "allowed": allowed,
-            "allow_self_approval": 1,
-            "send_email_to_creator": 0,
-        })
-        added.append(f"{state} --[{action}]--> {next_state} ({allowed})")
+	added = []
+	for state, action, next_state, allowed in desired:
+		key = (state, action, next_state, allowed)
+		if key in existing:
+			continue
+		wf.append(
+			"transitions",
+			{
+				"state": state,
+				"action": action,
+				"next_state": next_state,
+				"allowed": allowed,
+				"allow_self_approval": 1,
+				"send_email_to_creator": 0,
+			},
+		)
+		added.append(f"{state} --[{action}]--> {next_state} ({allowed})")
 
-    if added:
-        wf.save(ignore_permissions=True)
-        frappe.db.commit()
+	if added:
+		wf.save(ignore_permissions=True)
+		frappe.db.commit()
 
-    return {
-        "status": "success",
-        "added": added,
-        "skipped_existing": len(desired) - len(added),
-    }
+	return {
+		"status": "success",
+		"added": added,
+		"skipped_existing": len(desired) - len(added),
+	}
+
+
 # ============================================================

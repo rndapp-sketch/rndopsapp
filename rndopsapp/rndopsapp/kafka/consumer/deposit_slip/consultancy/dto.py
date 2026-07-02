@@ -337,7 +337,7 @@ class ConsultancyDepositSlipUpdateDTO:
         consultancy_d_details = ConsultancyDDetailsDTO.from_dict(data.get('consultancyDDetails'))
         consultancy_e_details = ConsultancyEDetailsDTO.from_dict(data.get('consultancyEDetails'))
         consultancy_t_details = ConsultancyTDetailsDTO.from_dict(data.get('consultancyTDetails'))
-        consultancy_o_details = ConsultancyODetailsDTO.from_dict(data.get('consultancyODetails'))
+        consultancy_o_details = ConsultancyODetailsDTO.from_dict(data.get('consultancyOtherDetails'))
 
         return cls(
             depositSlipRefNumFab=data.get('depositSlipRefNumFab', ''),
@@ -429,6 +429,6 @@ class ConsultancyDepositSlipUpdateDTO:
         if self.consultancyTDetails:
             data["consultancyTDetails"] = self.consultancyTDetails.to_dict()
         if self.consultancyODetails:
-            data["consultancyODetails"] = self.consultancyODetails.to_dict()
+            data["consultancyOtherDetails"] = self.consultancyODetails.to_dict()
 
         return data

@@ -451,9 +451,6 @@
 # # END MKY Edit - Added features to Project Staff Details - 2026-05-19 12:35 IST
 
 
-
-
-
 # -========================bhasker update
 
 # Copyright (c) 2026, rndops and contributors
@@ -519,33 +516,33 @@ def get_project_staff_details_fields(doc_name=None):
 	fields = []
 	for f in meta.get("fields"):
 		field_data = {
-			"fieldname":               f.fieldname,
-			"label":                   f.label,
-			"fieldtype":               f.fieldtype,
-			"options":                 f.options,
-			"mandatory":               f.reqd,
-			"hidden":                  f.hidden,
-			"read_only":               f.read_only,
-			"description":             f.description,
-			"default":                 f.default,
-			"depends_on":              f.depends_on,
-			"mandatory_depends_on":    f.mandatory_depends_on,
-			"read_only_depends_on":    f.read_only_depends_on,
-			"depends_on_eval":         _extract_eval(f.depends_on),
-			"mandatory_depends_on_eval":  _extract_eval(f.mandatory_depends_on),
-			"read_only_depends_on_eval":  _extract_eval(f.read_only_depends_on),
+			"fieldname": f.fieldname,
+			"label": f.label,
+			"fieldtype": f.fieldtype,
+			"options": f.options,
+			"mandatory": f.reqd,
+			"hidden": f.hidden,
+			"read_only": f.read_only,
+			"description": f.description,
+			"default": f.default,
+			"depends_on": f.depends_on,
+			"mandatory_depends_on": f.mandatory_depends_on,
+			"read_only_depends_on": f.read_only_depends_on,
+			"depends_on_eval": _extract_eval(f.depends_on),
+			"mandatory_depends_on_eval": _extract_eval(f.mandatory_depends_on),
+			"read_only_depends_on_eval": _extract_eval(f.read_only_depends_on),
 		}
 		if f.fieldtype == "Table" and f.options:
 			child_meta = frappe.get_meta(f.options)
 			field_data["child_fields"] = [
 				{
-					"fieldname":    cf.fieldname,
-					"label":        cf.label,
-					"fieldtype":    cf.fieldtype,
-					"options":      cf.options,
-					"mandatory":    cf.reqd,
-					"hidden":       cf.hidden,
-					"read_only":    cf.read_only,
+					"fieldname": cf.fieldname,
+					"label": cf.label,
+					"fieldtype": cf.fieldtype,
+					"options": cf.options,
+					"mandatory": cf.reqd,
+					"hidden": cf.hidden,
+					"read_only": cf.read_only,
 					"in_list_view": cf.in_list_view,
 				}
 				for cf in child_meta.get("fields")
@@ -573,9 +570,9 @@ def get_project_staff_details_fields(doc_name=None):
 		pass
 
 	return {
-		"fields":         fields,
-		"prefill_data":   prefill_data,
-		"link_options":   link_options,
+		"fields": fields,
+		"prefill_data": prefill_data,
+		"link_options": link_options,
 		"client_scripts": client_scripts,
 	}
 
@@ -612,7 +609,9 @@ def save_project_staff_details_data(data):
 				)
 				if existing:
 					frappe.throw(
-						_("A Joining Form already exists for this candidate ({0}). Open the existing record instead of creating a new one.").format(existing.name)
+						_(
+							"A Joining Form already exists for this candidate ({0}). Open the existing record instead of creating a new one."
+						).format(existing.name)
 					)
 			doc = frappe.new_doc("Project Staff Details")
 
@@ -691,7 +690,9 @@ def save_project_staff_details_data(data):
 				"pstd_tentative_joining_date",
 			]
 			for row in tenure_rows:
-				doc.append("table_ymed", {f: row.get(f) for f in child_fields if row.get(f) not in [None, ""]})
+				doc.append(
+					"table_ymed", {f: row.get(f) for f in child_fields if row.get(f) not in [None, ""]}
+				)
 
 		if doc_name:
 			doc.save(ignore_permissions=True)
@@ -815,8 +816,7 @@ def get_joining_by_application(application_id):
 	)
 	# A doc is considered "submitted" (view-only) once it has moved past Draft.
 	is_submitted = bool(rec) and (
-		int(rec.docstatus or 0) >= 1
-		or (rec.workflow_state or "").strip().lower() not in ("", "draft")
+		int(rec.docstatus or 0) >= 1 or (rec.workflow_state or "").strip().lower() not in ("", "draft")
 	)
 	return {
 		"status": "success",
@@ -918,6 +918,7 @@ def perform_project_staff_details_action(docname, action):
 		# (joining date / term completion date / basic salary) in the child table.
 		if (updated.workflow_state or "") == "Approved":
 			_populate_tenure_on_approval(updated)
+			_allocate_leave_data_on_approval(updated)
 
 		frappe.db.commit()
 
@@ -951,17 +952,89 @@ def _populate_tenure_on_approval(doc):
 		return
 
 	# Avoid duplicating the row if approval is re-triggered.
-	for row in (doc.get("table_ymed") or []):
-		if str(row.pstd_joining_date or "") == str(joining_date or "") and \
-			str(row.pstd_basic_salary or "") == str(basic_salary or ""):
+	for row in doc.get("table_ymed") or []:
+		if str(row.pstd_joining_date or "") == str(joining_date or "") and str(
+			row.pstd_basic_salary or ""
+		) == str(basic_salary or ""):
 			return
 
-	doc.append("table_ymed", {
-		"pstd_joining_date": joining_date,
-		"pstd_term_completion_date": term_completion_date,
-		"pstd_basic_salary": basic_salary,
-	})
+	doc.append(
+		"table_ymed",
+		{
+			"pstd_joining_date": joining_date,
+			"pstd_term_completion_date": term_completion_date,
+			"pstd_basic_salary": basic_salary,
+		},
+	)
 	doc.save(ignore_permissions=True)
+
+
+def get_tenure_months(joining_date, term_completion_date):
+	if not joining_date or not term_completion_date:
+		return 0
+	from frappe.utils import getdate
+
+	j_date = getdate(joining_date)
+	c_date = getdate(term_completion_date)
+	if c_date < j_date:
+		return 0
+	# Calculate days difference inclusively
+	days_diff = (c_date - j_date).days + 1
+	# Standard average days per month is 30.437
+	return int(round(days_diff / 30.437))
+
+
+def _allocate_leave_data_on_approval(doc):
+	try:
+		# Calculate tenure in months
+		tenure_months = get_tenure_months(doc.ps_joining_date, doc.ps_term_completion_date)
+		if tenure_months <= 0:
+			return
+
+		cl = round(tenure_months * 8.0 / 11.0, 2)
+		el = int(max(0, (tenure_months - 1) * 2.5))
+
+		# Get username from erp_mail
+		erp_mail = (doc.erp_mail or "").strip()
+		if not erp_mail or "@" not in erp_mail:
+			frappe.log_error(
+				f"Cannot allocate leave for Project Staff Details {doc.name}: erp_mail is empty or invalid.",
+				"Leave Allocation Error",
+			)
+			return
+		emp_username = erp_mail.split("@", 1)[0]
+
+		# Fetch emp_id (using doc.ps_emp_id, fallback to db query if not loaded)
+		emp_id = doc.ps_emp_id or frappe.db.get_value("Project Staff Details", doc.name, "ps_emp_id")
+		if not emp_id:
+			frappe.log_error(
+				f"Cannot allocate leave for Project Staff Details {doc.name}: ps_emp_id is not set.",
+				"Leave Allocation Error",
+			)
+			return
+
+		# Check if Leave Data already exists for this employee id
+		if frappe.db.exists("Leave Data", emp_id):
+			leave_data_doc = frappe.get_doc("Leave Data", emp_id)
+			leave_data_doc.emp_username = emp_username
+			leave_data_doc.emp_class = "Project Staff"
+			leave_data_doc.department = doc.ps_department
+			leave_data_doc.cl = cl
+			leave_data_doc.el = el
+			leave_data_doc.save(ignore_permissions=True)
+		else:
+			leave_data_doc = frappe.new_doc("Leave Data")
+			leave_data_doc.emp_id = emp_id
+			leave_data_doc.emp_username = emp_username
+			leave_data_doc.emp_class = "Project Staff"
+			leave_data_doc.department = doc.ps_department
+			leave_data_doc.cl = cl
+			leave_data_doc.el = el
+			leave_data_doc.insert(ignore_permissions=True)
+	except Exception as e:
+		frappe.log_error(
+			frappe.get_traceback(), f"Failed to allocate leave for Project Staff Details {doc.name}"
+		)
 
 
 def _sync_project_staff_to_user(doc):
@@ -1054,8 +1127,8 @@ def submit_project_staff_details(docname):
 	# (was Draft / blank going in). Doing the allocation AFTER apply_workflow
 	# succeeds means a failed/forbidden transition can't burn a series number.
 	before_state = (
-		frappe.db.get_value("Project Staff Details", docname, "workflow_state") or ""
-	).strip().lower()
+		(frappe.db.get_value("Project Staff Details", docname, "workflow_state") or "").strip().lower()
+	)
 
 	result = perform_project_staff_details_action(docname, "Submit")
 

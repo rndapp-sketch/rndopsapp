@@ -18,6 +18,7 @@
   "applying_for_department",
   "applying_for_designation",
   "section_break_jsdg",
+  "is_foreign",
   "account_head",
   "table_gdxp",
   "total_estimate",
@@ -170,23 +171,32 @@
    "label": "Designation"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "project_no",
    "fieldtype": "Data",
-   "label": "Project Number",
-   "read_only": 1
+   "label": "Project Number"
   },
   {
    "fieldname": "workflow_state",
    "fieldtype": "Data",
    "label": "Workflow State",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "is_foreign",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Is it Foreign Purchase?",
+   "options": "\nYes\nNo",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-22 11:14:59.119197",
+ "modified": "2026-06-11 12:32:50.321049",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Direct Purchase",

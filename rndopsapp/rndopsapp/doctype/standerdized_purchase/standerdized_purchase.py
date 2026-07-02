@@ -38,7 +38,8 @@ class standerdized_purchase(Document):
 
 	def validate(self):
 		"""Server-side calculations: row amounts and grand total."""
-		self.calculate_totals()
+		if not self.flags.get("skip_total_calculation"):
+			self.calculate_totals()
 
 	def calculate_totals(self):
 		"""Calculate row amounts for the items table and overall totals."""

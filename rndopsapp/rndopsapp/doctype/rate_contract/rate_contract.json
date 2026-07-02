@@ -214,6 +214,7 @@
   {
    "fieldname": "principal_supplier",
    "fieldtype": "Link",
+   "in_preview": 1,
    "label": "Principal Supplier",
    "link_filters": "[]",
    "options": "Principal Supplier"
@@ -222,6 +223,7 @@
    "fieldname": "local_supplier",
    "fieldtype": "Data",
    "in_list_view": 1,
+   "in_preview": 1,
    "label": "Select Local Supplier"
   },
   {
@@ -354,8 +356,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-03 16:19:25.735226",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-06-18 11:59:26.537275",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Rate Contract",
  "naming_rule": "Expression",

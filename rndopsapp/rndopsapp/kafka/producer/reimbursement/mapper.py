@@ -124,16 +124,25 @@ def resolve_budget_head_id(budget_head) -> Optional[int]:
     if isinstance(budget_head, str) and budget_head.isdigit():
         return int(budget_head)
 
-    # Try to find by name (PK)
     try:
+        # Try by name (PK) → custom id field
         found_id = frappe.db.get_value("Budget Head", budget_head, "id")
         if found_id:
             return int(found_id)
 
-        # Try by budget_head field
+        # Try by budget_head label field → custom id field
         found_id = frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "id")
         if found_id:
             return int(found_id)
+
+        # id field is NULL — fall back to Frappe's idx (row position integer)
+        found_idx = frappe.db.get_value("Budget Head", budget_head, "idx")
+        if found_idx:
+            return int(found_idx)
+
+        found_idx = frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "idx")
+        if found_idx:
+            return int(found_idx)
     except Exception:
         pass
 

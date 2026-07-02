@@ -102,6 +102,7 @@
    "label": "Certified that we the undersigned, members of the purchase committee are jointly."
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "project_no",
    "fieldtype": "Data",
    "label": "Project No"
@@ -128,7 +129,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-25 16:58:41.225671",
+ "modified": "2026-06-11 15:21:02.857244",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "P_11 Form",

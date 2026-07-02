@@ -222,6 +222,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "pi_webmail.full_name",
    "fieldname": "principal_investigator_name",
    "fieldtype": "Data",
@@ -974,13 +975,12 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "description": "* For Office Use Only",
    "fieldname": "project_no",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Project No.",
-   "length": 30,
-   "read_only": 1
+   "length": 30
   },
   {
    "fieldname": "my_projects",
@@ -1277,6 +1277,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "upload_supporting_docs",
    "fieldtype": "Table",
    "label": "Upload Supporting Docs ( Project Proposal / Invitation Letter)",
@@ -1287,8 +1288,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-03 16:29:54.914946",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-06-11 13:12:21.693981",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
  "naming_rule": "Expression",

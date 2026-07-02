@@ -434,12 +434,19 @@ def perform_disbursal_of_honorarium_action(docname, action):
 		workflow = frappe.get_doc("Workflow", workflow_name)
 		
 		next_state = None
-		
+
 		for t in workflow.transitions:
 			if t.state == current_state and t.action == action:
+				condition = getattr(t, "condition", None)
+				if condition:
+					try:
+						if not frappe.safe_eval(condition, None, {"doc": doc}):
+							continue
+					except Exception:
+						continue
 				next_state = t.next_state
 				break
-		
+
 		if not next_state:
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
 

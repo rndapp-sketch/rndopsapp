@@ -2,13 +2,26 @@
 # For license information, please see license.txt
 
 import json
+from datetime import datetime
 
 import frappe
 from frappe.model.document import Document
 
 
+def _normalize_date(value):
+	"""Convert DD/MM/YYYY to YYYY-MM-DD; pass through anything else unchanged."""
+	if isinstance(value, str) and len(value) == 10 and value[2] == "/" and value[5] == "/":
+		try:
+			return datetime.strptime(value, "%d/%m/%Y").strftime("%Y-%m-%d")
+		except ValueError:
+			pass
+	return value
+
+
 class ICSS_PO(Document):
-	pass
+	def before_save(self):
+		if self.po_date:
+			self.po_date = _normalize_date(self.po_date)
 
 
 AMC_INDENT_TYPE = "Annual Maintenance Contract"
@@ -133,7 +146,7 @@ def save_icss_po_data(
 		if po_number is not None:
 			doc.po_number = po_number
 		if po_date is not None:
-			doc.po_date = po_date
+			doc.po_date = _normalize_date(po_date)
 		if icss_po_form is not None:
 			doc.icss_po_form = icss_po_form
 

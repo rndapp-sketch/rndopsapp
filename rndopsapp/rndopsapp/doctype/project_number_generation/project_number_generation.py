@@ -78,7 +78,8 @@ class ProjectNumberGeneration(Document):
         if self.category:
             self.category = str(self.category).strip().upper()[:1]
         if self.dept_initial:
-            self.dept_initial = str(self.dept_initial).strip().upper()[:4]
+            raw = str(self.dept_initial).strip().upper()[:4]
+            self.dept_initial = raw.ljust(4, 'X')
         if self.emp_id:
             self.emp_id = str(self.emp_id).strip().zfill(4)[-4:]
         if self.emp_initial:
@@ -118,7 +119,8 @@ class ProjectNumberGeneration(Document):
         self.current_year1 = fin_year
 
         cat = (self.category or "").upper()[:1]
-        dept = (self.dept_initial or "").upper()[:4]
+        dept_raw = (self.dept_initial or "").upper()[:4]
+        dept = dept_raw.ljust(4, 'X') if dept_raw else "XXXX"
         eid = str(self.emp_id or "").zfill(4)[-4:]
         einit = (self.emp_initial or "").upper()[:4]
 
@@ -245,7 +247,8 @@ def get_project_number_generation_fields(doc_name=None):
 
             category = CATEGORY_BY_PROJECT_TYPE.get(proj_reg.get("project_type"), "C")
 
-            dept_formatted = (str(dept_initials or "").upper()[:4]) or "XXXX"
+            dept_raw = str(dept_initials or "").upper()[:4]
+            dept_formatted = dept_raw.ljust(4, 'X') if dept_raw else "XXXX"
             eid_formatted = (str(employee_id or "").strip().zfill(4)[-4:]) if (employee_id and str(employee_id).strip()) else "XXXX"
             einit_formatted = (str(pi_initials or "").upper()[:4]) or "XXXX"
 

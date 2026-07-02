@@ -194,8 +194,8 @@ def get_fund_received_fields(doc_name=None):
 
 
 
-@frappe.whitelist(allow_guest=False)
-def get_fund_received_by_prjreg(prjreg_title: str = "", limit: int = 200, start: int = 0):
+@frappe.whitelist()
+def get_fund_received_by_prjreg(prjreg_title: str = "", limit: int = 190000000, start: int = 0):
 	"""
 	Returns Fund Received docs for a given prjreg_title in the format:
 	{ "message": [ { ... full doc as dict ... }, ... ] }
@@ -780,48 +780,20 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 				print(f"Error parsing deposit_slip_data: {e}")
 				deposit_slip_data = None
 		
-		# Find the transition matching current state and action
-		# Note: There might be multiple transitions with same action name (e.g. 'Forward')
-		# Logic to distinguish path:
-		# 1. If deposit_slip_data is provided, prefer path to 'Pending HoS Approval' (Row 11)
-		# 2. If no deposit_slip_data, prefer path to 'Pending Accounts Staff Approval' (Row 4)
-		# OR simpler: check if the 'next_state' implies a specific requirement.
-		
-		# Let's simple-loop first to find *candidates*
-		candidates = []
-		
-		for t in workflow.transitions:
-			if t.state == current_state and t.action == action:
-				candidates.append(t)
-		
+		# Find all transitions matching current state and action.
+		# Multiple rows may exist for the same (state, action) when different roles
+		# are each given their own row — but they all target the same next_state.
+		# Always pick the first match.
+		candidates = [
+			t for t in workflow.transitions
+			if t.state == current_state and t.action == action
+		]
+
 		if not candidates:
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
-		
-		# Logic to disambiguate if multiple candidates exist (e.g. 'Forward' action)
-		if len(candidates) > 1:
-			# If we are at 'Pending Misc. Staff Approval' and action is 'Forward':
-			# Candidate A -> 'Pending Accounts Staff Approval'
-			# Candidate B -> 'Pending HoS Approval'
-			if current_state == "Pending Misc. Staff Approval" and action == "Forward":
-				# Distinguish based on presence of deposit data
-				if deposit_slip_data:
-					# User intends to generate deposit slip -> Go to HoS
-					transition = next((t for t in candidates if t.next_state == "Pending HoS Approval"), None)
-					print("DEBUG: Selected HoS (via data)")
-				else:
-					# Standard forward -> Go to Accounts
-					transition = next((t for t in candidates if t.next_state == "Pending Accounts Staff Approval"), None)
-					print("DEBUG: Selected Accounts (no data)")
-			else:
-				# Default to first found if no specific logic defined
-				transition = candidates[0]
-				print(f"DEBUG: Default selection: {transition.next_state}")
-		else:
-			transition = candidates[0]
-			print(f"DEBUG: Single candidate: {transition.next_state}")
 
-		if not transition:
-			frappe.throw(_("Could not determine next state for action '{}'.").format(action))
+		transition = candidates[0]
+		print(f"DEBUG: Selected transition: {transition.state} --[{transition.action}]--> {transition.next_state}")
 
 		next_state = transition.next_state
 
@@ -865,18 +837,24 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 		
 		print(f"DEBUG: Saving with ignore_validate=True. Next State: {next_state}")
 
-		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
-			doc.submit()
-		elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
-			doc.cancel()
-		else:
-			doc.save(ignore_permissions=True)
-		
-		# Force update state in DB to avoid race conditions or hook interference
-		# (Still good to keep even with save success)
+		try:
+			if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
+				doc.submit()
+			elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
+				doc.cancel()
+			else:
+				doc.save(ignore_permissions=True)
+		except Exception as save_err:
+			# Save/submit failure must NOT block the workflow state commit.
+			# The deposit slip creation (if any) is already in this transaction;
+			# we still want to commit the state change so the FR doesn't revert.
+			print(f"DEBUG: doc save/submit failed (non-fatal, continuing to commit state): {save_err}")
+			frappe.log_error(frappe.get_traceback(), "Fund Received Save/Submit Error (non-fatal)")
+
+		# Force-write state directly in DB — survives even if save/submit above failed
 		print(f"DEBUG: Reaching db_set. Next state: {next_state}")
 		doc.db_set("workflow_state", next_state)
-		
+
 		print("DEBUG: Reaching commit")
 		frappe.db.commit()
 		print("DEBUG: Commit done")
@@ -959,15 +937,45 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 					"T Testing Deposit Slip"
 				]
 
-				# Find linked Deposit Slip in any of the potential doctypes
+				# Find linked Deposit Slip in any of the potential doctypes.
+				# Prefer the one currently waiting for HoS approval (the active DS);
+				# multiple deposit slips can exist when the misc staff regenerated
+				# after a HoS put-back.  Fall back to the most recently created DS if
+				# none is found in "Pending HoS Approval" state.
 				ds_name = None
 				found_doctype = None
 
 				for dt in deposit_doctypes:
-					ds_name = frappe.db.get_value(dt, {"fund_received_ref": doc.name}, "name")
-					if ds_name:
+					# First pass: find the active DS waiting for HoS
+					# Some deposit slip doctypes have no workflow (no workflow_state column);
+					# skip them gracefully — they can never be in "Pending HoS Approval".
+					try:
+						name = frappe.db.get_value(
+							dt,
+							{"fund_received_ref": doc.name, "workflow_state": "Pending HoS Approval"},
+							"name",
+							order_by="creation desc",
+						)
+					except Exception:
+						name = None
+					if name:
+						ds_name = name
 						found_doctype = dt
 						break
+
+				if not ds_name:
+					# Second pass: fall back to most recently created DS for this FR
+					for dt in deposit_doctypes:
+						name = frappe.db.get_value(
+							dt,
+							{"fund_received_ref": doc.name},
+							"name",
+							order_by="creation desc",
+						)
+						if name:
+							ds_name = name
+							found_doctype = dt
+							break
 
 				if ds_name and found_doctype:
 					print(f"DEBUG: Found linked Deposit Slip {ds_name} of type {found_doctype}. Auto-approving and Syncing...")
@@ -1417,11 +1425,6 @@ def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_typ
 			actual_fa = frappe.db.get_value("fundingagency_", {"funding_agency_initials": fa_value}, "name")
 			new_doc.set("funding_agency", actual_fa)  # None if not found
 
-		# Clear gstin_of_funding_agency if it has an invalid link value
-		gstin_val = new_doc.get("gstin_of_funding_agency")
-		if gstin_val and not frappe.db.exists("fundingagency_", gstin_val):
-			new_doc.set("gstin_of_funding_agency", None)
-
 		# Also resolve funding_agency from the Fund Received's project if still not set
 		if not new_doc.get("funding_agency") and fund_received_doc.get("prjreg_title"):
 			fa_name = frappe.db.get_value("Project Registration", fund_received_doc.prjreg_title, "funding_agen")
@@ -1713,8 +1716,14 @@ def update_fund_received(docname, doc_data, project_reg=None):
 				)
 
 		# ── 7. Save and commit ────────────────────────────────────────────────
+		# Preserve workflow_state across the save — Frappe may otherwise reset it
+		# when override_status is active and docstatus/workflow_state are out of sync.
+		current_workflow_state = doc.workflow_state
 		doc.flags.ignore_validate = False
 		doc.save(ignore_permissions=True)
+		# Re-apply the state in case Frappe reset it during save
+		if doc.workflow_state != current_workflow_state:
+			doc.db_set("workflow_state", current_workflow_state)
 		frappe.db.commit()
 
 		print(f"[update_fund_received] Successfully updated: {doc.name}")

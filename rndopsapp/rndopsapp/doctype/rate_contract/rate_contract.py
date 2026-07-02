@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 def extract_eval_expression(expression):
@@ -31,7 +32,13 @@ def extract_eval_expression(expression):
 
 
 class RateContract(Document):
-	pass
+	def validate(self):
+		self._compute_totals()
+
+	def _compute_totals(self):
+		item_total = sum(flt(row.amount) for row in self.get("items", []))
+		self.rate_contract_total = item_total
+		self.rate_contract_grand_total = item_total + flt(self.rate_contract_packing)
 
 
 @frappe.whitelist()

@@ -74,6 +74,19 @@ class FundReceivedConsumerMapper:
         # Fallback: return original project_number if no match found
         return project_number
 
+    # Ordered workflow states — higher index = further along in the workflow.
+    # Source of truth: fund_received_with_kafka workflow (verified from DB).
+    # The Kafka consumer must NEVER move a document backward.
+    _STATE_PRIORITY = {
+        'Draft':                                                 0,
+        'Pending Misc. Staff Approval':                          1,
+        'PENDING_APPROVAL':                                      2,
+        'Pending Misc. Staff Approval(Deposit Slip Pending)':    3,
+        'Pending HoS Approval':                                  4,
+        'Approved':                                              5,
+        'Fund Received':                                         6,
+    }
+
     @staticmethod
     def map_status(kafka_status: Optional[str]) -> Optional[str]:
         """
@@ -91,13 +104,12 @@ class FundReceivedConsumerMapper:
         status_upper = kafka_status.upper()
 
         if status_upper == 'APPROVED':
+            # External APPROVED → awaiting deposit slip from Misc. Staff
             return 'Pending Misc. Staff Approval(Deposit Slip Pending)'
         elif status_upper == 'PENDING_APPROVAL':
-            return 'Pending Approval'
-        elif status_upper == 'REJECTED':
-            return 'Rejected'
+            # Kafka intermediate state — matches the actual Frappe workflow state name
+            return 'PENDING_APPROVAL'
         else:
-            # Default: Title case the status
             return kafka_status.title()
 
     @classmethod
@@ -142,14 +154,55 @@ class FundReceivedConsumerMapper:
                     'bank_account', dto.iitgAccountNumber
                 )
 
-            # Map and apply workflow_state
+            # Map and apply workflow_state — only move FORWARD, never backward.
+            # Uses a single conditional SQL UPDATE (atomic check+apply) to avoid
+            # a TOCTOU race with the Frappe workflow action handlers: MariaDB MVCC
+            # means a plain SELECT reads the transaction snapshot while a separate
+            # UPDATE writes to the latest row version, so a Python-level
+            # read-then-update can silently overwrite a state that was advanced by
+            # another process between the read and the write.
             if frappe.db.has_column('Fund Received', 'workflow_state'):
                 new_status = cls.map_status(dto.fundReceivedStatus)
                 if new_status:
-                    frappe.db.set_value(
-                        'Fund Received', doc_name,
-                        'workflow_state', new_status
-                    )
+                    new_priority = cls._STATE_PRIORITY.get(new_status, 0)
+
+                    # Build list of states whose priority is <= new_priority
+                    # (the only states from which this transition is allowed).
+                    allowed_from_states = [
+                        state for state, pri in cls._STATE_PRIORITY.items()
+                        if pri <= new_priority
+                    ]
+
+                    if not allowed_from_states:
+                        frappe.logger().warning(
+                            f"[FundReceivedConsumerMapper] No allowed-from states for "
+                            f"{doc_name}: target='{new_status}' (priority {new_priority}), skipped."
+                        )
+                    else:
+                        # Single atomic UPDATE: only applies when current state is
+                        # in the allowed set, preventing any backward movement even
+                        # under concurrent requests.
+                        placeholders = ', '.join(['%s'] * len(allowed_from_states))
+                        rows_affected = frappe.db.sql(
+                            f"""
+                            UPDATE `tabFund Received`
+                            SET workflow_state = %s,
+                                modified = NOW()
+                            WHERE name = %s
+                              AND workflow_state IN ({placeholders})
+                            """,
+                            [new_status, doc_name] + allowed_from_states,
+                        )
+                        if not rows_affected:
+                            # Read current state only for the warning log
+                            current_status = frappe.db.get_value(
+                                'Fund Received', doc_name, 'workflow_state'
+                            ) or ''
+                            frappe.logger().warning(
+                                f"[FundReceivedConsumerMapper] Skipped backward state change for "
+                                f"{doc_name}: current='{current_status}' "
+                                f"→ '{new_status}' (priority {new_priority}) ignored."
+                            )
 
             # Map and apply fund_received_ref_number
             if dto.fundReceivedRefNumber is not None and frappe.db.has_column('Fund Received', 'fund_received_ref_number'):
