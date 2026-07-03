@@ -202,6 +202,7 @@
    "fetch_from": "advance_for_id.empclass",
    "fieldname": "other_applicant_category",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Other Applicant Category (Empclass)",
    "read_only": 1
   },
@@ -209,6 +210,7 @@
    "fetch_from": "applicant_webmail.empclass",
    "fieldname": "applicant_category",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Applicant Category (Empclass)",
    "read_only": 1
   },
@@ -243,7 +245,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 14:20:46.026252",
+ "modified": "2026-07-01 10:32:06.750595",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Temporary Advance",

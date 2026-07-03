@@ -16,7 +16,7 @@
    "fieldname": "transaction_number",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Transaction Number (UTR No)",
+   "label": "Transaction Number (UTR No)/ Grant Transac. No",
    "reqd": 1
   },
   {
@@ -44,7 +44,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-28 16:01:12.065412",
+ "modified": "2026-05-14 12:33:50.205627",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Fund Transaction",

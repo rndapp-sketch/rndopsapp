@@ -30,6 +30,40 @@ _consumer = None
 _consumer_thread = None
 _stop_consumer = threading.Event()
 
+# Redis keys — shared across all Gunicorn workers
+_HEARTBEAT_KEY = "kafka_consumer_heartbeat"
+_HEARTBEAT_TTL = 15  # seconds — if no heartbeat for this long, consumer is considered dead
+_HEARTBEAT_INTERVAL = 5  # seconds between heartbeats written by the consumer loop
+
+
+def _write_heartbeat():
+    """Called from the consumer loop thread to mark itself alive in Redis."""
+    try:
+        import time as _time
+        frappe.cache().set_value(_HEARTBEAT_KEY, _time.time(), expires_in_sec=_HEARTBEAT_TTL)
+    except Exception:
+        pass
+
+
+def _clear_heartbeat():
+    """Called when the consumer loop exits cleanly."""
+    try:
+        frappe.cache().delete_value(_HEARTBEAT_KEY)
+    except Exception:
+        pass
+
+
+def is_consumer_running_globally() -> bool:
+    """
+    Returns True if a consumer heartbeat exists in Redis (fresh within TTL).
+    Safe to call from any Gunicorn worker — does not rely on per-process thread state.
+    """
+    try:
+        return bool(frappe.cache().get_value(_HEARTBEAT_KEY))
+    except Exception:
+        # Fall back to local thread check if Redis unavailable
+        return _consumer_thread is not None and _consumer_thread.is_alive()
+
 
 def get_consumer():
     """Returns a singleton KafkaConsumer instance with manual assignment."""
@@ -96,6 +130,13 @@ def ensure_frappe_site_init():
         if frappe.local and hasattr(frappe.local, 'site') and frappe.local.site:
             if not frappe.db:
                 frappe.connect()
+            else:
+                # Verify the connection is still alive — MySQL silently drops idle
+                # connections after wait_timeout, which causes InterfaceError (0, '').
+                try:
+                    frappe.db.sql("SELECT 1")
+                except Exception:
+                    frappe.connect()
             return True
 
         # Try to determine site name
@@ -166,11 +207,19 @@ def start_consumer_loop():
 
     log_info("Starting Kafka consumer loop...", "consumer")
     poll_count = 0
+    last_heartbeat = 0.0
 
     try:
         while not _stop_consumer.is_set():
             try:
                 poll_count += 1
+                now = time.monotonic()
+
+                # Write heartbeat to Redis every HEARTBEAT_INTERVAL seconds
+                if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
+                    _write_heartbeat()
+                    last_heartbeat = now
+
                 message_batch = consumer.poll(timeout_ms=1000, max_records=CONSUMER_MAX_POLL_RECORDS)
 
                 if not message_batch:
@@ -191,6 +240,7 @@ def start_consumer_loop():
     except Exception as e:
         log_error(f"Consumer loop terminated: {str(e)}", "TERMINAL_ERROR")
     finally:
+        _clear_heartbeat()
         close_consumer()
 
     log_info("Kafka consumer loop stopped", "consumer")
@@ -225,7 +275,7 @@ def stop_kafka_consumer():
 def get_kafka_consumer_status():
     """Returns the current status of the Kafka consumer."""
     return {
-        "running": _consumer_thread is not None and _consumer_thread.is_alive(),
+        "running": is_consumer_running_globally(),
         "topics": ALL_CONSUMER_TOPICS,
         "bootstrap_servers": KAFKA_BOOTSTRAP_SERVERS,
         "group_id": CONSUMER_GROUP_ID,

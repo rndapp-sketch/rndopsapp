@@ -1,608 +1,604 @@
 {
-    "actions": [],
-    "allow_rename": 1,
-    "autoname": "format:{YYYY}{MM}{DD}7A{######}",
-    "creation": "2025-11-26 16:08:04.021067",
-    "doctype": "DocType",
-    "engine": "InnoDB",
-    "field_order": [
-        "section_break_oqr2",
-        "amended_from",
-        "trvel_leave_balance_section",
-        "if_traveler",
-        "travel_project_title",
-        "travel_project_number",
-        "section_break_lroa",
-        "column_break_tewx",
-        "webmail_id_travel",
-        "applicant_name_travel",
-        "designation_travel",
-        "department_travel",
-        "section_break_lgbn",
-        "column_break_anji",
-        "traveler_webmail_id",
-        "other_traveler",
-        "other_traveler_address",
-        "details_travel",
-        "visit_type_travel",
-        "specify_type_of_visit",
-        "nature_of_travel",
-        "venue_address",
-        "organizing_authority",
-        "purpose_of_visit",
-        "travel_period_section",
-        "from_date",
-        "column_break_skdw",
-        "to_date",
-        "account_heads_section",
-        "travel_financial_assistance",
-        "do_you_need_advance",
-        "account_head_details_section",
-        "column_break_gqur",
-        "account_head",
-        "bank_details_section",
-        "bank_account_holder",
-        "column_break_yzkt",
-        "bank_account_number",
-        "column_break_yptc",
-        "ifsc_code",
-        "section_break_jfah",
-        "travel_mode_of_travel",
-        "sec_break_est_2",
-        "est_travel_amt",
-        "est_reg_amt",
-        "est_accom_amt",
-        "est_other_amt",
-        "total_estimate",
-        "col_break_est_2",
-        "est_travel_file",
-        "est_reg_file",
-        "est_accom_file",
-        "est_other_desc",
-        "est_validation_html",
-        "section_break_tfys",
-        "travel_special_casual_leave",
-        "travel_leave_from_date",
-        "travel_leave_to_date",
-        "travel_right_column",
-        "travel_supporting_documents",
-        "travel_leave_balance_html",
-        "station_leave_required_section",
-        "station_leave_required",
-        "station_leave_details_section",
-        "travel_station_leave_from_date",
-        "travel_station_leave_to_date",
-        "column_break_xrfg",
-        "travel_station_leave_from_session",
-        "travel_station_leave_to_session",
-        "section_break_zlyp",
-        "travel_additional_responsibility",
-        "travel_additional_responsibility_details",
-        "arrangement_for_classes_during_the_proposed_leave_section",
-        "travel_classes_arrangement",
-        "alternative_arrangement",
-        "comments__remarks_if_any_section",
-        "travel_comment_if_any",
-        "travel_declaration_section",
-        "declaration_section",
-        "travel_declaration_text",
-        "travel_declaration_accepted",
-        "workflow_state"
-    ],
-    "fields": [
-        {
-            "fieldname": "section_break_oqr2",
-            "fieldtype": "Section Break"
-        },
-        {
-            "fieldname": "amended_from",
-            "fieldtype": "Link",
-            "hidden": 1,
-            "label": "Amended From",
-            "no_copy": 1,
-            "options": "Travel",
-            "print_hide": 1,
-            "read_only": 1,
-            "search_index": 1
-        },
-        {
-            "fetch_from": "webmail_id_travel.full_name",
-            "fieldname": "applicant_name_travel",
-            "fieldtype": "Data",
-            "label": "Name of the Applicant"
-        },
-        {
-            "fieldname": "webmail_id_travel",
-            "fieldtype": "Link",
-            "label": "webmail_Id",
-            "options": "User"
-        },
-        {
-            "fetch_from": "webmail_id_travel.department_name",
-            "fieldname": "department_travel",
-            "fieldtype": "Link",
-            "label": "Department",
-            "options": "Department_prornd"
-        },
-        {
-            "fetch_from": "webmail_id_travel.designation_name",
-            "fieldname": "designation_travel",
-            "fieldtype": "Data",
-            "label": "Designation of the applicant"
-        },
-        {
-            "fieldname": "details_travel",
-            "fieldtype": "Section Break",
-            "label": "Details of the Journey"
-        },
-        {
-            "fieldname": "visit_type_travel",
-            "fieldtype": "Select",
-            "label": "Type Of Visit",
-            "options": "\nConference\nField Visit\nOther"
-        },
-        {
-            "default": "Self",
-            "fieldname": "if_traveler",
-            "fieldtype": "Select",
-            "label": "Applying for self or other? ",
-            "options": "\nSelf\nOther",
-            "read_only": 1
-        },
-        {
-            "depends_on": "eval:doc.if_traveler == 'Other'",
-            "fieldname": "other_traveler",
-            "fieldtype": "Link",
-            "hidden": 1,
-            "label": "Name of the traveler",
-            "options": "User"
-        },
-        {
-            "depends_on": "eval:doc.if_traveler == 'Other'",
-            "fieldname": "other_traveler_address",
-            "fieldtype": "Data",
-            "hidden": 1,
-            "label": "Designation and full address of traveler"
-        },
-        {
-            "depends_on": "eval:doc.visit_type_travel== 'Other'",
-            "fieldname": "specify_type_of_visit",
-            "fieldtype": "Data",
-            "label": "Specify Type of Visit",
-            "mandatory_depends_on": "eval:doc.type_of_visit==\"Other\""
-        },
-        {
-            "fieldname": "nature_of_travel",
-            "fieldtype": "Select",
-            "label": "Nature of Travel",
-            "options": "\nLocal\nNational\nInternational"
-        },
-        {
-            "fieldname": "venue_address",
-            "fieldtype": "Small Text",
-            "label": "Venue / Address of Visit"
-        },
-        {
-            "fieldname": "travel_period_section",
-            "fieldtype": "Section Break",
-            "label": "Travel Period"
-        },
-        {
-            "fieldname": "from_date",
-            "fieldtype": "Date",
-            "in_list_view": 1,
-            "label": "From Date",
-            "reqd": 1
-        },
-        {
-            "fieldname": "to_date",
-            "fieldtype": "Date",
-            "in_list_view": 1,
-            "label": "To Date",
-            "reqd": 1
-        },
-        {
-            "fieldname": "organizing_authority",
-            "fieldtype": "Small Text",
-            "label": "Organizing Authority",
-            "reqd": 1
-        },
-        {
-            "fieldname": "purpose_of_visit",
-            "fieldtype": "Small Text",
-            "label": "Purpose of Visit"
-        },
-        {
-            "fieldname": "account_heads_section",
-            "fieldtype": "Section Break",
-            "label": "Assitance Details"
-        },
-        {
-            "fetch_from": "travel_project_title.project_no",
-            "fieldname": "travel_project_number",
-            "fieldtype": "Data",
-            "label": "Project Number"
-        },
-        {
-            "fieldname": "travel_project_title",
-            "fieldtype": "Link",
-            "label": "Project Title",
-            "options": "Project Registration",
-            "reqd": 1
-        },
-        {
-            "description": "If you require an advance, a separate Advance Request form must be submitted.",
-            "fieldname": "travel_financial_assistance",
-            "fieldtype": "Select",
-            "label": "Do you require financial assistance?",
-            "options": "\nYes\nNo",
-            "reqd": 1
-        },
-        {
-            "fieldname": "travel_mode_of_travel",
-            "fieldtype": "Select",
-            "label": "Mode of Travel",
-            "options": "By Air\nBy Train\nBy Road"
-        },
-        {
-            "fieldname": "section_break_jfah",
-            "fieldtype": "Section Break"
-        },
-        {
-            "description": "If leave has been approved by Faculty Affairs/Department (for CL), please upload the relevant document in the Attachments section.",
-            "fieldname": "travel_special_casual_leave",
-            "fieldtype": "Select",
-            "label": "Special Casual Leave (R&D Section)",
-            "options": "\nRequired\nNot Required"
-        },
-        {
-            "depends_on": "eval:doc.travel_special_casual_leave == \"Required\";",
-            "fieldname": "travel_leave_from_date",
-            "fieldtype": "Date",
-            "label": "Leave Period \u2013 From Date"
-        },
-        {
-            "depends_on": "eval:doc.travel_special_casual_leave == \"Required\";",
-            "fieldname": "travel_leave_to_date",
-            "fieldtype": "Date",
-            "label": "Leave Period \u2013 To Date"
-        },
-        {
-            "depends_on": "eval:doc.station_leave_required == \"Required\";",
-            "fieldname": "station_leave_details_section",
-            "fieldtype": "Section Break"
-        },
-        {
-            "fieldname": "travel_station_leave_from_date",
-            "fieldtype": "Date",
-            "label": "Station Leave From Date"
-        },
-        {
-            "fieldname": "travel_station_leave_from_session",
-            "fieldtype": "Select",
-            "label": "Station Leave (From Session)",
-            "options": "Full Day\nForenoon\nAfternoon"
-        },
-        {
-            "fieldname": "travel_station_leave_to_date",
-            "fieldtype": "Date",
-            "label": "Station Leave To Date"
-        },
-        {
-            "fieldname": "travel_station_leave_to_session",
-            "fieldtype": "Select",
-            "label": "Station Leave (To Session)",
-            "options": "Full Day\nForenoon\nAfternoon"
-        },
-        {
-            "fieldname": "section_break_zlyp",
-            "fieldtype": "Section Break",
-            "label": "Are you currently holding any additional administrative or academic responsibility?"
-        },
-        {
-            "description": "\n",
-            "fieldname": "travel_additional_responsibility",
-            "fieldtype": "Select",
-            "label": "Examples include HOD, HOC, HOS, Warden, Chairman of a Committee, or similar roles.",
-            "mandatory_depends_on": "eval:doc.if_traveler == \"Self\";",
-            "options": "Yes\nNo"
-        },
-        {
-            "depends_on": "eval:doc.travel_additional_responsibility==\"Yes\"",
-            "fieldname": "travel_additional_responsibility_details",
-            "fieldtype": "Small Text",
-            "label": "Please provide details of the position(s) held",
-            "mandatory_depends_on": "eval:doc.travel_additional_responsibility == \"Yes\";"
-        },
-        {
-            "fieldname": "arrangement_for_classes_during_the_proposed_leave_section",
-            "fieldtype": "Section Break",
-            "label": "Arrangement for Classes During the Proposed Leave"
-        },
-        {
-            "depends_on": "eval:doc.if_traveller == 'Self';",
-            "fieldname": "travel_classes_arrangement",
-            "fieldtype": "Int",
-            "label": "Number of Classes",
-            "placeholder": "Total number of classes with alternate arrangements"
-        },
-        {
-            "fieldname": "comments__remarks_if_any_section",
-            "fieldtype": "Section Break",
-            "label": "Comments / Remarks (if any)"
-        },
-        {
-            "fieldname": "travel_comment_if_any",
-            "fieldtype": "Small Text",
-            "label": "Additional Remarks (if any)"
-        },
-        {
-            "fieldname": "travel_declaration_section",
-            "fieldtype": "Section Break",
-            "label": "DECLARATION"
-        },
-        {
-            "fieldname": "declaration_section",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "travel_declaration_text",
-            "fieldtype": "HTML",
-            "label": "Declaration Text",
-            "options": "<p>\nI hereby certify that my participation in the above-mentioned\nconference/workshop/seminar is in the interest of teaching and research\nat this Institute. I further confirm that suitable arrangements will be\nmade to fulfill my academic and research responsibilities during the\nperiod of my leave/absence.\n</p>\n\n<p>\nI also certify that the proposed travel has a direct relevance to the\nProject for which financial support is being sought. It is requested\nthat permission for attending the event, grant of leave, and financial\nassistance may kindly be accorded.\n</p>\n\n<p>\nI declare that the travel and related expenses claimed herein have not\nbeen, and will not be, claimed from any other source.\n</p>\n"
-        },
-        {
-            "default": "0",
-            "fieldname": "travel_declaration_accepted",
-            "fieldtype": "Check",
-            "label": "I hereby accept and agree to the above declaration"
-        },
-        {
-            "fieldname": "trvel_leave_balance_section",
-            "fieldtype": "Section Break",
-            "label": "Apply for Travel "
-        },
-        {
-            "fieldname": "travel_right_column",
-            "fieldtype": "Column Break"
-        },
-        {
-            "depends_on": "eval:doc.if_traveler == \"Self\";",
-            "fieldname": "travel_leave_balance_html",
-            "fieldtype": "HTML",
-            "label": "Leave Balance",
-            "options": "<div style=\"border:1px solid #d1d8dd; padding:10px; border-radius:6px;\">\n    <strong>Special Casual Leave (SCL) Balance</strong><br>\n    <span>30 days remaining</span>\n</div>\n"
-        },
-        {
-            "depends_on": "eval:doc.if_traveler == \"Self\";",
-            "description": "Upload relevant supporting documents such as Leave Sanction Order (for students),\nInvitation Letter, or Leave Approval Letter from Faculty Affairs/Department (for CL), as applicable.\n",
-            "fieldname": "travel_supporting_documents",
-            "fieldtype": "Attach",
-            "label": "Supporting Documents"
-        },
-        {
-            "depends_on": "eval:doc.do_you_need_advance == \"Yes\"",
-            "fieldname": "bank_details_section",
-            "fieldtype": "Section Break",
-            "label": "Temporary Advance and Bank Details for this Travel"
-        },
-        {
-            "fieldname": "bank_account_holder",
-            "fieldtype": "Data",
-            "label": "Bank Account Holder's Name"
-        },
-        {
-            "fieldname": "bank_account_number",
-            "fieldtype": "Data",
-            "label": "Bank account number"
-        },
-        {
-            "fieldname": "ifsc_code",
-            "fieldtype": "Data",
-            "label": "IFSC Code"
-        },
-        {
-            "fieldname": "est_travel_amt",
-            "fieldtype": "Currency",
-            "label": "Travel Estimate"
-        },
-        {
-            "fieldname": "est_travel_file",
-            "fieldtype": "Attach",
-            "label": "Travel Attachment"
-        },
-        {
-            "depends_on": "eval:doc.travel_financial_assistance == \"Yes\";",
-            "fieldname": "sec_break_est_2",
-            "fieldtype": "Section Break",
-            "label": "ESTIMATE OF FINANCIAL ASSISTANCE"
-        },
-        {
-            "fieldname": "est_reg_amt",
-            "fieldtype": "Currency",
-            "label": "Registration Fee"
-        },
-        {
-            "fieldname": "col_break_est_2",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "est_reg_file",
-            "fieldtype": "Attach",
-            "label": "Registration Attachment"
-        },
-        {
-            "fieldname": "est_accom_amt",
-            "fieldtype": "Currency",
-            "label": "Accommodation + Food"
-        },
-        {
-            "fieldname": "est_accom_file",
-            "fieldtype": "Attach",
-            "label": "Accommodation Attachment"
-        },
-        {
-            "fieldname": "est_other_amt",
-            "fieldtype": "Currency",
-            "label": "Any other"
-        },
-        {
-            "fieldname": "est_other_desc",
-            "fieldtype": "Data",
-            "hidden": 1,
-            "label": "Specify Other"
-        },
-        {
-            "fieldname": "total_estimate",
-            "fieldtype": "Currency",
-            "label": "Total Estimate",
-            "read_only": 1
-        },
-        {
-            "fieldname": "est_validation_html",
-            "fieldtype": "HTML",
-            "label": "Validation Message"
-        },
-        {
-            "fieldname": "column_break_skdw",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "section_break_tfys",
-            "fieldtype": "Section Break",
-            "label": "Special Casual Leave"
-        },
-        {
-            "fieldname": "column_break_xrfg",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "column_break_yzkt",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "column_break_yptc",
-            "fieldtype": "Column Break"
-        },
-        {
-            "depends_on": "eval:doc.if_traveler == 'Other'",
-            "fieldname": "traveler_webmail_id",
-            "fieldtype": "Link",
-            "hidden": 1,
-            "label": "Traveler Webmail Id",
-            "options": "User"
-        },
-        {
-            "fieldname": "section_break_lroa",
-            "fieldtype": "Section Break",
-            "hidden": 1,
-            "label": "Applicant Details"
-        },
-        {
-            "fieldname": "section_break_lgbn",
-            "fieldtype": "Section Break",
-            "hidden": 1
-        },
-        {
-            "fieldname": "account_head_details_section",
-            "fieldtype": "Section Break",
-            "label": "Account Head Details"
-        },
-        {
-            "fieldname": "station_leave_required_section",
-            "fieldtype": "Section Break",
-            "label": "Station Leave Details"
-        },
-        {
-            "fieldname": "station_leave_required",
-            "fieldtype": "Select",
-            "label": "Station Leave Required",
-            "options": "\nRequired\nNot Required"
-        },
-        {
-            "depends_on": "eval:doc.travel_classes_arrangement > 0;",
-            "fieldname": "alternative_arrangement",
-            "fieldtype": "Select",
-            "label": "Alternative Arrangement",
-            "options": "\nYes\nNo"
-        },
-        {
-            "fieldname": "column_break_tewx",
-            "fieldtype": "Column Break",
-            "hidden": 1
-        },
-        {
-            "fieldname": "column_break_anji",
-            "fieldtype": "Column Break",
-            "hidden": 1
-        },
-        {
-            "depends_on": "eval:doc.travel_financial_assistance == \"Yes\"",
-            "fieldname": "do_you_need_advance",
-            "fieldtype": "Select",
-            "label": "Do you need Advance?",
-            "options": "\nYes\nNo"
-        },
-        {
-            "fieldname": "account_head",
-            "fieldtype": "Link",
-            "in_list_view": 1,
-            "label": "Account Head",
-            "options": "Budget Head",
-            "reqd": 1
-        },
-        {
-            "fieldname": "column_break_gqur",
-            "fieldtype": "Column Break"
-        },
-        {
-            "fieldname": "workflow_state",
-            "fieldtype": "Data",
-            "label": "Workflow State",
-            "read_only": 1
-        }
-    ],
-    "grid_page_length": 50,
-    "index_web_pages_for_search": 1,
-    "is_submittable": 1,
-    "links": [],
-    "modified": "2026-04-21 12:45:29.971473",
-    "modified_by": "Administrator",
-    "module": "Rndopsapp",
-    "name": "Travel",
-    "naming_rule": "Expression",
-    "owner": "Administrator",
-    "permissions": [
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "System Manager",
-            "share": 1,
-            "submit": 1,
-            "write": 1
-        },
-        {
-            "create": 1,
-            "delete": 1,
-            "email": 1,
-            "export": 1,
-            "print": 1,
-            "read": 1,
-            "report": 1,
-            "role": "All_ProRnd_User",
-            "share": 1,
-            "submit": 1,
-            "write": 1
-        }
-    ],
-    "row_format": "Dynamic",
-    "rows_threshold_for_grid_search": 20,
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}7A{######}",
+ "creation": "2025-11-26 16:08:04.021067",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_oqr2",
+  "amended_from",
+  "trvel_leave_balance_section",
+  "if_traveler",
+  "travel_project_title",
+  "travel_project_number",
+  "section_break_lroa",
+  "column_break_tewx",
+  "webmail_id_travel",
+  "applicant_name_travel",
+  "designation_travel",
+  "department_travel",
+  "section_break_lgbn",
+  "column_break_anji",
+  "traveler_webmail_id",
+  "other_traveler",
+  "other_traveler_address",
+  "details_travel",
+  "visit_type_travel",
+  "specify_type_of_visit",
+  "nature_of_travel",
+  "venue_address",
+  "organizing_authority",
+  "purpose_of_visit",
+  "travel_period_section",
+  "from_date",
+  "column_break_skdw",
+  "to_date",
+  "account_heads_section",
+  "travel_financial_assistance",
+  "do_you_need_advance",
+  "account_head_details_section",
+  "column_break_gqur",
+  "account_head",
+  "bank_details_section",
+  "bank_account_holder",
+  "column_break_yzkt",
+  "bank_account_number",
+  "column_break_yptc",
+  "ifsc_code",
+  "section_break_jfah",
+  "travel_mode_of_travel",
+  "sec_break_est_2",
+  "est_travel_amt",
+  "est_reg_amt",
+  "est_accom_amt",
+  "est_other_amt",
+  "total_estimate",
+  "col_break_est_2",
+  "est_travel_file",
+  "est_reg_file",
+  "est_accom_file",
+  "est_other_desc",
+  "est_validation_html",
+  "section_break_tfys",
+  "travel_special_casual_leave",
+  "travel_leave_from_date",
+  "travel_leave_to_date",
+  "travel_right_column",
+  "travel_supporting_documents",
+  "travel_leave_balance_html",
+  "station_leave_required_section",
+  "station_leave_required",
+  "station_leave_details_section",
+  "travel_station_leave_from_date",
+  "travel_station_leave_to_date",
+  "column_break_xrfg",
+  "travel_station_leave_from_session",
+  "travel_station_leave_to_session",
+  "section_break_zlyp",
+  "travel_additional_responsibility",
+  "travel_additional_responsibility_details",
+  "arrangement_for_classes_during_the_proposed_leave_section",
+  "travel_classes_arrangement",
+  "alternative_arrangement",
+  "comments__remarks_if_any_section",
+  "travel_comment_if_any",
+  "travel_declaration_section",
+  "declaration_section",
+  "travel_declaration_text",
+  "travel_declaration_accepted",
+  "workflow_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_oqr2",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Travel",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "webmail_id_travel.full_name",
+   "fieldname": "applicant_name_travel",
+   "fieldtype": "Data",
+   "label": "Name of the Applicant"
+  },
+  {
+   "fieldname": "webmail_id_travel",
+   "fieldtype": "Link",
+   "label": "webmail_Id",
+   "options": "User"
+  },
+  {
+   "fetch_from": "webmail_id_travel.department_name",
+   "fieldname": "department_travel",
+   "fieldtype": "Link",
+   "label": "Department",
+   "options": "Department_prornd"
+  },
+  {
+   "fetch_from": "webmail_id_travel.designation_name",
+   "fieldname": "designation_travel",
+   "fieldtype": "Data",
+   "label": "Designation of the applicant"
+  },
+  {
+   "fieldname": "details_travel",
+   "fieldtype": "Section Break",
+   "label": "Details of the Journey"
+  },
+  {
+   "fieldname": "visit_type_travel",
+   "fieldtype": "Select",
+   "label": "Type Of Visit",
+   "options": "\nConference\nField Visit\nOther"
+  },
+  {
+   "default": "Self",
+   "fieldname": "if_traveler",
+   "fieldtype": "Select",
+   "label": "Applying for self or other? ",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == 'Other'",
+   "fieldname": "other_traveler",
+   "fieldtype": "Link",
+   "label": "Name of the traveler",
+   "options": "User"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == 'Other'",
+   "fieldname": "other_traveler_address",
+   "fieldtype": "Data",
+   "label": "Designation and full address of traveler"
+  },
+  {
+   "depends_on": "eval:doc.visit_type_travel== 'Other'",
+   "fieldname": "specify_type_of_visit",
+   "fieldtype": "Data",
+   "label": "Specify Type of Visit",
+   "mandatory_depends_on": "eval:doc.type_of_visit==\"Other\""
+  },
+  {
+   "fieldname": "nature_of_travel",
+   "fieldtype": "Select",
+   "label": "Nature of Travel",
+   "options": "\nLocal\nNational\nInternational"
+  },
+  {
+   "fieldname": "venue_address",
+   "fieldtype": "Small Text",
+   "label": "Venue / Address of Visit"
+  },
+  {
+   "fieldname": "travel_period_section",
+   "fieldtype": "Section Break",
+   "label": "Travel Period"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "To Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "organizing_authority",
+   "fieldtype": "Small Text",
+   "label": "Organizing Authority",
+   "reqd": 1
+  },
+  {
+   "fieldname": "purpose_of_visit",
+   "fieldtype": "Small Text",
+   "label": "Purpose of Visit"
+  },
+  {
+   "fieldname": "account_heads_section",
+   "fieldtype": "Section Break",
+   "label": "Assitance Details"
+  },
+  {
+   "fetch_from": "travel_project_title.project_no",
+   "fieldname": "travel_project_number",
+   "fieldtype": "Data",
+   "label": "Project Number"
+  },
+  {
+   "fieldname": "travel_project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration",
+   "reqd": 1
+  },
+  {
+   "description": "If you require an advance, a separate Advance Request form must be submitted.",
+   "fieldname": "travel_financial_assistance",
+   "fieldtype": "Select",
+   "label": "Do you require financial assistance?",
+   "options": "\nYes\nNo",
+   "reqd": 1
+  },
+  {
+   "fieldname": "travel_mode_of_travel",
+   "fieldtype": "Select",
+   "label": "Mode of Travel",
+   "options": "By Air\nBy Train\nBy Road"
+  },
+  {
+   "fieldname": "section_break_jfah",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "If leave has been approved by Faculty Affairs/Department (for CL), please upload the relevant document in the Attachments section.",
+   "fieldname": "travel_special_casual_leave",
+   "fieldtype": "Select",
+   "label": "Special Casual Leave (R&D Section)",
+   "options": "\nRequired\nNot Required"
+  },
+  {
+   "depends_on": "eval:doc.travel_special_casual_leave == \"Required\";",
+   "fieldname": "travel_leave_from_date",
+   "fieldtype": "Date",
+   "label": "Leave Period \u2013 From Date"
+  },
+  {
+   "depends_on": "eval:doc.travel_special_casual_leave == \"Required\";",
+   "fieldname": "travel_leave_to_date",
+   "fieldtype": "Date",
+   "label": "Leave Period \u2013 To Date"
+  },
+  {
+   "depends_on": "eval:doc.station_leave_required == \"Required\";",
+   "fieldname": "station_leave_details_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "travel_station_leave_from_date",
+   "fieldtype": "Date",
+   "label": "Station Leave From Date"
+  },
+  {
+   "fieldname": "travel_station_leave_from_session",
+   "fieldtype": "Select",
+   "label": "Station Leave (From Session)",
+   "options": "Full Day\nForenoon\nAfternoon"
+  },
+  {
+   "fieldname": "travel_station_leave_to_date",
+   "fieldtype": "Date",
+   "label": "Station Leave To Date"
+  },
+  {
+   "fieldname": "travel_station_leave_to_session",
+   "fieldtype": "Select",
+   "label": "Station Leave (To Session)",
+   "options": "Full Day\nForenoon\nAfternoon"
+  },
+  {
+   "fieldname": "section_break_zlyp",
+   "fieldtype": "Section Break",
+   "label": "Are you currently holding any additional administrative or academic responsibility?"
+  },
+  {
+   "description": "\n",
+   "fieldname": "travel_additional_responsibility",
+   "fieldtype": "Select",
+   "label": "Examples include HOD, HOC, HOS, Warden, Chairman of a Committee, or similar roles.",
+   "mandatory_depends_on": "eval:doc.if_traveler == \"Self\";",
+   "options": "Yes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.travel_additional_responsibility==\"Yes\"",
+   "fieldname": "travel_additional_responsibility_details",
+   "fieldtype": "Small Text",
+   "label": "Please provide details of the position(s) held",
+   "mandatory_depends_on": "eval:doc.travel_additional_responsibility == \"Yes\";"
+  },
+  {
+   "fieldname": "arrangement_for_classes_during_the_proposed_leave_section",
+   "fieldtype": "Section Break",
+   "label": "Arrangement for Classes During the Proposed Leave"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == 'Self';",
+   "fieldname": "travel_classes_arrangement",
+   "fieldtype": "Int",
+   "label": "Number of Classes",
+   "placeholder": "Total number of classes with alternate arrangements"
+  },
+  {
+   "fieldname": "comments__remarks_if_any_section",
+   "fieldtype": "Section Break",
+   "label": "Comments / Remarks (if any)"
+  },
+  {
+   "fieldname": "travel_comment_if_any",
+   "fieldtype": "Small Text",
+   "label": "Additional Remarks (if any)"
+  },
+  {
+   "fieldname": "travel_declaration_section",
+   "fieldtype": "Section Break",
+   "label": "DECLARATION"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "travel_declaration_text",
+   "fieldtype": "HTML",
+   "label": "Declaration Text",
+   "options": "<p>\nI hereby certify that my participation in the above-mentioned\nconference/workshop/seminar is in the interest of teaching and research\nat this Institute. I further confirm that suitable arrangements will be\nmade to fulfill my academic and research responsibilities during the\nperiod of my leave/absence.\n</p>\n\n<p>\nI also certify that the proposed travel has a direct relevance to the\nProject for which financial support is being sought. It is requested\nthat permission for attending the event, grant of leave, and financial\nassistance may kindly be accorded.\n</p>\n\n<p>\nI declare that the travel and related expenses claimed herein have not\nbeen, and will not be, claimed from any other source.\n</p>\n"
+  },
+  {
+   "default": "0",
+   "fieldname": "travel_declaration_accepted",
+   "fieldtype": "Check",
+   "label": "I hereby accept and agree to the above declaration"
+  },
+  {
+   "fieldname": "trvel_leave_balance_section",
+   "fieldtype": "Section Break",
+   "label": "Apply for Travel "
+  },
+  {
+   "fieldname": "travel_right_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == \"Self\";",
+   "fieldname": "travel_leave_balance_html",
+   "fieldtype": "HTML",
+   "label": "Leave Balance",
+   "options": "<div style=\"border:1px solid #d1d8dd; padding:10px; border-radius:6px;\">\n    <strong>Special Casual Leave (SCL) Balance</strong><br>\n    <span>30 days remaining</span>\n</div>\n"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == \"Self\";",
+   "description": "Upload relevant supporting documents such as Leave Sanction Order (for students),\nInvitation Letter, or Leave Approval Letter from Faculty Affairs/Department (for CL), as applicable.\n",
+   "fieldname": "travel_supporting_documents",
+   "fieldtype": "Attach",
+   "label": "Supporting Documents"
+  },
+  {
+   "depends_on": "eval:doc.do_you_need_advance == \"Yes\"",
+   "fieldname": "bank_details_section",
+   "fieldtype": "Section Break",
+   "label": "Temporary Advance and Bank Details for this Travel"
+  },
+  {
+   "fieldname": "bank_account_holder",
+   "fieldtype": "Data",
+   "label": "Bank Account Holder's Name"
+  },
+  {
+   "fieldname": "bank_account_number",
+   "fieldtype": "Data",
+   "label": "Bank account number"
+  },
+  {
+   "fieldname": "ifsc_code",
+   "fieldtype": "Data",
+   "label": "IFSC Code"
+  },
+  {
+   "fieldname": "est_travel_amt",
+   "fieldtype": "Currency",
+   "label": "Travel Estimate"
+  },
+  {
+   "fieldname": "est_travel_file",
+   "fieldtype": "Attach",
+   "label": "Travel Attachment"
+  },
+  {
+   "depends_on": "eval:doc.travel_financial_assistance == \"Yes\";",
+   "fieldname": "sec_break_est_2",
+   "fieldtype": "Section Break",
+   "label": "ESTIMATE OF FINANCIAL ASSISTANCE"
+  },
+  {
+   "fieldname": "est_reg_amt",
+   "fieldtype": "Currency",
+   "label": "Registration Fee"
+  },
+  {
+   "fieldname": "col_break_est_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "est_reg_file",
+   "fieldtype": "Attach",
+   "label": "Registration Attachment"
+  },
+  {
+   "fieldname": "est_accom_amt",
+   "fieldtype": "Currency",
+   "label": "Accommodation + Food"
+  },
+  {
+   "fieldname": "est_accom_file",
+   "fieldtype": "Attach",
+   "label": "Accommodation Attachment"
+  },
+  {
+   "fieldname": "est_other_amt",
+   "fieldtype": "Currency",
+   "label": "Any other"
+  },
+  {
+   "fieldname": "est_other_desc",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Specify Other"
+  },
+  {
+   "fieldname": "total_estimate",
+   "fieldtype": "Currency",
+   "label": "Total Estimate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "est_validation_html",
+   "fieldtype": "HTML",
+   "label": "Validation Message"
+  },
+  {
+   "fieldname": "column_break_skdw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_tfys",
+   "fieldtype": "Section Break",
+   "label": "Special Casual Leave"
+  },
+  {
+   "fieldname": "column_break_xrfg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_yzkt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_yptc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == 'Other'",
+   "fieldname": "traveler_webmail_id",
+   "fieldtype": "Link",
+   "label": "Traveler Webmail Id",
+   "options": "User"
+  },
+  {
+   "fieldname": "section_break_lroa",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Applicant Details"
+  },
+  {
+   "depends_on": "eval:doc.if_traveler == \"Other\"",
+   "fieldname": "section_break_lgbn",
+   "fieldtype": "Section Break",
+   "label": "Traveller Details"
+  },
+  {
+   "fieldname": "account_head_details_section",
+   "fieldtype": "Section Break",
+   "label": "Account Head Details"
+  },
+  {
+   "fieldname": "station_leave_required_section",
+   "fieldtype": "Section Break",
+   "label": "Station Leave Details"
+  },
+  {
+   "fieldname": "station_leave_required",
+   "fieldtype": "Select",
+   "label": "Station Leave Required",
+   "options": "\nRequired\nNot Required"
+  },
+  {
+   "depends_on": "eval:doc.travel_classes_arrangement > 0;",
+   "fieldname": "alternative_arrangement",
+   "fieldtype": "Select",
+   "label": "Alternative Arrangement",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "column_break_tewx",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_anji",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.travel_financial_assistance == \"Yes\"",
+   "fieldname": "do_you_need_advance",
+   "fieldtype": "Select",
+   "label": "Do you need Advance?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Account Head",
+   "options": "Budget Head",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_gqur",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-06-08 11:05:30.766695",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Travel",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

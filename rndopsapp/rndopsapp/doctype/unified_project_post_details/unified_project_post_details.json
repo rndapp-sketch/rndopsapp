@@ -44,7 +44,7 @@
    "fieldname": "upfa_hra_percent",
    "fieldtype": "Select",
    "label": "HRA Percentage",
-   "options": "\n18%\n16%\n20%"
+   "options": "\n10%\n18%\n16%\n20%"
   },
   {
    "allow_on_submit": 1,
@@ -94,7 +94,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-23 17:43:03.485017",
+ "modified": "2026-06-11 11:16:13.420121",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Unified Project Post Details",

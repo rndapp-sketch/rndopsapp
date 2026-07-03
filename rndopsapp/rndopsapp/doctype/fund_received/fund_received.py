@@ -11,6 +11,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, sanitize_html
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_received
+from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
 
 
 class FundReceived(Document):
@@ -193,8 +194,8 @@ def get_fund_received_fields(doc_name=None):
 
 
 
-@frappe.whitelist(allow_guest=False)
-def get_fund_received_by_prjreg(prjreg_title: str = "", limit: int = 200, start: int = 0):
+@frappe.whitelist()
+def get_fund_received_by_prjreg(prjreg_title: str = "", limit: int = 190000000, start: int = 0):
 	"""
 	Returns Fund Received docs for a given prjreg_title in the format:
 	{ "message": [ { ... full doc as dict ... }, ... ] }
@@ -695,15 +696,18 @@ def get_fund_received_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_fund_received_action(docname, action, deposit_slip_data=None):
+def perform_fund_received_action(docname, action, deposit_slip_data=None, deposit_slip_type=None):
 	"""
 	Executes the selected workflow action and updates the document state.
-	
+
 	Args:
 		docname (str): Name of the Fund Received document.
 		action (str): Workflow action to perform.
-		deposit_slip_data (json/dict, optional): Data to create a new Deposit Slip 
+		deposit_slip_data (json/dict, optional): Data to create a new Deposit Slip
 												 if transitioning to HoS Approval.
+		deposit_slip_type (str, optional): Explicit deposit slip type from frontend
+										   (e.g. 'e_non_routine', 'research', 'd_consultancy').
+										   Takes priority over project-type inference.
 	"""
 	try:
 		print("=========================================================================")
@@ -776,48 +780,20 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 				print(f"Error parsing deposit_slip_data: {e}")
 				deposit_slip_data = None
 		
-		# Find the transition matching current state and action
-		# Note: There might be multiple transitions with same action name (e.g. 'Forward')
-		# Logic to distinguish path:
-		# 1. If deposit_slip_data is provided, prefer path to 'Pending HoS Approval' (Row 11)
-		# 2. If no deposit_slip_data, prefer path to 'Pending Accounts Staff Approval' (Row 4)
-		# OR simpler: check if the 'next_state' implies a specific requirement.
-		
-		# Let's simple-loop first to find *candidates*
-		candidates = []
-		
-		for t in workflow.transitions:
-			if t.state == current_state and t.action == action:
-				candidates.append(t)
-		
+		# Find all transitions matching current state and action.
+		# Multiple rows may exist for the same (state, action) when different roles
+		# are each given their own row — but they all target the same next_state.
+		# Always pick the first match.
+		candidates = [
+			t for t in workflow.transitions
+			if t.state == current_state and t.action == action
+		]
+
 		if not candidates:
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
-		
-		# Logic to disambiguate if multiple candidates exist (e.g. 'Forward' action)
-		if len(candidates) > 1:
-			# If we are at 'Pending Misc. Staff Approval' and action is 'Forward':
-			# Candidate A -> 'Pending Accounts Staff Approval'
-			# Candidate B -> 'Pending HoS Approval'
-			if current_state == "Pending Misc. Staff Approval" and action == "Forward":
-				# Distinguish based on presence of deposit data
-				if deposit_slip_data:
-					# User intends to generate deposit slip -> Go to HoS
-					transition = next((t for t in candidates if t.next_state == "Pending HoS Approval"), None)
-					print("DEBUG: Selected HoS (via data)")
-				else:
-					# Standard forward -> Go to Accounts
-					transition = next((t for t in candidates if t.next_state == "Pending Accounts Staff Approval"), None)
-					print("DEBUG: Selected Accounts (no data)")
-			else:
-				# Default to first found if no specific logic defined
-				transition = candidates[0]
-				print(f"DEBUG: Default selection: {transition.next_state}")
-		else:
-			transition = candidates[0]
-			print(f"DEBUG: Single candidate: {transition.next_state}")
 
-		if not transition:
-			frappe.throw(_("Could not determine next state for action '{}'.").format(action))
+		transition = candidates[0]
+		print(f"DEBUG: Selected transition: {transition.state} --[{transition.action}]--> {transition.next_state}")
 
 		next_state = transition.next_state
 
@@ -828,7 +804,7 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		if next_state == "Pending HoS Approval": 
 			print(f"DEBUG: Transitioning to HoS Approval. Data present: {bool(deposit_slip_data)}")
 			if deposit_slip_data:
-				create_deposit_slip_from_data(deposit_slip_data, doc)
+				create_deposit_slip_from_data(deposit_slip_data, doc, deposit_slip_type=deposit_slip_type)
 			else:
 				print(f"Warning: transitioning to {next_state} without deposit_slip_data")
 
@@ -861,18 +837,24 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		
 		print(f"DEBUG: Saving with ignore_validate=True. Next State: {next_state}")
 
-		if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
-			doc.submit()
-		elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
-			doc.cancel()
-		else:
-			doc.save(ignore_permissions=True)
-		
-		# Force update state in DB to avoid race conditions or hook interference
-		# (Still good to keep even with save success)
+		try:
+			if state_doc and state_doc.doc_status == 1 and doc.docstatus == 0:
+				doc.submit()
+			elif state_doc and state_doc.doc_status == 2 and doc.docstatus != 2:
+				doc.cancel()
+			else:
+				doc.save(ignore_permissions=True)
+		except Exception as save_err:
+			# Save/submit failure must NOT block the workflow state commit.
+			# The deposit slip creation (if any) is already in this transaction;
+			# we still want to commit the state change so the FR doesn't revert.
+			print(f"DEBUG: doc save/submit failed (non-fatal, continuing to commit state): {save_err}")
+			frappe.log_error(frappe.get_traceback(), "Fund Received Save/Submit Error (non-fatal)")
+
+		# Force-write state directly in DB — survives even if save/submit above failed
 		print(f"DEBUG: Reaching db_set. Next state: {next_state}")
 		doc.db_set("workflow_state", next_state)
-		
+
 		print("DEBUG: Reaching commit")
 		frappe.db.commit()
 		print("DEBUG: Commit done")
@@ -886,77 +868,228 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		# (Send Fund Received data to Kafka when moving to PENDING_APPROVAL state)
 		if next_state == "PENDING_APPROVAL":
 			try:
+				import datetime
 				success = publish_fund_received(doc)
 				if success:
 					frappe.msgprint(_("Fund Received data synced to Kafka successfully."), indicator='green')
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  📡 [Kafka Publish] Fund Received SUCCESS      │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {doc.name}\n"
+						f" State    : {next_state}\n"
+						f" User     : {frappe.session.user}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```"
+					)
 				else:
 					frappe.msgprint(_("Kafka sync returned False."), indicator='orange')
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  ⚠️ [Kafka Publish] Fund Received FAILED       │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {doc.name}\n"
+						f" State    : {next_state}\n"
+						f" User     : {frappe.session.user}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```",
+						urgent=True,
+					)
 			except Exception as k_err:
+				import datetime
 				print(f"Kafka sync error: {k_err}")
 				frappe.log_error(frappe.get_traceback(), "Fund Received Workflow Kafka Sync Error")
 				frappe.msgprint(_("Failed to sync with Kafka: {}").format(str(k_err)), indicator='red')
+				notify_mattermost(
+					"```\n"
+					"┌──────────────────────────────────────────────┐\n"
+					"│  🔴 [ERROR] Fund Received Kafka Sync           │\n"
+					"├──────────────────────────────────────────────┤\n"
+					f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+					f" Docname  : {docname}\n"
+					f" Action   : {action}\n"
+					f" User     : {frappe.session.user}\n"
+					f" Error    : {str(k_err)}\n"
+					"└──────────────────────────────────────────────┘\n"
+					"```",
+					urgent=True,
+				)
 
 		# 3. When Fund Received is Approved by HoS -> Auto-Approve Deposit Slip & Sync to Kafka
 		if next_state == "Approved":
 			try:
+				import datetime
 				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
 				print("|||||||||||||||||||||||KAFKA|||||||||||||||||||||||||||||||||")
 				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				
+
 				# List of potential Deposit Slip doctypes
 				deposit_doctypes = [
 					"Research Deposit Slip",
-					"Research Consultancy Deposit Slip", 
+					"Research Consultancy Deposit Slip",
 					"D Consultancy Deposit Slip",
 					"E Non Routine Deposit Slip",
 					"Other Event Deposit Slip",
 					"T Testing Deposit Slip"
 				]
 
-				# Find linked Deposit Slip in any of the potential doctypes
+				# Find linked Deposit Slip in any of the potential doctypes.
+				# Prefer the one currently waiting for HoS approval (the active DS);
+				# multiple deposit slips can exist when the misc staff regenerated
+				# after a HoS put-back.  Fall back to the most recently created DS if
+				# none is found in "Pending HoS Approval" state.
 				ds_name = None
 				found_doctype = None
-				
+
 				for dt in deposit_doctypes:
-					ds_name = frappe.db.get_value(dt, {"fund_received_ref": doc.name}, "name")
-					if ds_name:
+					# First pass: find the active DS waiting for HoS
+					# Some deposit slip doctypes have no workflow (no workflow_state column);
+					# skip them gracefully — they can never be in "Pending HoS Approval".
+					try:
+						name = frappe.db.get_value(
+							dt,
+							{"fund_received_ref": doc.name, "workflow_state": "Pending HoS Approval"},
+							"name",
+							order_by="creation desc",
+						)
+					except Exception:
+						name = None
+					if name:
+						ds_name = name
 						found_doctype = dt
 						break
-				
+
+				if not ds_name:
+					# Second pass: fall back to most recently created DS for this FR
+					for dt in deposit_doctypes:
+						name = frappe.db.get_value(
+							dt,
+							{"fund_received_ref": doc.name},
+							"name",
+							order_by="creation desc",
+						)
+						if name:
+							ds_name = name
+							found_doctype = dt
+							break
+
 				if ds_name and found_doctype:
 					print(f"DEBUG: Found linked Deposit Slip {ds_name} of type {found_doctype}. Auto-approving and Syncing...")
 					ds_doc = frappe.get_doc(found_doctype, ds_name)
-					
-					# Get current workflow_state (Data field, not Frappe workflow)
-					# Use get() for safe access since it's a Data field
+
 					current_ds_state = ds_doc.get("workflow_state") or ""
 					print(f"DEBUG: Current Deposit Slip state: '{current_ds_state}'")
-					
+
 					# Update State to Approved if not already
+					# skip_kafka_sync flag tells on_update to skip its own publish
+					# so we can publish explicitly below with proper error handling
 					if current_ds_state != "Approved":
 						ds_doc.workflow_state = "Approved"
 						ds_doc.flags.ignore_validate = True
+						ds_doc.flags.skip_kafka_sync = True
 						ds_doc.save(ignore_permissions=True)
 						print(f"DEBUG: Deposit Slip {ds_name} state updated to 'Approved'")
-						
+
 					# Submit if not submitted
 					if ds_doc.docstatus == 0:
 						ds_doc.flags.ignore_validate = True
+						ds_doc.flags.skip_kafka_sync = True
 						ds_doc.submit()
 						print(f"DEBUG: Deposit Slip {ds_name} submitted")
-					
-					# Note: Kafka sync is handled by the on_update() hook in Research Consultancy Deposit Slip
-					# when save() is called with workflow_state = "Approved"
-					frappe.msgprint(_(f"Linked {found_doctype} Approved and Synced to Kafka."), indicator='green')
+
+					# --- Explicit Kafka publish with proper success/failure handling ---
+					# Use the canonical publisher that handles all 6 deposit slip types
+					# with key-based partitioning and structured logging
+					kafka_result = False
+					kafka_error = None
+					try:
+						from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip
+						kafka_result = publish_deposit_slip(ds_doc)
+					except Exception as kafka_exc:
+						kafka_error = str(kafka_exc)
+						kafka_result = False
+						print(f"DEBUG: Kafka publish exception: {kafka_exc}")
+						print(frappe.get_traceback())
+						frappe.log_error(frappe.get_traceback(), "Deposit Slip Kafka Publish Error")
+
+					if kafka_result:
+						frappe.msgprint(_(f"Linked {found_doctype} Approved and published to Kafka."), indicator='green')
+						print(f"DEBUG: Kafka publish SUCCESS for {ds_name}")
+						try:
+							notify_mattermost(
+								"```\n"
+								"┌──────────────────────────────────────────────┐\n"
+								"│  ✅ [Kafka Publish] Deposit Slip Approved      │\n"
+								"├──────────────────────────────────────────────┤\n"
+								f" Time        : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+								f" Fund Rcvd   : {doc.name}\n"
+								f" Deposit Slip: {ds_name}\n"
+								f" Type        : {found_doctype}\n"
+								f" User        : {frappe.session.user}\n"
+								"└──────────────────────────────────────────────┘\n"
+								"```"
+							)
+						except Exception as mm_exc:
+							print(f"DEBUG: Mattermost notify failed (success path): {mm_exc}")
+					else:
+						err_detail = kafka_error or "publish_deposit_slip returned False (check validation errors in Frappe Error Log)"
+						frappe.msgprint(_(f"Deposit Slip approved but Kafka publish failed: {err_detail}"), indicator='orange')
+						print(f"DEBUG: Kafka publish FAILED for {ds_name}: {err_detail}")
+						try:
+							notify_mattermost(
+								"```\n"
+								"┌──────────────────────────────────────────────┐\n"
+								"│  ⚠️ [Kafka Publish] Deposit Slip FAILED        │\n"
+								"├──────────────────────────────────────────────┤\n"
+								f" Time        : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+								f" Fund Rcvd   : {doc.name}\n"
+								f" Deposit Slip: {ds_name}\n"
+								f" Type        : {found_doctype}\n"
+								f" User        : {frappe.session.user}\n"
+								f" Error       : {err_detail}\n"
+								"└──────────────────────────────────────────────┘\n"
+								"```",
+								urgent=True,
+							)
+						except Exception as mm_exc:
+							print(f"DEBUG: Mattermost notify failed (failure path): {mm_exc}")
 				else:
 					print("DEBUG: No linked Deposit Slip found.")
-					
+
 				print("|||||||||||||||||||||||KAFKA end|||||||||||||||||||||||||||||||||")
 			except Exception as ds_err:
+				import datetime
 				print(f"DEBUG: Error auto-processing Deposit Slip: {ds_err}")
 				print(frappe.get_traceback())
 				frappe.log_error(frappe.get_traceback(), "Auto Deposit Slip Sync Error")
 				frappe.msgprint(_("Error processing Deposit Slip: {}").format(str(ds_err)), indicator='red')
+				# Ensure FR state is committed even if deposit slip processing failed
+				try:
+					doc.db_set("workflow_state", next_state)
+					frappe.db.commit()
+				except Exception:
+					pass
+				try:
+					notify_mattermost(
+						"```\n"
+						"┌──────────────────────────────────────────────┐\n"
+						"│  🔴 [ERROR] Deposit Slip Auto-Approve/Kafka    │\n"
+						"├──────────────────────────────────────────────┤\n"
+						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+						f" Docname  : {docname}\n"
+						f" Action   : {action}\n"
+						f" User     : {frappe.session.user}\n"
+						f" Error    : {str(ds_err)}\n"
+						"└──────────────────────────────────────────────┘\n"
+						"```",
+						urgent=True,
+					)
+				except Exception as mm_exc:
+					print(f"DEBUG: Mattermost notify failed (error path): {mm_exc}")
 		
 		print("DEBUG: End of function success")
 		return {
@@ -968,14 +1101,29 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None):
 		}
 
 	except Exception as e:
+		import datetime
 		frappe.db.rollback()
 		print(f"DEBUG: Exception in perform_fund_received_action: {e}")
 		print(frappe.get_traceback())
 		frappe.log_error(frappe.get_traceback(), "Fund Received Action Error")
+		notify_mattermost(
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  🔴 [ERROR] Fund Received Action Failed        │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname  : {docname}\n"
+			f" Action   : {action}\n"
+			f" User     : {frappe.session.user}\n"
+			f" Error    : {str(e)}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```",
+			urgent=True,
+		)
 		return {"status": "error", "message": str(e)}
 
 
-def create_deposit_slip_from_data(data_json, fund_received_doc):
+def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_type=None):
 	"""
 	Helper to create a fresh Deposit Slip document linked to the Fund Received doc.
 	Reuse logic similar to save_deposit_slip but internal.
@@ -1003,49 +1151,73 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 		print(f"Creating Deposit Slip for FR: {fund_received_doc.name}")
 
 		# Determine Doctype based on Category
-		category = data.get("category", "")
-		
-		# If category is empty, try to infer from Fund Received document
-		if not category:
-			# Try to get project type from the linked project registration
-			if fund_received_doc.prjreg_title:
-				try:
-					project_type = frappe.db.get_value(
-						"Project Registration", 
-						fund_received_doc.prjreg_title, 
-						"project_type"
-					)
-					if project_type:
-						project_type_upper = (project_type or "").upper()
-						if "RESEARCH" in project_type_upper and "CONSULTANCY" not in project_type_upper:
-							category = "RESEARCH"
-						elif "CONSULTANCY" in project_type_upper:
-							if "D" in project_type_upper or "D_CONSULTANCY" in project_type_upper:
-								category = "D_CONSULTANCY"
-							elif "E" in project_type_upper or "NON" in project_type_upper:
-								category = "E_NON_ROUTINE"
-							elif "T" in project_type_upper or "TEST" in project_type_upper:
-								category = "T_TESTING"
+		# Priority: 1) explicit deposit_slip_type from frontend  2) 'category' key in data
+		# 3) category-specific field keys in data  4) project-type inference (last resort)
+
+		# Map from frontend deposit_slip_type values to internal category keys
+		_type_to_category = {
+			"e_non_routine":        "E_NON_ROUTINE",
+			"d_consultancy":        "D_CONSULTANCY",
+			"t_testing":            "T_TESTING",
+			"other_event":          "OTHER_EVENT",
+			"research":             "RESEARCH",
+			"research_consultancy": "CONSULTANCY",
+		}
+
+		project_type = None  # kept for log_category_inference below
+
+		if deposit_slip_type and deposit_slip_type.lower() in _type_to_category:
+			category = _type_to_category[deposit_slip_type.lower()]
+			print(f"Category resolved from deposit_slip_type='{deposit_slip_type}': {category}")
+		else:
+			category = data.get("category", "")
+
+			# Detect category from category-specific field keys when 'category' is absent
+			if not category:
+				if data.get("category_e"):
+					category = "E_NON_ROUTINE"
+				elif data.get("category_d"):
+					category = "D_CONSULTANCY"
+
+			# Last resort: infer from project_type on the linked Project Registration
+			if not category:
+				if fund_received_doc.prjreg_title:
+					try:
+						project_type = frappe.db.get_value(
+							"Project Registration",
+							fund_received_doc.prjreg_title,
+							"project_type"
+						)
+						if project_type:
+							project_type_upper = (project_type or "").upper()
+							if "RESEARCH" in project_type_upper and "CONSULTANCY" not in project_type_upper:
+								category = "RESEARCH"
+							elif "CONSULTANCY" in project_type_upper:
+								if "D" in project_type_upper or "D_CONSULTANCY" in project_type_upper:
+									category = "D_CONSULTANCY"
+								elif "E" in project_type_upper or "NON" in project_type_upper:
+									category = "E_NON_ROUTINE"
+								elif "T" in project_type_upper or "TEST" in project_type_upper:
+									category = "T_TESTING"
+								else:
+									category = "CONSULTANCY"
 							else:
-								category = "CONSULTANCY"
+								category = "RESEARCH"
 						else:
-							category = "RESEARCH"  # Default to Research
-					else:
-						category = "RESEARCH"  # Default to Research
-				except Exception as e:
-					print(f"Warning: Could not get project type: {e}")
-					category = "RESEARCH"  # Default to Research
-			else:
-				category = "RESEARCH"  # Default to Research if no project linked
-			
-			print(f"Inferred category from project: {category}")
-			# Log category inference
-			log_category_inference(
-				fund_received_doc.name,
-				fund_received_doc.prjreg_title,
-				project_type if 'project_type' in dir() else None,
-				category
-			)
+							category = "RESEARCH"
+					except Exception as e:
+						print(f"Warning: Could not get project type: {e}")
+						category = "RESEARCH"
+				else:
+					category = "RESEARCH"
+
+				print(f"Inferred category from project: {category}")
+				log_category_inference(
+					fund_received_doc.name,
+					fund_received_doc.prjreg_title,
+					project_type,
+					category
+				)
 		
 		# Simple mapping based on known categories
 		# Adjust keys as per exact frontend inputs
@@ -1084,8 +1256,11 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			"bank": "bank",
 			
 			# Mappings to new fieldnames (Research Consultancy Deposit Slip)
+			# NOTE: falls back to original key when target field missing (e.g. E Non Routine uses amount_inclusive_of_gst)
 			"amount_inclusive_of_gst": "amount_inclusive_gst_capital",
 			"amount_inclusive_gst_capital": "amount_inclusive_gst_capital",
+
+			"consultancy_fee_x": "consultancy_fee_x",
 			
 			"ecs_acc_no": "ecs_ac_no",
 			"ecs_ac_no": "ecs_ac_no",
@@ -1109,6 +1284,33 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			"staff_welfare_amount": "staff_welfare_amount",
 			"student_welfare_amount": "student_welfare_amount",
 			
+			# D Consultancy Deposit Slip specific fields
+			"consultancy_title": "consultancy_title",
+			"principal_consultant": "principal_consultant",
+			"igst_18_on_consultancy": "igst_18_on_consultancy",
+			"amount_after_gst_tds": "amount_after_gst_tds",
+			"total_cost_x": "total_cost_x",
+			"consultancy_charge_y": "consultancy_charge_y",
+			"operational_charge_z": "operational_charge_z",
+			"idf_percentage": "idf_percentage",
+			"iitg_invoice_no": "iitg_invoice_no",
+
+			# Other Event Deposit Slip specific fields
+			"event_title": "event_title",
+			"principal_organizer": "principal_organizer",
+			"gstin_no": "gstin_no",
+			"gst_multiplier": "gst_multiplier",
+			"gst_amount": "gst_amount",
+			"training_fee": "training_fee",
+			"gst_final": "gst_final",
+			"total": "total",
+
+			# T Testing Deposit Slip specific fields
+			"idf_t_testing_fee": "idf_t_testing_fee",
+			"dpf_t_testing_fee": "dpf_t_testing_fee",
+			"staff_welfare_t_testing_fund": "staff_welfare_t_testing_fund",
+			"student_welfare_t_testing_fund": "student_welfare_t_testing_fund",
+
 			# Research Deposit Slip specific fields
 			"deposit_date": "deposit_date",
 			"total_amount": "total_amount",
@@ -1121,10 +1323,15 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			"project_no": "project_no",
 			"project_account_balance": "project_account_balance",
 			"grand_total": "grand_total",
+			"staff_welfare_fund_percent": "staff_welfare_fund_percent",
+			"student_welfare_fund_percent": "student_welfare_fund_percent",
+
+			# Research Consultancy Deposit Slip specific fields
+			"project_number": "project_number",
 		}
 		
-		# Fields to skip (can cause link validation errors)
-		skip_fields = ["funding_agency", "gstin_of_funding_agency"]
+		# Fields to skip (funding_agency is a Link field — validated separately below)
+		skip_fields = ["funding_agency"]
 		
 		# Handle date fields - convert "Today" string to actual date
 		date_fields = ["deposit_date"]
@@ -1141,7 +1348,13 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 				continue
 			if form_field in data and data[form_field] not in [None, ""]:
 				try:
-					new_doc.set(doctype_field, data[form_field])
+					# If the mapped target field doesn't exist on this doctype, fall back to the original key name
+					actual_field = doctype_field
+					if (doctype_field != form_field
+							and not new_doc.meta.has_field(doctype_field)
+							and new_doc.meta.has_field(form_field)):
+						actual_field = form_field
+					new_doc.set(actual_field, data[form_field])
 				except Exception as e:
 					print(f"Warning: Could not set field {doctype_field}: {e}")
 
@@ -1212,11 +1425,6 @@ def create_deposit_slip_from_data(data_json, fund_received_doc):
 			actual_fa = frappe.db.get_value("fundingagency_", {"funding_agency_initials": fa_value}, "name")
 			new_doc.set("funding_agency", actual_fa)  # None if not found
 
-		# Clear gstin_of_funding_agency if it has an invalid link value
-		gstin_val = new_doc.get("gstin_of_funding_agency")
-		if gstin_val and not frappe.db.exists("fundingagency_", gstin_val):
-			new_doc.set("gstin_of_funding_agency", None)
-
 		# Also resolve funding_agency from the Fund Received's project if still not set
 		if not new_doc.get("funding_agency") and fund_received_doc.get("prjreg_title"):
 			fa_name = frappe.db.get_value("Project Registration", fund_received_doc.prjreg_title, "funding_agen")
@@ -1284,3 +1492,245 @@ def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=No
 		frappe.throw("Document name is required to submit.")
 
 	return perform_fund_received_action(docname, "Submit")
+
+
+# ── OJS EDIT START ──────────────────────────────────────────────────────────
+# Author      : OJS
+# Date        : 2026-06-01
+# Time        : 15:29 IST
+# Description : New endpoint – update_fund_received
+#               Updates an existing Fund Received document.
+#               Accepts: bank_account, fund_transactions (with per-row file
+#               upload to MinIO), received_amt_breakup, and an optional new
+#               document_upload file. All file uploads follow the same MinIO
+#               path convention as save_fund_received.
+# ────────────────────────────────────────────────────────────────────────────
+@frappe.whitelist()
+def update_fund_received(docname, doc_data, project_reg=None):
+	"""
+	Update fields on an existing Fund Received document.
+
+	Expected ``doc_data`` JSON keys (all optional – only supplied keys are
+	updated):
+
+	Scalar fields
+	─────────────
+	  bank_account            – Bank Account Number / Scheme
+	  fund_received_amt       – Total fund received amount
+	  gst_invoice_issued      – Yes / No
+	  invoice_no              – Invoice number (when GST is issued)
+	  sanction_ref_no         – Sanction reference number
+
+	Main document file
+	──────────────────
+	  document_upload_name    – Filename for the supporting document
+	  document_upload_data    – Base-64 encoded file content (data-URI ok)
+
+	Sanction Transaction Details  (fund_transactions child table)
+	──────────────────────────────────────────────────────────────
+	  fund_transactions : list of dicts, each with:
+	    transaction_number    – UTR / Grant transaction number (required)
+	    transaction_date      – Date string (YYYY-MM-DD)
+	    amount                – Amount (₹)
+	    file_name             – (optional) filename for row attachment
+	    file_data             – (optional) base-64 content for row attachment
+
+	  When provided the ENTIRE child table is replaced (same as save logic).
+
+	Budget Breakup of the Received Amount  (received_amt_breakup child table)
+	─────────────────────────────────────────────────────────────────────────
+	  received_amt_breakup : list of dicts, each with:
+	    account_head          – Budget Head label or doc name
+	    amount_received       – Amount (₹)
+	    budget_year_funds_receive – (optional, default 1)
+	    remarks               – (optional)
+
+	  When provided the ENTIRE child table is replaced.
+
+	Returns
+	───────
+	  {"status": "success", "docname": "<name>"}  on success.
+	  Raises on error.
+	"""
+	try:
+		# ── 1. Parse incoming data ────────────────────────────────────────────
+		if isinstance(doc_data, str):
+			data = json.loads(doc_data)
+		else:
+			data = doc_data
+
+		print(f"[update_fund_received] docname={docname}, keys={list(data.keys())}")
+
+		# ── 2. Load the existing document ────────────────────────────────────
+		if not frappe.db.exists("Fund Received", docname):
+			frappe.throw(f"Fund Received '{docname}' not found.")
+
+		doc = frappe.get_doc("Fund Received", docname)
+
+		# ── 3. Update scalar fields (only if supplied in payload) ─────────────
+		scalar_fields = [
+			"bank_account",
+			"fund_received_amt",
+			"gst_invoice_issued",
+			"invoice_no",
+			"sanction_ref_no",
+			"prjreg_title",
+		]
+		for field in scalar_fields:
+			if field in data and data[field] not in [None, ""]:
+				doc.set(field, data[field])
+
+		# ── 4. Handle main document_upload file → MinIO ───────────────────────
+		if data.get("document_upload_name") and data.get("document_upload_data"):
+			try:
+				from rndopsapp.minio import get_rnd_file_service
+
+				file_data_uri = data["document_upload_data"]
+				if file_data_uri.startswith("data:"):
+					file_data_uri = file_data_uri.split(",", 1)[1]
+				file_bytes = base64.b64decode(file_data_uri)
+
+				upload_result = get_rnd_file_service().save_file(
+					filename=data["document_upload_name"],
+					content=file_bytes,
+					is_private=True,
+					doctype="Project Registration",
+					docname=project_reg or doc.prjreg_title,
+					folder="fund_received",
+				)
+
+				if upload_result.get("status"):
+					doc.document_upload = upload_result.get("data", {}).get("file_url")
+					print(f"✅ document_upload updated in MinIO: {doc.document_upload}")
+				else:
+					frappe.log_error(
+						f"MinIO upload failed for document_upload (update): {upload_result.get('message')}",
+						"Fund Received Update – Document Upload",
+					)
+			except Exception as _upload_err:
+				frappe.log_error(frappe.get_traceback(), "Fund Received Update – Document Upload Error")
+				print(f"❌ document_upload MinIO error (update): {_upload_err}")
+
+		# ── 5. Replace fund_transactions child table (Sanction Txn Details) ───
+		if "fund_transactions" in data:
+			# Build Budget Head lookup (needed for resolving account_head labels)
+			doc.set("fund_transactions", [])  # clear existing rows
+
+			for transaction in data["fund_transactions"]:
+				# Skip completely empty rows
+				if (
+					transaction.get("transaction_number") in [None, ""]
+					and transaction.get("amount", 0) == 0
+				):
+					continue
+
+				attachment_url = None
+
+				# Upload per-row attachment to MinIO if provided
+				if transaction.get("file_data") and transaction.get("file_name"):
+					try:
+						from rndopsapp.minio import get_rnd_file_service
+
+						file_data_uri = transaction["file_data"]
+						if file_data_uri.startswith("data:"):
+							file_data_uri = file_data_uri.split(",", 1)[1]
+						file_bytes = base64.b64decode(file_data_uri)
+
+						upload_result = get_rnd_file_service().save_file(
+							filename=transaction["file_name"],
+							content=file_bytes,
+							is_private=True,
+							doctype="Project Registration",
+							docname=project_reg or doc.prjreg_title,
+							folder="fundreceived",
+						)
+
+						if upload_result.get("status"):
+							attachment_url = upload_result.get("data", {}).get("file_url")
+							print(f"✅ fund_transactions row file uploaded: {attachment_url}")
+						else:
+							frappe.log_error(
+								f"MinIO upload failed for transaction row: {upload_result.get('message')}",
+								"Fund Received Update – Transaction File Upload",
+							)
+					except Exception as _trx_err:
+						frappe.log_error(
+							frappe.get_traceback(),
+							"Fund Received Update – Transaction File Upload Error",
+						)
+						print(f"❌ Transaction row MinIO error: {_trx_err}")
+
+				row_data = {
+					"transaction_number": transaction.get("transaction_number") or "",
+					"transaction_date": transaction.get("transaction_date"),
+					"amount": transaction.get("amount", 0),
+				}
+				if attachment_url:
+					row_data["attachment"] = attachment_url
+
+				doc.append("fund_transactions", row_data)
+
+		# ── 6. Replace received_amt_breakup child table (Budget Breakup) ──────
+		if "received_amt_breakup" in data:
+			# Build Budget Head label → name lookup
+			try:
+				budget_heads = frappe.get_all("Budget Head", fields=["name", "budget_head"])
+				bh_label_to_name = {b.budget_head: b.name for b in budget_heads}
+			except Exception as _bh_err:
+				print(f"DEBUG: Error fetching Budget Head lookup (update): {_bh_err}")
+				bh_label_to_name = {}
+
+			doc.set("received_amt_breakup", [])  # clear existing rows
+
+			for breakup in data["received_amt_breakup"]:
+				if (
+					breakup.get("account_head") in [None, ""]
+					and breakup.get("amount_received", 0) == 0
+				):
+					continue
+
+				raw_account_head = breakup.get("account_head") or ""
+
+				# Resolve label to Budget Head document name (same logic as save)
+				account_head_name = raw_account_head
+				if raw_account_head in bh_label_to_name:
+					account_head_name = bh_label_to_name[raw_account_head]
+					print(f"DEBUG (update): Resolved account_head '{raw_account_head}' → '{account_head_name}'")
+				else:
+					for label, name in bh_label_to_name.items():
+						if label.lower() == raw_account_head.lower():
+							account_head_name = name
+							print(
+								f"DEBUG (update): Case-insensitive match '{raw_account_head}' → '{account_head_name}'"
+							)
+							break
+
+				doc.append(
+					"received_amt_breakup",
+					{
+						"account_head": account_head_name,
+						"amount_received": breakup.get("amount_received", 0),
+						"budget_year_funds_receive": breakup.get("budget_year_funds_receive", 1),
+						"remarks": breakup.get("remarks") or "",
+					},
+				)
+
+		# ── 7. Save and commit ────────────────────────────────────────────────
+		# Preserve workflow_state across the save — Frappe may otherwise reset it
+		# when override_status is active and docstatus/workflow_state are out of sync.
+		current_workflow_state = doc.workflow_state
+		doc.flags.ignore_validate = False
+		doc.save(ignore_permissions=True)
+		# Re-apply the state in case Frappe reset it during save
+		if doc.workflow_state != current_workflow_state:
+			doc.db_set("workflow_state", current_workflow_state)
+		frappe.db.commit()
+
+		print(f"[update_fund_received] Successfully updated: {doc.name}")
+		return {"status": "success", "docname": doc.name}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Fund Received Update Error")
+		frappe.db.rollback()
+		frappe.throw(f"Failed to update Fund Received: {str(e)}")
+# ── OJS EDIT END ─────────────────────────────────────────────────────────────

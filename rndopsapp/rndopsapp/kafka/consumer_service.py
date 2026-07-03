@@ -20,14 +20,33 @@ def fetch_kafka_logs(log_type='consumer', lines=50, search_string=None):
 	return get_kafka_logs(log_type, lines, search_string)
 
 
+_MANUALLY_STOPPED_KEY = "kafka_consumer_manually_stopped"
+
+
+def _set_manually_stopped(value: bool):
+	try:
+		frappe.cache().set_value(_MANUALLY_STOPPED_KEY, value)
+	except Exception:
+		pass
+
+
+def _is_manually_stopped() -> bool:
+	try:
+		return bool(frappe.cache().get_value(_MANUALLY_STOPPED_KEY))
+	except Exception:
+		return False
+
+
 @frappe.whitelist()
 def start_kafka_consumer(**kwargs):
+	_set_manually_stopped(False)
 	from .consumer.manager import start_kafka_consumer as _fn
 	return _fn()
 
 
 @frappe.whitelist()
 def stop_kafka_consumer(**kwargs):
+	_set_manually_stopped(True)
 	from .consumer.manager import stop_kafka_consumer as _fn
 	return _fn()
 
@@ -82,16 +101,26 @@ def ensure_consumer_running():
 	"""
 	Called by the before_request hook on every HTTP request.
 	Guards:
-	  1. 60-second cooldown between restart attempts — prevents a crashing
-	     consumer from spamming restarts on every request.
-	  2. One Mattermost notification per worker-process lifetime — prevents
-	     multiple Gunicorn workers each sending a ping on every hot-reload.
+	  1. Redis heartbeat check — if any worker's consumer thread is alive,
+	     the heartbeat is fresh and other workers skip. Prevents N workers
+	     each running their own consumer thread.
+	  2. Skips auto-restart when the user has manually stopped the consumer
+	     via the Control Center — cleared only when user clicks Start.
+	  3. 60-second cooldown between restart attempts per worker — prevents
+	     a crashing consumer from spamming restarts on every request.
+	  4. One Mattermost notification per worker-process lifetime.
 	"""
 	global _restart_notified, _last_start_attempt
 	try:
-		from .consumer.manager import _consumer_thread, start_kafka_consumer
-		if _consumer_thread is not None and _consumer_thread.is_alive():
-			return  # fast path — nothing to do
+		from .consumer.manager import is_consumer_running_globally, start_kafka_consumer
+
+		# Fast path — Redis heartbeat confirms consumer is alive somewhere
+		if is_consumer_running_globally():
+			return
+
+		# Respect explicit user stop — don't auto-restart until user clicks Start
+		if _is_manually_stopped():
+			return
 
 		now = time.monotonic()
 		if now - _last_start_attempt < _RESTART_COOLDOWN:

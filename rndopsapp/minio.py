@@ -142,6 +142,17 @@ class RNDFileService:
     # CORE OPERATIONS
     # -------------------------
 
+    # ── OJS EDIT START ───────────────────────────────────────────────────────
+    # Author      : OJS
+    # Date        : 2026-06-01
+    # Time        : 15:36 IST
+    # Description : save_file is now idempotent on path.
+    #               If a tabFile row already exists for the same file_url
+    #               (same MinIO path), the object is overwritten in MinIO and
+    #               the existing tabFile row is updated — no duplicate is
+    #               created.  If no record exists, the path is created in
+    #               MinIO and a fresh tabFile row is inserted.
+    # ─────────────────────────────────────────────────────────────────────────
     def save_file(self, filename, content, is_private=True, doctype=None, docname=None, folder=None, use_hash=False):
         print(f"\n[MINIO] >>> save_file called")
         print(f"[MINIO]   filename   : {filename}")
@@ -156,60 +167,82 @@ class RNDFileService:
             file_hash = self._hash(data)
             print(f"[MINIO]   file_hash  : {file_hash}")
 
-            # Check for duplicate scoped to same doctype+docname — replace if found
-            existing = frappe.db.get_value(
-                "File",
-                {"content_hash": file_hash, "attached_to_doctype": doctype, "attached_to_name": docname},
-                "file_url"
-            )
-            if existing:
-                print(f"[MINIO]   DUPLICATE found for same doc, replacing: {existing}")
-
             path = self._path(filename, file_hash, is_private, doctype, docname, folder, use_hash=use_hash)
             mime = self._mime(filename)
+            file_url = f"/{path}"
             print(f"[MINIO]   minio path : {path}")
+            print(f"[MINIO]   file_url   : {file_url}")
             print(f"[MINIO]   mime type  : {mime}")
 
-            # Upload to MinIO
-            print(f"[MINIO]   Uploading to MinIO...")
+            # ── Check whether a tabFile record already exists at this path ──
+            existing_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+
+            # ── Upload (overwrite if already present) ──────────────────────
+            # MinIO put_object always overwrites; no pre-creation of "folders"
+            # needed — the path is just a key prefix.
+            print(f"[MINIO]   {'Overwriting' if existing_name else 'Uploading'} object in MinIO...")
             self.storage.upload(path, data, mime)
             print(f"[MINIO]   MinIO upload SUCCESS")
 
-            file_url = f"/{path}"
-            print(f"[MINIO]   file_url   : {file_url}")
+            now = frappe.utils.now()
 
-            # Save metadata in Frappe via direct DB insert (bypasses all validators)
             try:
-                print(f"[MINIO]   Inserting Frappe File doc via direct DB...")
-                file_doc_name = frappe.generate_hash(length=10)
-                now = frappe.utils.now()
-                frappe.db.sql("""
-                    INSERT INTO `tabFile`
-                        (name, file_name, file_url, is_private,
-                         attached_to_doctype, attached_to_name,
-                         content_hash, file_size,
-                         owner, creation, modified, modified_by, docstatus, idx)
-                    VALUES
-                        (%(name)s, %(file_name)s, %(file_url)s, %(is_private)s,
-                         %(attached_to_doctype)s, %(attached_to_name)s,
-                         %(content_hash)s, %(file_size)s,
-                         %(owner)s, %(creation)s, %(modified)s, %(modified_by)s, 0, 0)
-                """, {
-                    "name": file_doc_name,
-                    "file_name": filename,
-                    "file_url": file_url,
-                    "is_private": 1 if is_private else 0,
-                    "attached_to_doctype": doctype,
-                    "attached_to_name": docname,
-                    "content_hash": file_hash,
-                    "file_size": len(data),
-                    "owner": frappe.session.user,
-                    "creation": now,
-                    "modified": now,
-                    "modified_by": frappe.session.user,
-                })
-                frappe.db.commit()
-                print(f"[MINIO]   Frappe File doc inserted: {file_doc_name}")
+                if existing_name:
+                    # ── PATH EXISTS: update the existing tabFile row ───────
+                    print(f"[MINIO]   Path already exists (tabFile: {existing_name}). Updating record...")
+                    frappe.db.sql("""
+                        UPDATE `tabFile`
+                        SET
+                            file_name     = %(file_name)s,
+                            content_hash  = %(content_hash)s,
+                            file_size     = %(file_size)s,
+                            is_private    = %(is_private)s,
+                            modified      = %(modified)s,
+                            modified_by   = %(modified_by)s
+                        WHERE name = %(name)s
+                    """, {
+                        "name": existing_name,
+                        "file_name": filename,
+                        "content_hash": file_hash,
+                        "file_size": len(data),
+                        "is_private": 1 if is_private else 0,
+                        "modified": now,
+                        "modified_by": frappe.session.user,
+                    })
+                    frappe.db.commit()
+                    print(f"[MINIO]   tabFile row updated: {existing_name}")
+                else:
+                    # ── PATH IS NEW: insert a fresh tabFile row ───────────
+                    print(f"[MINIO]   Path is new. Inserting tabFile row...")
+                    file_doc_name = frappe.generate_hash(length=10)
+                    frappe.db.sql("""
+                        INSERT INTO `tabFile`
+                            (name, file_name, file_url, is_private,
+                             attached_to_doctype, attached_to_name,
+                             content_hash, file_size,
+                             owner, creation, modified, modified_by, docstatus, idx)
+                        VALUES
+                            (%(name)s, %(file_name)s, %(file_url)s, %(is_private)s,
+                             %(attached_to_doctype)s, %(attached_to_name)s,
+                             %(content_hash)s, %(file_size)s,
+                             %(owner)s, %(creation)s, %(modified)s, %(modified_by)s, 0, 0)
+                    """, {
+                        "name": file_doc_name,
+                        "file_name": filename,
+                        "file_url": file_url,
+                        "is_private": 1 if is_private else 0,
+                        "attached_to_doctype": doctype,
+                        "attached_to_name": docname,
+                        "content_hash": file_hash,
+                        "file_size": len(data),
+                        "owner": frappe.session.user,
+                        "creation": now,
+                        "modified": now,
+                        "modified_by": frappe.session.user,
+                    })
+                    frappe.db.commit()
+                    print(f"[MINIO]   tabFile row inserted: {file_doc_name}")
+
             except Exception as meta_err:
                 print(f"[MINIO]   WARNING: Frappe metadata save failed: {meta_err}")
                 logger.warning(f"File uploaded to MinIO but Frappe metadata save failed: {meta_err}")
@@ -218,13 +251,15 @@ class RNDFileService:
             return self._resp(True, "File saved", {
                 "file_url": file_url,
                 "path": path,
-                "hash": file_hash
+                "hash": file_hash,
+                "existed": bool(existing_name),
             })
 
         except Exception as e:
             print(f"[MINIO] <<< save_file FAILED: {e}\n")
             logger.exception("Save failed")
             return self._resp(False, str(e))
+    # ── OJS EDIT END ─────────────────────────────────────────────────────────
 
     def get_file(self, file_url):
         try:

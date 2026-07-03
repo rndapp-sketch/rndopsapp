@@ -8,6 +8,7 @@
  "field_order": [
   "project_title",
   "principal_investigator",
+  "category_e",
   "client",
   "funding_agency",
   "gstin_of_funding_agency",
@@ -26,7 +27,8 @@
   "additional_project_credits",
   "totals_section",
   "total_gst",
-  "total_budget"
+  "total_budget",
+  "fund_received_ref"
  ],
  "fields": [
   {
@@ -38,7 +40,7 @@
   {
    "fieldname": "principal_investigator",
    "fieldtype": "Link",
-   "label": "Principal Investigator",
+   "label": "Principal Investigator/Consultant",
    "options": "User"
   },
   {
@@ -97,7 +99,6 @@
    "default": "0.1",
    "fieldname": "overhead_multiplier",
    "fieldtype": "Float",
-   "hidden": 1,
    "label": "Overhead Multiplier"
   },
   {
@@ -108,8 +109,7 @@
   {
    "fieldname": "overhead_amount",
    "fieldtype": "Currency",
-   "label": "Overhead Amount",
-   "read_only": 1
+   "label": "Overhead Amount"
   },
   {
    "fieldname": "credit_distribution_section",
@@ -143,12 +143,24 @@
    "fieldtype": "Currency",
    "label": "Total Budget",
    "read_only": 1
+  },
+  {
+   "default": "Category E",
+   "fieldname": "category_e",
+   "fieldtype": "Data",
+   "label": "Category"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-16 11:19:36.856628",
+ "modified": "2026-06-24 12:42:25.468130",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "E Non Routine Deposit Slip",

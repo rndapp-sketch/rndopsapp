@@ -22,12 +22,20 @@ from .producer import (
     publish_commit,
     publish_payment,
 )
+from .batch_dto import (
+    AccountHeadCommitBatchItemDTO,
+    AccountHeadCommitBatchEvent,
+)
+from .batch_producer import publish_commit_batch
 
 
 __all__ = [
     # DTOs
     "AccountHeadCommitDTO",
     "AccountHeadPaymentDTO",
+    # Batch DTOs
+    "AccountHeadCommitBatchItemDTO",
+    "AccountHeadCommitBatchEvent",
     # Mappers
     "AccountHeadCommitMapper",
     "AccountHeadPaymentMapper",
@@ -44,4 +52,5 @@ __all__ = [
     # Convenience Functions
     "publish_commit",
     "publish_payment",
+    "publish_commit_batch",
 ]

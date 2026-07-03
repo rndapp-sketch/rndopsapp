@@ -26,7 +26,8 @@
   "additional_project_credits",
   "totals_section",
   "gst_final",
-  "total"
+  "total",
+  "fund_received_ref"
  ],
  "fields": [
   {
@@ -97,14 +98,12 @@
   {
    "fieldname": "gst_amount",
    "fieldtype": "Currency",
-   "label": "GST Amount",
-   "read_only": 1
+   "label": "GST Amount"
   },
   {
    "fieldname": "training_fee",
    "fieldtype": "Currency",
-   "label": "Training Fee",
-   "read_only": 1
+   "label": "License Fee"
   },
   {
    "fieldname": "overhead_amount",
@@ -136,20 +135,25 @@
   {
    "fieldname": "gst_final",
    "fieldtype": "Currency",
-   "label": "GST (Final)",
-   "read_only": 1
+   "label": "GST (Final)"
   },
   {
    "fieldname": "total",
    "fieldtype": "Currency",
    "label": "Total",
    "read_only": 1
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-16 11:19:41.482176",
+ "modified": "2026-06-17 15:25:40.614491",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Other Event Deposit Slip",

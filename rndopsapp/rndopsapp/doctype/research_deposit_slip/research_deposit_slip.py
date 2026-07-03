@@ -15,12 +15,12 @@ def extract_eval_expression(expression):
 	"""
 	if not expression:
 		return None
-	
+
 	expression = str(expression).strip()
-	
+
 	if expression.startswith("eval:"):
 		return expression[5:].strip()
-	
+
 	return expression
 
 class ResearchDepositSlip(Document):
@@ -31,25 +31,21 @@ class ResearchDepositSlip(Document):
 		"""
 		Trigger Kafka sync on workflow state change to 'Approved' or 'Verified'.
 		"""
+		if self.flags.get('skip_kafka_sync'):
+			return
 		try:
-			# Check for state transition
 			doc_before_save = self.get_doc_before_save()
 			old_state = doc_before_save.workflow_state if doc_before_save else None
 			new_state = self.workflow_state
-			
-			# Define states that trigger sync
 			target_states = ["Approved", "Verified", "Submitted"]
-			
-			# Trigger if entering target state (and not already there)
-			# OR if submitting (docstatus becomes 1)
-			if (new_state in target_states and old_state != new_state):
+
+			if new_state in target_states and old_state != new_state:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
 				publish_research_deposit_slip(self)
-			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0):
-				# Fallback if workflow state not used but doc submitted
+			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0) and new_state not in target_states:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for Submit")
 				publish_research_deposit_slip(self)
-				
+
 		except Exception as e:
 			frappe.log_error(f"Error in Research Deposit Slip on_update: {e}", "Research Deposit Slip Error")
 			pass
@@ -66,7 +62,7 @@ def get_research_deposit_slip_fields(doc_name=None):
 	fields = []
 	link_fields = []
 	child_table_meta = {}
-	
+
 	for f in meta.get("fields"):
 		field_data = {
 			"fieldname": f.fieldname,
@@ -88,10 +84,10 @@ def get_research_deposit_slip_fields(doc_name=None):
 			"read_only_depends_on_eval": extract_eval_expression(f.read_only_depends_on),
 		}
 		fields.append(field_data)
-		
+
 		if f.fieldtype == "Link" and f.options:
 			link_fields.append({"fieldname": f.fieldname, "options": f.options})
-		
+
 		# Fetch child table metadata for Table fields
 		if f.fieldtype == "Table" and f.options:
 			try:
@@ -157,12 +153,12 @@ def get_research_deposit_slip_fields(doc_name=None):
 	for link_field in link_fields:
 		fieldname = link_field["fieldname"]
 		linked_doctype = link_field["options"]
-		
+
 		try:
 			# Get title field for linked doctype if available
 			linked_meta = frappe.get_meta(linked_doctype)
 			title_field = linked_meta.title_field or "name"
-			
+
 			# Special handling for User doctype
 			if linked_doctype == "User":
 				link_options[fieldname] = frappe.get_all(
@@ -264,7 +260,7 @@ def save_research_deposit_slip(doc_data):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Research Deposit Slip Save Error")
 		frappe.db.rollback()
-		frappe.throw(f"Failed to save Research Deposit Slip: {str(e)}")
+		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
 def submit_research_deposit_slip(docname):
@@ -273,7 +269,7 @@ def submit_research_deposit_slip(docname):
 	"""
 	try:
 		doc = frappe.get_doc("Research Deposit Slip", docname)
-		
+
 		if doc.docstatus == 0:
 			doc.submit()
 			frappe.db.commit()

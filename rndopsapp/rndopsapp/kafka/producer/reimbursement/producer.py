@@ -7,7 +7,7 @@ from typing import Optional
 from .mapper import AccountHeadCommitMapper, AccountHeadPaymentMapper
 from .validator import AccountHeadCommitValidator, AccountHeadPaymentValidator, ValidationError
 from ...config import SCHEMA_VERSION_DEPOSIT_SLIP
-from ...utils import publish_message, is_kafka_available
+from ...utils import publish_message, is_kafka_available, mm_notify
 from ...logs import log_producer_event, log_error
 
 
@@ -43,7 +43,8 @@ class AccountHeadCommitProducer:
         validate: bool = True,
         log_errors: bool = True,
         frap_app_id: Optional[str] = None,
-        ref_details: Optional[str] = None
+        ref_details: Optional[str] = None,
+        module_id: Optional[int] = None
     ) -> bool:
         """
         Publish Account Head Commit to Kafka.
@@ -58,6 +59,7 @@ class AccountHeadCommitProducer:
             validate: Whether to validate before publishing
             log_errors: Whether to log validation errors
             frap_app_id: Frap App ID (optional, defaults to project_name in mapper)
+            module_id: optional int override (e.g. 14 for ICSS PO re-commit)
 
         Returns:
             bool: True if successful, False otherwise
@@ -69,6 +71,11 @@ class AccountHeadCommitProducer:
                 cls.TOPIC,
                 "SKIPPED",
                 "Kafka not available"
+            )
+            mm_notify(
+                f":warning: **Kafka Commit SKIPPED** — Kafka not available\n"
+                f"**Doc:** {doc.name}\n"
+                f"**Topic:** {cls.TOPIC}"
             )
             return False
 
@@ -83,7 +90,7 @@ class AccountHeadCommitProducer:
 
             # Map to event DTO
             event = AccountHeadCommitMapper.map_to_event(
-                doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details
+                doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details, module_id
             )
 
             # Validate
@@ -106,6 +113,12 @@ class AccountHeadCommitProducer:
                             "VALIDATION_FAILED",
                             str(ve)
                         )
+                    mm_notify(
+                        f":x: **Kafka Commit Validation FAILED**\n"
+                        f"**Doc:** {doc.name}\n"
+                        f"**Topic:** {cls.TOPIC}\n"
+                        f"**Error:** {str(ve)}"
+                    )
                     return False
 
             # Convert to Kafka payload
@@ -128,6 +141,12 @@ class AccountHeadCommitProducer:
                     "SUCCESS",
                     f"Successfully published | projectNumber={project_name}"
                 )
+                mm_notify(
+                    f":white_check_mark: **Kafka Commit Published**\n"
+                    f"**Doc:** {doc.name}\n"
+                    f"**Topic:** {cls.TOPIC}\n"
+                    f"**Project:** {project_name}"
+                )
             else:
                 log_producer_event(
                     "ACCOUNT_HEAD_COMMIT",
@@ -136,6 +155,12 @@ class AccountHeadCommitProducer:
                     "FAILED",
                     "Failed to publish to Kafka"
                 )
+                mm_notify(
+                    f":x: **Kafka Commit FAILED**\n"
+                    f"**Doc:** {doc.name}\n"
+                    f"**Topic:** {cls.TOPIC}\n"
+                    f"**Project:** {project_name}"
+                )
 
             return result
 
@@ -143,6 +168,12 @@ class AccountHeadCommitProducer:
             error_msg = f"Error publishing commit: {str(e)}"
             log_error(error_msg, "ACCOUNT_HEAD_COMMIT_ERROR", exc_info=True)
             frappe.log_error(error_msg, "Account Head Commit Kafka Error")
+            mm_notify(
+                f":rotating_light: **Kafka Commit Exception**\n"
+                f"**Doc:** {doc.name}\n"
+                f"**Topic:** {cls.TOPIC}\n"
+                f"**Error:** {str(e)}"
+            )
             return False
 
 
@@ -199,6 +230,11 @@ class AccountHeadPaymentProducer:
                 "SKIPPED",
                 "Kafka not available"
             )
+            mm_notify(
+                f":warning: **Kafka Payment SKIPPED** — Kafka not available\n"
+                f"**Doc:** {getattr(doc, 'name', 'NEW')}\n"
+                f"**Topic:** {cls.TOPIC}"
+            )
             return False
 
         try:
@@ -237,6 +273,12 @@ class AccountHeadPaymentProducer:
                             "VALIDATION_FAILED",
                             str(ve)
                         )
+                    mm_notify(
+                        f":x: **Kafka Payment Validation FAILED**\n"
+                        f"**Doc:** {doc_name}\n"
+                        f"**Topic:** {cls.TOPIC}\n"
+                        f"**Error:** {str(ve)}"
+                    )
                     return False
 
             # Convert to Kafka payload
@@ -262,6 +304,12 @@ class AccountHeadPaymentProducer:
                     "SUCCESS",
                     f"Successfully published | projectNumber={partition_key}"
                 )
+                mm_notify(
+                    f":white_check_mark: **Kafka Payment Published**\n"
+                    f"**Doc:** {doc_name}\n"
+                    f"**Topic:** {cls.TOPIC}\n"
+                    f"**Project:** {partition_key}"
+                )
             else:
                 log_producer_event(
                     "ACCOUNT_HEAD_PAYMENT",
@@ -270,6 +318,12 @@ class AccountHeadPaymentProducer:
                     "FAILED",
                     "Failed to publish to Kafka"
                 )
+                mm_notify(
+                    f":x: **Kafka Payment FAILED**\n"
+                    f"**Doc:** {doc_name}\n"
+                    f"**Topic:** {cls.TOPIC}\n"
+                    f"**Project:** {partition_key}"
+                )
 
             return result
 
@@ -277,6 +331,12 @@ class AccountHeadPaymentProducer:
             error_msg = f"Error publishing payment: {str(e)}"
             log_error(error_msg, "ACCOUNT_HEAD_PAYMENT_ERROR", exc_info=True)
             frappe.log_error(error_msg, "Account Head Payment Kafka Error")
+            mm_notify(
+                f":rotating_light: **Kafka Payment Exception**\n"
+                f"**Doc:** {doc_name}\n"
+                f"**Topic:** {cls.TOPIC}\n"
+                f"**Error:** {str(e)}"
+            )
             return False
 
 
@@ -294,7 +354,8 @@ def publish_commit(
     validate: bool = True,
     log_errors: bool = True,
     frap_app_id: Optional[str] = None,
-    ref_details: Optional[str] = None
+    ref_details: Optional[str] = None,
+    module_id: Optional[int] = None
 ) -> bool:
     """
     Convenience function to publish Account Head Commit.
@@ -309,12 +370,13 @@ def publish_commit(
         validate: Whether to validate before publishing
         log_errors: Whether to log validation errors
         frap_app_id: Frap App ID (optional, defaults to project_name in mapper)
+        module_id: optional int override (e.g. 14 for ICSS PO re-commit)
 
     Returns:
         bool: True if successful, False otherwise
     """
     return AccountHeadCommitProducer.publish(
-        doc, commit_amount, budget_head, project_name, bmr, bill_amount, validate, log_errors, frap_app_id, ref_details
+        doc, commit_amount, budget_head, project_name, bmr, bill_amount, validate, log_errors, frap_app_id, ref_details, module_id
     )
 
 

@@ -181,7 +181,7 @@ def extract_eval_expression(expression):
 # into (connect=2s, read=3s) so a dead/unreachable Mattermost
 # server fails fast and NEVER blocks or affects functionality.
 # ============================================================
-def notify_mattermost(message: str, urgent: bool = False) -> None:
+def notify_mattermost(message: str, urgent: bool = False, channel_id: str = "ihmkbbfq9ibzugfpy9rncq5yke") -> None:
 	"""
 	Sends a message to the configured Mattermost channel.
 	- connect timeout = 2 s : fails fast if server is unreachable
@@ -198,7 +198,7 @@ def notify_mattermost(message: str, urgent: bool = False) -> None:
 		}
 
 		_payload = {
-			"channel_id": "ihmkbbfq9ibzugfpy9rncq5yke",
+			"channel_id": channel_id,
 			"message": str(message),
 		}
 
@@ -317,9 +317,46 @@ def submit_project_registration(docname):
 		if "Head Approval" in next_state and not doc.head_approver:
 			frappe.throw("Cannot submit: The designated Department Head approver has not been determined.")
 
-		# ✅ Update workflow and submit
+		# START MKY 2026-05-29 12:52:00 IST - If submitting user IS the dept head, skip
+		# "Pending Head Approval" and jump directly to the next state (e.g. Pending Staff Approval).
+		# Uses pre-set-then-reload so validate_workflow sees no in-flight transition → no role error.
+		submitting_user = frappe.session.user
+		is_head_submitting = (
+			submitting_user == doc.head_approver
+			or submitting_user == doc.department_head
+		)
+
+		if is_head_submitting and "Head Approval" in next_state:
+			# Walk the workflow to find the state AFTER "Pending Head Approval"
+			post_head_state = None
+			for t in workflow_doc.transitions:
+				if t.state == next_state:
+					post_head_state = t.next_state
+					break
+			if post_head_state:
+				print(
+					f"[submit_project_registration] Head '{submitting_user}' is submitting — "
+					f"skipping '{next_state}' → going directly to '{post_head_state}'"
+				)
+				next_state = post_head_state
+
+		# Pre-set target workflow_state in DB so validate_workflow sees no transition
+		# (in-memory state == DB state → role check on the transition is not triggered).
+		frappe.db.set_value(
+			"Project Registration", docname, "workflow_state", next_state, update_modified=False
+		)
+		frappe.db.commit()
+
+		# Reload so in-memory doc matches the DB state before submit()
+		doc = frappe.get_doc("Project Registration", docname)
 		doc.workflow_state = next_state
+		doc.department_head = dept_doc.dept_head
+		doc.head_approver = dept_doc.dept_head
+
+		# ✅ Submit — validate_workflow passes since state already matches DB
+		doc.flags.ignore_mandatory = True
 		doc.submit()
+		# END MKY
 
 		notify_mattermost(
 			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
@@ -1184,6 +1221,8 @@ def save_project_data(doc, html_content=None):
 	# print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
 	# print(doc)
 	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc}")
+	upload_events = []
+	new_project = None
 	try:
 		# The 'doc' argument from the frontend is a JSON string, so we parse it.
 		# If the frontend sends an object directly, Frappe might auto-parse it.
@@ -1231,16 +1270,35 @@ def save_project_data(doc, html_content=None):
 									folder="attachments",
 								)
 								if upload_result.get("status"):
+									file_url = upload_result.get("data", {}).get("file_url")
+									upload_events.append({
+										"filename": attachment.get("file_name"),
+										"fieldname": fieldname,
+										"status": "success",
+										"file_url": file_url,
+									})
 									child_row = dict(child_row)
-									child_row["attachment"] = upload_result.get("data", {}).get("file_url")
+									child_row["attachment"] = file_url
 								else:
+									upload_events.append({
+										"filename": attachment.get("file_name"),
+										"fieldname": fieldname,
+										"status": "failed",
+										"message": upload_result.get("message"),
+									})
 									frappe.log_error(
 										upload_result.get("message"),
 										f"Supporting doc upload failed for {new_project.name}"
 									)
 									child_row = dict(child_row)
 									child_row.pop("attachment", None)
-							except Exception:
+							except Exception as upload_error:
+								upload_events.append({
+									"filename": attachment.get("file_name"),
+									"fieldname": fieldname,
+									"status": "error",
+									"message": str(upload_error),
+								})
 								frappe.log_error(frappe.get_traceback(), f"Supporting doc upload error for {new_project.name}")
 								child_row = dict(child_row)
 								child_row.pop("attachment", None)
@@ -1269,9 +1327,22 @@ def save_project_data(doc, html_content=None):
 					)
 
 					if upload_result.get("status"):
+						file_url = upload_result.get("data", {}).get("file_url")
+						upload_events.append({
+							"filename": value.get("file_name"),
+							"fieldname": fieldname,
+							"status": "success",
+							"file_url": file_url,
+						})
 						# Set the field to the MinIO file URL instead of the Base64 dict
-						new_project.set(fieldname, upload_result.get("data", {}).get("file_url"))
+						new_project.set(fieldname, file_url)
 					else:
+						upload_events.append({
+							"filename": value.get("file_name"),
+							"fieldname": fieldname,
+							"status": "failed",
+							"message": upload_result.get("message"),
+						})
 						frappe.log_error(f"File upload failed: {upload_result.get('message')}",
 							f"Attach Field Upload Failed for {fieldname}")
 				else:
@@ -1319,8 +1390,20 @@ def save_project_data(doc, html_content=None):
 				)
 
 				if html_result.get("status"):
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "success",
+						"file_url": html_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"HTML file saved to MinIO: {html_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "failed",
+						"message": html_result.get("message"),
+					})
 					frappe.log_error(f"HTML upload failed: {html_result.get('message')}",
 						f"save_project_data: HTML Upload Failed for {new_project.name}")
 
@@ -1336,12 +1419,30 @@ def save_project_data(doc, html_content=None):
 				)
 
 				if pdf_result.get("status"):
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "success",
+						"file_url": pdf_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"PDF file saved to MinIO: {pdf_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "failed",
+						"message": pdf_result.get("message"),
+					})
 					frappe.log_error(f"PDF upload failed: {pdf_result.get('message')}",
 						f"save_project_data: PDF Upload Failed for {new_project.name}")
 
 			except Exception as pdf_error:
+				upload_events.append({
+					"filename": f"{new_project.name}.html / {new_project.name}.pdf",
+					"fieldname": "html_content",
+					"status": "error",
+					"message": str(pdf_error),
+				})
 				frappe.log_error(
 					frappe.get_traceback(),
 					f"save_project_data: PDF conversion/save error for {new_project.name}",
@@ -1377,13 +1478,40 @@ def save_project_data(doc, html_content=None):
 		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost success notification for save_project_data
 		# ============================================================
+		uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+		else:
+			files_block = "   (no uploaded file paths)"
+
+		if upload_events:
+			upload_status_lines = []
+			for event in upload_events:
+				line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+				if event.get("file_url"):
+					line += f" -> {event.get('file_url')}"
+				if event.get("message"):
+					line += f" ({event.get('message')})"
+				upload_status_lines.append(line)
+			upload_status_block = "\n".join(upload_status_lines)
+		else:
+			upload_status_block = "   (no file uploads attempted)"
+
 		notify_mattermost(
-			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
-			f"✅ [save_project_data] SUCCESS ✅\n"
-			f"Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Docname : {new_project.name}\n"
-			f"User    : {frappe.session.user}\n"
-			f"Message : Project Registration Successful"
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ✅ [save_project_data] SUCCESS              │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname : {new_project.name}\n"
+			f" User    : {frappe.session.user}\n"
+			f" Uploads : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			" Upload Status:\n"
+			f"{upload_status_block}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```"
 		)
 		# END OF EDIT — OJS | 2026-04-21 01:43 IST
 		# ============================================================
@@ -1402,13 +1530,44 @@ def save_project_data(doc, html_content=None):
 		# EDITED BY OJS | 2026-04-21 01:46 IST
 		# START OF EDIT — Error notification: actual exception first
 		# ============================================================
+		docname = new_project.name if new_project and getattr(new_project, "name", None) else "N/A"
+		uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+		else:
+			files_block = "   (no uploaded file paths)"
+
+		if upload_events:
+			upload_status_lines = []
+			for event in upload_events:
+				line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+				if event.get("file_url"):
+					line += f" -> {event.get('file_url')}"
+				if event.get("message"):
+					line += f" ({event.get('message')})"
+				upload_status_lines.append(line)
+			upload_status_block = "\n".join(upload_status_lines)
+		else:
+			upload_status_block = "   (no file uploads attempted)"
+
 		notify_mattermost(
-			f"❌ -=-=-=-=-=-=❌-=-=-=-=-=-❌=-=-=-=-=-=-=-=❌-=-=-=-=-=-❌ \n"
-			f"❌ [save_project_data] ERROR ❌\n"
-			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Exception : {type(e).__name__}: {str(e)}\n"
-			f"User      : {frappe.session.user}\n"
-			f"---TRACEBACK---\n{_tb}",
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ❌ [save_project_data] ERROR                │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname   : {docname}\n"
+			f" User      : {frappe.session.user}\n"
+			f" Exception : {type(e).__name__}: {str(e)}\n"
+			f" Uploads   : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			" Upload Status:\n"
+			f"{upload_status_block}\n"
+			" Traceback:\n"
+			f"{_tb}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```",
 			urgent=True,
 		)
 		# END OF EDIT — OJS | 2026-04-21 01:46 IST
@@ -1546,6 +1705,8 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 
 	# Now 'data' is a dictionary
 	frappe.logger().warning(f"Jimmy Logging Debug save project data keys: {list(data.keys())}")
+	upload_events = []
+	doc = None
 	
 	if data.get("implementation_department"):
 		# --- Fetch linked Department_prornd document ---
@@ -1794,13 +1955,32 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 								folder=get_file_category_for_doctype(doc.doctype, "upload_supporting_docs"),
 							)
 							if upload_result.get("status"):
-								update_data["project_file"] = upload_result["data"]["file_url"]
+								file_url = upload_result["data"]["file_url"]
+								upload_events.append({
+									"filename": file_entry["filename"],
+									"fieldname": table_fieldname,
+									"status": "success",
+									"file_url": file_url,
+								})
+								update_data["project_file"] = file_url
 							else:
+								upload_events.append({
+									"filename": file_entry["filename"],
+									"fieldname": table_fieldname,
+									"status": "failed",
+									"message": upload_result.get("message"),
+								})
 								frappe.log_error(
 									upload_result.get("message"),
 									f"Supporting doc upload failed for {doc.name}"
 								)
-						except Exception:
+						except Exception as upload_error:
+							upload_events.append({
+								"filename": file_entry.get("filename") if isinstance(file_entry, dict) else row_filename,
+								"fieldname": table_fieldname,
+								"status": "error",
+								"message": str(upload_error),
+							})
 							frappe.log_error(frappe.get_traceback(), f"Supporting doc upload error for {doc.name}")
 
 				child = doc.append(table_fieldname, {})
@@ -1916,12 +2096,30 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 					# ============================================================
 
 					if upload_result.get("status"):
+						upload_events.append({
+							"filename": filename,
+							"fieldname": _field_for_category,
+							"status": "success",
+							"file_url": upload_result.get("data", {}).get("file_url"),
+						})
 						frappe.logger().info(f"File uploaded to MinIO: {filename} -> {upload_result.get('data', {}).get('file_url')}")
 					else:
+						upload_events.append({
+							"filename": filename,
+							"fieldname": _field_for_category,
+							"status": "failed",
+							"message": upload_result.get("message"),
+						})
 						frappe.log_error(f"MinIO upload failed: {upload_result.get('message')}",
 							f"save_project_draft: file upload error for {filename}")
 
 				except Exception as fe:
+						upload_events.append({
+							"filename": f.get("filename") or f.get("file_name") or f.get("name"),
+							"fieldname": f.get("fieldname") or "attachments",
+							"status": "error",
+							"message": str(fe),
+						})
 						frappe.log_error(
 							frappe.get_traceback(),
 							f"save_project_draft: file upload error for {f.get('filename')}",
@@ -1956,8 +2154,20 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				)
 
 				if html_result.get("status"):
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "success",
+						"file_url": html_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"HTML file saved to MinIO: {html_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": html_filename,
+						"fieldname": "html_content",
+						"status": "failed",
+						"message": html_result.get("message"),
+					})
 					frappe.log_error(f"HTML upload failed: {html_result.get('message')}",
 						f"save_project_draft: HTML Upload Failed for {doc.name}")
 
@@ -1972,8 +2182,20 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				)
 
 				if pdf_result.get("status"):
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "success",
+						"file_url": pdf_result.get("data", {}).get("file_url"),
+					})
 					frappe.logger().info(f"PDF file saved to MinIO: {pdf_result.get('data', {}).get('file_url')}")
 				else:
+					upload_events.append({
+						"filename": pdf_filename,
+						"fieldname": "html_content_pdf",
+						"status": "failed",
+						"message": pdf_result.get("message"),
+					})
 					frappe.log_error(f"PDF upload failed: {pdf_result.get('message')}",
 						f"save_project_draft: PDF Upload Failed for {doc.name}")
 
@@ -1997,6 +2219,12 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				frappe.db.commit()
 
 			except Exception as pdf_error:
+				upload_events.append({
+					"filename": f"{doc.name}.html / {doc.name}.pdf",
+					"fieldname": "html_content",
+					"status": "error",
+					"message": str(pdf_error),
+				})
 				print(f"DEBUG ERROR: PDF conversion/save error: {str(pdf_error)}")
 				frappe.log_error(
 					frappe.get_traceback(),
@@ -2009,15 +2237,56 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		# ============================================================
 		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost success notification for save_project_draft
+		# Entire block is isolated: any failure here NEVER affects the save result.
 		# ============================================================
-		notify_mattermost(
-			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
-			f"✅ [save_project_draft] SUCCESS ✅\n"
-			f"Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Docname : {doc.name}\n"
-			f"User    : {frappe.session.user}\n"
-			f"Status  : Draft saved successfully"
-		)
+		try:
+			uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+			if uploaded_file_urls:
+				files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+			else:
+				files_block = "   (no uploaded file paths)"
+
+			if upload_events:
+				upload_status_lines = []
+				for event in upload_events:
+					line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+					if event.get("file_url"):
+						line += f" -> {event.get('file_url')}"
+					if event.get("message"):
+						line += f" ({event.get('message')})"
+					upload_status_lines.append(line)
+				upload_status_block = "\n".join(upload_status_lines)
+			else:
+				upload_status_block = "   (no file uploads attempted)"
+
+			notify_mattermost(
+				"```\n"
+				"┌──────────────────────────────────────────────┐\n"
+				"│  ✅ [save_project_draft] SUCCESS             │\n"
+				"├──────────────────────────────────────────────┤\n"
+				f" Time    : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+				f" Docname : {doc.name}\n"
+				f" User    : {frappe.session.user}\n"
+				f" Uploads : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+				f" Files ({len(uploaded_file_urls)}):\n"
+				f"{files_block}\n"
+				" Upload Status:\n"
+				f"{upload_status_block}\n"
+				"└──────────────────────────────────────────────┘\n"
+				"```"
+			)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "save_project_draft: Mattermost status notification failed (non-fatal)")
+
+		try:
+			_doc_json = json.dumps(doc.as_dict(), indent=2, default=str)
+			notify_mattermost(
+				f"```json\n{_doc_json}\n```",
+				channel_id="cp3cjfc14in15byj13onii3z5o",
+			)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "save_project_draft: Mattermost JSON publish failed (non-fatal)")
+
 		# END OF EDIT — OJS | 2026-04-21 01:43 IST
 		# ============================================================
 		return {"docname": doc.name}
@@ -2029,13 +2298,44 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 		# EDITED BY OJS | 2026-04-21 01:43 IST
 		# START OF EDIT — Mattermost error notification for save_project_draft
 		# ============================================================
+		docname = doc.name if doc and getattr(doc, "name", None) else (docname or data.get("name") or "N/A")
+		uploaded_file_urls = [event.get("file_url") for event in upload_events if event.get("file_url")]
+		if uploaded_file_urls:
+			files_block = "\n".join(f"   • {file_url}" for file_url in uploaded_file_urls)
+		else:
+			files_block = "   (no uploaded file paths)"
+
+		if upload_events:
+			upload_status_lines = []
+			for event in upload_events:
+				line = f"   • [{event.get('status', 'unknown')}] {event.get('filename') or event.get('fieldname')}"
+				if event.get("file_url"):
+					line += f" -> {event.get('file_url')}"
+				if event.get("message"):
+					line += f" ({event.get('message')})"
+				upload_status_lines.append(line)
+			upload_status_block = "\n".join(upload_status_lines)
+		else:
+			upload_status_block = "   (no file uploads attempted)"
+
 		notify_mattermost(
-			f"❌ -=-=-=-=-=-=❌-=-=-=-=-=-❌=-=-=-=-=-=-=-=❌-=-=-=-=-=-❌ \n"
-			f"❌ [save_project_draft] ERROR ❌\n"
-			f"Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-			f"Exception : {type(e).__name__}: {str(e)}\n"
-			f"User      : {frappe.session.user}\n"
-			f"---TRACEBACK---\n{_tb}",
+			"```\n"
+			"┌──────────────────────────────────────────────┐\n"
+			"│  ❌ [save_project_draft] ERROR               │\n"
+			"├──────────────────────────────────────────────┤\n"
+			f" Time      : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+			f" Docname   : {docname}\n"
+			f" User      : {frappe.session.user}\n"
+			f" Exception : {type(e).__name__}: {str(e)}\n"
+			f" Uploads   : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
+			f" Files ({len(uploaded_file_urls)}):\n"
+			f"{files_block}\n"
+			" Upload Status:\n"
+			f"{upload_status_block}\n"
+			" Traceback:\n"
+			f"{_tb}\n"
+			"└──────────────────────────────────────────────┘\n"
+			"```",
 			urgent=True,
 		)
 		# END OF EDIT — OJS | 2026-04-21 01:43 IST
@@ -2443,8 +2743,14 @@ def update_proposed_budget_breakup(docname, rows):
         doc = frappe.get_doc("Project Registration", docname)
         print(f"[BUDGET_UPDATE] doc fetched: owner={doc.owner} docstatus={doc.docstatus} workflow_state={doc.workflow_state}")
 
-        if doc.owner != frappe.session.user:
-            print(f"[BUDGET_UPDATE] OWNER MISMATCH: doc.owner={doc.owner} session={frappe.session.user}")
+        _user_roles = frappe.get_roles(frappe.session.user)
+        _is_privileged = (
+            doc.owner == frappe.session.user
+            or "System Manager" in _user_roles
+            or "staff, RnD" in _user_roles
+        )
+        if not _is_privileged:
+            print(f"[BUDGET_UPDATE] ACCESS DENIED: doc.owner={doc.owner} session={frappe.session.user} roles={_user_roles}")
             return {"status": "error", "message": "You can only edit your own projects"}
 
         year_fields = [
@@ -2455,7 +2761,7 @@ def update_proposed_budget_breakup(docname, rows):
             "fifth_year_budget",
         ]
 
-        # Build processed rows first
+        # Build processed rows — skip blank rows (no account_head and all zeros)
         processed_rows = []
         for idx, row_data in enumerate(rows):
             update_data = row_data.copy() if isinstance(row_data, dict) else {}
@@ -2474,62 +2780,47 @@ def update_proposed_budget_breakup(docname, rows):
                     update_data[year_fields[i]] = flt(amount)
 
             row_total = sum(flt(update_data.get(f, 0)) for f in year_fields)
+
+            # Skip rows that have no account_head and no budget values
+            if not update_data.get("account_head") and row_total == 0:
+                print(f"[BUDGET_UPDATE] row[{idx}] skipped (empty row)")
+                continue
+
             update_data["total_proposal_of_heads"] = row_total
-            update_data["idx"] = idx + 1
+            update_data["idx"] = len(processed_rows) + 1
             processed_rows.append(update_data)
             print(f"[BUDGET_UPDATE] row[{idx}] processed: {update_data}")
 
         grand_total = sum(r["total_proposal_of_heads"] for r in processed_rows)
-        print(f"[BUDGET_UPDATE] grand_total={grand_total} docstatus={doc.docstatus}")
+        print(f"[BUDGET_UPDATE] grand_total={grand_total} rows={len(processed_rows)} docstatus={doc.docstatus}")
+
+        _child_filters = {
+            "parent": docname,
+            "parentfield": "proposed_budget_breakup",
+            "parenttype": "Project Registration",
+        }
 
         if doc.docstatus == 1:
-            # Submitted doc — bypass doc.save() and write directly to DB
-            print(f"[BUDGET_UPDATE] SUBMITTED: using direct DB update")
-
-            # Fetch existing rows keyed by account_head and by name
-            existing_rows = frappe.db.get_all(
-                "Project Sanctioned Budget",
-                filters={
-                    "parent": docname,
-                    "parentfield": "proposed_budget_breakup",
-                    "parenttype": "Project Registration",
-                },
-                fields=["name", "account_head"],
-            )
-            # Build lookup: account_head → row name, name → row name
-            by_account_head = {r["account_head"]: r["name"] for r in existing_rows}
-            by_name = {r["name"]: r["name"] for r in existing_rows}
-            print(f"[BUDGET_UPDATE] existing rows: {[r['account_head'] for r in existing_rows]}")
+            # Submitted doc — bypass doc.save() and write directly to DB.
+            # Delete ALL existing rows first so no stale rows survive.
+            print(f"[BUDGET_UPDATE] SUBMITTED: wiping existing rows then reinserting")
+            frappe.db.delete("Project Sanctioned Budget", _child_filters)
 
             now = frappe.utils.now()
             for row in processed_rows:
-                # Resolve existing row: prefer explicit name, then match by account_head
-                existing_name = by_name.get(row.get("name")) or by_account_head.get(row.get("account_head"))
-
-                update_vals = {k: v for k, v in row.items() if k not in ("name", "idx")}
-                update_vals["modified"] = now
-                update_vals["modified_by"] = frappe.session.user
-
-                if existing_name:
-                    frappe.db.set_value(
-                        "Project Sanctioned Budget",
-                        existing_name,
-                        update_vals,
-                        update_modified=False,
-                    )
-                    print(f"[BUDGET_UPDATE] updated existing row {existing_name} (account_head={row.get('account_head')})")
-                else:
-                    child = frappe.get_doc({
-                        "doctype": "Project Sanctioned Budget",
-                        "parent": docname,
-                        "parentfield": "proposed_budget_breakup",
-                        "parenttype": "Project Registration",
-                        "creation": now,
-                        "owner": frappe.session.user,
-                        **row,
-                    })
-                    child.db_insert()
-                    print(f"[BUDGET_UPDATE] inserted new row idx={row['idx']} (account_head={row.get('account_head')})")
+                child = frappe.get_doc({
+                    "doctype": "Project Sanctioned Budget",
+                    "parent": docname,
+                    "parentfield": "proposed_budget_breakup",
+                    "parenttype": "Project Registration",
+                    "creation": now,
+                    "modified": now,
+                    "owner": frappe.session.user,
+                    "modified_by": frappe.session.user,
+                    **{k: v for k, v in row.items() if k != "name"},
+                })
+                child.db_insert()
+                print(f"[BUDGET_UPDATE] inserted row idx={row['idx']} (account_head={row.get('account_head')})")
 
             frappe.db.set_value("Project Registration", docname, {
                 "grand_total_proposal": grand_total,
@@ -2537,8 +2828,10 @@ def update_proposed_budget_breakup(docname, rows):
             }, update_modified=False)
 
         else:
-            # Draft / Saved — use normal doc.save()
-            print(f"[BUDGET_UPDATE] DRAFT: using doc.save()")
+            # Draft / Saved — wipe child rows in DB directly, then use doc.save()
+            # to avoid Frappe leaving orphan rows when child list is replaced.
+            print(f"[BUDGET_UPDATE] DRAFT: wiping existing rows then saving")
+            frappe.db.delete("Project Sanctioned Budget", _child_filters)
             doc.set("proposed_budget_breakup", [])
             for row in processed_rows:
                 child = doc.append("proposed_budget_breakup", {})
@@ -2546,6 +2839,8 @@ def update_proposed_budget_breakup(docname, rows):
 
             doc.grand_total_proposal = grand_total
             doc.total_budget_amount = grand_total
+            doc.flags.ignore_mandatory = True
+            doc.flags.ignore_validate = True
             doc.save(ignore_permissions=True)
 
         frappe.db.commit()
@@ -2555,7 +2850,7 @@ def update_proposed_budget_breakup(docname, rows):
             "status": "success",
             "docname": doc.name,
             "grand_total": grand_total,
-            "rows_saved": len(doc.proposed_budget_breakup),
+            "rows_saved": len(processed_rows),
         }
 
     except frappe.DoesNotExistError:
@@ -2594,7 +2889,12 @@ def delete_draft_project(docname):
                 "message": "You can only delete your own draft projects"
             }
 
-        frappe.delete_doc("Project Registration", docname, ignore_permissions=True)
+        # Cancel first if docstatus=1 (submitted but workflow_state shows Draft — state mismatch)
+        if doc.docstatus == 1:
+            doc.flags.ignore_permissions = True
+            doc.cancel()
+
+        frappe.delete_doc("Project Registration", docname, ignore_permissions=True, force=True)
         frappe.db.commit()
 
         return {"status": "success", "message": f"Project '{docname}' deleted successfully"}
@@ -2644,3 +2944,525 @@ def get_co_projects(user=None):
     )
 
     return projects
+
+
+# ============================================================
+# MINIO FILE ENDPOINTS
+# OJS | 2026-06-10
+# ============================================================
+
+@frappe.whitelist(allow_guest=True)
+def get_project_files_by_project_no(project_no):
+	"""
+	Look up a Project Registration by project_no, then list all MinIO files
+	stored under that document.
+
+	Returns:
+		{
+			"status": "success",
+			"docname": "<Project Registration name>",
+			"files": ["Project_Registration/<docname>/attachments/...", ...]
+		}
+	"""
+	if not project_no:
+		return {"status": "error", "message": "project_no is required"}
+
+	docname = frappe.db.get_value("Project Registration", {"project_no": project_no}, "name")
+	if not docname:
+		return {"status": "error", "message": f"No Project Registration found for project_no '{project_no}'"}
+
+	try:
+		svc = get_rnd_file_service()
+		prefix = f"Project_Registration/{docname}/"
+		objects = svc.storage.list_prefix(prefix)
+		file_paths = [obj.object_name for obj in objects]
+
+		return {
+			"status": "success",
+			"docname": docname,
+			"files": file_paths,
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), f"get_project_files_by_project_no error for {project_no}")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_minio_project_file(docname, path):
+	"""
+	Stream a MinIO file through Frappe as a direct download.
+
+	Args:
+		docname (str): Project Registration document name.
+		path    (str): MinIO object key, e.g.
+		               "Project_Registration/<docname>/attachments/<filename>".
+	"""
+	import mimetypes
+
+	if not docname or not path:
+		frappe.throw("docname and path are required", frappe.ValidationError)
+
+	# Security: path must belong to this docname to prevent path traversal.
+	if not path.startswith(f"Project_Registration/{docname}/"):
+		frappe.throw("Access denied: path does not belong to the given docname", frappe.PermissionError)
+
+	if not frappe.db.exists("Project Registration", docname):
+		frappe.throw(f"Project Registration '{docname}' not found", frappe.DoesNotExistError)
+
+	svc = get_rnd_file_service()
+	result = svc.get_file(path)
+
+	if not result.get("status"):
+		frappe.throw(result.get("message", "File not found"), frappe.DoesNotExistError)
+
+	filename = path.rsplit("/", 1)[-1]
+	content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+	frappe.response["filename"] = filename
+	frappe.response["filecontent"] = result["data"]["content"]
+	frappe.response["type"] = "download"
+	frappe.response["content_type"] = content_type
+
+
+@frappe.whitelist(allow_guest=True)
+def get_project_file_urls_by_project_no(project_no):
+	"""
+	Look up a Project Registration by project_no, list all MinIO files,
+	and return each file's full MinIO URL alongside its object key.
+
+	Returns:
+		{
+			"status": "success",
+			"docname": "<Project Registration name>",
+			"files": [
+				{
+					"path": "Project_Registration/<docname>/attachments/<filename>",
+					"url": "http://<minio-endpoint>/<bucket>/Project_Registration/<docname>/attachments/<filename>"
+				},
+				...
+			]
+		}
+	"""
+	if not project_no:
+		return {"status": "error", "message": "project_no is required"}
+
+	docname = frappe.db.get_value("Project Registration", {"project_no": project_no}, "name")
+	if not docname:
+		return {"status": "error", "message": f"No Project Registration found for project_no '{project_no}'"}
+
+	try:
+		svc = get_rnd_file_service()
+		endpoint = frappe.conf.minio_endpoint.rstrip("/")
+		bucket = frappe.conf.minio_bucket
+		secure = getattr(frappe.conf, "minio_secure", False)
+		scheme = "https" if secure else "http"
+
+		prefix = f"Project_Registration/{docname}/"
+		objects = svc.storage.list_prefix(prefix)
+
+		files = [
+			{
+				"path": obj.object_name,
+				"url": f"{scheme}://{endpoint}/{bucket}/{obj.object_name}",
+			}
+			for obj in objects
+		]
+
+		return {
+			"status": "success",
+			"docname": docname,
+			"files": files,
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), f"get_project_file_urls_by_project_no error for {project_no}")
+		return {"status": "error", "message": str(e)}
+
+
+# ============================================================
+# FREEFORM PROJECT SEARCH ENDPOINT
+# OJS | 2026-06-23
+# ============================================================
+
+@frappe.whitelist(allow_guest=True)
+def search_projects(query=None, department=None, page=1, page_size=20):
+	"""
+	Freeform search across Project Registration records.
+
+	Searches across: project_title, project_no, principal_investigator_name,
+	pi_webmail, pi_employee_id, implementation_department (name + dept_name),
+	project_type, category, workflow_state.
+
+	Args:
+		query      (str): Free-form search string (partial match, case-insensitive).
+		department (str): Optional — filter by Department_prornd name (exact).
+		page       (int): 1-based page number (default 1).
+		page_size  (int): Results per page (default 20, capped at 100).
+
+	Returns:
+		{
+			"status": "success",
+			"total": <int>,
+			"page": <int>,
+			"page_size": <int>,
+			"results": [ { project fields + department details }, ... ]
+		}
+	"""
+	try:
+		page = max(1, int(page or 1))
+		page_size = min(100, max(1, int(page_size or 20)))
+		offset = (page - 1) * page_size
+
+		# Build the WHERE clause dynamically
+		conditions = ["pr.docstatus != 2"]  # exclude cancelled docs
+		values = []
+
+		if query:
+			q = f"%{query}%"
+			conditions.append(
+				"("
+				"  pr.project_title LIKE %s"
+				"  OR pr.project_no LIKE %s"
+				"  OR pr.principal_investigator_name LIKE %s"
+				"  OR pr.pi_webmail LIKE %s"
+				"  OR pr.pi_employee_id LIKE %s"
+				"  OR pr.implementation_department LIKE %s"
+				"  OR pr.project_type LIKE %s"
+				"  OR pr.consultancy_category LIKE %s"
+				"  OR pr.workflow_state LIKE %s"
+				"  OR d.dept_name LIKE %s"
+				")"
+			)
+			values.extend([q] * 10)
+
+		if department:
+			d_like = f"%{department}%"
+			conditions.append("(pr.implementation_department LIKE %s OR d.dept_name LIKE %s)")
+			values.extend([d_like, d_like])
+
+		where_clause = " AND ".join(conditions)
+
+		count_sql = f"""
+			SELECT COUNT(DISTINCT pr.name)
+			FROM `tabProject Registration` pr
+			LEFT JOIN `tabDepartment_prornd` d ON d.name = pr.implementation_department
+			WHERE {where_clause}
+		"""
+		total = frappe.db.sql(count_sql, values)[0][0]
+
+		data_sql = f"""
+			SELECT
+				pr.name,
+				pr.project_no,
+				pr.project_title,
+				pr.principal_investigator_name,
+				pr.pi_webmail,
+				pr.pi_employee_id,
+				pr.implementation_department,
+				pr.project_type,
+				pr.consultancy_category,
+				pr.workflow_state,
+				pr.docstatus,
+				pr.prj_start_date,
+				pr.prj_end_date,
+				pr.total_budget_amount,
+				pr.grand_total_proposal,
+				pr.funding_agen,
+				pr.owner,
+				pr.creation,
+				pr.modified,
+				d.dept_name,
+				d.dept_head,
+				d.dept_id
+			FROM `tabProject Registration` pr
+			LEFT JOIN `tabDepartment_prornd` d ON d.name = pr.implementation_department
+			WHERE {where_clause}
+			ORDER BY pr.modified DESC
+			LIMIT %s OFFSET %s
+		"""
+		rows = frappe.db.sql(data_sql, values + [page_size, offset], as_dict=True)
+
+		results = []
+		for row in rows:
+			results.append({
+				"name": row.get("name"),
+				"project_no": row.get("project_no"),
+				"project_title": row.get("project_title"),
+				"pi_name": row.get("principal_investigator_name"),
+				"pi_email": row.get("pi_webmail"),
+				"pi_employee_id": row.get("pi_employee_id"),
+				"department": {
+					"id": row.get("implementation_department"),
+					"name": row.get("dept_name"),
+					"head": row.get("dept_head"),
+					"dept_id": row.get("dept_id"),
+				},
+				"project_type": row.get("project_type"),
+				"category": row.get("consultancy_category"),
+				"workflow_state": row.get("workflow_state"),
+				"docstatus": row.get("docstatus"),
+				"start_date": str(row.get("prj_start_date") or ""),
+				"completion_date": str(row.get("prj_end_date") or ""),
+				"total_budget_amount": flt(row.get("total_budget_amount") or row.get("grand_total_proposal")),
+				"funding_agency": row.get("funding_agen"),
+				"owner": row.get("owner"),
+				"creation": str(row.get("creation") or ""),
+				"modified": str(row.get("modified") or ""),
+			})
+
+		return {
+			"status": "success",
+			"total": total,
+			"page": page,
+			"page_size": page_size,
+			"results": results,
+		}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "search_projects error")
+		return {"status": "error", "message": str(e)}
+
+
+# ============================================================
+# PROJECT REGISTRATION LINK GRAPH ENDPOINT
+# OJS | 2026-06-24
+# Source of truth: PROJECT_REGISTRATION_LINKS_TO_APPLICATION.md
+# ============================================================
+
+_PR_DIRECT_LINKS = [
+	# (doctype, link_field, display_label, category)
+	("AccountHeadPayment",               "project_ref_number",   "Account Head Payment",              "finance"),
+	("Advance Settlement",               "project_name",         "Advance Settlement",                "finance"),
+	("AMC",                              "project_ref",          "AMC",                               "purchase"),
+	("Deposit slip",                     "project_title",        "Deposit Slip",                      "finance"),
+	("Deposit Slip Project Credit",      "project_number",       "Deposit Slip Project Credit",       "finance"),
+	("Disbursement of Honorarium",       "project_number",       "Disbursement of Honorarium",        "hr"),
+	("E Non Routine Deposit Slip",       "project_title",        "E Non-Routine Deposit Slip",        "finance"),
+	("Fund Received",                    "prjreg_title",         "Fund Received",                     "finance"),
+	("Fund Sanction",                    "project_proposal",     "Fund Sanction",                     "finance"),
+	("Indent Cum Sanction Sheet",        "project_ref",          "Indent Cum Sanction Sheet",         "purchase"),
+	("Indent General Form",              "igf_project_title",    "Indent General Form",               "purchase"),
+	("Loan Request",                     "project_name",         "Loan Request",                      "finance"),
+	("myProjects",                       "project_proposal",     "My Projects",                       "project"),
+	("payments",                         "project_id",           "Payment",                           "finance"),
+	("Project Extension",                "project_ref",          "Project Extension",                 "project"),
+	("proprietary_purchase",             "project_ref",          "Proprietary Purchase",              "purchase"),
+	("Rate Contract",                    "project_number",       "Rate Contract",                     "purchase"),
+	("Rate Contract",                    "project_ref",          "Rate Contract",                     "purchase"),
+	("Reimbursement",                    "project_name",         "Reimbursement",                     "finance"),
+	("repair_replacement",               "project_ref",          "Repair / Replacement",              "purchase"),
+	("Research Consultancy Deposit Slip","project_title",        "Research Consultancy Deposit Slip", "finance"),
+	("Research Deposit Slip",            "project_title",        "Research Deposit Slip",             "finance"),
+	("standerdized_purchase",            "project_ref",          "Standardized Purchase",             "purchase"),
+	("T Testing Deposit Slip",           "project_title",        "T Testing Deposit Slip",            "finance"),
+	("Top Up Fellowship",                "project_code",         "Top Up Fellowship",                 "hr"),
+	("Travel",                           "travel_project_title", "Travel",                            "hr"),
+	("UC Request",                       "project_id",           "UC Request",                        "project"),
+]
+
+_PR_INDIRECT_LINKS = [
+	# (doctype, data_field, display_label, category)
+	("Disbursal of Consultancy",           "project_title",      "Disbursal of Consultancy",         "finance"),
+	("Disbursal of Honorarium",            "project_no",         "Disbursal of Honorarium",          "hr"),
+	("Direct Purchase",                    "project_no",         "Direct Purchase",                  "purchase"),
+	("dp_po",                              "project_no",         "Direct Purchase PO",               "purchase"),
+	("Endorsement Data",                   "project_no",         "Endorsement Data",                 "project"),
+	("Extension Of Tenure Of Appointment", "project_number",     "Extension of Tenure",              "hr"),
+	("ICSS_PO",                            "project_number",     "ICSS PO",                          "purchase"),
+	("NIQ",                                "project_no",         "NIQ",                              "purchase"),
+	("P_11 Form",                          "project_no",         "P-11 Form",                        "hr"),
+	("Project Staff Details",              "project_no",         "Project Staff Details",            "hr"),
+	("Recruitment Adhoc Contractual",      "upfa_project_code",  "Recruitment Adhoc Contractual",    "hr"),
+	("sanction_sheet",                     "project_no",         "Sanction Sheet",                   "finance"),
+	("TA DA Settlement",                   "project_no",         "TA/DA Settlement",                 "hr"),
+	("Temporary Advance",                  "project_code",       "Temporary Advance",                "finance"),
+]
+
+# Chained links: parent must already exist in the graph (from direct/indirect pass).
+# Edge is drawn parent → child (not PR → child).
+# (parent_doctype, child_doctype, child_link_field, display_label, category)
+_PR_CHAINED_LINKS = [
+    # Fund Received (direct) → Deposit Slip via fund_received_ref
+    ("Fund Received",               "Deposit slip",             "fund_received_ref",            "Deposit Slip",                "finance"),
+    # Indent Cum Sanction Sheet (direct) → purchase docs via ICSS ref
+    ("Indent Cum Sanction Sheet",   "repair_replacement",       "indent_cum_sanction_sheet_id", "Repair / Replacement",        "purchase"),
+    ("Indent Cum Sanction Sheet",   "AMC",                      "indent_cum_sanction_sheet_id", "AMC",                         "purchase"),
+    ("Indent Cum Sanction Sheet",   "proprietary_purchase",     "indent_cum_sanction_sheet_id", "Proprietary Purchase",        "purchase"),
+    ("Indent Cum Sanction Sheet",   "standerdized_purchase",    "indent_cum_sanction_sheet_id", "Standardized Purchase",       "purchase"),
+    # Recruitment Adhoc Contractual (indirect) → Selection Committee Report
+    ("Recruitment Adhoc Contractual", "Selection Committee Report", "interview_id",             "Selection Committee Report",  "hr"),
+    # Travel (direct) → TA DA Settlement
+    ("Travel",                      "TA DA Settlement",         "ta_da_travel_application",     "TA/DA Settlement",            "hr"),
+    # Sanction Sheet (indirect) → Direct Purchase PO, PO Commit Adjustment
+    ("sanction_sheet",              "dp_po",                    "sanction_sheet_ref",           "Direct Purchase PO",          "purchase"),
+    ("sanction_sheet",              "Po Commit Adjustment",     "purchase_order_number",        "PO Commit Adjustment",        "purchase"),
+]
+
+
+@frappe.whitelist()
+def get_pr_link_graph(docname):
+	"""
+	Returns all documents linked to a Project Registration as a D3-ready graph structure.
+	Accepts either the PR autoname (e.g. 202507300DIIT000001) or the human-readable project_no.
+	"""
+	try:
+		if not docname:
+			return {"status": "error", "message": "Document name or project number is required"}
+
+		# Resolve PR — accept either autoname or project_no
+		pr_name = None
+		if frappe.db.exists("Project Registration", docname):
+			pr_name = docname
+		else:
+			pr_name = frappe.db.get_value("Project Registration", {"project_no": docname}, "name")
+
+		if not pr_name:
+			return {"status": "error", "message": f"No Project Registration found for: {docname}"}
+
+		pr = frappe.db.get_value(
+			"Project Registration", pr_name,
+			["project_no", "project_title", "principal_investigator_name",
+			 "pi_webmail", "workflow_state", "project_type", "docstatus"],
+			as_dict=True,
+		)
+
+		project_no = (pr.get("project_no") or "").strip()
+
+		nodes = []
+		links = []
+		errors = []
+		seen_nodes = set()
+		seen_links = set()
+
+		root_id = f"PR::{pr_name}"
+		nodes.append({
+			"id":             root_id,
+			"type":           "root",
+			"label":          pr_name,
+			"subtitle":       project_no,
+			"doctype":        "Project Registration",
+			"name":           pr_name,
+			"category":       "root",
+			"workflow_state": pr.get("workflow_state") or "",
+			"docstatus":      int(pr.get("docstatus") or 0),
+		})
+		seen_nodes.add(root_id)
+
+		def _query_and_add(spec_list, link_type, filter_value):
+			for (doctype, field, display, category) in spec_list:
+				try:
+					if not frappe.db.table_exists(doctype):
+						continue
+					docs = frappe.get_all(
+						doctype,
+						filters={field: filter_value},
+						fields=["name", "workflow_state", "docstatus"],
+						limit=100,
+					)
+					for doc in docs:
+						node_id = f"{doctype}::{doc['name']}"
+						if node_id not in seen_nodes:
+							seen_nodes.add(node_id)
+							nodes.append({
+								"id":             node_id,
+								"type":           link_type,
+								"label":          doc["name"],
+								"subtitle":       display,
+								"doctype":        doctype,
+								"name":           doc["name"],
+								"category":       category,
+								"workflow_state": doc.get("workflow_state") or "",
+								"docstatus":      int(doc.get("docstatus") or 0),
+								"link_field":     field,
+							})
+						lkey = f"{root_id}->{node_id}::{field}"
+						if lkey not in seen_links:
+							seen_links.add(lkey)
+							links.append({
+								"source": root_id,
+								"target": node_id,
+								"type":   link_type,
+								"field":  field,
+							})
+				except Exception as exc:
+					errors.append(f"{doctype}.{field}: {exc}")
+
+		_query_and_add(_PR_DIRECT_LINKS, "direct", pr_name)
+		if project_no:
+			_query_and_add(_PR_INDIRECT_LINKS, "indirect", project_no)
+
+		# Chained pass: traverse from already-found nodes to their children
+		parents_by_doctype = {}
+		for node in nodes[1:]:
+			parents_by_doctype.setdefault(node["doctype"], []).append(node["name"])
+
+		for (parent_dt, child_dt, child_field, display, category) in _PR_CHAINED_LINKS:
+			parent_names = parents_by_doctype.get(parent_dt, [])
+			if not parent_names or not frappe.db.table_exists(child_dt):
+				continue
+			for parent_name in parent_names:
+				parent_node_id = f"{parent_dt}::{parent_name}"
+				try:
+					docs = frappe.get_all(
+						child_dt,
+						filters={child_field: parent_name},
+						fields=["name", "workflow_state", "docstatus"],
+						limit=100,
+					)
+					for doc in docs:
+						node_id = f"{child_dt}::{doc['name']}"
+						if node_id not in seen_nodes:
+							seen_nodes.add(node_id)
+							nodes.append({
+								"id":             node_id,
+								"type":           "chained",
+								"label":          doc["name"],
+								"subtitle":       display,
+								"doctype":        child_dt,
+								"name":           doc["name"],
+								"category":       category,
+								"workflow_state": doc.get("workflow_state") or "",
+								"docstatus":      int(doc.get("docstatus") or 0),
+								"link_field":     child_field,
+								"via":            parent_dt,
+							})
+						lkey = f"{parent_node_id}->{node_id}::{child_field}"
+						if lkey not in seen_links:
+							seen_links.add(lkey)
+							links.append({
+								"source": parent_node_id,
+								"target": node_id,
+								"type":   "chained",
+								"field":  child_field,
+							})
+				except Exception as exc:
+					errors.append(f"{child_dt}.{child_field} (via {parent_dt}): {exc}")
+
+		direct_count   = sum(1 for n in nodes[1:] if n["type"] == "direct")
+		indirect_count = sum(1 for n in nodes[1:] if n["type"] == "indirect")
+		chained_count  = sum(1 for n in nodes[1:] if n["type"] == "chained")
+
+		return {
+			"status": "success",
+			"pr": {
+				"name":           pr_name,
+				"project_no":     project_no,
+				"project_title":  pr.get("project_title") or "",
+				"pi_name":        pr.get("principal_investigator_name") or "",
+				"pi_email":       pr.get("pi_webmail") or "",
+				"workflow_state": pr.get("workflow_state") or "",
+				"project_type":   pr.get("project_type") or "",
+			},
+			"nodes": nodes,
+			"links": links,
+			"errors": errors,
+			"summary": {
+				"total":    direct_count + indirect_count + chained_count,
+				"direct":   direct_count,
+				"indirect": indirect_count,
+				"chained":  chained_count,
+			},
+		}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "get_pr_link_graph error")
+		return {"status": "error", "message": str(e)}

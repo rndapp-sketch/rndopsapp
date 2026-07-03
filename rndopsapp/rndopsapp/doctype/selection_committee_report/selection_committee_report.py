@@ -466,6 +466,12 @@ def get_selection_committee_report_workflow_actions(docname):
 	# Extract unique action names
 	actions = list(dict.fromkeys([t.get("action") for t in transitions]))
 
+	# START MKY 2026-05-14 14:00 IST Hide Approve for Contractual in Pending Dean Approval
+	if (doc.workflow_state or "") == "Pending Dean Approval" and (doc.get("recruitment_type") or "").strip().lower() != "adhoc":
+		if "Approve" in actions:
+			actions.remove("Approve")
+	# END MKY
+
 	return actions
 
 
@@ -483,18 +489,24 @@ def perform_selection_committee_report_action(docname, action):
 		doc = frappe.get_doc("Selection Committee Report", docname)
 		print(f"Fetched doc: {doc.name}, current state: {doc.workflow_state}")
 
-		# Director-PDF gate: SCR cannot be Approved by Dean
+		# START MKY 2026-05-14 14:00 IST Prevent direct Dean approval for Contractual
+		if action == "Approve" and (doc.workflow_state or "") == "Pending Dean Approval" and (doc.get("recruitment_type") or "").strip().lower() != "adhoc":
+			frappe.throw("Contractual recruitment requires Director Approval. Use the Send for Director Approval action instead.")
+		# END MKY
+
+		# Director-PDF gate: SCR cannot be Approved
 		# until Staff has uploaded the Director-signed scan (if flagged).
+		# START MKY 2026-05-14 14:00 IST Update PDF gate state to Pending Director Approval
 		if (
 			action == "Approve"
-			and (doc.workflow_state or "") == "Pending Dean Approval"
-			and frappe.utils.cint(doc.get("send_to_director")) == 1
+			and (doc.workflow_state or "") == "Pending Director Approval"
 			and not (doc.get("director_signed_pdf") or "").strip()
 		):
 			frappe.throw(
 				"Cannot approve: the Director-signed PDF has not been uploaded "
 				"by Staff yet."
 			)
+		# END MKY
 
 		# apply_workflow handles transitions, permissions, and status updates
 		updated_doc = apply_workflow(doc, action)
@@ -592,15 +604,25 @@ def update_send_to_director_scr(docname, send_to_director):
 	if doc.docstatus != 0:
 		frappe.throw("Cannot update Director Approval flag after document is submitted.")
 
+	# START MKY 2026-05-14 13:45 IST Ensure it only applies to Contractual
+	if (doc.get("recruitment_type") or "").strip().lower() == "adhoc":
+		frappe.throw("Director Approval flow is only applicable for Contractual recruitment.")
+	# END MKY
+
 	if frappe.utils.cint(doc.get("send_to_director")):
 		return {"status": "success", "docname": docname, "send_to_director": 1}
 
 	if not frappe.utils.cint(send_to_director):
 		frappe.throw("send_to_director can only be set, not cleared.")
 
+	# START MKY 2026-05-14 13:35 IST Update workflow_state when send_to_director is set
 	frappe.db.set_value(
-		"Selection Committee Report", docname, "send_to_director", 1
+		"Selection Committee Report", docname, {
+			"send_to_director": 1,
+			"workflow_state": "Pending Director Approval"
+		}
 	)
+	# END MKY
 	frappe.db.commit()
 	return {"status": "success", "docname": docname, "send_to_director": 1}
 
@@ -748,11 +770,13 @@ def get_pending_director_uploads_scr():
 	"""
 	docs = frappe.get_all(
 		"Selection Committee Report",
+		# START MKY 2026-05-14 13:35 IST Support the new Pending Director Approval state
 		filters={
 			"send_to_director": 1,
-			"workflow_state": "Pending Dean Approval",
+			"workflow_state": ["in", ["Pending Dean Approval", "Pending Director Approval"]],
 			"docstatus": 0,
 		},
+		# END MKY
 		fields=[
 			"name",
 			"interview_id",

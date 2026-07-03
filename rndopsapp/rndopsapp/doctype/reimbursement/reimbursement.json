@@ -159,7 +159,7 @@
   {
    "fieldname": "rules_content",
    "fieldtype": "HTML",
-   "options": "<li> Maximum Limit \u20b9 25000, Not applicable for rate contract items.</li>\n<li> Splitting the bill applying for reimbursement for the same item is not allowed.</li>\n"
+   "options": "<li> Maximum Limit \u20b9 100000, Not applicable for rate contract items.</li>\n<li> Splitting the bill applying for reimbursement for the same item is not allowed.</li>\n"
   },
   {
    "fieldname": "amended_from",
@@ -231,7 +231,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 14:20:46.594181",
+ "modified": "2026-05-15 10:29:41.330149",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",

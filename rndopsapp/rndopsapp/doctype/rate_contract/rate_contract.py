@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 def extract_eval_expression(expression):
@@ -31,7 +32,13 @@ def extract_eval_expression(expression):
 
 
 class RateContract(Document):
-	pass
+	def validate(self):
+		self._compute_totals()
+
+	def _compute_totals(self):
+		item_total = sum(flt(row.amount) for row in self.get("items", []))
+		self.rate_contract_total = item_total
+		self.rate_contract_grand_total = item_total + flt(self.rate_contract_packing)
 
 
 @frappe.whitelist()
@@ -221,7 +228,7 @@ def save_rate_contract(doc_data):
 		# Handle child table - items
 		if "items" in data:
 			doc.set("items", [])  # Clear existing items
-			for item in data["items"]:
+			for item in (data.get("items") or []):
 				if item.get("item_description") or item.get("cat_no"):
 					doc.append(
 						"items",
@@ -309,7 +316,7 @@ def get_principal_suppliers_by_item_type(item_type=None):
 		"Principal Supplier",
 		filters={"item_type": item_type},
 		fields=["name as value", "principal_supplier_name as label", "addres", "agreement_no"],
-		limit=200
+		limit=0
 	)
 	return suppliers
 
@@ -325,9 +332,9 @@ def get_local_suppliers_by_principal(principal_supplier=None):
 	
 	suppliers = frappe.get_all(
 		"Local Supplier Detail",
-		filters={"parent": principal_supplier},
+		filters={"parent": principal_supplier, "parenttype": "Principal Supplier"},
 		fields=["name as value", "local_supplier_name as label", "address", "email"],
-		limit=200
+		limit=0
 	)
 	return suppliers
 
@@ -348,7 +355,7 @@ def get_vendors_by_p4_item_type(p4_item_type=None):
 		"Principal Supplier",
 		filters={"item_type": p4_item_type},
 		fields=["name as value", "principal_supplier_name as label", "addres", "email"],
-		limit=200
+		limit=0
 	)
 	return vendors
 

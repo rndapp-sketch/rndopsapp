@@ -23,6 +23,29 @@ from .dto import (
 
 
 # ==========================================
+# Event Wrapper Class
+# ==========================================
+
+class ConsultancyDepositSlipEvent:
+    """
+    Event wrapper for Consultancy Deposit Slip DTO.
+    Provides the interface expected by the producer.
+    """
+
+    def __init__(self, dto: ConsultancyDepositSlipDTO):
+        self.data = dto
+        self.eventType = "DEPOSIT_SLIP"
+
+    def to_kafka_payload(self, schema_version: str = "1.0") -> dict:
+        return {
+            "schemaVersion": schema_version,
+            "eventType": self.eventType,
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": self.data.to_dict()
+        }
+
+
+# ==========================================
 # Utility Functions
 # ==========================================
 
@@ -129,13 +152,13 @@ class ConsultancyDepositSlipMapper:
         Returns:
             str: Project number
         """
-        # Try different field names used by different doctypes
-        project_number = (
-            getattr(doc, 'project_number', '') or
-            getattr(doc, 'consultancy_title', '') or
-            getattr(doc, 'event_title', '') or
-            ""
-        )
+        # project_number is a direct numeric/code field on Research-type slips.
+        # consultancy_title and event_title are free-text titles — never use them as a project number.
+        # For E Non Routine / T Testing, project_title is a Link → Project Registration;
+        # look up project_no from there.
+        # For Other Event / D Consultancy (no project link on the slip itself),
+        # trace back via fund_received_ref → Fund Received.prjreg_title → Project Registration.project_no.
+        project_number = getattr(doc, 'project_number', '') or ""
 
         if not project_number and getattr(doc, 'project_title', None):
             try:
@@ -144,6 +167,22 @@ class ConsultancyDepositSlipMapper:
                     doc.project_title,
                     "project_no"
                 ) or ""
+            except Exception:
+                project_number = ""
+
+        if not project_number and getattr(doc, 'fund_received_ref', None):
+            try:
+                prjreg = frappe.db.get_value(
+                    "Fund Received",
+                    doc.fund_received_ref,
+                    "prjreg_title"
+                )
+                if prjreg:
+                    project_number = frappe.db.get_value(
+                        "Project Registration",
+                        prjreg,
+                        "project_no"
+                    ) or ""
             except Exception:
                 project_number = ""
 
@@ -227,7 +266,7 @@ class ConsultancyDepositSlipMapper:
         if hasattr(doc, "ecs_dates"):
             for row in doc.ecs_dates:
                 if getattr(row, 'ecs_date', None):
-                    ecs_dates.append(fmt_date(row.ecs_date))
+                    ecs_dates.append(str(row.ecs_date)[:10])
         return ecs_dates
 
     @staticmethod
@@ -481,3 +520,12 @@ class ConsultancyDepositSlipMapper:
         # dto.fundReceivedRefNumberFap = getattr(doc, 'fund_received_ref', '') or ''
 
         return dto
+
+    @classmethod
+    def map_to_event(cls, doc) -> ConsultancyDepositSlipEvent:
+        """
+        Map Frappe Consultancy Deposit Slip document to ConsultancyDepositSlipEvent.
+        Wraps the DTO in an event envelope for Kafka publishing.
+        """
+        dto = cls.map_to_dto(doc)
+        return ConsultancyDepositSlipEvent(dto)

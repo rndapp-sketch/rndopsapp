@@ -269,7 +269,7 @@ class ConsultancyDepositSlipDTO:
         elif self.category == "CONSULTANCY_T" and self.consultancyTDetails:
             data["consultancyTDetails"] = self.consultancyTDetails.to_dict()
         elif self.category == "OTHER_EVENT" and self.consultancyODetails:
-            data["consultancyODetails"] = self.consultancyODetails.to_dict()
+            data["consultancyOtherDetails"] = self.consultancyODetails.to_dict()
 
         return data
 

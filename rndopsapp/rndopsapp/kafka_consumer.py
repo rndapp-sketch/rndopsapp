@@ -1320,15 +1320,41 @@ def update_fund_received(**kwargs):
             frappe.db.set_value('Fund Received', doc_name, 'bank_account', kwargs.get('iitg_account_number'))
         
         # Map fundReceivedStatus -> workflow_state
+        # Guard: never move the document backward in the workflow.
+        # APPROVED from Kafka maps to "Pending Misc. Staff Approval(Deposit Slip Pending)"
+        # which is BEHIND "Pending HoS Approval" or "Approved" — skip if already ahead.
+        # Source of truth: fund_received_with_kafka workflow (verified from DB).
+        _STATE_PRIORITY = {
+            'Draft':                                                 0,
+            'Pending Misc. Staff Approval':                          1,
+            'PENDING_APPROVAL':                                      2,
+            'Pending Misc. Staff Approval(Deposit Slip Pending)':    3,
+            'Pending HoS Approval':                                  4,
+            'Approved':                                              5,
+            'Fund Received':                                         6,
+        }
         fund_received_status = kwargs.get('fund_received_status')
         if fund_received_status:
-            # Specific logic: If status is 'APPROVED' (case-insensitive), set to 'Pending Misc. Staff Approval(Deposit Slip Pending)'
-            if fund_received_status.upper() == 'APPROVED':
-                 new_status = 'Pending Misc. Staff Approval(Deposit Slip Pending)'
+            status_upper = fund_received_status.upper()
+            if status_upper == 'APPROVED':
+                new_status = 'Pending Misc. Staff Approval(Deposit Slip Pending)'
+            elif status_upper == 'PENDING_APPROVAL':
+                # Must use the exact state name, not title-cased 'Pending_Approval'
+                new_status = 'PENDING_APPROVAL'
             else:
-                 new_status = fund_received_status.title()
-            
-            frappe.db.set_value('Fund Received', doc_name, 'workflow_state', new_status)
+                new_status = fund_received_status.title()
+
+            current_status = frappe.db.get_value('Fund Received', doc_name, 'workflow_state') or ''
+            current_priority = _STATE_PRIORITY.get(current_status, 0)
+            new_priority = _STATE_PRIORITY.get(new_status, 0)
+            if new_priority >= current_priority:
+                frappe.db.set_value('Fund Received', doc_name, 'workflow_state', new_status)
+            else:
+                frappe.logger().warning(
+                    f"[kafka_consumer] Skipped backward state change for {doc_name}: "
+                    f"'{current_status}' (priority {current_priority}) "
+                    f"→ '{new_status}' (priority {new_priority}) ignored."
+                )
         
         # Map fundReceivedRefNumber -> fund_received_ref_number (integer field)
         if fund_received_ref_number is not None:

@@ -216,7 +216,10 @@ def extract_eval_expression(expression):
 
 def _find_matching_transition(workflow, current_state, action, doc):
 	"""Find the first workflow transition that matches state, action, role, and condition."""
+	doc._set_user_info()
 	doc_dict = doc.as_dict()
+	doc_dict["empclass"] = doc.empclass
+	doc_dict["is_rnd_staff"] = doc.is_rnd_staff
 	user_roles = frappe.get_roles(frappe.session.user)
 
 	for t in workflow.transitions:
@@ -470,8 +473,11 @@ def submit_leave_module(docname):
 @frappe.whitelist()
 def get_leave_module_workflow_actions(docname):
 	doc = frappe.get_doc("Leave Module", docname)
+	doc._set_user_info()
 	current_state = doc.workflow_state or "Draft"
 	doc_dict = doc.as_dict()
+	doc_dict["empclass"] = doc.empclass
+	doc_dict["is_rnd_staff"] = doc.is_rnd_staff
 	user_roles = frappe.get_roles(frappe.session.user)
 
 	workflow_name = frappe.db.get_value(

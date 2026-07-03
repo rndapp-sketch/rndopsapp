@@ -124,16 +124,25 @@ def resolve_budget_head_id(budget_head) -> Optional[int]:
     if isinstance(budget_head, str) and budget_head.isdigit():
         return int(budget_head)
 
-    # Try to find by name (PK)
     try:
+        # Try by name (PK) → custom id field
         found_id = frappe.db.get_value("Budget Head", budget_head, "id")
         if found_id:
             return int(found_id)
 
-        # Try by budget_head field
+        # Try by budget_head label field → custom id field
         found_id = frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "id")
         if found_id:
             return int(found_id)
+
+        # id field is NULL — fall back to Frappe's idx (row position integer)
+        found_idx = frappe.db.get_value("Budget Head", budget_head, "idx")
+        if found_idx:
+            return int(found_idx)
+
+        found_idx = frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "idx")
+        if found_idx:
+            return int(found_idx)
     except Exception:
         pass
 
@@ -195,7 +204,8 @@ class AccountHeadCommitMapper:
         bmr: Optional[str] = None,
         bill_amount: Optional[float] = None,
         frap_app_id: Optional[str] = None,
-        ref_details: Optional[str] = None
+        ref_details: Optional[str] = None,
+        module_id: Optional[int] = None
     ) -> AccountHeadCommitDTO:
         """
         Map Frappe Reimbursement document to AccountHeadCommitDTO.
@@ -234,9 +244,10 @@ class AccountHeadCommitMapper:
         print(f"[COMMIT_MAPPER] final particulars_list={particulars_list}")
         particulars = ", ".join(particulars_list) if particulars_list else f"Commitment for {doc.name}"
 
-        # Get module information
+        # Get module information — use explicit override first, then resolve from doctype
         doctype_name = getattr(doc, 'doctype', '')
-        module_id = get_module_id(doctype_name) or 7 # Default to 8 if not found
+        if module_id is None:
+            module_id = get_module_id(doctype_name) or 7
         print(f"[COMMIT_MAPPER] Mapping doctype '{doctype_name}' to module_id: {module_id}")
 
         # Use explicit frap_app_id if provided, otherwise fall back to project_name
@@ -269,7 +280,8 @@ class AccountHeadCommitMapper:
         bmr: Optional[str] = None,
         bill_amount: Optional[float] = None,
         frap_app_id: Optional[str] = None,
-        ref_details: Optional[str] = None
+        ref_details: Optional[str] = None,
+        module_id: Optional[int] = None
     ) -> AccountHeadCommitEvent:
         """
         Map Frappe Reimbursement document to AccountHeadCommitEvent.
@@ -283,11 +295,12 @@ class AccountHeadCommitMapper:
             bmr: BMR number (optional)
             bill_amount: Bill amount (optional)
             frap_app_id: Frap App ID (optional, defaults to project_name)
+            module_id: optional int override (e.g. 14 for ICSS PO re-commit)
 
         Returns:
             AccountHeadCommitEvent: Event wrapper ready for Kafka publishing
         """
-        dto = cls.map_to_dto(doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details)
+        dto = cls.map_to_dto(doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details, module_id)
         return AccountHeadCommitEvent(dto)
 
 

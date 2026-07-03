@@ -1297,3 +1297,16 @@ def get_universal_registration_by_profile_type(profile_type):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Get Registration by Profile Type Error")
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_project_staff_details_count(filters=None):
+    """
+    Returns the total number of entries in the "Project Staff Details" doctype.
+    Guest-accessible (no API token required) since it only reads a count.
+    """
+    if filters and isinstance(filters, str):
+        filters = frappe.parse_json(filters)
+
+    count = frappe.db.count("Project Staff Details", filters=filters or None)
+    return {"doctype": "Project Staff Details", "count": count}

@@ -21,7 +21,8 @@
   "freight",
   "other_charges",
   "grand_total",
-  "declaration"
+  "declaration",
+  "attachment_if_any"
  ],
  "fields": [
   {
@@ -101,6 +102,7 @@
    "label": "Certified that we the undersigned, members of the purchase committee are jointly."
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "project_no",
    "fieldtype": "Data",
    "label": "Project No"
@@ -116,13 +118,18 @@
    "hidden": 1,
    "label": "Workflow Status",
    "read_only": 1
+  },
+  {
+   "fieldname": "attachment_if_any",
+   "fieldtype": "Attach",
+   "label": "Attachment if any"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-01 20:39:17.759948",
+ "modified": "2026-06-11 15:21:02.857244",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "P_11 Form",

@@ -2,7 +2,8 @@ import frappe
 import requests
 import json
 import threading
-from frappe.utils import today, flt
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from frappe.utils import today, flt, getdate
 from datetime import datetime
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
 from rndopsapp.rndopsapp.kafka_sync import publish_message, KAFKA_AVAILABLE
@@ -39,13 +40,237 @@ ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.134.81:18080/api/account-head-commi
 
 # Valid commit statuses
 VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]
+SALARY_COMMIT_STATUSES = ["COMMITTED", "PARTIALLY_PAID", "OVERPAYMENT"]
+
+
+def _get_project_title_by_number(project_number):
+    if not project_number:
+        return None
+
+    project_meta = frappe.get_meta("Project Registration")
+    project_number_field = "project_number" if project_meta.has_field("project_number") else "project_no"
+
+    return frappe.db.get_value(
+        "Project Registration",
+        {project_number_field: project_number},
+        "project_title"
+    )
+
+
+def _fetch_account_head_commits_by_status(status):
+    response = requests.get(
+        f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-status/{status}",
+        timeout=10,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    if isinstance(data, list):
+        return data
+
+    if isinstance(data, dict):
+        for key in ("data", "message", "results"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+
+    return []
+
+
+def _json_contains_ps_emp_id(value, ps_emp_id):
+    if isinstance(value, dict):
+        if str(value.get("ps_emp_id")) == str(ps_emp_id):
+            return True
+        return any(_json_contains_ps_emp_id(item, ps_emp_id) for item in value.values())
+
+    if isinstance(value, list):
+        return any(_json_contains_ps_emp_id(item, ps_emp_id) for item in value)
+
+    return False
+
+
+def _salary_staging_has_ps_emp_id(ps_emp_id, yyyy_month=None):
+    filters = {}
+    if yyyy_month:
+        filters["name"] = yyyy_month
+
+    staged_records = frappe.get_all(
+        "Salary Staging",
+        filters=filters,
+        fields=["name", "salary_record"],
+        limit_page_length=0,
+    )
+
+    for staged_record in staged_records:
+        salary_record = staged_record.get("salary_record")
+        if not salary_record:
+            continue
+
+        for line in str(salary_record).splitlines():
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                payload = json.loads(line)
+            except Exception:
+                continue
+
+            if _json_contains_ps_emp_id(payload, ps_emp_id):
+                return True
+
+    return False
+
+
+@frappe.whitelist(allow_guest=True)
+def salary_payment_data(ps_emp_id, yyyy_month=None):
+    """
+    Return active salary tenure data for a Project Staff employee.
+    """
+    if not ps_emp_id:
+        return {"status": "error", "message": "Employee ID is required"}
+
+    try:
+        if yyyy_month and _salary_staging_has_ps_emp_id(ps_emp_id, yyyy_month):
+            return {"status": "Pending Approval in Account Portal", "message": "Salary already initiated"}
+
+        staff_records = frappe.get_all(
+            "Project Staff Details",
+            filters={"ps_emp_id": ps_emp_id},
+            fields=["name", "scr_id", "project_no"],
+        )
+
+        if not staff_records:
+            return {
+                "status": "error",
+                "message": "No Project Staff Details found for the given Employee ID",
+            }
+
+        current_date = getdate(today())
+        valid_records = []
+
+        for staff_record in staff_records:
+            staff_doc = frappe.get_doc("Project Staff Details", staff_record.name)
+            valid_tenures = []
+
+            for tenure in staff_doc.get("table_ymed") or []:
+                term_completion_date = tenure.get("pstd_term_completion_date")
+                if not term_completion_date:
+                    continue
+
+                term_completion_date = getdate(term_completion_date)
+                if current_date > term_completion_date:
+                    continue
+
+                joining_date = tenure.get("pstd_joining_date")
+                basic_salary = flt(tenure.get("pstd_basic_salary"))
+                valid_tenures.append({
+                    "joining_date": joining_date,
+                    "term_completion_date": term_completion_date,
+                    "basic_salary": basic_salary,
+                })
+
+            if not valid_tenures:
+                continue
+
+            latest_tenure = max(
+                valid_tenures,
+                key=lambda row: (
+                    getdate(row.get("joining_date")) if row.get("joining_date") else getdate("1900-01-01"),
+                    getdate(row.get("term_completion_date")),
+                ),
+            )
+
+            valid_records.append({
+                "staff_doc": staff_doc,
+                "valid_tenures": valid_tenures,
+                "latest_tenure": latest_tenure,
+            })
+
+        if not valid_records:
+            return {
+                "status": "error",
+                "message": "No active tenure found for the given Employee ID",
+            }
+
+        latest_record = max(
+            valid_records,
+            key=lambda row: (
+                getdate(row["latest_tenure"].get("joining_date"))
+                if row["latest_tenure"].get("joining_date")
+                else getdate("1900-01-01"),
+                getdate(row["latest_tenure"].get("term_completion_date")),
+            ),
+        )
+
+        staff_doc = latest_record["staff_doc"]
+        scr_id = staff_doc.get("scr_id")
+        project_no = staff_doc.get("project_no")
+        interview_id = None
+
+        if scr_id and frappe.db.exists("Selection Committee Report", scr_id):
+            interview_id = frappe.db.get_value("Selection Committee Report", scr_id, "interview_id")
+
+        recruitment_doc_name = interview_id
+        if not recruitment_doc_name or not frappe.db.exists("Recruitment Adhoc Contractual", recruitment_doc_name):
+            return []
+
+        merged_commit_records = []
+        with ThreadPoolExecutor(max_workers=len(SALARY_COMMIT_STATUSES)) as executor:
+            future_to_status = {
+                executor.submit(_fetch_account_head_commits_by_status, status): status
+                for status in SALARY_COMMIT_STATUSES
+            }
+
+            for future in as_completed(future_to_status):
+                status = future_to_status[future]
+                try:
+                    merged_commit_records.extend(future.result())
+                except Exception:
+                    frappe.log_error(
+                        frappe.get_traceback(),
+                        f"Salary Account Head Commit API Error: {status}"
+                    )
+
+        filtered_records = []
+        project_title_by_number = {}
+
+        for record in merged_commit_records:
+            if not isinstance(record, dict):
+                continue
+
+            project_number = record.get("projectNumber")
+            if (
+                str(record.get("moduleId")) != "11"
+                or str(record.get("frapAppId")) != str(recruitment_doc_name)
+                or str(project_number) != str(project_no)
+            ):
+                continue
+
+            if project_number not in project_title_by_number:
+                project_title_by_number[project_number] = _get_project_title_by_number(project_number)
+
+            filtered_record = {"projectNumber": project_number}
+            filtered_record["projectTitle"] = project_title_by_number.get(project_number)
+            filtered_record.update({
+                key: value
+                for key, value in record.items()
+                if key != "projectNumber"
+            })
+            filtered_records.append(filtered_record)
+
+        return filtered_records
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Salary Payment Data Error")
+        return {"status": "error", "message": str(e)}
 
 
 @frappe.whitelist()
 def get_project_available_amounts(project_number):
     """
     Fetch available commit and payment amounts for a project from the external ledger API.
-    
+
     Returns:
         dict: {
             "projectNumber": str,
@@ -58,12 +283,12 @@ def get_project_available_amounts(project_number):
     """
     if not project_number:
         return {"status": "error", "message": "Project number is required"}
-    
+
     try:
         api_url = f"{LEDGER_API_BASE_URL}/total-available-amounts?projectNumber={project_number}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -90,15 +315,15 @@ def get_project_available_amounts(project_number):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Ledger API timeout", "Get Project Available Amounts Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Project Available Amounts Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Project Available Amounts Error")
         return {"status": "error", "message": str(e)}
@@ -115,21 +340,21 @@ TOPIC_PAYMENT_DLQ = 'account-head-payment-events-dlq'
 def get_payments_by_account_head(account_head_id):
     """
     Fetch payments by accountHeadId from the external ledger API.
-    
+
     Args:
         account_head_id: The account head ID to fetch payments for
-        
+
     Returns:
         dict: API response with payments data or error
     """
     if not account_head_id:
         return {"status": "error", "message": "Account Head ID is required"}
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_PAYMENTS_API_URL}/account-head/{account_head_id}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -146,15 +371,15 @@ def get_payments_by_account_head(account_head_id):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Payments API timeout", "Get Payments By Account Head Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Payments By Account Head Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Payments By Account Head Error")
         return {"status": "error", "message": str(e)}
@@ -165,28 +390,28 @@ def get_commits_by_status(status):
     """
     Fetch commits by status from the external ledger API.
     Valid statuses: SETTLED, PARTIALLY_PAID, OVERPAYMENT, PENDING
-    
+
     Args:
         status: The status to filter commits by
-        
+
     Returns:
         dict: API response with commits data or error
     """
     if not status:
         return {"status": "error", "message": "Status is required"}
-    
+
     status = status.upper()
     if status not in VALID_COMMIT_STATUSES:
         return {
-            "status": "error", 
+            "status": "error",
             "message": f"Invalid status. Must be one of: {', '.join(VALID_COMMIT_STATUSES)}"
         }
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-status/{status}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -203,15 +428,15 @@ def get_commits_by_status(status):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Commits By Status API timeout", "Get Commits By Status Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Commits By Status Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Commits By Status Error")
         return {"status": "error", "message": str(e)}
@@ -221,21 +446,21 @@ def get_commits_by_status(status):
 def get_commits_by_account_head(account_head_id):
     """
     Fetch commits by accountHeadId from the external ledger API.
-    
+
     Args:
         account_head_id: The account head ID to fetch commits for
-        
+
     Returns:
         dict: API response with commits data or error
     """
     if not account_head_id:
         return {"status": "error", "message": "Account Head ID is required"}
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-account-head/{account_head_id}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -252,15 +477,15 @@ def get_commits_by_account_head(account_head_id):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Commits By Account Head API timeout", "Get Commits By Account Head Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Commits By Account Head Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Commits By Account Head Error")
         return {"status": "error", "message": str(e)}
@@ -271,32 +496,32 @@ def get_commits_by_account_head_and_status(account_head_id, status):
     """
     Fetch commits by accountHeadId and status from the external ledger API.
     Valid statuses: SETTLED, PARTIALLY_PAID, OVERPAYMENT, PENDING
-    
+
     Args:
         account_head_id: The account head ID to fetch commits for
         status: The status to filter commits by
-        
+
     Returns:
         dict: API response with commits data or error
     """
     if not account_head_id:
         return {"status": "error", "message": "Account Head ID is required"}
-    
+
     if not status:
         return {"status": "error", "message": "Status is required"}
-    
+
     status = status.upper()
     if status not in VALID_COMMIT_STATUSES:
         return {
-            "status": "error", 
+            "status": "error",
             "message": f"Invalid status. Must be one of: {', '.join(VALID_COMMIT_STATUSES)}"
         }
-    
+
     try:
         api_url = f"{ACCOUNT_HEAD_COMMIT_API_URL}/by-account-head/{account_head_id}/status/{status}"
-        
+
         response = requests.get(api_url, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             return {
@@ -313,15 +538,15 @@ def get_commits_by_account_head_and_status(account_head_id, status):
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
             }
-    
+
     except requests.exceptions.Timeout:
         frappe.log_error("Get Commits By Account Head and Status API timeout", "Get Commits By Account Head and Status Timeout")
         return {"status": "error", "message": "API request timed out"}
-    
+
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Commits By Account Head and Status Connection Error")
         return {"status": "error", "message": "Could not connect to the ledger API"}
-    
+
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Commits By Account Head and Status Error")
         return {"status": "error", "message": str(e)}
@@ -333,20 +558,24 @@ def get_commits_by_account_head_and_status(account_head_id, status):
 # ==========================================
 
 @frappe.whitelist()
-def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None):
+def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None, moduleId=None, trigger_state=None):
     """
     Submit commit data by staging it in Kafka Commit Staging.
-    It will be published to Kafka later upon workflow reaching 'Approved' (Dean Approval).
-    Works for Reimbursement, Travel, Temporary Advance, Advance Settlement, etc.
+    Published to Kafka when workflow reaches trigger_state (default: 'Approved').
+
+    moduleId: optional int override sent to Kafka (e.g. 14 for ICSS PO re-commit)
+    trigger_state: workflow state that fires publishing (e.g. 'Pending PO Generation' for ICSS)
     """
-    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular}")
+    resolved_trigger_state = trigger_state or "Approved"
+    print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular} moduleId={moduleId} trigger_state={resolved_trigger_state}")
     try:
         # Basic validation
         if not frappe.db.exists(doctype, name):
             print(f"[COMMIT_STAGING] ERROR: Document {doctype} {name} not found")
             return {"status": "error", "message": f"Document {doctype} {name} not found"}
 
-        # Create Payload
+        # Build payload — trigger_state and moduleId stored here so check_workflow_and_publish
+        # can read them without requiring a separate doctype field.
         payload = {
             "commit_amount": flt(commit_amount),
             "budget_head": budget_head,
@@ -355,23 +584,37 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
             "bill_amount": flt(bill_amount) if bill_amount else None,
             "frap_app_id": frapAppId,
             "ref_details": refDetails,
-            "commit_particular": commitParticular
+            "commit_particular": commitParticular,
+            "trigger_state": resolved_trigger_state
         }
+        if moduleId is not None:
+            payload["moduleId"] = int(moduleId)
         print(f"[COMMIT_STAGING] Payload built: {payload}")
 
-        # Check if a staging doc already exists for this reference
+        # Match existing staging row for the same reference + trigger_state so that
+        # a PO re-commit (different trigger_state) does not overwrite the initial commit.
         existing_staging = frappe.get_all("Kafka Commit Staging", filters={
             "reference_doctype": doctype,
             "reference_name": name,
             "status": "PENDING_APPROVAL"
-        }, limit=1)
+        }, fields=["name", "payload"], limit=10)
         print(f"[COMMIT_STAGING] Existing staging docs: {existing_staging}")
 
-        if existing_staging:
-            staging_doc = frappe.get_doc("Kafka Commit Staging", existing_staging[0].name)
+        matched = None
+        for row in existing_staging:
+            try:
+                row_payload = json.loads(row.payload or "{}")
+                if row_payload.get("trigger_state", "Approved") == resolved_trigger_state:
+                    matched = row
+                    break
+            except Exception:
+                pass
+
+        if matched:
+            staging_doc = frappe.get_doc("Kafka Commit Staging", matched.name)
             staging_doc.payload = json.dumps(payload)
             staging_doc.save(ignore_permissions=True)
-            print(f"[COMMIT_STAGING] Updated existing staging doc: {existing_staging[0].name}")
+            print(f"[COMMIT_STAGING] Updated existing staging doc: {matched.name}")
         else:
             staging_doc = frappe.get_doc({
                 "doctype": "Kafka Commit Staging",
@@ -393,41 +636,26 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
 
 def check_workflow_and_publish(doc, method=None):
     """
-    Centralized workflow hook to publish staged commit data when approved by Dean (state: Approved).
-    Triggered on_update of documents.
-    """
-    applicable_doctypes = [
-        "Reimbursement",
-        "Temporary Advance",
-        "Disbursal of Honorarium",
-        "Disbursal of Consultancy",
-        "Direct Purchase",
-        "Advance Settlement",
-        "Travel",
-        "TA DA Settlement",
-        "Recruitment Adhoc Contractual",
-        "Indent General Form"
-    ]
+    Centralized workflow hook to publish staged commit data when the document reaches
+    the trigger_state stored inside each Kafka Commit Staging payload.
 
-    if doc.doctype not in applicable_doctypes:
+    Previously gated by a hardcoded applicable_doctypes list.  Now fully dynamic:
+    any doctype that stages a row via submit_commit_data will be published here once
+    its workflow_state matches the trigger_state in that staging row's payload.
+    Default trigger_state is "Approved" (backward-compatible with all existing modules).
+    ICSS uses trigger_state="Pending PO Generation".
+    """
+    current_state = doc.get("workflow_state")
+    if not current_state:
         return
 
-    current_state = doc.get("workflow_state")
     print(f"[CHECK_WORKFLOW] doctype={doc.doctype} name={doc.name} current_state={current_state}")
 
-    if current_state != "Approved":
-        print(f"[CHECK_WORKFLOW] Skipping — state is '{current_state}', not Approved")
-        return
-
-    # Idempotency: only publish when transitioning INTO Approved
     doc_before = doc.get_doc_before_save()
     prev_state = doc_before.get("workflow_state") if doc_before else None
     print(f"[CHECK_WORKFLOW] prev_state={prev_state}")
-    if doc_before and prev_state == "Approved":
-        print(f"[CHECK_WORKFLOW] Skipping — was already Approved before save (idempotency guard)")
-        return
 
-    # Look for pending staging docs
+    # Look for all pending/failed staging docs for this document
     staging_docs = frappe.get_all("Kafka Commit Staging", filters={
         "reference_doctype": doc.doctype,
         "reference_name": doc.name,
@@ -436,7 +664,6 @@ def check_workflow_and_publish(doc, method=None):
     print(f"[CHECK_WORKFLOW] Found {len(staging_docs)} staging doc(s) for {doc.doctype}/{doc.name}")
 
     if not staging_docs:
-        print(f"[CHECK_WORKFLOW] No staging docs found — nothing to publish")
         return
 
     for st in staging_docs:
@@ -445,6 +672,18 @@ def check_workflow_and_publish(doc, method=None):
         try:
             payload = json.loads(staging_doc.payload)
             print(f"[CHECK_WORKFLOW] Parsed payload: {payload}")
+
+            # Each staging row carries its own trigger_state (default "Approved")
+            trigger_state = payload.get("trigger_state") or "Approved"
+
+            if current_state != trigger_state:
+                print(f"[CHECK_WORKFLOW] Skipping {staging_doc.name} — state '{current_state}' != trigger '{trigger_state}'")
+                continue
+
+            # Idempotency: skip if document was already in trigger_state before this save
+            if doc_before and prev_state == trigger_state:
+                print(f"[CHECK_WORKFLOW] Skipping {staging_doc.name} — was already '{trigger_state}' (idempotency guard)")
+                continue
 
             # For Indent General Form, resolve project_no from the linked Project Registration
             if doc.doctype == "Indent General Form":
@@ -455,6 +694,9 @@ def check_workflow_and_publish(doc, method=None):
                         print(f"[CHECK_WORKFLOW] IGF: resolved project_no={project_no} from igf_project_title={igf_project_title}")
                         payload["project_name"] = project_no
 
+            # Pass moduleId override from payload so ICSS PO re-commit uses module 14
+            module_id_override = payload.get("moduleId") or payload.get("module_id")
+
             # Publish to Kafka
             success = kafka_publish_commit(
                 doc=doc,
@@ -464,7 +706,8 @@ def check_workflow_and_publish(doc, method=None):
                 bmr=payload.get("bmr"),
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
-                ref_details=payload.get("ref_details")
+                ref_details=payload.get("ref_details"),
+                module_id=module_id_override
             )
             print(f"[CHECK_WORKFLOW] kafka_publish_commit returned: {success}")
 
@@ -525,6 +768,8 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
             payload = json.loads(staging_doc.payload)
             print(f"[MANUAL_PUBLISH] Publishing staging doc {staging_doc.name} payload={payload}")
 
+            module_id_override = payload.get("moduleId") or payload.get("module_id")
+
             success = kafka_publish_commit(
                 doc=doc,
                 commit_amount=payload.get("commit_amount"),
@@ -533,7 +778,8 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
                 bmr=payload.get("bmr"),
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
-                ref_details=payload.get("ref_details")
+                ref_details=payload.get("ref_details"),
+                module_id=module_id_override
             )
             print(f"[MANUAL_PUBLISH] kafka_publish_commit returned: {success}")
 
@@ -568,13 +814,251 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
         return {"status": "error", "message": str(e)}
 
 
+def _get_form_value(*keys):
+    for key in keys:
+        value = frappe.form_dict.get(key)
+        if value not in (None, "", "None", "null", "undefined"):
+            return value
+    return None
+
+
+def _is_recruitment_salary_payment(doctype=None, frapAppId=None, moduleName=None, moduleId=None):
+    doctype = doctype or _get_form_value("doctype", "reference_doctype")
+    moduleName = moduleName or _get_form_value("moduleName", "module_name")
+    moduleId = moduleId or _get_form_value("moduleId", "module_id")
+    frapAppId = frapAppId or _get_form_value("frapAppId", "frap_app_id")
+
+    return (
+        doctype == "Recruitment Adhoc Contractual"
+        or moduleName == "Recruitment Adhoc Contractual"
+        or str(moduleName) == "11"
+        or str(moduleId) == "11"
+        or (frapAppId and frappe.db.exists("Recruitment Adhoc Contractual", frapAppId))
+    )
+
+
+def _append_salary_staging_record(salary_year_month, payload):
+    # START MKY 2026-05-29 12:32:00 IST - Fixed salary_record to store as JSON array (was JSON Lines which fails MariaDB CHECK json_valid() constraint)
+    if not salary_year_month:
+        return {"status": "error", "message": "salary_year_month is required"}
+
+    try:
+        created = False
+        print(f"[SALARY_STAGING] Attempting to stage salary_year_month={salary_year_month}")
+        print(f"[SALARY_STAGING] Payload keys: {list(payload.keys())}")
+
+        if frappe.db.exists("Salary Staging", salary_year_month):
+            print(f"[SALARY_STAGING] Existing staging doc found — updating")
+            staging_doc = frappe.get_doc("Salary Staging", salary_year_month)
+
+            # Parse existing salary_record as JSON array
+            existing_raw = staging_doc.get("salary_record") or "[]"
+            try:
+                existing_records = json.loads(existing_raw)
+                if not isinstance(existing_records, list):
+                    existing_records = [existing_records]
+            except Exception:
+                existing_records = []
+
+            # Append new payload and serialize back as a valid JSON array
+            existing_records.append(payload)
+            staging_doc.salary_record = json.dumps(existing_records, default=str)
+            staging_doc.save(ignore_permissions=True)
+            print(f"[SALARY_STAGING] Updated staging doc: {staging_doc.name} (total records: {len(existing_records)})")
+        else:
+            print(f"[SALARY_STAGING] No existing doc — creating new staging doc")
+            # Store as a JSON array with one element so json_valid() constraint passes
+            salary_record_json = json.dumps([payload], default=str)
+            staging_doc = frappe.get_doc({
+                "doctype": "Salary Staging",
+                "name": salary_year_month,
+                "salary_record": salary_record_json,
+            })
+            if frappe.get_meta("Salary Staging").has_field("salary_year_month"):
+                staging_doc.salary_year_month = salary_year_month
+            staging_doc.name = salary_year_month
+            staging_doc.flags.name_set = True  # bypass DocType autoname (format:{YYYY}_{MMMM})
+            staging_doc.insert(ignore_permissions=True)
+            created = True
+            print(f"[SALARY_STAGING] Inserted new staging doc: {staging_doc.name}")
+
+        frappe.db.commit()
+        print(f"[SALARY_STAGING] db.commit() done. created={created}")
+
+        return {
+            "status": "success",
+            "message": "Salary record appended",
+            "name": staging_doc.name,
+            "created": created,
+        }
+
+    except Exception as e:
+        print(f"[SALARY_STAGING] EXCEPTION: {str(e)}")
+        frappe.log_error(frappe.get_traceback(), "Append Salary Staging Record Error")
+        return {"status": "error", "message": str(e)}
+    # END MKY
+
+
 @frappe.whitelist()
-def submit_payment_data(doctype=None, name=None, project_name=None, payment_amount=None, budget_head=None, bmr=None, refDetails=None, frapAppId=None, moduleName=None):
+def submit_payment_data(doctype=None, name=None, project_name=None, payment_amount=None, budget_head=None, bmr=None, refDetails=None, frapAppId=None, moduleName=None, salary_year_month=None):
     """
-    Submit payment data using new Kafka producer.
-    Works for doctype.
+    Create or update an AccountHeadPayment document and publish it to Kafka.
+
+    Accepts values from explicit arguments, falling back to frappe.form_dict
+    for fields not passed directly. Both snake_case and camelCase form keys
+    are supported (e.g. paymentStatus == payment_status).
+
+    Flow:
+        1. Salary/recruitment payments (detected via frapAppId + moduleName):
+           - Stages the payment via _append_salary_staging_record.
+           - Returns immediately with the staging result; does NOT create an
+             AccountHeadPayment document.
+        2. All other payments:
+           - Loads existing doc if `name` is provided and exists, otherwise
+             inserts a new AccountHeadPayment.
+           - Resolves project_ref_number: accepts the Frappe PK or project_no;
+             looks up the PK when a project_no is passed.
+           - Resolves budget_head: accepts the Frappe PK, budget_head label, or
+             numeric id; looks up the PK when a label/id is passed.
+           - Defaults payment_status to "PENDING" and payment_date to today()
+             if not supplied.
+           - Publishes the saved document to Kafka topic
+             `account-head-payment-events`.
+           - Notifies Mattermost on every outcome (success, failure, exception).
+
+    Args:
+        doctype (str): Frappe DocType name (e.g. "AccountHeadPayment").
+        name (str | None): Frappe document name/ID to update. Pass None,
+            "None", "null", or "" to create a new document.
+        project_name (str): Project reference number or project_no value.
+        payment_amount (float | str): Payment amount.
+        budget_head (str): Budget Head PK, label, or numeric id.
+        bmr (str): BMR number linked to the payment.
+        refDetails (str): Free-text payment reference details.
+        frapAppId (str): Frap App identifier; used to detect salary payments.
+        moduleName (str): Module name; used together with frapAppId to detect
+            salary payments.
+        salary_year_month (str): Year-month string (e.g. "2026-06") required
+            for salary staging. Falls back to form_dict keys
+            salary_year_month / salaryYearMonth / year_month / yearMonth.
+
+    Returns:
+        dict: Always returns a dict with at least a "status" key.
+            Success  → {"status": "success", "message": str,
+                        "name": str, "data": dict}
+            Failure  → {"status": "error",   "message": str}
     """
     try:
+        if _is_recruitment_salary_payment(doctype=doctype, frapAppId=frapAppId, moduleName=moduleName):
+            # --- Step 1: persist to Salary Staging for audit record ---
+            salary_year_month = salary_year_month or _get_form_value(
+                "salary_year_month", "salaryYearMonth", "year_month", "yearMonth"
+            )
+            salary_payload = dict(frappe.form_dict)
+            _salary_backend = frappe.form_dict.get("salary_backend_details") or {}
+            if isinstance(_salary_backend, str):
+                try:
+                    import json as _json
+                    _salary_backend = _json.loads(_salary_backend)
+                except Exception:
+                    _salary_backend = {}
+            salary_payload.update({
+                "doctype": doctype, "name": name,
+                "project_name": project_name, "payment_amount": payment_amount,
+                "budget_head": budget_head, "bmr": bmr, "refDetails": refDetails,
+                "frapAppId": frapAppId, "moduleName": moduleName,
+                "salary_year_month": salary_year_month,
+                "status": "PENDING_PUBLISH",
+                "project_no": _get_form_value("project_no") or _salary_backend.get("project_no"),
+                "account_number": _get_form_value("account_number"),
+            })
+            salary_payload.pop("cmd", None)
+            if salary_year_month:
+                _append_salary_staging_record(salary_year_month, salary_payload)
+
+            # --- Step 2: create AccountHeadPayment and publish to Kafka immediately ---
+            # Prefer numeric moduleId ("11") so the mapper can cast it directly to int
+            _sal_module = _get_form_value("moduleId", "module_id") or str(moduleName or "11")
+
+            # Resolve project reference
+            _sal_project = project_name or _get_form_value("project_name", "projectNumber", "project_no")
+            if _sal_project and not frappe.db.exists("Project Registration", _sal_project):
+                _found = frappe.db.get_value("Project Registration", {"project_no": _sal_project}, "name")
+                if _found:
+                    _sal_project = _found
+
+            # Resolve budget head
+            _sal_bh = budget_head or _get_form_value("budget_head")
+            if _sal_bh and not frappe.db.exists("Budget Head", _sal_bh):
+                _found = (
+                    frappe.db.get_value("Budget Head", {"budget_head": _sal_bh}, "name")
+                    or frappe.db.get_value("Budget Head", {"id": _sal_bh}, "name")
+                )
+                if _found:
+                    _sal_bh = _found
+
+            if not _sal_project:
+                _mm_notify(f":x: **Salary Payment Error**\n**frapAppId:** {frapAppId}\n**Error:** project_ref_number is required")
+                return {"status": "error", "message": "project_ref_number is required for salary payment"}
+            if not _sal_bh:
+                _mm_notify(f":x: **Salary Payment Error**\n**frapAppId:** {frapAppId}\n**Error:** budget_head is required")
+                return {"status": "error", "message": "budget_head is required for salary payment"}
+
+            _sal_doc = frappe.new_doc("AccountHeadPayment")
+            _sal_doc.project_ref_number = _sal_project
+            _sal_doc.budget_head        = _sal_bh
+            _sal_doc.payment_amount     = flt(payment_amount or _get_form_value("payment_amount") or 0)
+            _sal_doc.payment_bmr        = bmr or _get_form_value("bmr")
+            _sal_doc.payment_particular = (
+                _get_form_value("payment_particular", "paymentParticular", "commitParticular")
+                or f"Salary payment - {frapAppId}"
+            )
+            _sal_doc.payment_date   = _get_form_value("payment_date", "commitDate") or today()
+            _sal_doc.payment_status = _get_form_value("payment_status", "paymentStatus") or "PENDING"
+            _sal_commit_id = _get_form_value("transactionCommitNumber", "commitId")
+            if _sal_commit_id and str(_sal_commit_id) not in ("0", "None", "null"):
+                _sal_doc.commit_id = _sal_commit_id
+
+            _sal_doc.flags.ignore_permissions = True
+            _sal_doc.insert()
+            print(f"[PAYMENT_DEBUG] Salary AccountHeadPayment inserted: {_sal_doc.name}")
+
+            _sal_success = kafka_publish_payment(
+                doc=_sal_doc,
+                project_name=None,
+                payment_amount=None,
+                budget_head=None,
+                bmr=None,
+                ref_details=refDetails,
+                frap_app_id=frapAppId,
+                module_name=_sal_module,
+            )
+            print(f"[PAYMENT_DEBUG] Salary kafka_publish_payment returned: {_sal_success}")
+
+            if _sal_success:
+                _mm_notify(
+                    f":white_check_mark: **Salary Kafka Published**\n"
+                    f"**frapAppId:** {frapAppId}\n"
+                    f"**Doc:** {_sal_doc.name}\n"
+                    f"**Project:** {_sal_doc.project_ref_number or '-'}\n"
+                    f"**Amount:** {_sal_doc.payment_amount or '-'}\n"
+                    f"**Budget Head:** {_sal_doc.budget_head or '-'}"
+                )
+                return {
+                    "status": "success",
+                    "message": "Salary payment published to Kafka",
+                    "name": _sal_doc.name,
+                    "data": _sal_doc.as_dict(),
+                }
+            else:
+                _mm_notify(
+                    f":x: **Salary Kafka FAILED**\n"
+                    f"**frapAppId:** {frapAppId}\n"
+                    f"**Doc:** {_sal_doc.name}\n"
+                    f"**Project:** {_sal_doc.project_ref_number or '-'}"
+                )
+                return {"status": "error", "message": "Failed to publish salary payment to Kafka"}
+
         # Normalize name: treat "None", "null", empty string as actual None
         if not name or name in ("None", "null", "undefined", ""):
             name = None
@@ -591,11 +1075,11 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
         if not doc:
             is_new = True
             doc = frappe.new_doc(doctype)
-        
+
         # --- Populate Document Fields ---
         # Helper to prefer explicit arg, then form field, then existing doc value
         def get_val(arg_val, fieldname, default=None):
-            if arg_val is not None: 
+            if arg_val is not None:
                 return arg_val
             if fieldname in frappe.form_dict:
                 return frappe.form_dict[fieldname]
@@ -603,19 +1087,19 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
 
         raw_project_ref = get_val(project_name, 'project_ref_number')
         resolved_project_ref = raw_project_ref
-        
+
         if raw_project_ref and not frappe.db.exists("Project Registration", raw_project_ref):
             found_proj = frappe.db.get_value("Project Registration", {"project_no": raw_project_ref}, "name")
             if found_proj:
                 resolved_project_ref = found_proj
-                
+
         doc.project_ref_number = resolved_project_ref
         doc.payment_amount = flt(get_val(payment_amount, 'payment_amount', 0))
-        
+
         # Resolve Budget Head to valid Link Name (PK)
         raw_budget_head = get_val(budget_head, 'budget_head')
         resolved_budget_head = raw_budget_head
-        
+
         # If value exists and is not already a valid PK, try to find the PK
         if raw_budget_head and not frappe.db.exists("Budget Head", raw_budget_head):
             # Try by 'budget_head' field (e.g. "Equipments")
@@ -623,13 +1107,13 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             if not found_name:
                 # Try by 'id' field (if integer passed)
                 found_name = frappe.db.get_value("Budget Head", {"id": raw_budget_head}, "name")
-            
+
             if found_name:
                 resolved_budget_head = found_name
-        
+
         doc.budget_head = resolved_budget_head
         doc.payment_bmr = get_val(bmr, 'payment_bmr')
-        
+
         # Populate other fields from form_dict if present, supporting camelCase alternatives
         field_map = {
             'payment_particular': ['paymentParticular'],
@@ -639,8 +1123,8 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             'bank_transaction_date': ['bankTransactionDate'],
             'commit_id': ['commitId', 'transactionCommitNumber']
         }
-        
-        for field in ['payment_date', 'payment_particular', 'payment_reference_details', 
+
+        for field in ['payment_date', 'payment_particular', 'payment_reference_details',
                       'payment_status', 'bank_transaction_number', 'bank_transaction_date', 'commit_id']:
             val = None
             if field in frappe.form_dict:
@@ -650,14 +1134,14 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                     if alt_key in frappe.form_dict:
                         val = frappe.form_dict[alt_key]
                         break
-            
+
             if val is not None:
                 doc.set(field, val)
-        
+
         # Default status if not set
         if not doc.payment_status:
             doc.payment_status = "PENDING"
-            
+
         # Default dates if not set
         if not doc.payment_date:
             doc.payment_date = today()
@@ -665,10 +1149,22 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
         # Validate required fields for naming and integrity
         if is_new:
             if not doc.project_ref_number:
+                _mm_notify(
+                    f":x: **Payment Validation Error**\n"
+                    f"**DocType:** {doctype}\n"
+                    f"**Name:** {name}\n"
+                    f"**Error:** Project Reference Number is required to create a Payment"
+                )
                 return {"status": "error", "message": "Project Reference Number is required to create a Payment"}
             if not doc.budget_head:
+                _mm_notify(
+                    f":x: **Payment Validation Error**\n"
+                    f"**DocType:** {doctype}\n"
+                    f"**Name:** {name}\n"
+                    f"**Error:** Budget Head is required to create a Payment"
+                )
                 return {"status": "error", "message": "Budget Head is required to create a Payment"}
-            
+
         # Save document to generate name/ID
         doc.flags.ignore_permissions = True
         print(f"[PAYMENT_DEBUG] Before save. is_new={is_new} doc.name={doc.name}")
@@ -676,15 +1172,33 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             doc.insert()
         else:
             doc.save()
-            
+
         print(f"[PAYMENT_DEBUG] After save. doc.name={doc.name}")
+
+        # Pre-flight: verify the two fields the validator requires before hitting Kafka
+        from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import (
+            resolve_budget_head_id, get_project_number
+        )
+        _pre_project = get_project_number(doc.project_ref_number)
+        _pre_bh_id   = resolve_budget_head_id(doc.budget_head)
+        print(f"[PAYMENT_DEBUG] pre-flight projectNumber={_pre_project!r} accountHeadId={_pre_bh_id!r}")
+
+        if not _pre_project:
+            msg = f"Cannot publish: project_ref_number '{doc.project_ref_number}' did not resolve to a project number"
+            _mm_notify(f":x: **Kafka Payment Pre-flight Failed**\n**Doc:** {doc.name}\n**Error:** {msg}")
+            return {"status": "error", "message": msg}
+
+        if _pre_bh_id is None:
+            msg = f"Cannot publish: budget_head '{doc.budget_head}' has no integer id/idx — update the Budget Head record"
+            _mm_notify(f":x: **Kafka Payment Pre-flight Failed**\n**Doc:** {doc.name}\n**Error:** {msg}")
+            return {"status": "error", "message": msg}
 
         # Using the saved document for Kafka publishing
         # We pass explicit args as None to let the mapper use the doc's values we just saved
         print(f"[PAYMENT_DEBUG] Calling kafka_publish_payment for {doc.name}")
         success = kafka_publish_payment(
             doc=doc,
-            project_name=None, 
+            project_name=None,
             payment_amount=None,
             budget_head=None,
             bmr=None,
@@ -721,16 +1235,222 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
     except Exception as e:
         print(f"[PAYMENT_DEBUG] Exception in submit_payment_data: {str(e)}")
         frappe.log_error(frappe.get_traceback(), "Submit Payment Data Error")
+        _mm_notify(
+            f":rotating_light: **submit_payment_data Exception**\n"
+            f"**DocType:** {doctype}\n"
+            f"**Name:** {name}\n"
+            f"**Error:** {str(e)}"
+        )
         return {"status": "error", "message": str(e)}
 
-# START MKY 2026-04-23 12:45:00 IST - Added endpoints to fetch workflow states securely
+@frappe.whitelist()
+def publish_salary_staging(salary_year_month):
+    """
+    Publish all staged salary records for the given year-month to Kafka.
+
+    Reads the Salary Staging document keyed by salary_year_month, iterates
+    every record in the salary_record JSON array, creates an AccountHeadPayment
+    document for each, and publishes it to Kafka via kafka_publish_payment.
+
+    Each record's status inside the JSON array is updated to "PUBLISHED" or
+    "FAILED" after the attempt. The staging document is saved once at the end.
+
+    Args:
+        salary_year_month (str): Primary key of the Salary Staging document
+            (e.g. "2026_june" or "2026-06").
+
+    Returns:
+        dict: {
+            "status": "success" | "error",
+            "published": int,    # count of records successfully published
+            "failed": int,       # count of records that failed
+            "skipped": int,      # count of records already published
+            "total": int,
+            "message": str
+        }
+    """
+    if not salary_year_month:
+        return {"status": "error", "message": "salary_year_month is required"}
+
+    if not frappe.db.exists("Salary Staging", salary_year_month):
+        return {"status": "error", "message": f"Salary Staging '{salary_year_month}' not found"}
+
+    try:
+        staging_doc = frappe.get_doc("Salary Staging", salary_year_month)
+        raw = staging_doc.get("salary_record") or "[]"
+        try:
+            records = json.loads(raw)
+            if not isinstance(records, list):
+                records = [records]
+        except Exception:
+            return {"status": "error", "message": "salary_record is not valid JSON"}
+
+        published = failed = skipped = 0
+
+        for idx, record in enumerate(records):
+            if record.get("status") == "PUBLISHED":
+                skipped += 1
+                continue
+
+            # Pull all fields from the staged record
+            rec_name       = record.get("name") or None
+            rec_project    = record.get("project_name") or record.get("projectNumber")
+            rec_amount     = record.get("payment_amount") or record.get("commitAmount")
+            rec_bhead      = record.get("budget_head")
+            rec_bmr        = record.get("bmr")
+            rec_ref        = record.get("refDetails")
+            rec_app_id     = record.get("frapAppId")
+            # Use moduleId (already an int/digit string) so the mapper can cast it directly
+            rec_module_id  = str(record.get("moduleId") or "11")
+            rec_particular = record.get("payment_particular") or record.get("commitParticular")
+            rec_pay_date   = record.get("payment_date") or record.get("commitDate")
+            rec_pay_status = record.get("payment_status") or "PENDING"
+            rec_commit_id  = record.get("transactionCommitNumber") or None
+
+            print(f"[SALARY_PUBLISH] Processing record {idx}: frapAppId={rec_app_id} project={rec_project} amount={rec_amount} moduleId={rec_module_id}")
+
+            try:
+                # Normalize name — always create a fresh AccountHeadPayment
+                if not rec_name or rec_name in ("None", "null", "undefined", ""):
+                    rec_name = None
+
+                doc = None
+                if rec_name:
+                    try:
+                        doc = frappe.get_doc("AccountHeadPayment", rec_name)
+                    except frappe.DoesNotExistError:
+                        pass
+
+                is_new = not doc
+                if is_new:
+                    doc = frappe.new_doc("AccountHeadPayment")
+
+                # Resolve project_ref_number: accept project_no or Frappe PK
+                raw_proj = rec_project
+                if raw_proj and not frappe.db.exists("Project Registration", raw_proj):
+                    found = frappe.db.get_value("Project Registration", {"project_no": raw_proj}, "name")
+                    if found:
+                        raw_proj = found
+                doc.project_ref_number = raw_proj
+
+                # Resolve budget head: accept name, label, or numeric id string
+                raw_bh = rec_bhead
+                if raw_bh and not frappe.db.exists("Budget Head", raw_bh):
+                    found = (
+                        frappe.db.get_value("Budget Head", {"budget_head": raw_bh}, "name")
+                        or frappe.db.get_value("Budget Head", {"id": raw_bh}, "name")
+                    )
+                    if found:
+                        raw_bh = found
+                doc.budget_head    = raw_bh
+                doc.payment_amount = flt(rec_amount or 0)
+                doc.payment_bmr    = rec_bmr
+                doc.payment_status = rec_pay_status
+                doc.payment_date   = rec_pay_date or today()
+                if rec_particular:
+                    doc.payment_particular = rec_particular
+                if rec_commit_id:
+                    doc.commit_id = rec_commit_id
+
+                if is_new and not doc.project_ref_number:
+                    raise ValueError("project_ref_number is required")
+                if is_new and not doc.budget_head:
+                    raise ValueError("budget_head is required")
+
+                doc.flags.ignore_permissions = True
+                if is_new:
+                    doc.insert()
+                else:
+                    doc.save()
+
+                print(f"[SALARY_PUBLISH] Saved AccountHeadPayment: {doc.name}")
+
+                success = kafka_publish_payment(
+                    doc=doc,
+                    project_name=None,
+                    payment_amount=None,
+                    budget_head=None,
+                    bmr=None,
+                    ref_details=rec_ref,
+                    frap_app_id=rec_app_id,
+                    module_name=rec_module_id,  # digit string "11" → mapper casts to int 11
+                )
+                print(f"[SALARY_PUBLISH] kafka_publish_payment returned: {success}")
+
+                if success:
+                    records[idx]["status"] = "PUBLISHED"
+                    records[idx]["payment_doc"] = doc.name
+                    published += 1
+                    _mm_notify(
+                        f":white_check_mark: **Salary Kafka Published**\n"
+                        f"**Staging:** {salary_year_month}\n"
+                        f"**Doc:** {doc.name}\n"
+                        f"**Project:** {doc.project_ref_number or '-'}\n"
+                        f"**Amount:** {doc.payment_amount or '-'}\n"
+                        f"**Budget Head:** {doc.budget_head or '-'}"
+                    )
+                else:
+                    records[idx]["status"] = "FAILED"
+                    failed += 1
+                    _mm_notify(
+                        f":x: **Salary Kafka FAILED**\n"
+                        f"**Staging:** {salary_year_month}\n"
+                        f"**Doc:** {doc.name}\n"
+                        f"**Project:** {doc.project_ref_number or '-'}"
+                    )
+
+            except Exception as rec_err:
+                print(f"[SALARY_PUBLISH] Exception on record {idx}: {str(rec_err)}")
+                frappe.log_error(frappe.get_traceback(), f"Salary Publish Record Error [{salary_year_month}][{idx}]")
+                records[idx]["status"] = "FAILED"
+                records[idx]["error"] = str(rec_err)
+                failed += 1
+                _mm_notify(
+                    f":rotating_light: **Salary Publish Exception**\n"
+                    f"**Staging:** {salary_year_month}\n"
+                    f"**Record index:** {idx}\n"
+                    f"**Error:** {str(rec_err)}"
+                )
+
+        # Persist updated statuses back to the staging doc
+        staging_doc.salary_record = json.dumps(records, default=str)
+        staging_doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        total = len(records)
+        summary = f"total={total} published={published} failed={failed} skipped={skipped}"
+        print(f"[SALARY_PUBLISH] Done: {summary}")
+
+        return {
+            "status": "success" if failed == 0 else "partial",
+            "published": published,
+            "failed": failed,
+            "skipped": skipped,
+            "total": total,
+            "message": summary,
+        }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Publish Salary Staging Error")
+        _mm_notify(
+            f":rotating_light: **publish_salary_staging Exception**\n"
+            f"**Staging:** {salary_year_month}\n"
+            f"**Error:** {str(e)}"
+        )
+        return {"status": "error", "message": str(e)}
+
+
+# START OJS 2026-04-23 12:45:00 IST - Added endpoints to fetch workflow states securely
 @frappe.whitelist()
 def get_workflow_states(doctype):
     try:
+        # Prefer active workflow; fall back to any workflow for the doctype
         workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
         if not workflows:
-            return {"status": "error", "message": "No active workflow found"}
-        
+            workflows = frappe.get_all("Workflow", filters={"document_type": doctype}, pluck="name")
+        if not workflows:
+            return {"status": "error", "message": "No workflow found"}
+
         states = frappe.get_all("Workflow Document State", filters={"parent": workflows[0]}, pluck="state")
         return {"status": "success", "data": list(set(states))}
     except Exception as e:
@@ -747,14 +1467,41 @@ def get_document_state(doctype, docname):
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def set_workflow_state(doctype, docname, state):
+def set_workflow_state(doctype, docname, state, comment=None):
     try:
         if not frappe.db.exists(doctype, docname):
             return {"status": "error", "message": "Document not found"}
+
+        prev_state = frappe.db.get_value(doctype, docname, "workflow_state") or "Unknown"
+        user = frappe.session.user
+        comment = (comment or "").strip()
+
         frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
+
+        # Activity log comment
+        reason_text = f" | Reason: {comment}" if comment else ""
+        frappe.get_doc({
+            "doctype": "Comment",
+            "comment_type": "Workflow",
+            "reference_doctype": doctype,
+            "reference_name": docname,
+            "content": (
+                f"[Manual Override] Workflow state changed by {user} "
+                f"via Admin Panel: {prev_state} → {state}{reason_text}"
+            ),
+        }).insert(ignore_permissions=True)
+
         frappe.db.commit()
-        return {"status": "success", "message": f"{docname} → {state}"}
+
+        return {
+            "status": "success",
+            "message": f"{docname} → {state}",
+            "from_state": prev_state,
+            "to_state": state,
+            "changed_by": user,
+            "comment": comment or None,
+        }
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "set_workflow_state failed")
         return {"status": "error", "message": str(e)}
-# END MKY
+# END OJS
