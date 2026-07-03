@@ -52,7 +52,7 @@ def get_project_staff_details_fields(doc_name=None):
 	"""
 	Returns field metadata, prefill data (if doc_name provided), and link options.
 	"""
-	meta = frappe.get_meta("project_staff_details")
+	meta = frappe.get_meta("Project Staff Details")
 
 	fields = []
 	for f in meta.get("fields"):
@@ -95,14 +95,14 @@ def get_project_staff_details_fields(doc_name=None):
 
 	if doc_name:
 		doc_name = str(doc_name).strip('"').strip("'")
-		doc = frappe.get_doc("project_staff_details", doc_name)
+		doc = frappe.get_doc("Project Staff Details", doc_name)
 		prefill_data = doc.as_dict()
 
 	client_scripts = []
 	try:
 		scripts = frappe.get_all(
 			"Client Script",
-			filters={"dt": "project_staff_details", "enabled": 1},
+			filters={"dt": "Project Staff Details", "enabled": 1},
 			fields=["name", "script", "view"],
 		)
 		for script in scripts:
@@ -129,11 +129,11 @@ def save_project_staff_details_data(data):
 
 		doc_name = data.get("name")
 		if doc_name:
-			doc = frappe.get_doc("project_staff_details", doc_name)
+			doc = frappe.get_doc("Project Staff Details", doc_name)
 			if doc.docstatus != 0:
 				frappe.throw(_("Cannot edit a submitted or cancelled document."))
 		else:
-			doc = frappe.new_doc("project_staff_details")
+			doc = frappe.new_doc("Project Staff Details")
 
 		field_mapping = [
 			"ps_emp_id",
@@ -209,7 +209,7 @@ def get_project_staff_details_list(filters=None, limit=100):
 			parsed_filters = json.loads(filters) if isinstance(filters, str) else filters
 
 		records = frappe.get_all(
-			"project_staff_details",
+			"Project Staff Details",
 			filters=parsed_filters,
 			fields=[
 				"name",
@@ -243,12 +243,12 @@ def delete_project_staff_details(docname):
 	Deletes a Project Staff Details document (only Draft records).
 	"""
 	try:
-		doc = frappe.get_doc("project_staff_details", docname)
+		doc = frappe.get_doc("Project Staff Details", docname)
 
 		if doc.docstatus == 1:
 			frappe.throw(_("Cannot delete a submitted document. Cancel it first."))
 
-		frappe.delete_doc("project_staff_details", docname, ignore_permissions=True)
+		frappe.delete_doc("Project Staff Details", docname, ignore_permissions=True)
 		frappe.db.commit()
 		return {"status": "success", "message": _("Record '{0}' deleted successfully.").format(docname)}
 

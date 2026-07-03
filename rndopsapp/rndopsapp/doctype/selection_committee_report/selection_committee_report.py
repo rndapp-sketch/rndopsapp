@@ -69,6 +69,10 @@ def _create_selection_candidate_details(doc):
 		if not candidate_id:
 			continue
 
+		# Only insert Recommended and Waiting List candidates
+		if (candidate.get("recommendation") or "").strip().lower() not in ("recommended", "waiting list"):
+			continue
+
 		# Fetch external profile
 		profile = _fetch_candidate_profile(candidate_id)
 
@@ -500,7 +504,7 @@ def perform_selection_committee_report_action(docname, action):
 		print("frappe.db.commit() successful")
 
 		# On Submit: create Selection Candidate Details records from candidates JSON
-		if action == "Submit":
+		if action == "Approve":
 			print("Action is Submit — creating Selection Candidate Details records")
 			try:
 				_create_selection_candidate_details(updated_doc)
@@ -629,6 +633,109 @@ def attach_director_pdf_scr(docname, file_url):
 		"status": "success",
 		"docname": docname,
 		"director_signed_pdf": file_url,
+	}
+
+
+@frappe.whitelist()
+def backfill_selection_candidate_details(dry_run=False):
+	"""
+	One-time backfill: for every submitted SCR that has candidates data,
+	create missing Selection Candidate Details records.
+
+	dry_run=True  → only report which SCRs/candidates would be processed,
+	               nothing is inserted.
+
+	Restricted to System Manager.
+	Call via:
+	  bench execute rndopsapp.rndopsapp.doctype.selection_committee_report.selection_committee_report.backfill_selection_candidate_details
+	or the whitelisted API (System Manager only).
+	"""
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "System Manager" not in user_roles:
+		frappe.throw("Not permitted", frappe.PermissionError)
+
+	dry_run = bool(dry_run)
+
+	# Fetch every SCR that has candidates data
+	all_scr = frappe.get_all(
+		"Selection Committee Report",
+		filters=[["candidates", "is", "set"]],
+		fields=["name", "workflow_state", "candidates"],
+		limit_page_length=0,
+	)
+
+	results = []
+	inserted_total = 0
+	skipped_total = 0
+
+	for scr_row in all_scr:
+		docname = scr_row["name"]
+		candidates_raw = scr_row.get("candidates") or ""
+		if not candidates_raw:
+			continue
+
+		try:
+			candidates = json.loads(candidates_raw) if isinstance(candidates_raw, str) else candidates_raw
+		except Exception:
+			results.append({"name": docname, "error": "Could not parse candidates JSON"})
+			continue
+
+		if not isinstance(candidates, list):
+			continue
+
+		doc_inserted = 0
+		doc_skipped = 0
+
+		for candidate in candidates:
+			candidate_id = candidate.get("candidate_id")
+			application_id = candidate.get("application_id")
+			if not candidate_id:
+				continue
+
+			already_exists = frappe.db.exists(
+				"Selection Candidate Details",
+				{"candidate_id": int(candidate_id), "application_id": int(application_id or 0)},
+			)
+			if already_exists:
+				doc_skipped += 1
+				continue
+
+			doc_inserted += 1
+			if not dry_run:
+				# Re-use the full creation logic by calling the helper with the full doc
+				pass
+
+		if doc_inserted > 0 and not dry_run:
+			try:
+				doc = frappe.get_doc("Selection Committee Report", docname)
+				_create_selection_candidate_details(doc)
+			except Exception as e:
+				import traceback as _tb
+				results.append({
+					"name": docname,
+					"error": str(e),
+					"traceback": _tb.format_exc(),
+				})
+				continue
+
+		inserted_total += doc_inserted
+		skipped_total += doc_skipped
+		results.append({
+			"name": docname,
+			"workflow_state": scr_row.get("workflow_state"),
+			"candidates_count": len(candidates),
+			"would_insert" if dry_run else "inserted": doc_inserted,
+			"skipped_existing": doc_skipped,
+		})
+
+	return {
+		"status": "success",
+		"dry_run": dry_run,
+		"scr_processed": len(results),
+		"total_inserted": 0 if dry_run else inserted_total,
+		"total_would_insert": inserted_total if dry_run else None,
+		"total_skipped_existing": skipped_total,
+		"details": results,
 	}
 
 

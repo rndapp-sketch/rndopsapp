@@ -2605,3 +2605,42 @@ def delete_draft_project(docname):
         frappe.db.rollback()
         frappe.log_error(frappe.get_traceback(), f"Delete Draft Project Error for {docname}")
         return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_co_projects(user=None):
+    current_user = frappe.session.user
+
+    # Do not allow spoofing another user's co-project list
+    if user and user != current_user and current_user != "Administrator":
+        frappe.throw("Not permitted", frappe.PermissionError)
+
+    email = user or current_user
+
+    projects = frappe.db.sql(
+        """
+        SELECT DISTINCT
+            pr.name,
+            pr.project_title,
+            pr.project_no,
+            pr.workflow_state,
+            pr.project_type,
+            pr.funding_agen,
+            pr.creation,
+            pr.modified
+        FROM `tabProject Registration` pr
+        LEFT JOIN `tabProject Additional PI` api
+            ON api.parent = pr.name
+            AND api.parenttype = 'Project Registration'
+        LEFT JOIN `tabProject Co-Investigator` copi
+            ON copi.parent = pr.name
+            AND copi.parenttype = 'Project Registration'
+        WHERE LOWER(api.pi_email) = LOWER(%s)
+           OR LOWER(copi.copi_email) = LOWER(%s)
+        ORDER BY pr.creation DESC
+        """,
+        (email, email),
+        as_dict=True,
+    )
+
+    return projects
