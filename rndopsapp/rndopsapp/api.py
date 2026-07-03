@@ -1158,12 +1158,10 @@ def get_document_activity(doctype, docname):
 # Frontend calls: rndopsapp.rndopsapp.api.<method>
 # ============================================================
 
-
 @frappe.whitelist()
 def search_delegate_users(query=""):
-	from rndopsapp.rndopsapp.delegate_user.delegate_user import search_delegate_users as _impl
-
-	return _impl(query=query)
+    from rndopsapp.rndopsapp.delegate_user.delegate_user import search_delegate_users as _impl
+    return _impl(query=query)
 
 
 @frappe.whitelist()
