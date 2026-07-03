@@ -241,6 +241,7 @@ class WorkflowManager:
 
 		old_state = self.current_state
 		self.doc.workflow_state = next_state
+		self.doc.flags.ignore_validate_update_after_submit = True
 		self.doc.save(ignore_permissions=True)
 
 		# Add audit comment
@@ -317,8 +318,18 @@ def perform_workflow_action(docname: str, action: str, doctype: Optional[str] = 
 	Perform an action and return the new workflow state.
 	Usage: perform_workflow_action("DOCNAME", "Approve", "Doctype Name")
 	"""
-	wf = WorkflowManager(docname, doctype)
-	return wf.perform_action(action)
+	print(f"[WORKFLOW_ACTION] START docname={docname} action={action} doctype={doctype} user={frappe.session.user}")
+	try:
+		wf = WorkflowManager(docname, doctype)
+		print(f"[WORKFLOW_ACTION] WorkflowManager created for docname={docname} doctype={doctype}")
+		result = wf.perform_action(action)
+		print(f"[WORKFLOW_ACTION] SUCCESS docname={docname} action={action} new_state={result}")
+		return result
+	except Exception as e:
+		import traceback
+		print(f"[WORKFLOW_ACTION] ERROR docname={docname} action={action} error={e}")
+		print(traceback.format_exc())
+		raise
 
 
 @frappe.whitelist()

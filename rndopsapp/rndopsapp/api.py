@@ -1345,3 +1345,146 @@ def setup_travel_putback_transitions():
 
 
 # ============================================================
+# ---- PR Lookup: resolve Project Registration from any application docname ----
+
+_PR_FIELDS = [
+    "name", "project_no", "project_title", "project_type", "other_project_type_name",
+    "principal_investigator_name", "pi_webmail", "pi_userid",
+    "implementation_department", "funding_agen", "funding_agency_schemes",
+    "workflow_state", "docstatus", "total_budget_amount", "total_sanctioned_amount",
+    "prj_start_date", "prj_end_date", "project_duration_months",
+    "sanctioned_letter_no", "sanctioned_letter_date",
+    "creation", "modified", "modified_by", "owner",
+]
+
+# Maps application DocType → (link_field, kind)
+# kind "link"       → field stores PR name directly
+# kind "project_no" → field stores project_no; need secondary lookup
+_DOCTYPE_PR_MAP = {
+    "AccountHeadPayment":                ("project_ref_number",    "link"),
+    "Advance Settlement":                ("project_name",          "link"),
+    "AMC":                               ("project_ref",           "link"),
+    "Deposit slip":                      ("project_title",         "link"),
+    "Deposit Slip Project Credit":       ("project_number",        "link"),
+    "Disbursement of Honorarium":        ("project_number",        "link"),
+    "E Non Routine Deposit Slip":        ("project_title",         "link"),
+    "Fund Received":                     ("prjreg_title",          "link"),
+    "Fund Sanction":                     ("project_proposal",      "link"),
+    "Indent Cum Sanction Sheet":         ("project_ref",           "link"),
+    "Indent General Form":               ("igf_project_title",     "link"),
+    "Loan Request":                      ("project_name",          "link"),
+    "myProjects":                        ("project_proposal",      "link"),
+    "payments":                          ("project_id",            "link"),
+    "Project Extension":                 ("project_ref",           "link"),
+    "proprietary_purchase":              ("project_ref",           "link"),
+    "Rate Contract":                     ("project_number",        "link"),
+    "Reimbursement":                     ("project_name",          "link"),
+    "repair_replacement":                ("project_ref",           "link"),
+    "Research Consultancy Deposit Slip": ("project_title",         "link"),
+    "Research Deposit Slip":             ("project_title",         "link"),
+    "standerdized_purchase":             ("project_ref",           "link"),
+    "T Testing Deposit Slip":            ("project_title",         "link"),
+    "Top Up Fellowship":                 ("project_code",          "link"),
+    "Travel":                            ("travel_project_title",  "link"),
+    "UC Request":                        ("project_id",            "link"),
+    # Indirect — stores project_no in a plain Data field
+    "Disbursal of Consultancy":          ("project_title",         "project_no"),
+    "Disbursal of Honorarium":           ("project_no",            "project_no"),
+    "Direct Purchase":                   ("project_no",            "project_no"),
+    "dp_po":                             ("project_no",            "project_no"),
+    "Endorsement Data":                  ("project_no",            "project_no"),
+    "Extension Of Tenure Of Appointment":("project_number",        "project_no"),
+    "ICSS_PO":                           ("project_number",        "project_no"),
+    "NIQ":                               ("project_no",            "project_no"),
+    "P_11 Form":                         ("project_no",            "project_no"),
+    "Project Staff Details":             ("project_no",            "project_no"),
+    "Recruitment Adhoc Contractual":     ("upfa_project_code",     "project_no"),
+    "sanction_sheet":                    ("project_no",            "project_no"),
+    "Selection Committee Report":        ("project_number",        "project_no"),
+    "TA DA Settlement":                  ("project_no",            "project_no"),
+    "Temporary Advance":                 ("project_code",          "project_no"),
+}
+
+
+def _fetch_pr_summary(pr_name):
+    pr = frappe.db.get_value("Project Registration", pr_name, _PR_FIELDS, as_dict=True)
+    if not pr:
+        frappe.throw(f"Project Registration '{pr_name}' not found.", title="Not Found")
+    return pr
+
+
+@frappe.whitelist()
+def lookup_project_from_application(doctype, docname):
+    """
+    Resolve the Project Registration linked from any application DocType + docname.
+    Returns project_no and full PR summary alongside source document metadata.
+    """
+    if doctype not in _DOCTYPE_PR_MAP:
+        return {
+            "status": "error",
+            "message": f"DocType '{doctype}' is not in the PR link map.",
+            "supported_doctypes": sorted(_DOCTYPE_PR_MAP.keys()),
+        }
+
+    field_name, field_kind = _DOCTYPE_PR_MAP[doctype]
+
+    if not frappe.db.exists(doctype, docname):
+        return {"status": "error", "message": f"{doctype} '{docname}' not found."}
+
+    field_value = frappe.db.get_value(doctype, docname, field_name)
+    if not field_value:
+        return {
+            "status": "error",
+            "message": f"Field '{field_name}' in {doctype} '{docname}' is empty — no PR linked.",
+        }
+
+    if field_kind == "link":
+        pr_name = field_value
+    else:
+        pr_name = frappe.db.get_value("Project Registration", {"project_no": field_value}, "name")
+        if not pr_name:
+            return {
+                "status": "error",
+                "message": f"No Project Registration found with project_no '{field_value}'.",
+            }
+
+    pr = _fetch_pr_summary(pr_name)
+    return {
+        "status": "success",
+        "source": {
+            "doctype": doctype,
+            "docname": docname,
+            "link_field": field_name,
+            "link_value": field_value,
+            "link_kind": field_kind,
+        },
+        "pr": pr,
+    }
+
+
+@frappe.whitelist()
+def lookup_project_direct(identifier):
+    """
+    Look up a Project Registration by its document name (autoname) or project_no.
+    """
+    identifier = (identifier or "").strip()
+    if not identifier:
+        return {"status": "error", "message": "Please provide a PR name or project_no."}
+
+    if frappe.db.exists("Project Registration", identifier):
+        pr_name = identifier
+    else:
+        pr_name = frappe.db.get_value("Project Registration", {"project_no": identifier}, "name")
+
+    if not pr_name:
+        return {"status": "error", "message": f"No Project Registration found for '{identifier}'."}
+
+    pr = _fetch_pr_summary(pr_name)
+    return {"status": "success", "pr": pr}
+
+
+@frappe.whitelist()
+def get_pr_link_map():
+    """Return the supported doctype → link-field mapping for the PR lookup page."""
+    return {dt: {"field": v[0], "kind": v[1]} for dt, v in _DOCTYPE_PR_MAP.items()}
+

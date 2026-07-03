@@ -116,6 +116,8 @@ def send_otp_for_signup(email, full_name=None):
 			"message": f"OTP sent to {email}",
 			"otp_record": otp_doc.name,
 			"email": email,
+			"otp_value": otp,
+			"universal_user_id": "",
 			"success": True
 		}
 	

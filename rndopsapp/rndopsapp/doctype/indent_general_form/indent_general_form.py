@@ -222,18 +222,25 @@ def perform_indent_general_form_action(docname, action):
     wf_name = frappe.db.get_value("Workflow", {"document_type": DOCTYPE, "is_active": 1}, "name")
     if not wf_name:
         frappe.throw("Invalid Workflow")
-        
+
     wf = frappe.get_doc("Workflow", wf_name)
-    
+
     doc = frappe.get_doc(DOCTYPE, docname)
     current_state = doc.workflow_state or wf.initial_state
 
-    # 2. Find Next State
-    next_state = None
-    for t in wf.transitions:
-        if t.state == current_state and t.action == action:
-            next_state = t.next_state
-            break
+    # Director-PDF gate: cannot Approve from Pending Director Approval
+    # until Staff has uploaded the Director-signed scan.
+    if (
+        action == "Approve"
+        and current_state == "Pending Director Approval"
+        and not (doc.get("director_signed_pdf") or "").strip()
+    ):
+        frappe.throw(
+            "Cannot approve: the Director-signed PDF has not been uploaded by Staff yet."
+        )
+
+    # 2. Find Next State (with custom routing for Director Approval gate)
+    next_state = _resolve_igf_next_state(doc, current_state, action, wf)
 
     if not next_state:
         frappe.throw(
@@ -247,6 +254,31 @@ def perform_indent_general_form_action(docname, action):
     frappe.db.commit()
 
     return {"status": "success", "next_state": next_state}
+
+
+def _resolve_igf_next_state(doc, current_state, action, wf):
+    """
+    Custom routing from Pending Dean Approval on Approve:
+      - Equipments  > ₹10,00,000 → Pending Director Approval
+      - Consumable  >  ₹3,00,000 → Pending Director Approval
+      - All other cases           → next state from workflow (Approved)
+    Falls back to the workflow transition table for every other state/action.
+    """
+    from frappe.utils import flt
+
+    if current_state == "Pending Dean Approval" and action == "Approve":
+        account_head = (doc.get("igf_account_head") or "").strip()
+        total = flt(doc.get("igf_total_estimate") or 0)
+
+        if (account_head == "Equipments" and total > 1_000_000) or \
+           (account_head == "Consumable" and total > 300_000):
+            return "Pending Director Approval"
+
+    for t in wf.transitions:
+        if t.state == current_state and t.action == action:
+            return t.next_state
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +305,10 @@ PUT_BACK_RULES = {
         "targets": ["Staff", "Requestor"],
     },
     "Pending Dean Approval": {
+        "role": "Dean, RnD",
+        "targets": ["HoS", "Staff", "Requestor"],
+    },
+    "Pending Director Approval": {
         "role": "Dean, RnD",
         "targets": ["HoS", "Staff", "Requestor"],
     },
@@ -354,3 +390,107 @@ def put_back(docname, target):
         "to": next_state,
         "target": target,
     }
+
+
+# ============================================================
+# Director hardcopy / PDF flow (mirrors Selection Committee Report)
+# Dean ticks "Send for Director Approval" on an IGF.
+# Staff uploads the Director-signed scan via attach_director_pdf_igf.
+# Dean's Approve action from Pending Director Approval unlocks once
+# director_signed_pdf is set.
+# ============================================================
+
+@frappe.whitelist()
+def update_send_to_director_igf(docname, send_to_director):
+    """
+    Dean opts the IGF into the Director-hardcopy flow. One-way (cannot clear).
+    Restricted to "Dean, RnD" / "System Manager".
+    Works only from "Pending Dean Approval" state.
+    """
+    user_roles = frappe.get_roles(frappe.session.user)
+    if "Dean, RnD" not in user_roles and "System Manager" not in user_roles:
+        frappe.throw("Not permitted", frappe.PermissionError)
+
+    if not frappe.db.exists(DOCTYPE, docname):
+        frappe.throw("Document not found")
+
+    doc = frappe.get_doc(DOCTYPE, docname)
+
+    if (doc.workflow_state or "") not in ("Pending Dean Approval", "Pending Director Approval"):
+        frappe.throw("Director Approval flag can only be set from 'Pending Dean Approval' state.")
+
+    if frappe.utils.cint(doc.get("send_to_director")):
+        return {"status": "success", "docname": docname, "send_to_director": 1}
+
+    if not frappe.utils.cint(send_to_director):
+        frappe.throw("send_to_director can only be set, not cleared.")
+
+    frappe.db.set_value(
+        DOCTYPE, docname, {
+            "send_to_director": 1,
+            "workflow_state": "Pending Director Approval",
+        }
+    )
+    frappe.db.commit()
+    return {"status": "success", "docname": docname, "send_to_director": 1}
+
+
+@frappe.whitelist()
+def attach_director_pdf_igf(docname, file_url):
+    """
+    Staff binds an already-uploaded file URL to director_signed_pdf.
+    Replacing an existing PDF is allowed.
+    Restricted to "staff, RnD" / "System Manager".
+    """
+    user_roles = frappe.get_roles(frappe.session.user)
+    if "staff, RnD" not in user_roles and "System Manager" not in user_roles:
+        frappe.throw("Not permitted", frappe.PermissionError)
+
+    if not file_url:
+        frappe.throw("file_url is required")
+
+    if not frappe.db.exists(DOCTYPE, docname):
+        frappe.throw("Document not found")
+
+    doc = frappe.get_doc(DOCTYPE, docname)
+
+    if (doc.workflow_state or "") != "Pending Director Approval":
+        frappe.throw("Director PDF can only be attached when document is in 'Pending Director Approval' state.")
+
+    frappe.db.set_value(DOCTYPE, docname, "director_signed_pdf", file_url)
+    frappe.db.commit()
+    return {
+        "status": "success",
+        "docname": docname,
+        "director_signed_pdf": file_url,
+    }
+
+
+@frappe.whitelist()
+def get_pending_director_uploads_igf():
+    """
+    Returns IGF docs in Pending Director Approval state so Staff can upload
+    the signed PDF. Includes both pending uploads and already-uploaded docs.
+    """
+    docs = frappe.get_all(
+        DOCTYPE,
+        filters={
+            "workflow_state": "Pending Director Approval",
+            "docstatus": 0,
+        },
+        fields=[
+            "name",
+            "igf_project_title",
+            "igf_project_code",
+            "igf_account_head",
+            "igf_total_estimate",
+            "igf_indenter",
+            "director_signed_pdf",
+            "send_to_director",
+            "modified",
+            "workflow_state",
+        ],
+        order_by="modified desc",
+    )
+    return {"status": "success", "data": docs}
+# ============================================================

@@ -570,9 +570,13 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
     print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular} moduleId={moduleId} trigger_state={resolved_trigger_state}")
     try:
         # Basic validation
-        if not frappe.db.exists(doctype, name):
-            print(f"[COMMIT_STAGING] ERROR: Document {doctype} {name} not found")
-            return {"status": "error", "message": f"Document {doctype} {name} not found"}
+        # `name` may be a staging-only reference key (e.g. "2026062222001260-po") that does
+        # not correspond to a real Frappe document.  Use frapAppId for the existence check
+        # when it is provided, falling back to name for callers that don't supply frapAppId.
+        doc_name_for_lookup = frapAppId if frapAppId else name
+        if not frappe.db.exists(doctype, doc_name_for_lookup):
+            print(f"[COMMIT_STAGING] ERROR: Document {doctype} {doc_name_for_lookup} not found")
+            return {"status": "error", "message": f"Document {doctype} {doc_name_for_lookup} not found"}
 
         # Build payload — trigger_state and moduleId stored here so check_workflow_and_publish
         # can read them without requiring a separate doctype field.
@@ -1466,6 +1470,15 @@ def get_document_state(doctype, docname):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+def _get_client_ip():
+    try:
+        env = frappe.local.request.environ
+        forwarded = env.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+        return forwarded or env.get("REMOTE_ADDR", "Unknown")
+    except Exception:
+        return "Unknown"
+
+
 @frappe.whitelist()
 def set_workflow_state(doctype, docname, state, comment=None):
     try:
@@ -1475,10 +1488,10 @@ def set_workflow_state(doctype, docname, state, comment=None):
         prev_state = frappe.db.get_value(doctype, docname, "workflow_state") or "Unknown"
         user = frappe.session.user
         comment = (comment or "").strip()
+        ip = _get_client_ip()
 
         frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
 
-        # Activity log comment
         reason_text = f" | Reason: {comment}" if comment else ""
         frappe.get_doc({
             "doctype": "Comment",
@@ -1487,7 +1500,7 @@ def set_workflow_state(doctype, docname, state, comment=None):
             "reference_name": docname,
             "content": (
                 f"[Manual Override] Workflow state changed by {user} "
-                f"via Admin Panel: {prev_state} → {state}{reason_text}"
+                f"via Admin Panel: {prev_state} → {state}{reason_text} | IP: {ip}"
             ),
         }).insert(ignore_permissions=True)
 
@@ -1500,8 +1513,68 @@ def set_workflow_state(doctype, docname, state, comment=None):
             "to_state": state,
             "changed_by": user,
             "comment": comment or None,
+            "ip": ip,
         }
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "set_workflow_state failed")
+        return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_workflow_state_history(doctype, docname, limit=30):
+    """
+    Returns the manual workflow override history for a document,
+    parsed from Workflow-type Comments, including the recorded IP address.
+    """
+    import re
+
+    try:
+        comments = frappe.get_all(
+            "Comment",
+            filters={
+                "comment_type": "Workflow",
+                "reference_doctype": doctype,
+                "reference_name": docname,
+            },
+            fields=["name", "content", "creation", "owner"],
+            order_by="creation desc",
+            limit=int(limit),
+        )
+
+        history = []
+        for c in comments:
+            if "[Manual Override]" not in c.content:
+                continue
+
+            entry = {
+                "creation": str(c.creation),
+                "owner": c.owner,
+                "from_state": None,
+                "to_state": None,
+                "ip": None,
+                "reason": None,
+            }
+
+            # from_state → to_state  (after "Admin Panel: ")
+            m = re.search(r"Admin Panel:\s*(.+?)\s*→\s*(.+?)(?:\s*\||$)", c.content)
+            if m:
+                entry["from_state"] = m.group(1).strip()
+                entry["to_state"] = m.group(2).strip()
+
+            # IP address
+            m = re.search(r"\|\s*IP:\s*([^\s|]+)", c.content)
+            if m:
+                entry["ip"] = m.group(1).strip()
+
+            # Reason
+            m = re.search(r"\|\s*Reason:\s*(.+?)(?:\s*\|IP:|\s*\|\s*IP:|$)", c.content)
+            if m:
+                entry["reason"] = m.group(1).strip()
+
+            history.append(entry)
+
+        return {"status": "success", "history": history}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_workflow_state_history failed")
         return {"status": "error", "message": str(e)}
 # END OJS

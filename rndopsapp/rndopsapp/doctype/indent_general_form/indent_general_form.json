@@ -37,7 +37,9 @@
   "igf_upload_vendor_list",
   "igf_declaration_section",
   "igf_declaration_text",
-  "igf_decl_inr_confirmation"
+  "igf_decl_inr_confirmation",
+  "send_to_director",
+  "director_signed_pdf"
  ],
  "fields": [
   {
@@ -229,6 +231,18 @@
    "label": "All prices / amounts mentioned in the form are in Indian Rupee (INR)."
   },
   {
+   "default": "0",
+   "fieldname": "send_to_director",
+   "fieldtype": "Check",
+   "label": "Send for Director Approval"
+  },
+  {
+   "fieldname": "director_signed_pdf",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Director Signed PDF"
+  },
+  {
    "fieldname": "column_break_ybui",
    "fieldtype": "Column Break",
    "hidden": 1
@@ -238,7 +252,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-27 18:02:49.846668",
+ "modified": "2026-07-03 14:08:39.601163",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Indent General Form",
