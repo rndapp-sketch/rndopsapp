@@ -34,9 +34,12 @@ def _mm_notify(message: str):
     threading.Thread(target=_post, daemon=True).start()
 
 # External API endpoints
-LEDGER_API_BASE_URL = "http://172.16.134.81:18080/api/commit-payment-transactions"
-ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.134.81:18080/api/account-head-payments"
-ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.134.81:18080/api/account-head-commit"
+#LEDGER_API_BASE_URL = "http://172.16.134.81:18080/api/commit-payment-transactions"
+#ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.134.81:18080/api/account-head-payments"
+#ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.134.81:18080/api/account-head-commit"
+LEDGER_API_BASE_URL = "http://172.16.135.27:18083/api/commit-payment-transactions"
+ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.135.27:18083/api/account-head-payments"
+ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.135.27:18083/api/account-head-commit"
 
 # Valid commit statuses
 VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]
@@ -702,7 +705,8 @@ def check_workflow_and_publish(doc, method=None):
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
                 ref_details=payload.get("ref_details"),
-                module_id=module_id_override
+                module_id=module_id_override,
+                commit_particular=payload.get("commit_particular")
             )
             print(f"[CHECK_WORKFLOW] kafka_publish_commit returned: {success}")
 
@@ -774,7 +778,8 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
                 ref_details=payload.get("ref_details"),
-                module_id=module_id_override
+                module_id=module_id_override,
+                commit_particular=payload.get("commit_particular")
             )
             print(f"[MANUAL_PUBLISH] kafka_publish_commit returned: {success}")
 

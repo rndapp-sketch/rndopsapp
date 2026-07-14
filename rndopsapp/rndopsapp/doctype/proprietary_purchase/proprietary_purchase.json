@@ -150,7 +150,7 @@
   },
   {
    "fieldname": "pp_supplier_details",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Supplier Name & Address"
   },
   {

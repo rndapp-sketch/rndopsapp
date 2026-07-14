@@ -46,8 +46,9 @@ class AccountHeadCommitValidator:
         if not dto.commitDate:
             errors.append("commitDate is required")
 
-        if dto.commitAmount <= 0:
-            errors.append("commitAmount must be greater than 0")
+        if dto.commitAmount == 0:
+            # Negative is valid — it signals a de-commit (reversal) rather than a commit.
+            errors.append("commitAmount must not be zero")
 
         # Valid status values
         valid_statuses = ["COMMITTED", "PENDING", "CANCELLED"]
