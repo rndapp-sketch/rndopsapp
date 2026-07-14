@@ -19,6 +19,18 @@ from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_
 
 class FundSanction(Document):
 	def before_save(self):
+		self.sync_sanction_workflow_status()
+
+	def before_submit(self):
+		self.sync_sanction_workflow_status()
+
+	def before_update_after_submit(self):
+		# Workflow transitions on an already-submitted doc (docstatus staying 1) route
+		# through this hook instead of before_save — without it, sanction_workflow_status
+		# goes stale on every transition after the doc is first submitted.
+		self.sync_sanction_workflow_status()
+
+	def sync_sanction_workflow_status(self):
 		if self.workflow_state:
 			self.sanction_workflow_status = self.workflow_state
 

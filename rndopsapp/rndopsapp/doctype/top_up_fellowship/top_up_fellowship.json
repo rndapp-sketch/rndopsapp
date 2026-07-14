@@ -42,8 +42,7 @@
   },
   {
    "fieldname": "students_section",
-   "fieldtype": "Section Break",
-   "label": "Students"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "students",
@@ -141,8 +140,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-21 12:31:57.177475",
- "modified_by": "Administrator",
+ "modified": "2026-07-13 22:25:46.556608",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Top Up Fellowship",
  "naming_rule": "Expression",

@@ -711,7 +711,8 @@ def check_workflow_and_publish(doc, method=None):
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
                 ref_details=payload.get("ref_details"),
-                module_id=module_id_override
+                module_id=module_id_override,
+                commit_particular=payload.get("commit_particular")
             )
             print(f"[CHECK_WORKFLOW] kafka_publish_commit returned: {success}")
 
@@ -783,7 +784,8 @@ def manually_publish_staged_commit(reference_name, reference_doctype="Recruitmen
                 bill_amount=payload.get("bill_amount"),
                 frap_app_id=payload.get("frap_app_id"),
                 ref_details=payload.get("ref_details"),
-                module_id=module_id_override
+                module_id=module_id_override,
+                commit_particular=payload.get("commit_particular")
             )
             print(f"[MANUAL_PUBLISH] kafka_publish_commit returned: {success}")
 
@@ -841,18 +843,60 @@ def _is_recruitment_salary_payment(doctype=None, frapAppId=None, moduleName=None
     )
 
 
+def _salary_payload_identity(payload):
+    """Best-effort human-readable identifier for a staged salary payload, for logs/alerts."""
+    backend = payload.get("salary_backend_details") or {}
+    if isinstance(backend, str):
+        try:
+            backend = json.loads(backend)
+        except Exception:
+            backend = {}
+    user_details = payload.get("salary_user_details") or {}
+    if isinstance(user_details, str):
+        try:
+            user_details = json.loads(user_details)
+        except Exception:
+            user_details = {}
+
+    emp_id = backend.get("ps_emp_id") or user_details.get("employee_id") or payload.get("frapAppId")
+    emp_name = user_details.get("first_name")
+    if emp_id and emp_name:
+        return f"{emp_name} ({emp_id})"
+    return str(emp_id or payload.get("commitParticular") or "unknown")
+
+
 def _append_salary_staging_record(salary_year_month, payload):
     # START MKY 2026-05-29 12:32:00 IST - Fixed salary_record to store as JSON array (was JSON Lines which fails MariaDB CHECK json_valid() constraint)
     if not salary_year_month:
         return {"status": "error", "message": "salary_year_month is required"}
 
+    identity = _salary_payload_identity(payload)
+
+    # Concurrent submissions for the same salary_year_month race on this
+    # read-modify-write (each request reads salary_record before any of the
+    # others commit their append, so only the last writer's record survives).
+    # A named lock serializes appends per year-month across requests/workers.
+    lock_name = f"salary_staging_{salary_year_month}"
+    print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Acquiring lock {lock_name!r}...")
+    got_lock = frappe.db.sql("SELECT GET_LOCK(%s, 10)", lock_name)[0][0]
+    if not got_lock:
+        print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] FAILED to acquire lock after 10s")
+        _mm_notify(
+            f":x: **Salary Staging Lock Timeout**\n"
+            f"**Month:** {salary_year_month}\n"
+            f"**Employee:** {identity}\n"
+            f"**Error:** Could not acquire `{lock_name}` within 10s — record NOT staged"
+        )
+        return {"status": "error", "message": "Could not acquire salary staging lock, please retry"}
+    print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Lock acquired")
+
     try:
         created = False
-        print(f"[SALARY_STAGING] Attempting to stage salary_year_month={salary_year_month}")
-        print(f"[SALARY_STAGING] Payload keys: {list(payload.keys())}")
+        print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Attempting to stage")
+        print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Payload keys: {list(payload.keys())}")
 
         if frappe.db.exists("Salary Staging", salary_year_month):
-            print(f"[SALARY_STAGING] Existing staging doc found — updating")
+            print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Existing staging doc found — updating")
             staging_doc = frappe.get_doc("Salary Staging", salary_year_month)
 
             # Parse existing salary_record as JSON array
@@ -864,13 +908,17 @@ def _append_salary_staging_record(salary_year_month, payload):
             except Exception:
                 existing_records = []
 
+            before_count = len(existing_records)
+            existing_identities = [_salary_payload_identity(r) for r in existing_records]
+            print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Records before append: {before_count} -> {existing_identities}")
+
             # Append new payload and serialize back as a valid JSON array
             existing_records.append(payload)
             staging_doc.salary_record = json.dumps(existing_records, default=str)
             staging_doc.save(ignore_permissions=True)
-            print(f"[SALARY_STAGING] Updated staging doc: {staging_doc.name} (total records: {len(existing_records)})")
+            print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Updated staging doc: {staging_doc.name} ({before_count} -> {len(existing_records)} records)")
         else:
-            print(f"[SALARY_STAGING] No existing doc — creating new staging doc")
+            print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] No existing doc — creating new staging doc")
             # Store as a JSON array with one element so json_valid() constraint passes
             salary_record_json = json.dumps([payload], default=str)
             staging_doc = frappe.get_doc({
@@ -884,10 +932,20 @@ def _append_salary_staging_record(salary_year_month, payload):
             staging_doc.flags.name_set = True  # bypass DocType autoname (format:{YYYY}_{MMMM})
             staging_doc.insert(ignore_permissions=True)
             created = True
-            print(f"[SALARY_STAGING] Inserted new staging doc: {staging_doc.name}")
+            before_count = 0
+            print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Inserted new staging doc: {staging_doc.name}")
 
         frappe.db.commit()
-        print(f"[SALARY_STAGING] db.commit() done. created={created}")
+        after_count = before_count + 1
+        print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] db.commit() done. created={created}, total_records={after_count}")
+
+        _mm_notify(
+            f":white_check_mark: **Salary Staged**\n"
+            f"**Month:** {salary_year_month}\n"
+            f"**Employee:** {identity}\n"
+            f"**Doc:** {staging_doc.name} ({'created' if created else 'updated'})\n"
+            f"**Total records now:** {after_count}"
+        )
 
         return {
             "status": "success",
@@ -897,9 +955,18 @@ def _append_salary_staging_record(salary_year_month, payload):
         }
 
     except Exception as e:
-        print(f"[SALARY_STAGING] EXCEPTION: {str(e)}")
+        print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] EXCEPTION: {str(e)}")
         frappe.log_error(frappe.get_traceback(), "Append Salary Staging Record Error")
+        _mm_notify(
+            f":rotating_light: **Salary Staging Exception**\n"
+            f"**Month:** {salary_year_month}\n"
+            f"**Employee:** {identity}\n"
+            f"**Error:** {str(e)}"
+        )
         return {"status": "error", "message": str(e)}
+    finally:
+        frappe.db.sql("SELECT RELEASE_LOCK(%s)", lock_name)
+        print(f"[SALARY_STAGING] [{salary_year_month}] [{identity}] Lock released")
     # END MKY
 
 
@@ -953,6 +1020,26 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             Failure  → {"status": "error",   "message": str}
     """
     try:
+        print(
+            f"[PAYMENT_DEBUG] submit_payment_data called. doctype={doctype} name={name} "
+            f"project_name={project_name} payment_amount={payment_amount} budget_head={budget_head} "
+            f"bmr={bmr} refDetails={refDetails} frapAppId={frapAppId} moduleName={moduleName} "
+            f"salary_year_month={salary_year_month}"
+        )
+        print(f"[PAYMENT_DEBUG] form_dict keys received: {list(frappe.form_dict.keys())}")
+        _mm_notify(
+            f":inbox_tray: **submit_payment_data Called**\n"
+            f"**DocType:** {doctype}\n"
+            f"**Name:** {name}\n"
+            f"**Project:** {project_name or '-'}\n"
+            f"**Amount:** {payment_amount or '-'}\n"
+            f"**Budget Head:** {budget_head or '-'}\n"
+            f"**frapAppId:** {frapAppId or '-'}\n"
+            f"**moduleName:** {moduleName or '-'}\n"
+            f"**salary_year_month:** {salary_year_month or '-'}\n"
+            f"**form_dict keys:** {list(frappe.form_dict.keys())}"
+        )
+
         if _is_recruitment_salary_payment(doctype=doctype, frapAppId=frapAppId, moduleName=moduleName):
             # --- Step 1: persist to Salary Staging for audit record ---
             salary_year_month = salary_year_month or _get_form_value(
@@ -977,8 +1064,27 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                 "account_number": _get_form_value("account_number"),
             })
             salary_payload.pop("cmd", None)
+
+            _entry_identity = _salary_payload_identity(salary_payload)
+            print(f"[SUBMIT_PAYMENT_DATA] [{salary_year_month}] [{_entry_identity}] Salary payment detected. frapAppId={frapAppId} moduleName={moduleName} doctype={doctype}")
+            _mm_notify(
+                f":inbox_tray: **Salary Payment Received**\n"
+                f"**Month:** {salary_year_month or '-'}\n"
+                f"**Employee:** {_entry_identity}\n"
+                f"**frapAppId:** {frapAppId}\n"
+                f"**Amount:** {payment_amount or '-'}"
+            )
+
             if salary_year_month:
                 _append_salary_staging_record(salary_year_month, salary_payload)
+            else:
+                print(f"[SUBMIT_PAYMENT_DATA] [{_entry_identity}] WARNING: salary_year_month could not be resolved — record was NOT staged")
+                _mm_notify(
+                    f":warning: **Salary Staging Skipped**\n"
+                    f"**Employee:** {_entry_identity}\n"
+                    f"**frapAppId:** {frapAppId}\n"
+                    f"**Error:** salary_year_month missing/unresolved from request — record NOT written to Salary Staging"
+                )
 
             # --- Step 2: create AccountHeadPayment and publish to Kafka immediately ---
             # Prefer numeric moduleId ("11") so the mapper can cast it directly to int
@@ -992,7 +1098,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                     _sal_project = _found
 
             # Resolve budget head
-            _sal_bh = budget_head or _get_form_value("budget_head")
+            _sal_bh = budget_head or _get_form_value("budget_head", "accountHeadId", "account_head_id")
             if _sal_bh and not frappe.db.exists("Budget Head", _sal_bh):
                 _found = (
                     frappe.db.get_value("Budget Head", {"budget_head": _sal_bh}, "name")
@@ -1001,10 +1107,14 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                 if _found:
                     _sal_bh = _found
 
+            print(f"[PAYMENT_DEBUG] [{salary_year_month}] [{_entry_identity}] Resolved _sal_project={_sal_project!r} _sal_bh={_sal_bh!r}")
+
             if not _sal_project:
+                print(f"[PAYMENT_DEBUG] [{salary_year_month}] [{_entry_identity}] ERROR: project_ref_number could not be resolved")
                 _mm_notify(f":x: **Salary Payment Error**\n**frapAppId:** {frapAppId}\n**Error:** project_ref_number is required")
                 return {"status": "error", "message": "project_ref_number is required for salary payment"}
             if not _sal_bh:
+                print(f"[PAYMENT_DEBUG] [{salary_year_month}] [{_entry_identity}] ERROR: budget_head could not be resolved")
                 _mm_notify(f":x: **Salary Payment Error**\n**frapAppId:** {frapAppId}\n**Error:** budget_head is required")
                 return {"status": "error", "message": "budget_head is required for salary payment"}
 
@@ -1480,8 +1590,13 @@ def _get_client_ip():
 
 
 @frappe.whitelist()
-def set_workflow_state(doctype, docname, state, comment=None):
+def set_workflow_state(doctype, docname, state, comment=None, override_password=None):
     try:
+        from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
+
+        if override_password != ADMIN_ACTION_PASSWORD:
+            return {"status": "error", "message": "Incorrect password. State not changed."}
+
         if not frappe.db.exists(doctype, docname):
             return {"status": "error", "message": "Document not found"}
 

@@ -89,11 +89,12 @@ def send_otp_for_signup(email, full_name=None):
 		# Set expiry time (10 minutes from now)
 		expiry_time = add_to_date(now_datetime(), minutes=10)
 		
-		# Create OTP record
+		# Create OTP record (store full_name so it can be retrieved at password-setup step)
 		otp_doc = frappe.get_doc({
 			"doctype": "Email OTP__",
 			"email_u_r": email,
 			"otp_u_r": otp,
+			"full_name_u_r": full_name or "",
 			"purpose_u_r": "Registration",
 			"expiry_time_u_r": expiry_time,
 			"is_verified_u_r": 0,
@@ -116,8 +117,6 @@ def send_otp_for_signup(email, full_name=None):
 			"message": f"OTP sent to {email}",
 			"otp_record": otp_doc.name,
 			"email": email,
-			"otp_value": otp,
-			"universal_user_id": "",
 			"success": True
 		}
 	
@@ -421,15 +420,15 @@ def _send_otp_email(email, otp, expiry_time, full_name=None):
 
 
 @frappe.whitelist(allow_guest=True)
-def create_user_with_password(email, password, full_name=None):
+def create_user_with_password(email, password):
 	"""
 	Create a new Frappe User and Universal User__ record after OTP verification.
 	Called after user has verified their OTP.
+	full_name is read from the verified OTP record (collected at signup step).
 	
 	Args:
 		email (str): Verified email address
-		password (str): User's password (will be hashed)
-		full_name (str): User's full name (optional)
+		password (str): User's chosen password (will be hashed)
 	
 	Returns:
 		dict: Success or error response
@@ -465,6 +464,7 @@ def create_user_with_password(email, password, full_name=None):
 				"is_verified_u_r": 1,
 				"purpose_u_r": "Registration"
 			},
+			fields=["name", "full_name_u_r"],
 			order_by="verified_at_u_r desc",
 			limit=1
 		)
@@ -475,6 +475,10 @@ def create_user_with_password(email, password, full_name=None):
 				"message": "Email not verified. Please verify OTP first.",
 				"success": False
 			}
+		
+		# Read full_name from the OTP record (stored when OTP was requested)
+		username_part = email.split("@")[0].lower()
+		full_name = otp_records[0].get("full_name_u_r") or username_part
 		
 		# Check if user already exists
 		existing_user = frappe.db.exists("User", email)
@@ -493,12 +497,11 @@ def create_user_with_password(email, password, full_name=None):
 				"success": False
 			}
 		
-		# Create Frappe User
-		username_part = email.split("@")[0].lower()
+		# Create Frappe User using full_name from OTP record
 		frappe_user = frappe.get_doc({
 			"doctype": "User",
 			"email": email,
-			"first_name": full_name or username_part,
+			"first_name": full_name,
 			"username": username_part,
 			"password": password,
 			"send_welcome_email": False

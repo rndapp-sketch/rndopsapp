@@ -267,6 +267,30 @@ def get_pending_task(page_name="pending-task"):
 
 
 @frappe.whitelist()
+def get_pending_application():
+	"""
+	Returns Leave Module applications pending the current user's approval as PI.
+	Filters Leave Module by pi == frappe.session.user and workflow_state == "Pending PI Approval".
+	"""
+
+	current_user = frappe.session.user
+
+	records = frappe.get_list(
+		"Leave Module",
+		filters={
+			"pi": current_user,
+			"workflow_state": "Pending PI Approval",
+			"docstatus": 0,
+		},
+		fields=["name", "username", "pi", "leave_type", "workflow_state", "modified", "owner", "docstatus", "creation"],
+		order_by="modified desc",
+		limit_page_length=10000,
+	)
+
+	return {"user": current_user, "results": records}
+
+
+@frappe.whitelist()
 def get_task_registry(debug=0):
 	"""
 	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_task_registry

@@ -205,7 +205,8 @@ class AccountHeadCommitMapper:
         bill_amount: Optional[float] = None,
         frap_app_id: Optional[str] = None,
         ref_details: Optional[str] = None,
-        module_id: Optional[int] = None
+        module_id: Optional[int] = None,
+        commit_particular: Optional[str] = None
     ) -> AccountHeadCommitDTO:
         """
         Map Frappe Reimbursement document to AccountHeadCommitDTO.
@@ -218,31 +219,38 @@ class AccountHeadCommitMapper:
             bmr: BMR number (optional)
             bill_amount: Bill amount (optional)
             frap_app_id: Frap App ID (optional, defaults to project_name)
+            commit_particular: Explicit particulars string (e.g. staged via
+                commitPayment.submit_commit_data). Takes priority over the
+                table_bosk/expenditure_details derivation below, which only
+                applies to Reimbursement/Advance Settlement documents.
 
         Returns:
             AccountHeadCommitDTO: Mapped DTO ready for validation and publishing
         """
         account_head_id = resolve_budget_head_id(budget_head)
 
-        # Build particulars from child table rows
-        # Support both Reimbursement (table_bosk) and Advance Settlement (expenditure_details)
-        particulars_list = []
+        if commit_particular:
+            particulars = commit_particular
+        else:
+            # Build particulars from child table rows
+            # Support both Reimbursement (table_bosk) and Advance Settlement (expenditure_details)
+            particulars_list = []
 
-        table_bosk = getattr(doc, 'table_bosk', None) or []
-        for row in table_bosk:
-            if getattr(row, 'particulars', None):
-                particulars_list.append(row.particulars)
+            table_bosk = getattr(doc, 'table_bosk', None) or []
+            for row in table_bosk:
+                if getattr(row, 'particulars', None):
+                    particulars_list.append(row.particulars)
 
-        expenditure_details = getattr(doc, 'expenditure_details', None) or []
-        print(f"[COMMIT_MAPPER] doc.name={doc.name} doctype={getattr(doc, 'doctype', '?')} expenditure_details count={len(expenditure_details)}")
-        for row in expenditure_details:
-            row_particulars = getattr(row, 'particulars', None)
-            print(f"[COMMIT_MAPPER]   row particulars={row_particulars}")
-            if row_particulars:
-                particulars_list.append(row_particulars)
+            expenditure_details = getattr(doc, 'expenditure_details', None) or []
+            print(f"[COMMIT_MAPPER] doc.name={doc.name} doctype={getattr(doc, 'doctype', '?')} expenditure_details count={len(expenditure_details)}")
+            for row in expenditure_details:
+                row_particulars = getattr(row, 'particulars', None)
+                print(f"[COMMIT_MAPPER]   row particulars={row_particulars}")
+                if row_particulars:
+                    particulars_list.append(row_particulars)
 
-        print(f"[COMMIT_MAPPER] final particulars_list={particulars_list}")
-        particulars = ", ".join(particulars_list) if particulars_list else f"Commitment for {doc.name}"
+            print(f"[COMMIT_MAPPER] final particulars_list={particulars_list}")
+            particulars = ", ".join(particulars_list) if particulars_list else f"Commitment for {doc.name}"
 
         # Get module information — use explicit override first, then resolve from doctype
         doctype_name = getattr(doc, 'doctype', '')
@@ -281,7 +289,8 @@ class AccountHeadCommitMapper:
         bill_amount: Optional[float] = None,
         frap_app_id: Optional[str] = None,
         ref_details: Optional[str] = None,
-        module_id: Optional[int] = None
+        module_id: Optional[int] = None,
+        commit_particular: Optional[str] = None
     ) -> AccountHeadCommitEvent:
         """
         Map Frappe Reimbursement document to AccountHeadCommitEvent.
@@ -296,11 +305,13 @@ class AccountHeadCommitMapper:
             bill_amount: Bill amount (optional)
             frap_app_id: Frap App ID (optional, defaults to project_name)
             module_id: optional int override (e.g. 14 for ICSS PO re-commit)
+            commit_particular: Explicit particulars string, takes priority over
+                the doc-derived table_bosk/expenditure_details fallback.
 
         Returns:
             AccountHeadCommitEvent: Event wrapper ready for Kafka publishing
         """
-        dto = cls.map_to_dto(doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details, module_id)
+        dto = cls.map_to_dto(doc, commit_amount, budget_head, project_name, bmr, bill_amount, frap_app_id, ref_details, module_id, commit_particular)
         return AccountHeadCommitEvent(dto)
 
 

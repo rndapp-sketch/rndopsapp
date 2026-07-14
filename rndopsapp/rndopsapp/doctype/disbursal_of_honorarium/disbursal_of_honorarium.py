@@ -533,7 +533,8 @@ def perform_disbursal_of_honorarium_action(docname, action):
 							bmr=payload.get("bmr"),
 							bill_amount=payload.get("bill_amount"),
 							frap_app_id=payload.get("frap_app_id"),
-							ref_details=payload.get("ref_details")
+							ref_details=payload.get("ref_details"),
+							commit_particular=payload.get("commit_particular")
 						)
 
 						if success:

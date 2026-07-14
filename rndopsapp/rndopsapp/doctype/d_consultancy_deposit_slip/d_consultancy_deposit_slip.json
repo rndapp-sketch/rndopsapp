@@ -141,38 +141,32 @@
    "fieldname": "column_break_fwob",
    "fieldtype": "Column Break",
    "hidden": 1,
-   "label": "COL 3",
-   "read_only": 1
+   "label": "COL 3"
   },
   {
    "fieldname": "overhead_from_y_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Y (10% * Y) Amount",
-   "read_only": 1
+   "label": "Overhead from Y (10% * Y) Amount"
   },
   {
    "fieldname": "overhead_from_z_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Z (10% * Z) Amount",
-   "read_only": 1
+   "label": "Overhead from Z (10% * Z) Amount"
   },
   {
    "fieldname": "total_overhead_amount",
    "fieldtype": "Currency",
-   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount",
-   "read_only": 1
+   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount"
   },
   {
    "fieldname": "institute_share_amount",
    "fieldtype": "Currency",
-   "label": "Institute Share (20% * Y) Amount",
-   "read_only": 1
+   "label": "Institute Share (20% * Y) Amount"
   },
   {
    "fieldname": "total_overhead_institute_share",
    "fieldtype": "Currency",
-   "label": "Overhead + Institute Share",
-   "read_only": 1
+   "label": "Overhead + Institute Share"
   },
   {
    "fieldname": "primary_details",
@@ -192,14 +186,12 @@
   {
    "fieldname": "balance_consultancy_fee",
    "fieldtype": "Currency",
-   "label": "Balance Consultancy Fee",
-   "read_only": 1
+   "label": "Balance Consultancy Fee"
   },
   {
    "fieldname": "balance_operation_charge",
    "fieldtype": "Currency",
-   "label": "Balance Operation Charge",
-   "read_only": 1
+   "label": "Balance Operation Charge"
   },
   {
    "fieldname": "total_gst",
@@ -209,8 +201,7 @@
   {
    "fieldname": "total_amount",
    "fieldtype": "Currency",
-   "label": "Total Amount",
-   "read_only": 1
+   "label": "Total Amount"
   },
   {
    "fieldname": "col_1_column",
@@ -258,14 +249,13 @@
   {
    "fieldname": "fund_received_ref",
    "fieldtype": "Data",
-   "label": "Fund Received Ref",
-   "read_only": 1
+   "label": "Fund Received Ref"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 10:51:57.572765",
+ "modified": "2026-07-10 11:19:16.768220",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "D Consultancy Deposit Slip",

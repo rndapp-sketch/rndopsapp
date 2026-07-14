@@ -48,8 +48,13 @@ def execute():
 # bench --site prornd.local execute rndopsapp.delete_projects_tmp.execute
 
 
+# Hardcoded gate password shared by the Danger Zone / restricted admin actions
+# in kafka_control.html (delete projects, delete doctype records, clear mattermost, workflow override).
+ADMIN_ACTION_PASSWORD = "password@123"
+
+
 @frappe.whitelist()
-def delete_project_registrations(projects):
+def delete_project_registrations(projects, override_password=None):
     """
     Delete one or more Project Registration documents AND their MinIO files.
     Accepts `projects` as a comma-separated string or JSON list.
@@ -57,6 +62,9 @@ def delete_project_registrations(projects):
     """
     import json
     from rndopsapp.minio import get_rnd_file_service
+
+    if override_password != ADMIN_ACTION_PASSWORD:
+        return {"status": "error", "message": "Incorrect password. No projects were deleted."}
 
     user_roles = frappe.get_roles(frappe.session.user)
     if "System Manager" not in user_roles:

@@ -48,6 +48,7 @@ STUDENT_ROW_FIELDS = [
 	"period_to",
 	"hours_per_month",
 	"rate_per_hour",
+	"stipend_or_scholarship",
 	"total_amount_per_month",
 	"account_holder_name",
 	"account_number",
@@ -55,6 +56,26 @@ STUDENT_ROW_FIELDS = [
 	"ifsc",
 	"branch_code",
 ]
+
+
+def _resolve_department_prornd(d_name):
+	"""Academic Student Info stores free-text department names (e.g. "Department of
+	Computer Science and Engineering"), while dept_centre is a Link to Department_prornd
+	whose `name` is an opaque id — match on dept_name instead, falling back to stripping
+	the "Department of " prefix (Department_prornd stores it without that prefix).
+	Returns "" when no match is found so an unresolved value never fails Link validation."""
+	if not d_name:
+		return ""
+	d_name = d_name.strip()
+	match = frappe.db.get_value("Department_prornd", {"dept_name": d_name})
+	if match:
+		return match
+	prefix = "Department of "
+	if d_name.startswith(prefix):
+		match = frappe.db.get_value("Department_prornd", {"dept_name": d_name[len(prefix):]})
+		if match:
+			return match
+	return ""
 
 
 class TopUpFellowship(Document):
@@ -69,6 +90,34 @@ class TopUpFellowship(Document):
 					row.total_amount_per_month = hours * rate
 			except Exception:
 				pass
+
+		self.validate_student_caps()
+
+	def validate_student_caps(self):
+		# Per-student monthly cap: students who already hold a stipend/scholarship
+		# are capped lower since the top-up is meant to supplement, not duplicate, income.
+		for row in self.get("students") or []:
+			if row.stipend_or_scholarship not in ("Yes", "No"):
+				frappe.throw(
+					_("Row #{0}: Please select whether the student has a Stipend or Scholarship.").format(
+						row.idx
+					)
+				)
+
+			cap = monthly_cap_for(row.stipend_or_scholarship)
+			amount = _parse_amount(row.total_amount_per_month)
+			if amount > cap:
+				frappe.throw(
+					_(
+						"Row #{0}: Total Amount per Month ({1}) exceeds the cap of {2} for a student "
+						"who {3} a stipend/scholarship."
+					).format(
+						row.idx,
+						amount,
+						cap,
+						"has" if row.stipend_or_scholarship == "Yes" else "does not have",
+					)
+				)
 
 
 def extract_eval_expression(expression):
@@ -131,8 +180,24 @@ def _get_users_with_role(role_name):
 
 
 def _get_student_options():
-	"""Return [{value, label}] of Users with role = Student."""
-	return _get_users_with_role("Student")
+	"""Return [{value, label}] of students, sourced from Academic Student Info."""
+	try:
+		students = frappe.get_all(
+			"Academic Student Info",
+			filters={"email_id": ["is", "set"]},
+			fields=["email_id", "sname"],
+			limit_page_length=0,
+		)
+		return [
+			{
+				"value": s.email_id,
+				"label": f"{s.sname} ({s.email_id})" if s.sname else s.email_id,
+			}
+			for s in students
+			if s.email_id
+		]
+	except Exception:
+		return []
 
 
 @frappe.whitelist()
@@ -288,6 +353,31 @@ def save_top_up_fellowship_data(data):
 			doc.set("students", [])
 			for row in students_data:
 				clean = {k: row.get(k) for k in STUDENT_ROW_FIELDS if k in row}
+
+				# email_of_student holds the raw Academic Student Info email_id, which
+				# almost never matches a real "User" docname (most academic emails have
+				# no @domain — e.g. "tjoyson" vs the login "tjoyson@iitg.ac.in"). Frappe's
+				# Link-fetch chain (email_of_student -> User.full_name etc.) silently
+				# no-ops when the link doesn't resolve, leaving roll_number/dept_centre/
+				# name_of_the_student blank. Resolve them from Academic Student Info
+				# directly instead of relying on that fetch chain.
+				student_email = clean.get("email_of_student")
+				if student_email:
+					info = frappe.db.get_value(
+						"Academic Student Info",
+						{"email_id": student_email},
+						["roll_no", "d_name", "sname"],
+						as_dict=True,
+					)
+					if info:
+						clean["roll_number"] = info.get("roll_no") or clean.get("roll_number")
+						clean["name_of_the_student"] = info.get("sname") or clean.get("name_of_the_student")
+						clean["dept_centre"] = _resolve_department_prornd(info.get("d_name"))
+
+				dept_centre = clean.get("dept_centre")
+				if dept_centre and not frappe.db.exists("Department_prornd", dept_centre):
+					clean["dept_centre"] = _resolve_department_prornd(dept_centre)
+
 				doc.append("students", clean)
 
 		doc.flags.ignore_permissions = True
@@ -304,29 +394,44 @@ def save_top_up_fellowship_data(data):
 
 @frappe.whitelist()
 def get_student_details(email):
-	"""Return roll number (employee_id) and department for a student User."""
+	"""Return roll number, department and name for a student, sourced from Academic Student Info."""
 	try:
 		if not email:
 			return {}
-		user = frappe.db.get_value(
-			"User",
-			email,
-			["employee_id", "department_name", "full_name"],
+		info = frappe.db.get_value(
+			"Academic Student Info",
+			{"email_id": email},
+			["roll_no", "d_name", "sname"],
 			as_dict=True,
 		)
-		if not user:
+		if not info:
 			return {}
+		full_name = info.get("sname") or ""
 		return {
-			"roll_number": user.get("employee_id") or "",
-			"dept_centre": user.get("department_name") or "",
-			"full_name": user.get("full_name") or "",
+			"roll_number": info.get("roll_no") or "",
+			"dept_centre": _resolve_department_prornd(info.get("d_name")),
+			"full_name": full_name,
+			"name_of_the_student": full_name,
 		}
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Top Up Fellowship get_student_details")
 		return {}
 
 
-MONTHLY_CAP_PER_STUDENT = 25000
+MONTHLY_CAP_PER_STUDENT = 50000  # default cap when stipend/scholarship status is unknown ("No")
+MONTHLY_CAP_WITH_STIPEND = 25000  # lower cap when the student already holds a stipend/scholarship
+
+
+def monthly_cap_for(stipend_or_scholarship):
+	"""Students who already hold a stipend/scholarship are capped at 25000/month;
+	everyone else is capped at the default 50000/month.
+
+	Why: the top-up is meant to supplement, not duplicate, a student's income.
+	A student already receiving a stipend/scholarship has an existing income
+	source, so their top-up headroom is intentionally lower than a student
+	with none.
+	"""
+	return MONTHLY_CAP_WITH_STIPEND if stipend_or_scholarship == "Yes" else MONTHLY_CAP_PER_STUDENT
 
 
 def _parse_amount(val):
@@ -346,8 +451,17 @@ def get_students_monthly_summary(emails, month, year, exclude_docname=None):
 	- month, year: ints (1-12, e.g. 2026).
 	- exclude_docname: optional Top Up Fellowship docname to skip (when editing the same doc).
 
+	"cap" is always the default 50000 (no stipend/scholarship) cap, not the per-student
+	cap — a student on a stipend/scholarship is actually capped at 25000 (see
+	monthly_cap_for): the top-up is meant to supplement, not duplicate, a student's
+	income, so students with an existing income source get less top-up headroom.
+	This endpoint doesn't know a given student's stipend/scholarship status (it's a
+	per-row field on the doc being edited, not queryable in aggregate), so callers
+	must not treat "remaining" here as a hard ceiling for stipend/scholarship students —
+	the actual enforcement happens in validate_student_caps on save.
+
 	Returns: {
-		"cap": 25000,
+		"cap": 50000,
 		"summary": {
 			"<email>": {
 				"honorarium": <float>,
@@ -365,6 +479,7 @@ def get_students_monthly_summary(emails, month, year, exclude_docname=None):
 		except Exception:
 			emails = [emails]
 	emails = [e for e in (emails or []) if e]
+
 	try:
 		month = int(month)
 		year = int(year)
@@ -588,6 +703,7 @@ def perform_top_up_fellowship_action(docname, action):
 							bill_amount=payload.get("bill_amount"),
 							frap_app_id=payload.get("frap_app_id"),
 							ref_details=payload.get("ref_details"),
+							commit_particular=payload.get("commit_particular"),
 						)
 						if success:
 							staging_doc.db_set("status", "PUBLISHED")

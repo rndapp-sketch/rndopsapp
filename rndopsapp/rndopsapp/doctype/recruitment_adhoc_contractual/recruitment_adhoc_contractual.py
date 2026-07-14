@@ -373,7 +373,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
             print(f"Target state doc_status: {state_doc.doc_status} (Current docstatus: {doc.docstatus})")
 
         # ============================================================
-        # EDITED BY MKY | 2026-04-23 18:21 IST
+        # EDITED BY OJS | 2026-04-23 18:21 IST
         # START OF EDIT — Fix incorrect doc.cancel() on submitted workflow transitions
         # Root cause: all workflow states (except Draft) have doc_status=1. When a
         # submitted doc (docstatus=1) transitions to another doc_status=1 state, the
@@ -405,7 +405,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
                 # Reload the doc so it reflects the updated workflow_state
                 doc.reload()
                 check_workflow_and_publish(doc)
-        # END OF EDIT — MKY | 2026-04-23 18:21 IST
+        # END OF EDIT — OJS | 2026-04-23 18:21 IST
         # ============================================================
 
         frappe.db.commit()
@@ -436,7 +436,7 @@ def submit_recruitment_adhoc_contractual(docname):
 
 
 # ============================================================
-# EDITED BY MKY | 2026-05-05 12:28 IST
+# EDITED BY OJS | 2026-05-05 12:28 IST
 # START OF EDIT — Add status parameter to filter by workflow_state
 # ============================================================
 @frappe.whitelist(allow_guest=True)
@@ -450,11 +450,11 @@ def get_recruitment_adhoc_contractual_by_webmail(pi_mail=None, project_no=None, 
 		webmail_id=webmail_id,
 		status=status,
 	)
-# END OF EDIT — MKY | 2026-05-05 12:28 IST
+# END OF EDIT — OJS | 2026-05-05 12:28 IST
 # ============================================================
 
 # ============================================================
-# EDITED BY MKY | 2026-05-05 12:31 IST
+# EDITED BY OJS | 2026-05-05 12:31 IST
 # START OF EDIT — Add get_recruitment_adhoc_contractual_with_project_info endpoint
 # ============================================================
 @frappe.whitelist(allow_guest=True)
@@ -583,12 +583,12 @@ def get_recruitment_adhoc_contractual_with_project_info(pi_mail=None, project_no
 		return {"status": "success", "data": docs}
 	except Exception as e:
 		return {"status": "error", "message": str(e)}
-# END OF EDIT — MKY | 2026-05-05 12:31 IST
+# END OF EDIT — OJS | 2026-05-05 12:31 IST
 # ============================================================
 
 
 # ============================================================
-# EDITED BY MKY | 2026-04-14 12:23 IST
+# EDITED BY OJS | 2026-04-14 12:23 IST
 # START OF EDIT — Dynamic Designation Fetching via designation_type
 # Replaced complex EmployeeClass→User→Designation chain with a
 # direct filter on Designation_prornd.designation_type field.
@@ -637,7 +637,7 @@ def get_filtered_designations(designation_type=None):
 		]
 
 		# ============================================================
-		# EDITED BY MKY | 2026-04-14 15:35 IST
+		# EDITED BY OJS | 2026-04-14 15:35 IST
 		# START OF EDIT — Quick Entry Prepend
 		# Replaced "Other" appended at the end with "CREATE_NEW" prepended at the top.
 		# ============================================================
@@ -645,7 +645,7 @@ def get_filtered_designations(designation_type=None):
 			"value": "CREATE_NEW",
 			"label": "➕ Create New Designation..."
 		})
-		# END OF EDIT — MKY | 2026-04-14 15:35 IST
+		# END OF EDIT — OJS | 2026-04-14 15:35 IST
 		# ============================================================
 
 		return {"status": "success", "data": data}
@@ -713,16 +713,16 @@ def update_chairperson_fields(docname, chairperson_webmail_id, chairperson_name)
         }
 
 
-# END OF EDIT — MKY | 2026-04-14 12:23 IST
+# END OF EDIT — OJS | 2026-04-14 12:23 IST
 # ============================================================
 
 # ============================================================
-# EDITED BY MKY | 2026-04-14 15:35 IST
+# EDITED BY OJS | 2026-04-14 15:35 IST
 # START OF EDIT — create_custom_designation for Recruitment Adhoc Contractual
 # Mirrors the same logic from project_registration.py.
 # Returns status="duplicate" when designation already exists so frontend alerts the user.
 # ============================================================
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def create_custom_designation(designation_name, designation_type="Project Staff"):
 	"""
 	Checks for an existing designation (case-insensitive).
@@ -765,12 +765,12 @@ def create_custom_designation(designation_name, designation_type="Project Staff"
 		frappe.log_error(frappe.get_traceback(), f"Recruitment Adhoc Contractual Custom Designation Creation Error for {designation_name}")
 		return {"status": "error", "message": str(e)}
 
-# END OF EDIT — MKY | 2026-04-14 15:35 IST
+# END OF EDIT — OJS | 2026-04-14 15:35 IST
 # ============================================================
 
 
 # ============================================================
-# EDITED BY MKY | 2026-04-21 IST
+# EDITED BY OJS | 2026-04-21 IST
 # START OF EDIT — Single-field update endpoints
 # Each endpoint updates exactly one field on a Recruitment Adhoc
 # Contractual document (identified by docname) without touching
@@ -796,7 +796,7 @@ def _update_single_field(docname, fieldname, value):
 		return {"status": "error", "message": str(e)}
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def update_walk_in(docname, walk_in):
 	"""Update only the walk_in field ('Yes' / 'No' / '')."""
 	if walk_in not in ("", "Yes", "No", None):
@@ -804,22 +804,22 @@ def update_walk_in(docname, walk_in):
 	return _update_single_field(docname, "walk_in", walk_in or "")
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def update_upfa_interview_date(docname, upfa_interview_date):
 	"""Update only the upfa_interview_date field (Date, YYYY-MM-DD)."""
 	return _update_single_field(docname, "upfa_interview_date", upfa_interview_date or None)
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def update_upfa_interview_time(docname, upfa_interview_time):
 	"""Update only the upfa_interview_time field (Time, HH:MM:SS)."""
 	return _update_single_field(docname, "upfa_interview_time", upfa_interview_time or None)
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def update_last_date_of_appllication(docname, last_date_of_appllication):
 	"""Update only the last_date_of_appllication field (Date, YYYY-MM-DD)."""
 	return _update_single_field(docname, "last_date_of_appllication", last_date_of_appllication or None)
 
-# END OF EDIT — MKY | 2026-04-21 IST
+# END OF EDIT — OJS | 2026-04-21 IST
 # ============================================================

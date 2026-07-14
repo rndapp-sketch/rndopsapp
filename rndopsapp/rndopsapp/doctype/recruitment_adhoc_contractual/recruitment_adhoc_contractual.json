@@ -88,10 +88,10 @@
    "label": "Project Details"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "upfa_project_title",
    "fieldtype": "Long Text",
-   "label": "Project Title",
-   "read_only": 1
+   "label": "Project Title"
   },
   {
    "fieldname": "upfa_project_code",
@@ -129,14 +129,13 @@
   },
   {
    "allow_on_submit": 1,
-   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"||",
    "fieldname": "upfa_interview_date",
    "fieldtype": "Date",
    "label": "Date of Interview"
   },
   {
    "allow_on_submit": 1,
-   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
    "fieldname": "upfa_interview_time",
    "fieldtype": "Time",
    "label": "Time of Interview"
@@ -171,6 +170,7 @@
    "label": "Selection Committee"
   },
   {
+   "allow_on_submit": 1,
    "description": "*If the member is from outside, his/her email id should be provided. Otherwise, the webmail ID excluding the part @iitg.ac.in should be provided.",
    "fieldname": "upfa_selection_committee",
    "fieldtype": "Table",
@@ -274,7 +274,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-11 13:14:14.142589",
+ "modified": "2026-07-13 17:44:00.142476",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",

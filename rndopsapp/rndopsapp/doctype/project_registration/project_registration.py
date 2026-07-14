@@ -4,6 +4,7 @@
 # import frappe
 from frappe.model.document import Document
 import os
+import re
 import json
 import datetime
 import frappe
@@ -3223,6 +3224,146 @@ def search_projects(query=None, department=None, page=1, page_size=20):
 
 
 # ============================================================
+# FUNDING AGENCY PROJECT SEARCH ENDPOINT
+# ============================================================
+
+@frappe.whitelist(allow_guest=True)
+def search_projects_by_funding_agency(agency_name=None, page=1, page_size=20):
+	"""
+	Search Project Registrations by Funding Agency name or Scheme Name.
+
+	Matches against the linked Funding Agency's name/initials (fundingagency_),
+	legacy free-text values stored directly on Project Registration.funding_agen /
+	funding_agency_other, and the PFMS Account Details Scheme Name
+	(scheme_name / enter_scheme_number) — e.g. "ARG Matrics General".
+
+	Matching is done on word boundaries (via REGEXP), not a raw substring, so a
+	short term like "ARG" won't false-positive against unrelated text that merely
+	contains those letters (e.g. a Funding Agency record whose name field has
+	"...North 24 Parganas, West Bengal..." embedded in it).
+
+	Also resolves a Fund Sanction date for each project (earliest
+	sanctioned_letter_date across its linked Fund Sanction records, matched via
+	Fund Sanction.project_proposal = Project Registration.name). Many older
+	projects have no prj_start_date recorded, so the Fund Sanction date is
+	returned separately and also as an "effective_start_date" fallback.
+
+	Args:
+		agency_name (str): Free-form agency name/initials to match (partial, case-insensitive).
+		page       (int): 1-based page number (default 1).
+		page_size  (int): Results per page (default 20, capped at 100).
+
+	Returns:
+		{
+			"status": "success",
+			"total": <int>,
+			"page": <int>,
+			"page_size": <int>,
+			"results": [ { project + funding agency + date fields }, ... ]
+		}
+	"""
+	try:
+		page = max(1, int(page or 1))
+		page_size = min(100, max(1, int(page_size or 20)))
+		offset = (page - 1) * page_size
+
+		conditions = ["pr.docstatus != 2"]  # exclude cancelled docs
+		values = []
+
+		if agency_name:
+			# Word-boundary match: letters/digits count as "word" characters,
+			# anything else (space, hyphen, parens, start/end of string) is a boundary.
+			# This stops a short term like "ARG" from matching inside unrelated
+			# text such as "...North 24 Parganas..." while still matching
+			# "ANRF-ARG", "ARG Matrics General", "(ARG)", etc.
+			escaped = re.escape(agency_name.strip())
+			boundary_pattern = f"(^|[^A-Za-z0-9]){escaped}([^A-Za-z0-9]|$)"
+			conditions.append(
+				"("
+				"  fa.funding_agency_name REGEXP %s"
+				"  OR fa.funding_agency_initials REGEXP %s"
+				"  OR pr.funding_agen REGEXP %s"
+				"  OR pr.funding_agency_other REGEXP %s"
+				"  OR pr.scheme_name REGEXP %s"
+				"  OR pr.enter_scheme_number REGEXP %s"
+				")"
+			)
+			values.extend([boundary_pattern] * 6)
+
+		where_clause = " AND ".join(conditions)
+
+		count_sql = f"""
+			SELECT COUNT(DISTINCT pr.name)
+			FROM `tabProject Registration` pr
+			LEFT JOIN `tabfundingagency_` fa ON fa.name = pr.funding_agen
+			WHERE {where_clause}
+		"""
+		total = frappe.db.sql(count_sql, values)[0][0]
+
+		data_sql = f"""
+			SELECT
+				pr.name,
+				pr.project_no,
+				pr.project_title,
+				pr.principal_investigator_name,
+				pr.pi_webmail,
+				pr.workflow_state,
+				pr.prj_start_date,
+				pr.prj_end_date,
+				pr.funding_agen,
+				pr.funding_agency_other,
+				pr.is_the_account_type_pfms,
+				pr.scheme_name,
+				fa.funding_agency_name,
+				fa.funding_agency_initials,
+				(
+					SELECT MIN(fs.sanctioned_letter_date)
+					FROM `tabFund Sanction` fs
+					WHERE fs.project_proposal = pr.name
+					AND fs.sanctioned_letter_date IS NOT NULL
+				) AS fund_sanction_date
+			FROM `tabProject Registration` pr
+			LEFT JOIN `tabfundingagency_` fa ON fa.name = pr.funding_agen
+			WHERE {where_clause}
+			ORDER BY pr.modified DESC
+			LIMIT %s OFFSET %s
+		"""
+		rows = frappe.db.sql(data_sql, values + [page_size, offset], as_dict=True)
+
+		results = []
+		for row in rows:
+			start_date = row.get("prj_start_date")
+			fund_sanction_date = row.get("fund_sanction_date")
+			results.append({
+				"name": row.get("name"),
+				"project_no": row.get("project_no"),
+				"project_title": row.get("project_title"),
+				"pi_name": row.get("principal_investigator_name"),
+				"pi_email": row.get("pi_webmail"),
+				"workflow_state": row.get("workflow_state"),
+				"funding_agency": row.get("funding_agency_name") or row.get("funding_agency_other") or row.get("funding_agen"),
+				"account_type": "PFMS" if row.get("is_the_account_type_pfms") == "Yes" else (row.get("is_the_account_type_pfms") or ""),
+				"scheme_name": row.get("scheme_name") or "",
+				"start_date": str(start_date or ""),
+				"end_date": str(row.get("prj_end_date") or ""),
+				"fund_sanction_date": str(fund_sanction_date or ""),
+				"effective_start_date": str(start_date or fund_sanction_date or ""),
+			})
+
+		return {
+			"status": "success",
+			"total": total,
+			"page": page,
+			"page_size": page_size,
+			"results": results,
+		}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "search_projects_by_funding_agency error")
+		return {"status": "error", "message": str(e)}
+
+
+# ============================================================
 # PROJECT REGISTRATION LINK GRAPH ENDPOINT
 # OJS | 2026-06-24
 # Source of truth: PROJECT_REGISTRATION_LINKS_TO_APPLICATION.md
@@ -3466,3 +3607,112 @@ def get_pr_link_graph(docname):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "get_pr_link_graph error")
 		return {"status": "error", "message": str(e)}
+
+
+# ============================================================
+# ---- Cascade Delete: wipe a Project Registration + every associated document ----
+# Reuses the exact same link map as get_pr_link_graph (direct/indirect/chained),
+# so "associated documents" here always matches what the PR Link Graph visualizes.
+# ============================================================
+
+def _force_delete_single_doc(doctype, docname):
+	"""Force-delete one document, handling submitted docstatus and falling back to raw SQL.
+	Returns (deleted: bool, note: str | None)."""
+	try:
+		docstatus = frappe.db.get_value(doctype, docname, "docstatus")
+		if docstatus == 1:
+			frappe.db.set_value(doctype, docname, "docstatus", 2, update_modified=False)
+			frappe.db.commit()
+
+		frappe.delete_doc(
+			doctype, docname,
+			ignore_permissions=True, force=True,
+			ignore_on_trash=True, delete_permanently=True,
+		)
+		frappe.db.commit()
+		return True, None
+	except Exception as e:
+		first_err = str(e)
+		try:
+			meta = frappe.get_meta(doctype)
+			for df in meta.fields:
+				if df.fieldtype in ("Table", "Table MultiSelect") and df.options:
+					frappe.db.sql(
+						f"DELETE FROM `tab{df.options}` WHERE parent = %s AND parenttype = %s",
+						(docname, doctype),
+					)
+			frappe.db.sql(f"DELETE FROM `tab{doctype}` WHERE name = %s", (docname,))
+			frappe.db.commit()
+			return True, f"raw SQL fallback (frappe.delete_doc error: {first_err})"
+		except Exception as e2:
+			return False, f"frappe.delete_doc -> {first_err} | raw SQL -> {str(e2)}"
+
+
+@frappe.whitelist()
+def preview_pr_cascade_delete(identifier):
+	"""
+	Dry-run: resolve a Project Registration by docname or project_no and list every
+	associated document (direct link, indirect project_no cache, chained link) that
+	a cascade delete would remove. Does not modify anything.
+	"""
+	graph = get_pr_link_graph(identifier)
+	if graph.get("status") != "success":
+		return graph
+
+	by_doctype = {}
+	for node in graph["nodes"][1:]:
+		by_doctype[node["doctype"]] = by_doctype.get(node["doctype"], 0) + 1
+
+	return {
+		"status": "success",
+		"pr": graph["pr"],
+		"total_associated": graph["summary"]["total"],
+		"by_doctype": [{"doctype": dt, "count": c} for dt, c in sorted(by_doctype.items())],
+		"errors": graph.get("errors", []),
+	}
+
+
+@frappe.whitelist()
+def delete_pr_cascade(identifier, override_password=None):
+	"""
+	DANGER: permanently deletes a Project Registration AND every document linked to
+	it (direct Link fields, indirect project_no Data fields, and chained links) per
+	PROJECT_REGISTRATION_LINKS_TO_APPLICATION.md — the same map used by
+	get_pr_link_graph. Requires the shared admin override password. Irreversible.
+	"""
+	from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD, delete_project_registrations
+
+	if override_password != ADMIN_ACTION_PASSWORD:
+		return {"status": "error", "message": "Incorrect password. Nothing was deleted."}
+
+	if "System Manager" not in frappe.get_roles(frappe.session.user):
+		frappe.throw("Only System Manager can perform cascade deletion.", frappe.PermissionError)
+
+	graph = get_pr_link_graph(identifier)
+	if graph.get("status") != "success":
+		return graph
+
+	pr_name = graph["pr"]["name"]
+	deleted = []
+	errors = []
+
+	# Delete every associated document first (everything except the root PR node).
+	for node in graph["nodes"][1:]:
+		ok, note = _force_delete_single_doc(node["doctype"], node["name"])
+		label = f"{node['doctype']}: {node['name']}"
+		if ok:
+			deleted.append(label + (f" ({note})" if note else ""))
+		else:
+			errors.append(f"{label} — {note}")
+
+	# Finally delete the Project Registration itself (reuses MinIO file cleanup).
+	pr_result = delete_project_registrations(json.dumps([pr_name]), override_password=override_password)
+
+	return {
+		"status": "success",
+		"pr_name": pr_name,
+		"deleted_count": len(deleted),
+		"deleted": deleted,
+		"errors": errors,
+		"pr_deletion": pr_result,
+	}

@@ -52,8 +52,7 @@
   {
    "fieldname": "mobile_number_u_r",
    "fieldtype": "Phone",
-   "label": "Mobile Number",
-   "reqd": 1
+   "label": "Mobile Number"
   },
   {
    "default": "Individual",
@@ -179,7 +178,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-30 17:12:47.223495",
+ "modified": "2026-07-07 11:11:45.415915",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Universal User__",

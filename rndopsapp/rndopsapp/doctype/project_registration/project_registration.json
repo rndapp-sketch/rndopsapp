@@ -426,6 +426,7 @@
    "reqd": 1
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.is_additional_pi == \"Yes\"",
    "fieldname": "additional_pi_table",
    "fieldtype": "Table",
@@ -1288,7 +1289,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-11 13:12:21.693981",
+ "modified": "2026-07-08 12:39:18.055224",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

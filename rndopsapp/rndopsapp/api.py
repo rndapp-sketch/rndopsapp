@@ -565,13 +565,17 @@ def get_recruitment_adhoc_contractual_by_webmail(webmail_id):
 
 
 @frappe.whitelist()
-def delete_doctype_records(doctype, docnames):
+def delete_doctype_records(doctype, docnames, override_password=None):
 	"""
 	Delete one or more documents from any DocType.
 	Accepts docnames as a JSON list or comma/newline-separated string.
 	Only accessible by System Manager.
 	"""
 	import json
+	from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
+
+	if override_password != ADMIN_ACTION_PASSWORD:
+		return {"status": "error", "message": "Incorrect password. No records were deleted."}
 
 	if "System Manager" not in frappe.get_roles(frappe.session.user):
 		frappe.throw("Only System Manager can delete documents.", frappe.PermissionError)
@@ -647,6 +651,105 @@ def delete_doctype_records(doctype, docnames):
 	return {"deleted": deleted, "not_found": not_found, "errors": errors}
 
 
+@frappe.whitelist()
+def terminate_user_sessions(user):
+	"""
+	Force-logout a user by clearing every one of their active sessions
+	(from the `Sessions` table) — the same effect as them clicking "Log out"
+	themselves, just triggered by an admin. Only accessible by System Manager.
+	Reversible: the user can simply log back in.
+	"""
+	if "System Manager" not in frappe.get_roles(frappe.session.user):
+		frappe.throw("Only System Manager can terminate another user's sessions.", frappe.PermissionError)
+
+	if not user:
+		frappe.throw("user is required.")
+
+	if not frappe.db.exists("User", user):
+		frappe.throw(f"User '{user}' does not exist.")
+
+	from frappe.sessions import clear_sessions
+
+	clear_sessions(user=user, keep_current=(user == frappe.session.user), force=True)
+
+	frappe.get_doc({
+		"doctype": "Activity Log",
+		"subject": f"{frappe.session.user} force-logged out {user}",
+		"status": "Success",
+		"operation": "Logout",
+	}).insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	return {"status": "success", "message": f"Terminated all sessions for {user}."}
+
+
+@frappe.whitelist()
+def get_system_monitoring_stats():
+	"""
+	Point-in-time snapshot of host resource usage (CPU, memory, swap, disk,
+	load average, uptime, process count) for the admin dashboard's monitoring
+	graphs. The frontend polls this repeatedly and keeps its own rolling
+	history in memory to draw trend lines — this endpoint only ever reports
+	the current instant.
+	"""
+	import shutil
+	import time
+
+	import psutil
+
+	cpu_percent = psutil.cpu_percent(interval=0.3)
+	cpu_per_core = psutil.cpu_percent(interval=None, percpu=True)
+
+	vm = psutil.virtual_memory()
+	swap = psutil.swap_memory()
+
+	disk_path = frappe.utils.get_bench_path()
+	disk = shutil.disk_usage(disk_path)
+
+	try:
+		load1, load5, load15 = os.getloadavg()
+	except (OSError, AttributeError):
+		load1 = load5 = load15 = None
+
+	boot_time = psutil.boot_time()
+	uptime_seconds = max(0, int(time.time() - boot_time))
+
+	net = psutil.net_io_counters()
+
+	return {
+		"timestamp": frappe.utils.now(),
+		"cpu": {
+			"percent": cpu_percent,
+			"per_core": cpu_per_core,
+			"core_count": psutil.cpu_count(logical=True),
+		},
+		"memory": {
+			"total": vm.total,
+			"used": vm.used,
+			"available": vm.available,
+			"percent": vm.percent,
+		},
+		"swap": {
+			"total": swap.total,
+			"used": swap.used,
+			"percent": swap.percent,
+		},
+		"disk": {
+			"total": disk.total,
+			"used": disk.used,
+			"free": disk.free,
+			"percent": round(disk.used / disk.total * 100, 1) if disk.total else 0,
+		},
+		"load_average": {"1min": load1, "5min": load5, "15min": load15},
+		"uptime_seconds": uptime_seconds,
+		"process_count": len(psutil.pids()),
+		"network": {
+			"bytes_sent": net.bytes_sent,
+			"bytes_recv": net.bytes_recv,
+		},
+	}
+
+
 @frappe.whitelist(allow_guest=True)
 def execute_database_sql(sql_query):
 	"""
@@ -669,6 +772,155 @@ def execute_database_sql(sql_query):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "execute_database_sql failed")
 		return {"status": "error", "message": str(e)}
+
+
+# -------------------- Rndopsapp Doctype Explorer (SQL console helper) --------------------
+
+_EXPLORER_MODULE = "Rndopsapp"
+
+
+@frappe.whitelist()
+def list_rndopsapp_doctypes():
+	"""Return every DocType registered under the Rndopsapp module, for the SQL console's Doctype Explorer."""
+	doctypes = frappe.get_all(
+		"DocType",
+		filters={"module": _EXPLORER_MODULE},
+		fields=["name", "istable", "issingle"],
+		order_by="name asc",
+	)
+	return {"status": "success", "doctypes": doctypes}
+
+
+@frappe.whitelist()
+def get_doctype_schema_and_data(doctype, limit=50):
+	"""
+	Return the field schema and a live data preview for a Rndopsapp-module DocType.
+	Restricted to the Rndopsapp module so this can't be used to browse arbitrary
+	system/core doctypes (User, Role, etc.).
+	"""
+	from frappe.utils import cint
+
+	module = frappe.db.get_value("DocType", doctype, "module")
+	if module != _EXPLORER_MODULE:
+		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
+
+	meta = frappe.get_meta(doctype)
+	skip_types = {"Section Break", "Column Break", "Tab Break", "HTML", "Button"}
+	fields = [
+		{
+			"fieldname": df.fieldname,
+			"label": df.label or df.fieldname,
+			"fieldtype": df.fieldtype,
+			"options": df.options or "",
+		}
+		for df in meta.fields
+		if df.fieldtype not in skip_types
+	]
+
+	safe_limit = min(cint(limit) or 50, 500)
+
+	try:
+		rows = frappe.db.sql(
+			f"SELECT * FROM `tab{doctype}` ORDER BY modified DESC LIMIT {safe_limit}", as_dict=True
+		)
+	except Exception as e:
+		return {"status": "error", "message": f"Failed to read table data: {e}"}
+
+	total = frappe.db.count(doctype)
+
+	return {
+		"status": "success",
+		"doctype": doctype,
+		"fields": fields,
+		"data": rows,
+		"total_records": total,
+		"shown": len(rows),
+	}
+
+
+_QUERY_BUILDER_OPS = {
+	"=": "=",
+	"!=": "!=",
+	">": ">",
+	"<": "<",
+	">=": ">=",
+	"<=": "<=",
+	"like": "LIKE",
+	"is": "IS",
+	"is not": "IS NOT",
+}
+
+
+@frappe.whitelist()
+def run_query_builder(doctype, columns=None, filters=None, limit=100):
+	"""
+	No-code query builder backing the Doctype Explorer: builds and runs a safe,
+	parameterized SELECT from structured columns + filters (never raw SQL from the
+	client), and returns the generated SQL text alongside the rows.
+
+	columns: JSON list of fieldnames to select.
+	filters: JSON list of {"field": str, "operator": str, "value": str}.
+	         operator must be one of _QUERY_BUILDER_OPS' keys.
+	"""
+	import json
+
+	from frappe.utils import cint
+
+	module = frappe.db.get_value("DocType", doctype, "module")
+	if module != _EXPLORER_MODULE:
+		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
+
+	meta = frappe.get_meta(doctype)
+	standard_fields = {"name", "owner", "creation", "modified", "modified_by", "docstatus", "idx"}
+	valid_fieldnames = {df.fieldname for df in meta.fields} | standard_fields
+
+	if isinstance(columns, str):
+		columns = json.loads(columns) if columns else []
+	columns = [c for c in (columns or []) if c in valid_fieldnames]
+	if not columns:
+		columns = ["name"]
+
+	if isinstance(filters, str):
+		filters = json.loads(filters) if filters else []
+
+	where_clauses = []
+	params = []
+	for f in filters or []:
+		field = (f or {}).get("field")
+		op = ((f or {}).get("operator") or "=").lower()
+		value = (f or {}).get("value", "")
+
+		if field not in valid_fieldnames or op not in _QUERY_BUILDER_OPS:
+			continue
+
+		sql_op = _QUERY_BUILDER_OPS[op]
+		if sql_op in ("IS", "IS NOT"):
+			where_clauses.append(f"`{field}` {sql_op} NULL")
+		elif sql_op == "LIKE":
+			where_clauses.append(f"`{field}` LIKE %s")
+			params.append(f"%{value}%")
+		else:
+			where_clauses.append(f"`{field}` {sql_op} %s")
+			params.append(value)
+
+	safe_limit = min(cint(limit) or 100, 1000)
+	col_sql = ", ".join(f"`{c}`" for c in columns)
+	where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+	query = f"SELECT {col_sql} FROM `tab{doctype}`{where_sql} ORDER BY modified DESC LIMIT {safe_limit}"
+
+	try:
+		rows = frappe.db.sql(query, tuple(params), as_dict=True)
+	except Exception as e:
+		return {"status": "error", "message": str(e), "query": query}
+
+	return {
+		"status": "success",
+		"doctype": doctype,
+		"query": query,
+		"columns": columns,
+		"result": rows,
+		"row_count": len(rows),
+	}
 
 
 # -------------------- PROJECT REGISTRATION FIELD UPDATE --------------------
@@ -908,6 +1160,7 @@ def clear_mattermost_channel(
 	channel_name: str,
 	date_from: str = None,
 	date_to: str = None,
+	override_password: str = None,
 ):
 	"""
 	Delete posts in a Mattermost channel identified by its name.
@@ -916,6 +1169,7 @@ def clear_mattermost_channel(
 	  channel_name – friendly channel name (matched against _MM_CHANNELS or Mattermost search)
 	  date_from    – optional ISO date string (YYYY-MM-DD); delete posts on/after this date
 	  date_to      – optional ISO date string (YYYY-MM-DD); delete posts on/before this date
+	  override_password – required admin gate password
 
 	Returns:
 	  {"status": "cleared", "deleted": <int>}
@@ -924,6 +1178,10 @@ def clear_mattermost_channel(
 	from datetime import datetime, timezone
 
 	import requests as _req
+	from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
+
+	if override_password != ADMIN_ACTION_PASSWORD:
+		return {"status": "error", "error": "Incorrect password. Channel was not cleared."}
 
 	channel_name = (channel_name or "").strip()
 	if not channel_name:
@@ -1487,4 +1745,343 @@ def lookup_project_direct(identifier):
 def get_pr_link_map():
     """Return the supported doctype → link-field mapping for the PR lookup page."""
     return {dt: {"field": v[0], "kind": v[1]} for dt, v in _DOCTYPE_PR_MAP.items()}
+
+
+# ============================================================
+# ---- Project No. Replacement: cascade a project_no edit to every dependent DocType ----
+#
+# Project Registration.project_no is a human-readable Data field. Most application
+# DocTypes link to the PR by its autoname (`name`), so they never go stale — but ~19
+# of them ALSO cache the project_no value in a plain Data field (populated via
+# fetch_from or manual entry, per PROJECT_REGISTRATION_LINKS_TO_APPLICATION.md).
+# Editing project_no on the PR alone leaves those caches stale. This map lists every
+# such cache field so a single edit can cascade everywhere.
+#
+# match "link"  -> row located via a Link field that stores the PR's `name`
+# match "value" -> no Link field on this doctype; row located by the OLD project_no value itself
+# ============================================================
+
+_PROJECT_NO_SYNC_MAP = [
+    # --- cache field alongside a genuine Link field ---
+    {"doctype": "Advance Settlement", "field": "project_code", "match": "link", "link_field": "project_name"},
+    {"doctype": "AMC", "field": "project_no", "match": "link", "link_field": "project_ref"},
+    {"doctype": "Indent Cum Sanction Sheet", "field": "project_no", "match": "link", "link_field": "project_ref"},
+    {
+        "doctype": "Indent General Form",
+        "field": "igf_project_code",
+        "match": "link",
+        "link_field": "igf_project_title",
+    },
+    {"doctype": "Loan Request", "field": "project_number", "match": "link", "link_field": "project_name"},
+    {"doctype": "Project Extension", "field": "prj_num", "match": "link", "link_field": "project_ref"},
+    {"doctype": "proprietary_purchase", "field": "project_no", "match": "link", "link_field": "project_ref"},
+    {"doctype": "Rate Contract", "field": "project_no", "match": "link", "link_field": "project_ref"},
+    {"doctype": "repair_replacement", "field": "project_no", "match": "link", "link_field": "project_ref"},
+    {
+        "doctype": "Research Consultancy Deposit Slip",
+        "field": "project_number",
+        "match": "link",
+        "link_field": "project_title",
+    },
+    {
+        "doctype": "Research Deposit Slip",
+        "field": "project_no",
+        "match": "link",
+        "link_field": "project_title",
+    },
+    {"doctype": "standerdized_purchase", "field": "project_no", "match": "link", "link_field": "project_ref"},
+    {
+        "doctype": "Travel",
+        "field": "travel_project_number",
+        "match": "link",
+        "link_field": "travel_project_title",
+    },
+    # --- standalone Data field, no Link field on the doctype at all ---
+    {"doctype": "Disbursal of Consultancy", "field": "project_title", "match": "value"},
+    {"doctype": "Disbursal of Honorarium", "field": "project_no", "match": "value"},
+    {"doctype": "Direct Purchase", "field": "project_no", "match": "value"},
+    {"doctype": "dp_po", "field": "project_no", "match": "value"},
+    {"doctype": "Endorsement Data", "field": "project_no", "match": "value"},
+    {"doctype": "Extension Of Tenure Of Appointment", "field": "project_number", "match": "value"},
+    {"doctype": "ICSS_PO", "field": "project_number", "match": "value"},
+    {"doctype": "NIQ", "field": "project_no", "match": "value"},
+    {"doctype": "P_11 Form", "field": "project_no", "match": "value"},
+    {"doctype": "Project Staff Details", "field": "project_no", "match": "value"},
+    {"doctype": "Recruitment Adhoc Contractual", "field": "upfa_project_code", "match": "value"},
+    {"doctype": "sanction_sheet", "field": "project_no", "match": "value"},
+    {"doctype": "Selection Committee Report", "field": "project_number", "match": "value"},
+    {"doctype": "TA DA Settlement", "field": "project_no", "match": "value"},
+    {"doctype": "Temporary Advance", "field": "project_code", "match": "value"},
+]
+
+
+def _resolve_pr_name(identifier):
+    identifier = (identifier or "").strip()
+    if not identifier:
+        return None
+    if frappe.db.exists("Project Registration", identifier):
+        return identifier
+    return frappe.db.get_value("Project Registration", {"project_no": identifier}, "name")
+
+
+def _project_no_sync_where(entry, pr_name, old_value):
+    """Return (where_sql, params) selecting the rows in `entry` that need syncing."""
+    if entry["match"] == "link":
+        return f"`{entry['link_field']}` = %s", (pr_name,)
+    return f"`{entry['field']}` = %s", (old_value,)
+
+
+def _walk_project_no_sync_map(old_value):
+    """Yield each configured entry that actually applies on this site."""
+    for entry in _PROJECT_NO_SYNC_MAP:
+        if not frappe.db.exists("DocType", entry["doctype"]):
+            continue
+        if entry["match"] == "value" and not old_value:
+            # nothing to match against yet — PR has no project_no set
+            continue
+        yield entry
+
+
+@frappe.whitelist()
+def get_project_no_sync_map():
+    """Return the sync map for display (e.g. a reference table on the frontend)."""
+    return [e for e in _PROJECT_NO_SYNC_MAP if frappe.db.exists("DocType", e["doctype"])]
+
+
+@frappe.whitelist()
+def preview_project_no_change(identifier, new_project_no=None):
+    """
+    Dry-run: resolve the PR and count how many records in each dependent DocType
+    currently cache its project_no, so an admin can see the blast radius before
+    committing to the change. Does not modify anything.
+    """
+    pr_name = _resolve_pr_name(identifier)
+    if not pr_name:
+        return {"status": "error", "message": f"No Project Registration found for '{identifier}'."}
+
+    pr = frappe.db.get_value(
+        "Project Registration",
+        pr_name,
+        ["name", "project_no", "project_title", "workflow_state"],
+        as_dict=True,
+    )
+    old_value = pr.project_no
+
+    impact = []
+    total = 0
+    for entry in _PROJECT_NO_SYNC_MAP:
+        if not frappe.db.exists("DocType", entry["doctype"]):
+            continue
+        if entry["match"] == "value" and not old_value:
+            impact.append(
+                {**entry, "count": 0, "note": "PR has no project_no set yet — nothing to match on"}
+            )
+            continue
+        where_sql, params = _project_no_sync_where(entry, pr_name, old_value)
+        count = frappe.db.sql(f"SELECT COUNT(*) FROM `tab{entry['doctype']}` WHERE {where_sql}", params)[
+            0
+        ][0]
+        impact.append({**entry, "count": count})
+        total += count
+
+    new_project_no = (new_project_no or "").strip() or None
+    uniqueness_conflict = None
+    if new_project_no:
+        uniqueness_conflict = frappe.db.get_value(
+            "Project Registration", {"project_no": new_project_no, "name": ["!=", pr_name]}, "name"
+        )
+
+    return {
+        "status": "success",
+        "pr": pr,
+        "old_project_no": old_value,
+        "new_project_no": new_project_no,
+        "uniqueness_conflict": uniqueness_conflict,
+        "impact": impact,
+        "total_affected_records": total,
+    }
+
+
+def _cascade_project_no(pr_name, old_value, new_value):
+    """
+    Push new_value into every dependent DocType/field that cached old_value
+    (per _PROJECT_NO_SYNC_MAP). Assumes Project Registration.project_no has
+    already been set to new_value by the caller. Must run inside the caller's
+    try/except so a failure here rolls back the PR update too.
+    """
+    updated = []
+    plan = []
+    for entry in _walk_project_no_sync_map(old_value):
+        where_sql, params = _project_no_sync_where(entry, pr_name, old_value)
+        count = frappe.db.sql(f"SELECT COUNT(*) FROM `tab{entry['doctype']}` WHERE {where_sql}", params)[
+            0
+        ][0]
+        plan.append((entry, where_sql, params, count))
+
+    for entry, where_sql, params, count in plan:
+        if count:
+            frappe.db.sql(
+                f"UPDATE `tab{entry['doctype']}` SET `{entry['field']}` = %s WHERE {where_sql}",
+                (new_value, *params),
+            )
+        updated.append({"doctype": entry["doctype"], "field": entry["field"], "count": count})
+    return updated
+
+
+def _add_project_no_change_comment(pr_name, old_value, new_value, updated):
+    try:
+        pr_doc = frappe.get_doc("Project Registration", pr_name)
+        pr_doc.add_comment(
+            "Info",
+            f"project_no changed from '{old_value}' to '{new_value}' by {frappe.session.user}. "
+            f"Cascaded to {sum(u['count'] for u in updated)} record(s) across "
+            f"{len([u for u in updated if u['count']])} DocType(s).",
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "project_no change: audit comment failed")
+
+
+@frappe.whitelist()
+def apply_project_no_change(identifier, new_project_no):
+    """
+    Change a Project Registration's project_no to a MANUALLY entered value and
+    cascade it to every dependent DocType/field that caches it (see
+    _PROJECT_NO_SYNC_MAP), in a single transaction. Only System Manager can
+    perform this — it mutates dozens of tables.
+    """
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("Only System Manager can change a Project No.", frappe.PermissionError)
+
+    new_project_no = (new_project_no or "").strip()
+    if not new_project_no:
+        frappe.throw("The new project_no is required.")
+
+    pr_name = _resolve_pr_name(identifier)
+    if not pr_name:
+        frappe.throw(f"No Project Registration found for '{identifier}'.")
+
+    old_value = frappe.db.get_value("Project Registration", pr_name, "project_no")
+    if old_value == new_project_no:
+        return {"status": "error", "message": "New project_no is identical to the current value."}
+
+    conflict = frappe.db.get_value(
+        "Project Registration", {"project_no": new_project_no, "name": ["!=", pr_name]}, "name"
+    )
+    if conflict:
+        frappe.throw(
+            f"project_no '{new_project_no}' is already used by Project Registration '{conflict}'."
+        )
+
+    try:
+        frappe.db.set_value(
+            "Project Registration", pr_name, "project_no", new_project_no, update_modified=False
+        )
+        updated = _cascade_project_no(pr_name, old_value, new_project_no)
+        frappe.db.commit()
+    except Exception:
+        frappe.db.rollback()
+        frappe.log_error(frappe.get_traceback(), "apply_project_no_change failed")
+        raise
+
+    _add_project_no_change_comment(pr_name, old_value, new_project_no, updated)
+
+    return {
+        "status": "success",
+        "pr_name": pr_name,
+        "old_project_no": old_value,
+        "new_project_no": new_project_no,
+        "updated": updated,
+        "total_updated": sum(u["count"] for u in updated),
+    }
+
+
+@frappe.whitelist()
+def suggest_generated_project_no(identifier):
+    """
+    Peek at the next auto-generated project number (Project Number Generation
+    series) for this PR, without consuming the sequence or creating any record.
+    Wraps get_project_number_generation_fields for the Change Project No. UI.
+    """
+    from rndopsapp.rndopsapp.doctype.project_number_generation.project_number_generation import (
+        get_project_number_generation_fields,
+    )
+
+    pr_name = _resolve_pr_name(identifier)
+    if not pr_name:
+        return {"status": "error", "message": f"No Project Registration found for '{identifier}'."}
+
+    result = get_project_number_generation_fields(doc_name=pr_name)
+    if not result.get("final_project_number"):
+        return {
+            "status": "error",
+            "message": "Could not compute a suggested project number for this PR "
+            "(check the PI's User record and Implementation Department are set).",
+        }
+
+    return {
+        "status": "success",
+        "pr_name": pr_name,
+        "suggested_project_no": result["final_project_number"],
+        "prefill_data": result["prefill_data"],
+    }
+
+
+@frappe.whitelist()
+def generate_new_project_no_and_apply(identifier, generation_data=None):
+    """
+    Auto-generate a fresh, properly formatted project number via the
+    'Project Number Generation' series (consuming the sequence and creating an
+    audit record there), set it on the PR, and cascade it to every dependent
+    DocType/field. Only System Manager can perform this.
+    """
+    import json
+
+    from rndopsapp.rndopsapp.doctype.project_number_generation.project_number_generation import (
+        get_project_number_generation_fields,
+        save_project_number_generation_data,
+    )
+
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw("Only System Manager can change a Project No.", frappe.PermissionError)
+
+    pr_name = _resolve_pr_name(identifier)
+    if not pr_name:
+        frappe.throw(f"No Project Registration found for '{identifier}'.")
+
+    old_value = frappe.db.get_value("Project Registration", pr_name, "project_no")
+
+    if isinstance(generation_data, str):
+        generation_data = json.loads(generation_data)
+    if not generation_data:
+        generation_data = get_project_number_generation_fields(doc_name=pr_name)["prefill_data"]
+        if not generation_data:
+            frappe.throw(
+                "Could not auto-derive generation fields for this PR. "
+                "Check the PI's User record and Implementation Department, or use Manual Entry."
+            )
+
+    try:
+        save_result = save_project_number_generation_data(data=generation_data, projrefno=pr_name)
+        if save_result.get("status") != "success":
+            frappe.throw(save_result.get("message") or "Failed to generate a new project number.")
+
+        new_project_no = save_result["docname"]
+        updated = _cascade_project_no(pr_name, old_value, new_project_no)
+        frappe.db.commit()
+    except Exception:
+        frappe.db.rollback()
+        frappe.log_error(frappe.get_traceback(), "generate_new_project_no_and_apply failed")
+        raise
+
+    _add_project_no_change_comment(pr_name, old_value, new_project_no, updated)
+
+    return {
+        "status": "success",
+        "pr_name": pr_name,
+        "old_project_no": old_value,
+        "new_project_no": new_project_no,
+        "png_docname": new_project_no,
+        "updated": updated,
+        "total_updated": sum(u["count"] for u in updated),
+    }
 

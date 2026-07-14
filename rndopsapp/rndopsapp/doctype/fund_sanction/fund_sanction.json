@@ -160,6 +160,7 @@
    "label": "Ref Number (Project Registration)"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sanction_workflow_status",
    "fieldtype": "Data",
    "label": "Workflow Status"
