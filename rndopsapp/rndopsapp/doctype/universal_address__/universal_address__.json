@@ -1,0 +1,87 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "creation": "2026-02-05 12:48:24.762732",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "address_type_u_r",
+        "address_line_1_u_r",
+        "address_line_2_u_r",
+        "landmark_u_r",
+        "pincode_u_r",
+        "district_u_r",
+        "city_u_r",
+        "state_u_r"
+    ],
+    "fields": [
+        {
+            "fieldname": "address_type_u_r",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Address Type ",
+            "options": "\nPermanent\nPresent",
+            "placeholder": "Select the Address Type"
+        },
+        {
+            "fieldname": "address_line_1_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "House/Building "
+        },
+        {
+            "fieldname": "address_line_2_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Street/Locality "
+        },
+        {
+            "fieldname": "landmark_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Landmark"
+        },
+        {
+            "fieldname": "pincode_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "PIN Code"
+        },
+        {
+            "fieldname": "district_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "District",
+            "read_only": 1
+        },
+        {
+            "fieldname": "city_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "City",
+            "read_only": 1
+        },
+        {
+            "fieldname": "state_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "State",
+            "read_only": 1
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-04-23 12:31:01.603781",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "Universal Address__",
+    "owner": "Administrator",
+    "permissions": [],
+    "row_format": "Dynamic",
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

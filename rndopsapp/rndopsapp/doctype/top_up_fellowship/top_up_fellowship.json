@@ -1,0 +1,170 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}TF{#####}",
+ "creation": "2025-12-19 10:36:03.772564",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_d4hp",
+  "amended_from",
+  "students_section",
+  "students",
+  "project_details_section",
+  "project_no",
+  "project_title",
+  "account_head",
+  "details_of_supervisor_section",
+  "pi_webmail",
+  "coordinating_pi_webmail",
+  "faculty_admission_section",
+  "send_to_faculty_admission",
+  "faculty_admission_pdf",
+  "declaration_section",
+  "checkbox1",
+  "checkbox2",
+  "checkbox3"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_d4hp",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Top Up Fellowship",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "students_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "students",
+   "fieldtype": "Table",
+   "label": "Students",
+   "options": "Top Up Fellowship Student",
+   "reqd": 1
+  },
+  {
+   "fieldname": "project_details_section",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Long Text",
+   "label": "Project Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head",
+   "reqd": 1
+  },
+  {
+   "fieldname": "details_of_supervisor_section",
+   "fieldtype": "Section Break",
+   "label": "Details of Supervisor"
+  },
+  {
+   "fieldname": "pi_webmail",
+   "fieldtype": "Data",
+   "label": "Webmail ID of Supervisor / Faculty Adviser"
+  },
+  {
+   "fieldname": "coordinating_pi_webmail",
+   "fieldtype": "Data",
+   "label": "Webmail ID of the PI / Coordinating Faculty of the Project / Course"
+  },
+  {
+   "fieldname": "faculty_admission_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Faculty Admission"
+  },
+  {
+   "default": "0",
+   "fieldname": "send_to_faculty_admission",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Send to Faculty Admission",
+   "read_only": 1
+  },
+  {
+   "fieldname": "faculty_admission_pdf",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Faculty Admission Signed PDF",
+   "read_only": 1
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Section Break",
+   "label": "DECLARATION"
+  },
+  {
+   "default": "0",
+   "fieldname": "checkbox1",
+   "fieldtype": "Check",
+   "label": "I hereby promise that I will perform the assigned teaching assistantship duty by the Department / Center without any compromise. "
+  },
+  {
+   "default": "0",
+   "fieldname": "checkbox2",
+   "fieldtype": "Check",
+   "label": "I will ensure that there will not be any compromise in my academic and research performance. "
+  },
+  {
+   "default": "0",
+   "fieldname": "checkbox3",
+   "fieldtype": "Check",
+   "label": "This part-time employment can be cancelled by the competent authority without giving any notice period. "
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Project Number",
+   "read_only": 1,
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-22 17:36:53.086531",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Top Up Fellowship",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

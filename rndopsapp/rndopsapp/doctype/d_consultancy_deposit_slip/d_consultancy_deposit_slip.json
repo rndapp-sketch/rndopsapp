@@ -1,0 +1,295 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:D-CONS-.YYYY.-.#####.",
+ "creation": "2025-12-11 20:55:13.833811",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "primary_details",
+  "consultancy_title",
+  "category_d",
+  "principal_consultant",
+  "client",
+  "funding_agency",
+  "gstin_of_funding_agency",
+  "iitg_invoice_no",
+  "bank",
+  "ecs_ac_no",
+  "ecs_dates",
+  "section_break_mqkq",
+  "col_1_column",
+  "amount_inclusive_of_gst",
+  "igst_18_on_consultancy",
+  "amount_after_gst_tds",
+  "total_cost_x",
+  "consultancy_charge_y",
+  "operational_charge_z",
+  "column_break_fwob",
+  "overhead_from_y_amount",
+  "overhead_from_z_amount",
+  "total_overhead_amount",
+  "institute_share_amount",
+  "total_overhead_institute_share",
+  "credit_distribution_section",
+  "idf_percentage",
+  "column_break_umfm",
+  "idf_amount",
+  "section_break_rwhj",
+  "dpf_credit_distributions",
+  "student_welfare_amount",
+  "staff_welfare_amount",
+  "final_totals",
+  "balance_consultancy_fee",
+  "balance_operation_charge",
+  "total_gst",
+  "total_amount",
+  "fund_received_ref"
+ ],
+ "fields": [
+  {
+   "fieldname": "consultancy_title",
+   "fieldtype": "Data",
+   "label": "Project Title"
+  },
+  {
+   "default": "Category D",
+   "fieldname": "category_d",
+   "fieldtype": "Data",
+   "label": "Category"
+  },
+  {
+   "fieldname": "principal_consultant",
+   "fieldtype": "Link",
+   "label": "Principal Investigator/Consultant",
+   "options": "User"
+  },
+  {
+   "fieldname": "client",
+   "fieldtype": "Data",
+   "label": "Client"
+  },
+  {
+   "fieldname": "funding_agency",
+   "fieldtype": "Link",
+   "label": "Funding Agency",
+   "options": "fundingagency_"
+  },
+  {
+   "fieldname": "gstin_of_funding_agency",
+   "fieldtype": "Data",
+   "label": "GSTIN of Funding Agency"
+  },
+  {
+   "fieldname": "iitg_invoice_no",
+   "fieldtype": "Data",
+   "label": "IITG Invoice No.\t"
+  },
+  {
+   "fieldname": "bank",
+   "fieldtype": "Data",
+   "label": "Bank Name"
+  },
+  {
+   "fieldname": "ecs_ac_no",
+   "fieldtype": "Data",
+   "label": "ECS A/C No."
+  },
+  {
+   "fieldname": "ecs_dates",
+   "fieldtype": "Table",
+   "label": "ECS Dates",
+   "options": "Deposit Slip ECS Date"
+  },
+  {
+   "fieldname": "section_break_mqkq",
+   "fieldtype": "Section Break",
+   "label": "GST and Fee Calculations"
+  },
+  {
+   "fieldname": "amount_inclusive_of_gst",
+   "fieldtype": "Currency",
+   "label": "Amount Inclusive of GST"
+  },
+  {
+   "fieldname": "igst_18_on_consultancy",
+   "fieldtype": "Currency",
+   "label": "IGST @18% on Consultancy Fee"
+  },
+  {
+   "fieldname": "amount_after_gst_tds",
+   "fieldtype": "Currency",
+   "label": "Amount after GST TDS @ 2%"
+  },
+  {
+   "description": "Total Cost X (Balance after GST Deduction from amount received)",
+   "fieldname": "total_cost_x",
+   "fieldtype": "Currency",
+   "label": "Total Cost X"
+  },
+  {
+   "fieldname": "consultancy_charge_y",
+   "fieldtype": "Currency",
+   "label": "Consultancy Charge (Y)"
+  },
+  {
+   "fieldname": "operational_charge_z",
+   "fieldtype": "Currency",
+   "label": "Operational Charge (Z)"
+  },
+  {
+   "fieldname": "column_break_fwob",
+   "fieldtype": "Column Break",
+   "hidden": 1,
+   "label": "COL 3"
+  },
+  {
+   "fieldname": "overhead_from_y_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead from Y (10% * Y) Amount"
+  },
+  {
+   "fieldname": "overhead_from_z_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead from Z (10% * Z) Amount"
+  },
+  {
+   "fieldname": "total_overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount"
+  },
+  {
+   "fieldname": "institute_share_amount",
+   "fieldtype": "Currency",
+   "label": "Institute Share (20% * Y) Amount"
+  },
+  {
+   "fieldname": "total_overhead_institute_share",
+   "fieldtype": "Currency",
+   "label": "Overhead + Institute Share"
+  },
+  {
+   "fieldname": "primary_details",
+   "fieldtype": "Section Break",
+   "label": "Primary Details"
+  },
+  {
+   "fieldname": "credit_distribution_section",
+   "fieldtype": "Section Break",
+   "label": "Credit Distribution"
+  },
+  {
+   "fieldname": "final_totals",
+   "fieldtype": "Section Break",
+   "label": "Final Totals"
+  },
+  {
+   "fieldname": "balance_consultancy_fee",
+   "fieldtype": "Currency",
+   "label": "Balance Consultancy Fee"
+  },
+  {
+   "fieldname": "balance_operation_charge",
+   "fieldtype": "Currency",
+   "label": "Balance Operation Charge"
+  },
+  {
+   "fieldname": "total_gst",
+   "fieldtype": "Currency",
+   "label": "Total GST"
+  },
+  {
+   "fieldname": "total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount"
+  },
+  {
+   "fieldname": "col_1_column",
+   "fieldtype": "Column Break",
+   "hidden": 1,
+   "label": "COL 1"
+  },
+  {
+   "description": "(IDF %age of Overhead + Institute Share)",
+   "fieldname": "idf_amount",
+   "fieldtype": "Currency",
+   "label": "IDF Amount"
+  },
+  {
+   "description": "(5% of Overhead + Institute Share)",
+   "fieldname": "staff_welfare_amount",
+   "fieldtype": "Currency",
+   "label": "(D) Staff welfare Amount"
+  },
+  {
+   "description": "(5% of Overhead + Institute Share)",
+   "fieldname": "student_welfare_amount",
+   "fieldtype": "Currency",
+   "label": "(C) Student welfare Amount"
+  },
+  {
+   "fieldname": "idf_percentage",
+   "fieldtype": "Float",
+   "label": "(A) IDF % age"
+  },
+  {
+   "fieldname": "column_break_umfm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_rwhj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dpf_credit_distributions",
+   "fieldtype": "Table",
+   "label": "(B) DPF Credit Distribution",
+   "options": "DPF Credit Distribution"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-10 11:19:16.768220",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "D Consultancy Deposit Slip",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

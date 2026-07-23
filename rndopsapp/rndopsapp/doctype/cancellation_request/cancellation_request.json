@@ -1,0 +1,170 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "format:CANCEL-{reference_doctype_short}-{YYYY}{MM}{DD}-{####}",
+    "creation": "2026-05-29 10:00:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "reference_section",
+        "reference_doctype",
+        "reference_name",
+        "reference_owner",
+        "column_break_ref",
+        "request_date",
+        "requested_by",
+        "status",
+        "cancellation_details_section",
+        "cancellation_reason",
+        "workflow_section",
+        "source_workflow",
+        "workflow_state",
+        "reference_doctype_short",
+        "amended_from"
+    ],
+    "fields": [
+        {
+            "fieldname": "reference_section",
+            "fieldtype": "Section Break",
+            "label": "Reference Document"
+        },
+        {
+            "fieldname": "reference_doctype",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Reference DocType",
+            "options": "DocType",
+            "reqd": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "reference_name",
+            "fieldtype": "Dynamic Link",
+            "in_list_view": 1,
+            "label": "Reference Document",
+            "options": "reference_doctype",
+            "reqd": 1,
+            "read_only": 1
+        },
+        {
+            "fieldname": "reference_owner",
+            "fieldtype": "Link",
+            "label": "Original Applicant",
+            "options": "User",
+            "read_only": 1
+        },
+        {
+            "fieldname": "column_break_ref",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "request_date",
+            "fieldtype": "Datetime",
+            "label": "Request Date",
+            "read_only": 1
+        },
+        {
+            "fieldname": "requested_by",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Requested By",
+            "options": "User",
+            "read_only": 1
+        },
+        {
+            "default": "Pending",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Status",
+            "options": "\nPending\nApproved\nRejected",
+            "read_only": 1
+        },
+        {
+            "fieldname": "cancellation_details_section",
+            "fieldtype": "Section Break",
+            "label": "Cancellation Details"
+        },
+        {
+            "fieldname": "cancellation_reason",
+            "fieldtype": "Small Text",
+            "label": "Cancellation Reason",
+            "reqd": 1
+        },
+        {
+            "fieldname": "workflow_section",
+            "fieldtype": "Section Break",
+            "label": "Workflow Information",
+            "collapsible": 1
+        },
+        {
+            "fieldname": "source_workflow",
+            "fieldtype": "Data",
+            "label": "Source Workflow",
+            "read_only": 1,
+            "description": "The workflow copied from the original document's doctype"
+        },
+        {
+            "fieldname": "workflow_state",
+            "fieldtype": "Data",
+            "label": "Workflow State",
+            "read_only": 1
+        },
+        {
+            "fieldname": "reference_doctype_short",
+            "fieldtype": "Data",
+            "label": "Reference DocType Short",
+            "hidden": 1,
+            "read_only": 1,
+            "description": "Short name used in auto-naming"
+        },
+        {
+            "fieldname": "amended_from",
+            "fieldtype": "Link",
+            "hidden": 1,
+            "label": "Amended From",
+            "no_copy": 1,
+            "options": "Cancellation Request",
+            "print_hide": 1,
+            "read_only": 1,
+            "search_index": 1
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "is_submittable": 1,
+    "links": [],
+    "modified": "2026-05-29 10:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "Cancellation Request",
+    "naming_rule": "Expression",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "submit": 1,
+            "write": 1
+        },
+        {
+            "create": 1,
+            "read": 1,
+            "write": 1,
+            "submit": 1,
+            "role": "All"
+        }
+    ],
+    "row_format": "Dynamic",
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

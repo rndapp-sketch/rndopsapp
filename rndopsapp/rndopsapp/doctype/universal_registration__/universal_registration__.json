@@ -1,0 +1,390 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "autoname": "naming_series:",
+    "creation": "2026-02-05 15:20:05.905954",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "section_break_ih7c",
+        "amended_from",
+        "classification_and__status_section",
+        "profile_type_u_r",
+        "organization_sub_type_u_r",
+        "universal_user_u_r",
+        "personal_information_section_u_r",
+        "full_name_u_r",
+        "guardian_name_u_r",
+        "dob_u_r",
+        "gender_u_r",
+        "nationality_u_r",
+        "mobile_number_u_r",
+        "same_as_mobile_number_u_r",
+        "whatsapp_number_u_r",
+        "alternate_mobile_number_u_r",
+        "email_address_u_r",
+        "user_affiliation_detail_section_u_r",
+        "institution_details_u_r",
+        "personal_history_section_u_r",
+        "address_details",
+        "qualifications_u_r",
+        "experiences_u_r",
+        "organization_basic_details_section_u_r",
+        "org_name_u_r",
+        "est_date_u_r",
+        "nature_of_business_u_r",
+        "website_u_r",
+        "contact_person_u_r",
+        "contact_designation",
+        "email_oraganization__contact_person_u_r",
+        "org_contact_number_u_r",
+        "organization_mobile_number_u_r",
+        "org_address_details_u_r",
+        "vendor_profile_and_statutory_section_u_r",
+        "type_of_business_u_r",
+        "other_business_type_u_r",
+        "nature_of_org",
+        "pan_number_org_u_r",
+        "gst_status_u_r",
+        "other_registration_u_r",
+        "financial_and_documents_common_section_u_r",
+        "bank_details_u_r",
+        "uploaded_documents_u_r",
+        "vendor_declarations_and_signatory_section_u_r",
+        "decl_info_true_u_r",
+        "signatory_name_u_r",
+        "signatory_designation_u_r",
+        "date_of_signing_u_r",
+        "naming_series",
+        "funding_agency_section",
+        "funding_agency_u_r"
+    ],
+    "fields": [
+        {
+            "fieldname": "section_break_ih7c",
+            "fieldtype": "Section Break",
+            "hidden": 1
+        },
+        {
+            "fieldname": "amended_from",
+            "fieldtype": "Link",
+            "hidden": 1,
+            "label": "Amended From",
+            "no_copy": 1,
+            "options": "Universal Registration__",
+            "print_hide": 1,
+            "read_only": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "classification_and__status_section",
+            "fieldtype": "Section Break",
+            "label": "Classification and  Status"
+        },
+        {
+            "fieldname": "address_details",
+            "fieldtype": "Table",
+            "label": "Addresses",
+            "options": "Universal Address__"
+        },
+        {
+            "fieldname": "contact_designation",
+            "fieldtype": "Data",
+            "label": "Contact Designation"
+        },
+        {
+            "fieldname": "profile_type_u_r",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Profile Type",
+            "options": "\nIndividual (For Honorarium)\nOrganization\nPI / Co-PI (External only)",
+            "reqd": 1
+        },
+        {
+            "depends_on": "eval:doc.profile_type_u_r=='Organization'",
+            "fieldname": "organization_sub_type_u_r",
+            "fieldtype": "Select",
+            "label": "Org Sub-Type",
+            "options": "\nVendor\nCompany\nFunding Agency\nGovt Body\nLocal Supplier\nPrinciple Supplier"
+        },
+        {
+            "description": "Matches ID proof",
+            "fieldname": "full_name_u_r",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Full Name",
+            "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
+        },
+        {
+            "fieldname": "guardian_name_u_r",
+            "fieldtype": "Data",
+            "label": "Parent/Guardian"
+        },
+        {
+            "fieldname": "dob_u_r",
+            "fieldtype": "Date",
+            "in_list_view": 1,
+            "label": "Date of Birth"
+        },
+        {
+            "fieldname": "gender_u_r",
+            "fieldtype": "Select",
+            "label": "Gender",
+            "options": "\nMale\nFemale\nOther"
+        },
+        {
+            "default": "India",
+            "fieldname": "nationality_u_r",
+            "fieldtype": "Data",
+            "label": "Nationality"
+        },
+        {
+            "fieldname": "mobile_number_u_r",
+            "fieldtype": "Phone",
+            "in_list_view": 1,
+            "label": "Mobile Number",
+            "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
+        },
+        {
+            "fieldname": "email_address_u_r",
+            "fieldtype": "Data",
+            "label": "Official Email Address",
+            "mandatory_depends_on": "eval:doc.profile_type_u_r!='Organization'"
+        },
+        {
+            "fieldname": "qualifications_u_r",
+            "fieldtype": "Table",
+            "label": "Qualifications",
+            "options": "Personal Qualification__"
+        },
+        {
+            "fieldname": "experiences_u_r",
+            "fieldtype": "Table",
+            "label": "Experience",
+            "options": "Personal Experience__"
+        },
+        {
+            "fieldname": "org_name_u_r",
+            "fieldtype": "Data",
+            "label": "Organization Name"
+        },
+        {
+            "fieldname": "est_date_u_r",
+            "fieldtype": "Data",
+            "label": "Incorporation Date"
+        },
+        {
+            "fieldname": "nature_of_business_u_r",
+            "fieldtype": "Small Text",
+            "label": "Nature of Business"
+        },
+        {
+            "fieldname": "website_u_r",
+            "fieldtype": "Data",
+            "label": "Website"
+        },
+        {
+            "fieldname": "contact_person_u_r",
+            "fieldtype": "Data",
+            "label": "Contact Person Name"
+        },
+        {
+            "fieldname": "org_contact_number_u_r",
+            "fieldtype": "Data",
+            "label": "Contact Phone"
+        },
+        {
+            "fieldname": "org_address_details_u_r",
+            "fieldtype": "Table",
+            "label": "Registered Address",
+            "options": "Universal Address__"
+        },
+        {
+            "fieldname": "bank_details_u_r",
+            "fieldtype": "Table",
+            "label": "Bank Details",
+            "options": "Universal Bank Details__"
+        },
+        {
+            "fieldname": "uploaded_documents_u_r",
+            "fieldtype": "Table",
+            "label": "Identity & Credential Documents",
+            "options": "Universal Documents__"
+        },
+        {
+            "fieldname": "personal_information_section_u_r",
+            "fieldtype": "Section Break",
+            "label": "Personal Information"
+        },
+        {
+            "fieldname": "personal_history_section_u_r",
+            "fieldtype": "Section Break",
+            "label": "Personal History"
+        },
+        {
+            "fieldname": "organization_basic_details_section_u_r",
+            "fieldtype": "Section Break",
+            "label": "Organization Basic Details"
+        },
+        {
+            "fieldname": "financial_and_documents_common_section_u_r",
+            "fieldtype": "Section Break",
+            "label": "Financial and Documents (Common)"
+        },
+        {
+            "fieldname": "whatsapp_number_u_r",
+            "fieldtype": "Phone",
+            "label": "Whatsapp Number"
+        },
+        {
+            "default": "0",
+            "fieldname": "same_as_mobile_number_u_r",
+            "fieldtype": "Check",
+            "label": "WhatsApp No. Same as mobile number."
+        },
+        {
+            "fieldname": "alternate_mobile_number_u_r",
+            "fieldtype": "Phone",
+            "label": "Alternate Mobile Number"
+        },
+        {
+            "fieldname": "organization_mobile_number_u_r",
+            "fieldtype": "Phone",
+            "label": "Mobile Number"
+        },
+        {
+            "fieldname": "email_oraganization__contact_person_u_r",
+            "fieldtype": "Data",
+            "label": "Email (Oraganization / Contact Person)"
+        },
+        {
+            "fieldname": "type_of_business_u_r",
+            "fieldtype": "Select",
+            "label": "Type of Business",
+            "options": "\nSupply\nWorks\nService\nOthers"
+        },
+        {
+            "fieldname": "other_business_type_u_r",
+            "fieldtype": "Data",
+            "label": "Other Business"
+        },
+        {
+            "fieldname": "nature_of_org",
+            "fieldtype": "Select",
+            "label": "Nature of Org",
+            "options": "\nProprietorship\nPartnership\nCompany Registered"
+        },
+        {
+            "fieldname": "gst_status_u_r",
+            "fieldtype": "Select",
+            "label": "GST Status"
+        },
+        {
+            "fieldname": "pan_number_org_u_r",
+            "fieldtype": "Data",
+            "label": "PAN Number (Org.)"
+        },
+        {
+            "description": "Optional",
+            "fieldname": "other_registration_u_r",
+            "fieldtype": "Data",
+            "label": "Other Registration"
+        },
+        {
+            "default": "0",
+            "description": "I/We hereby declare that the particulars are given above are correct, complete and true to knowledge.\nI/We willing to/not willing to accept the payment through ECS/NEFT/RGTS. If the electronic transaction / transfer is\ndelayed or not effected at all for-reasons of incomplete or incorrect information, I/ we shall not hold the Institute\nresponsible. I/We shall abide by the Institutes' rules & regulations under any circumstances.",
+            "fieldname": "decl_info_true_u_r",
+            "fieldtype": "Check",
+            "label": "Info Declaration"
+        },
+        {
+            "fieldname": "signatory_name_u_r",
+            "fieldtype": "Data",
+            "label": "Signatory Name"
+        },
+        {
+            "fieldname": "signatory_designation_u_r",
+            "fieldtype": "Attach Image",
+            "label": "Designation"
+        },
+        {
+            "default": "Today",
+            "fieldname": "date_of_signing_u_r",
+            "fieldtype": "Date",
+            "label": "Date of Signing"
+        },
+        {
+            "fieldname": "vendor_declarations_and_signatory_section_u_r",
+            "fieldtype": "Section Break",
+            "label": "Vendor Declarations and Signatory"
+        },
+        {
+            "fieldname": "vendor_profile_and_statutory_section_u_r",
+            "fieldtype": "Section Break",
+            "label": " Vendor Profile and Statutory"
+        },
+        {
+            "fieldname": "universal_user_u_r",
+            "fieldtype": "Link",
+            "label": "Universal User",
+            "options": "Universal User__"
+        },
+        {
+            "fieldname": "naming_series",
+            "fieldtype": "Select",
+            "label": "Naming Series",
+            "options": "UNIREG-.#####",
+            "reqd": 1
+        },
+        {
+            "fieldname": "user_affiliation_detail_section_u_r",
+            "fieldtype": "Section Break",
+            "label": "User Affiliation Details"
+        },
+        {
+            "fieldname": "institution_details_u_r",
+            "fieldtype": "Table",
+            "label": "Institution Details",
+            "options": "Institution Details"
+        },
+        {
+            "fieldname": "funding_agency_section",
+            "fieldtype": "Section Break",
+            "label": "Funding Agency"
+        },
+        {
+            "allow_in_quick_entry": 1,
+            "fieldname": "funding_agency_u_r",
+            "fieldtype": "Link",
+            "options": "fundingagency_"
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "links": [],
+    "modified": "2026-04-23 15:21:56.406601",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "Universal Registration__",
+    "naming_rule": "By \"Naming Series\" field",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "row_format": "Dynamic",
+    "rows_threshold_for_grid_search": 20,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

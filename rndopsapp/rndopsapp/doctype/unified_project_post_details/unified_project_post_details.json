@@ -1,0 +1,109 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YY}{MM}{###}{####}",
+ "creation": "2025-12-30 17:02:58.274079",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_ygja",
+  "upfa_designation",
+  "upfa_vacancies",
+  "upfa_basic_pay",
+  "upfa_hra_percent",
+  "upfa_medical_required",
+  "upfa_total_amount",
+  "month_days",
+  "upfa_duration_months",
+  "upfa_qualification",
+  "upfa_justification"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_designation",
+   "fieldtype": "Link",
+   "label": "Project Staff Designation",
+   "options": "Designation_prornd"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_vacancies",
+   "fieldtype": "Int",
+   "label": "Number of Vacancies"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_basic_pay",
+   "fieldtype": "Currency",
+   "label": "Basic Pay Recommended"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_hra_percent",
+   "fieldtype": "Select",
+   "label": "HRA Percentage",
+   "options": "\n10%\n18%\n16%\n20%"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "upfa_medical_required",
+   "fieldtype": "Check",
+   "label": "Medical Required"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_total_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_duration_months",
+   "fieldtype": "Int",
+   "label": "Duration "
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_qualification",
+   "fieldtype": "Small Text",
+   "label": "Qualification"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upfa_justification",
+   "fieldtype": "Small Text",
+   "label": "Justification"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "month_days",
+   "fieldtype": "Select",
+   "label": "Month or Days",
+   "options": "\nMonth\nDays"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "section_break_ygja",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-11 11:16:13.420121",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Unified Project Post Details",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

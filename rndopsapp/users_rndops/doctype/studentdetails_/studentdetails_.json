@@ -1,0 +1,216 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-28 16:27:37.596146",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "student_id",
+  "pi_employee_id",
+  "name",
+  "department_id",
+  "designation_or_program",
+  "project_number",
+  "basic",
+  "hra",
+  "hostel",
+  "medical_allowance",
+  "medical_deduction",
+  "transport_allowance",
+  "dob",
+  "gender",
+  "contact_number",
+  "permanent_address",
+  "present_address",
+  "blood_group",
+  "account_number",
+  "ifsc_number",
+  "bank_name",
+  "pan",
+  "adhar",
+  "father_name",
+  "marital_status",
+  "citizenship",
+  "roll_no",
+  "email_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "student_id",
+   "fieldtype": "Link",
+   "label": "Student ID",
+   "options": "loginuser_"
+  },
+  {
+   "fieldname": "pi_employee_id",
+   "fieldtype": "Link",
+   "label": "PI Employee ID",
+   "options": "loginuser_"
+  },
+  {
+   "fieldname": "dob",
+   "fieldtype": "Date",
+   "label": "Date of birth"
+  },
+  {
+   "fieldname": "roll_no",
+   "fieldtype": "Data",
+   "label": "Roll No"
+  },
+  {
+   "fieldname": "email_id",
+   "fieldtype": "Data",
+   "label": "Email ID",
+   "options": "Email"
+  },
+  {
+   "fieldname": "name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "department_id",
+   "fieldtype": "Int",
+   "label": "Department ID"
+  },
+  {
+   "fieldname": "designation_or_program",
+   "fieldtype": "Data",
+   "label": "Designation/Program"
+  },
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Link",
+   "label": "Project Number"
+  },
+  {
+   "fieldname": "basic",
+   "fieldtype": "Float",
+   "label": "Basic"
+  },
+  {
+   "fieldname": "hra",
+   "fieldtype": "Data",
+   "label": "HRA"
+  },
+  {
+   "fieldname": "hostel",
+   "fieldtype": "Data",
+   "label": "Hostel"
+  },
+  {
+   "fieldname": "medical_allowance",
+   "fieldtype": "Data",
+   "label": "Medical Allowance"
+  },
+  {
+   "fieldname": "medical_deduction",
+   "fieldtype": "Data",
+   "label": "Medical Deduction"
+  },
+  {
+   "fieldname": "transport_allowance",
+   "fieldtype": "Data",
+   "label": "Transport Allowance"
+  },
+  {
+   "fieldname": "gender",
+   "fieldtype": "Select",
+   "label": "Gender",
+   "options": "\nMale\nFemale\nOther"
+  },
+  {
+   "fieldname": "contact_number",
+   "fieldtype": "Data",
+   "label": "Contact Number",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "permanent_address",
+   "fieldtype": "Link",
+   "label": "Permanent Address",
+   "options": "Address"
+  },
+  {
+   "fieldname": "present_address",
+   "fieldtype": "Link",
+   "label": "Present Address",
+   "options": "Address"
+  },
+  {
+   "fieldname": "blood_group",
+   "fieldtype": "Data",
+   "label": "Blood Group",
+   "options": "O+, O-, A+, A-, B+, B-, AB+, AB-"
+  },
+  {
+   "fieldname": "account_number",
+   "fieldtype": "Data",
+   "label": "Account Number"
+  },
+  {
+   "fieldname": "ifsc_number",
+   "fieldtype": "Data",
+   "label": "IFSC Number"
+  },
+  {
+   "fieldname": "bank_name",
+   "fieldtype": "Data",
+   "label": "Bank Name"
+  },
+  {
+   "fieldname": "pan",
+   "fieldtype": "Data",
+   "label": "PAN"
+  },
+  {
+   "fieldname": "adhar",
+   "fieldtype": "Data",
+   "label": "Aadhar"
+  },
+  {
+   "fieldname": "father_name",
+   "fieldtype": "Data",
+   "label": "Father's Name"
+  },
+  {
+   "fieldname": "marital_status",
+   "fieldtype": "Select",
+   "label": "Marital Status",
+   "options": "\nSingle\nMarried\nDivorced\nWidowed"
+  },
+  {
+   "fieldname": "citizenship",
+   "fieldtype": "Data",
+   "label": "Citizenship"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-09-28 16:36:50.175525",
+ "modified_by": "Administrator",
+ "module": "users_rndops",
+ "name": "studentdetails_",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

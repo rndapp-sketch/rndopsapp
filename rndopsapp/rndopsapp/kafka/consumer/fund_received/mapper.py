@@ -1,0 +1,313 @@
+# Copyright (c) 2025, rndops and contributors
+# Fund Received Consumer Mapper - Maps Kafka DTO to Frappe document updates
+
+import frappe
+from typing import Optional
+
+from .dto import FundReceivedUpdateDTO
+
+
+class FundReceivedConsumerMapper:
+    """
+    Maps Fund Received Update DTO to Frappe document field updates.
+    """
+
+    @staticmethod
+    def find_document(dto: FundReceivedUpdateDTO) -> Optional[str]:
+        """
+        Find Fund Received document by various identifiers.
+
+        Args:
+            dto: FundReceivedUpdateDTO with identifiers
+
+        Returns:
+            str or None: Document name if found
+        """
+        # Primary lookup by FAP reference number
+        if dto.fundReceivedRefNumberFap:
+            if frappe.db.exists('Fund Received', dto.fundReceivedRefNumberFap):
+                return dto.fundReceivedRefNumberFap
+
+        # Fallback: Lookup by reference number
+        if dto.fundReceivedRefNumber:
+            ref_num_str = str(dto.fundReceivedRefNumber)
+            if frappe.db.exists('Fund Received', ref_num_str):
+                return ref_num_str
+
+        # Fallback: Find by sanction letter and project
+        if dto.sanctionLetterNo and dto.projectNumber:
+            filters = {
+                'sanctioned_letter_no': dto.sanctionLetterNo,
+                'prjreg_title': dto.projectNumber
+            }
+            found_name = frappe.db.get_value('Fund Received', filters, 'name')
+            if found_name:
+                return found_name
+
+        return None
+
+    @staticmethod
+    def get_project_registration_name(project_number: str) -> Optional[str]:
+        """
+        Look up the Project Registration document name from project_no field.
+
+        Args:
+            project_number: The project_no value (e.g. '26RBSBESP0391LSAH0015')
+
+        Returns:
+            str: Project Registration document name (e.g. '2026032701DST000704'),
+                 or the original project_number if not found.
+        """
+        if not project_number:
+            return project_number
+
+        # Search Project Registration where project_no matches
+        prj_name = frappe.db.get_value(
+            'Project Registration',
+            {'project_no': project_number},
+            'name'
+        )
+
+        if prj_name:
+            return prj_name
+
+        # Fallback: return original project_number if no match found
+        return project_number
+
+    # Ordered workflow states — higher index = further along in the workflow.
+    # Source of truth: fund_received_with_kafka workflow (verified from DB).
+    # The Kafka consumer must NEVER move a document backward.
+    _STATE_PRIORITY = {
+        'Draft':                                                 0,
+        'Pending Misc. Staff Approval':                          1,
+        'PENDING_APPROVAL':                                      2,
+        'Pending Misc. Staff Approval(Deposit Slip Pending)':    3,
+        'Pending HoS Approval':                                  4,
+        'Approved':                                              5,
+        'Fund Received':                                         6,
+    }
+
+    @staticmethod
+    def map_status(kafka_status: Optional[str]) -> Optional[str]:
+        """
+        Map Kafka status to Frappe workflow state.
+
+        Args:
+            kafka_status: Status from Kafka message
+
+        Returns:
+            str: Frappe workflow state
+        """
+        if not kafka_status:
+            return None
+
+        status_upper = kafka_status.upper()
+
+        if status_upper == 'APPROVED':
+            # External APPROVED → awaiting deposit slip from Misc. Staff
+            return 'Pending Misc. Staff Approval(Deposit Slip Pending)'
+        elif status_upper == 'PENDING_APPROVAL':
+            # Kafka intermediate state — matches the actual Frappe workflow state name
+            return 'PENDING_APPROVAL'
+        else:
+            return kafka_status.title()
+
+    @classmethod
+    def apply_updates(cls, doc_name: str, dto: FundReceivedUpdateDTO) -> bool:
+        """
+        Apply DTO updates to Frappe document using direct DB updates.
+
+        Args:
+            doc_name: Fund Received document name
+            dto: FundReceivedUpdateDTO with update data
+
+        Returns:
+            bool: True if successful
+        """
+        try:
+            # Map and apply sanction_letter_no
+            if dto.sanctionLetterNo and frappe.db.has_column('Fund Received', 'sanctioned_letter_no'):
+                frappe.db.set_value(
+                    'Fund Received', doc_name,
+                    'sanctioned_letter_no', dto.sanctionLetterNo
+                )
+
+            # Map and apply project_number → look up Project Registration name
+            if dto.projectNumber and frappe.db.has_column('Fund Received', 'prjreg_title'):
+                prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
+                frappe.db.set_value(
+                    'Fund Received', doc_name,
+                    'prjreg_title', prj_reg_name
+                )
+
+            # Map and apply amount_received
+            if dto.amountReceived is not None and frappe.db.has_column('Fund Received', 'fund_received_amt'):
+                frappe.db.set_value(
+                    'Fund Received', doc_name,
+                    'fund_received_amt', dto.amountReceived
+                )
+
+            # Map and apply bank_account
+            if dto.iitgAccountNumber and frappe.db.has_column('Fund Received', 'bank_account'):
+                frappe.db.set_value(
+                    'Fund Received', doc_name,
+                    'bank_account', dto.iitgAccountNumber
+                )
+
+            # Map and apply workflow_state — only move FORWARD, never backward.
+            # Uses a single conditional SQL UPDATE (atomic check+apply) to avoid
+            # a TOCTOU race with the Frappe workflow action handlers: MariaDB MVCC
+            # means a plain SELECT reads the transaction snapshot while a separate
+            # UPDATE writes to the latest row version, so a Python-level
+            # read-then-update can silently overwrite a state that was advanced by
+            # another process between the read and the write.
+            if frappe.db.has_column('Fund Received', 'workflow_state'):
+                new_status = cls.map_status(dto.fundReceivedStatus)
+                if new_status:
+                    new_priority = cls._STATE_PRIORITY.get(new_status, 0)
+
+                    # Build list of states whose priority is <= new_priority
+                    # (the only states from which this transition is allowed).
+                    allowed_from_states = [
+                        state for state, pri in cls._STATE_PRIORITY.items()
+                        if pri <= new_priority
+                    ]
+
+                    if not allowed_from_states:
+                        frappe.logger().warning(
+                            f"[FundReceivedConsumerMapper] No allowed-from states for "
+                            f"{doc_name}: target='{new_status}' (priority {new_priority}), skipped."
+                        )
+                    else:
+                        # Single atomic UPDATE: only applies when current state is
+                        # in the allowed set, preventing any backward movement even
+                        # under concurrent requests.
+                        placeholders = ', '.join(['%s'] * len(allowed_from_states))
+                        rows_affected = frappe.db.sql(
+                            f"""
+                            UPDATE `tabFund Received`
+                            SET workflow_state = %s,
+                                modified = NOW()
+                            WHERE name = %s
+                              AND workflow_state IN ({placeholders})
+                            """,
+                            [new_status, doc_name] + allowed_from_states,
+                        )
+                        if not rows_affected:
+                            # Read current state only for the warning log
+                            current_status = frappe.db.get_value(
+                                'Fund Received', doc_name, 'workflow_state'
+                            ) or ''
+                            frappe.logger().warning(
+                                f"[FundReceivedConsumerMapper] Skipped backward state change for "
+                                f"{doc_name}: current='{current_status}' "
+                                f"→ '{new_status}' (priority {new_priority}) ignored."
+                            )
+
+            # Map and apply fund_received_ref_number
+            if dto.fundReceivedRefNumber is not None and frappe.db.has_column('Fund Received', 'fund_received_ref_number'):
+                try:
+                    frappe.db.set_value(
+                        'Fund Received', doc_name,
+                        'fund_received_ref_number', int(dto.fundReceivedRefNumber)
+                    )
+                except (ValueError, TypeError):
+                    frappe.db.set_value(
+                        'Fund Received', doc_name,
+                        'fund_received_ref_number', dto.fundReceivedRefNumber
+                    )
+
+            return True
+
+        except Exception as e:
+            frappe.log_error(
+                f"Error applying updates to Fund Received {doc_name}: {str(e)}",
+                "Fund Received Consumer Mapper Error"
+            )
+            return False
+
+    @classmethod
+    def update_budget_breakup(cls, doc_name: str, dto: FundReceivedUpdateDTO) -> bool:
+        """
+        Update Fund Budget Breakup child table.
+
+        Args:
+            doc_name: Fund Received document name
+            dto: FundReceivedUpdateDTO with budget breakup data
+
+        Returns:
+            bool: True if successful
+        """
+        if not dto.fundBudgetBreakupList:
+            return True
+
+        try:
+            child_doctype = 'Project Received Budget'
+            parent_field = 'received_amt_breakup'
+
+            # Clear existing items
+            frappe.db.delete(child_doctype, {'parent': doc_name})
+
+            # Add new items
+            for idx, item in enumerate(dto.fundBudgetBreakupList, start=1):
+                child_doc = frappe.new_doc(child_doctype)
+                child_doc.parent = doc_name
+                child_doc.parenttype = 'Fund Received'
+                child_doc.parentfield = parent_field
+                child_doc.idx = idx
+                child_doc.account_head = item.accountHeadId or item.accountHead
+                child_doc.amount_received = item.amount
+                child_doc.remarks = item.remarks
+                child_doc.db_insert()
+
+            return True
+
+        except Exception as e:
+            frappe.log_error(
+                f"Error updating budget breakup for {doc_name}: {str(e)}",
+                "Fund Received Consumer Budget Error"
+            )
+            return False
+
+    @classmethod
+    def update_transaction_details(cls, doc_name: str, dto: FundReceivedUpdateDTO) -> bool:
+        """
+        Update Transaction Details child table.
+
+        Args:
+            doc_name: Fund Received document name
+            dto: FundReceivedUpdateDTO with transaction data
+
+        Returns:
+            bool: True if successful
+        """
+        if not dto.transactionDetailsList:
+            return True
+
+        try:
+            child_doctype = 'Project Fund Transaction'
+            parent_field = 'fund_transactions'
+
+            # Clear existing items
+            frappe.db.delete(child_doctype, {'parent': doc_name})
+
+            # Add new items
+            for idx, item in enumerate(dto.transactionDetailsList, start=1):
+                child_doc = frappe.new_doc(child_doctype)
+                child_doc.parent = doc_name
+                child_doc.parenttype = 'Fund Received'
+                child_doc.parentfield = parent_field
+                child_doc.idx = idx
+                child_doc.transaction_number = item.uniqueTransactionNumber
+                child_doc.transaction_date = item.transactionReceivedDate
+                child_doc.amount = item.transactionAmount
+                child_doc.db_insert()
+
+            return True
+
+        except Exception as e:
+            frappe.log_error(
+                f"Error updating transaction details for {doc_name}: {str(e)}",
+                "Fund Received Consumer Transaction Error"
+            )
+            return False

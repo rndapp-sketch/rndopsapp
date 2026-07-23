@@ -1,0 +1,112 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-07-30 16:03:16.265657",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "budget_breakup_details_section",
+  "column_break_fqyi",
+  "account_head",
+  "first_year_budget",
+  "second_year_budget",
+  "third_year_budget",
+  "fourth_year_budget",
+  "fifth_year_budget",
+  "sixth_year_budget",
+  "total_proposal_of_heads",
+  "is_total_row"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "fieldname": "account_head",
+   "fieldtype": "Data",
+   "label": "Account Head"
+  },
+  {
+   "fieldname": "budget_breakup_details_section",
+   "fieldtype": "Section Break",
+   "label": "Budget Breakup details"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "total_proposal_of_heads",
+   "fieldtype": "Currency",
+   "label": "Total",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "first_year_budget",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "1st Year",
+   "non_negative": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "second_year_budget",
+   "fieldtype": "Currency",
+   "label": "2nd Year",
+   "non_negative": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "third_year_budget",
+   "fieldtype": "Currency",
+   "label": "3rd Year",
+   "non_negative": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "fourth_year_budget",
+   "fieldtype": "Currency",
+   "label": "4th Year",
+   "non_negative": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "fifth_year_budget",
+   "fieldtype": "Currency",
+   "label": "5th Year",
+   "non_negative": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_total_row",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Total Row",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "column_break_fqyi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "sixth_year_budget",
+   "fieldtype": "Currency",
+   "label": "6th Year",
+   "non_negative": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-12 12:03:43.998313",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Project Sanctioned Budget",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

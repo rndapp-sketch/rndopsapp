@@ -1,0 +1,268 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{DD}{MM}{YYYY}RES-DS{#####}",
+ "creation": "2025-12-12 07:43:16.296523",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "primary_details",
+  "project_title",
+  "principal_investigator",
+  "client",
+  "funding_agency",
+  "gstin_of_funding_agency",
+  "fund_received_ref",
+  "workflow_state",
+  "section_break_pouq",
+  "ecs_ac_no",
+  "column_break_zjki",
+  "bank",
+  "section_break_stia",
+  "ecs_dates",
+  "calculations_section",
+  "amount_inclusive_gst_capital",
+  "cgst_9",
+  "sgst_9",
+  "project_balance_after_gst",
+  "overhead_amount",
+  "credit_distribution_section",
+  "idf_amount",
+  "dpf_cle_amount",
+  "credit_distribution",
+  "staff_welfare_amount",
+  "student_welfare_amount",
+  "section_break_ytjt",
+  "column_break_aedd",
+  "project_number",
+  "column_break_yrxt",
+  "prj_amount",
+  "section_break_ahgv",
+  "total_gst",
+  "total_budget"
+ ],
+ "fields": [
+  {
+   "fieldname": "primary_details",
+   "fieldtype": "Section Break",
+   "label": "Primary Details"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration"
+  },
+  {
+   "fetch_from": "project_title.pi_userid",
+   "fieldname": "principal_investigator",
+   "fieldtype": "Data",
+   "label": "Principal Investigator"
+  },
+  {
+   "fieldname": "client",
+   "fieldtype": "Data",
+   "label": "Client"
+  },
+  {
+   "fieldname": "funding_agency",
+   "fieldtype": "Link",
+   "label": "Funding Agency",
+   "options": "fundingagency_"
+  },
+  {
+   "fetch_from": "project_title.consultancy_gstin",
+   "fieldname": "gstin_of_funding_agency",
+   "fieldtype": "Data",
+   "label": "GSTIN of Funding Agency"
+  },
+  {
+   "fieldname": "ecs_ac_no",
+   "fieldtype": "Data",
+   "label": "ECS A/C No."
+  },
+  {
+   "fieldname": "ecs_dates",
+   "fieldtype": "Table",
+   "label": "ECS Dates",
+   "options": "Deposit Slip ECS Date"
+  },
+  {
+   "fieldname": "bank",
+   "fieldtype": "Data",
+   "label": "Bank"
+  },
+  {
+   "fieldname": "calculations_section",
+   "fieldtype": "Section Break",
+   "label": "Calculations"
+  },
+  {
+   "fieldname": "amount_inclusive_gst_capital",
+   "fieldtype": "Currency",
+   "label": "Amount Inclusive of GST toward (Capital Component)"
+  },
+  {
+   "fieldname": "cgst_9",
+   "fieldtype": "Currency",
+   "label": "CGST @9% on Consultancy Fee"
+  },
+  {
+   "fieldname": "sgst_9",
+   "fieldtype": "Currency",
+   "label": "SGST @9% on Consultancy Fee"
+  },
+  {
+   "fieldname": "project_balance_after_gst",
+   "fieldtype": "Currency",
+   "label": "Project Balance (Balance after Deduction of IGST)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead Amount 15% (inclusive)"
+  },
+  {
+   "fieldname": "credit_distribution_section",
+   "fieldtype": "Section Break",
+   "label": "Credit Distribution"
+  },
+  {
+   "fieldname": "credit_distribution",
+   "fieldtype": "Table",
+   "label": "Credit as follows",
+   "options": "Deposit Slip Credit Distribution"
+  },
+  {
+   "fieldname": "section_break_ahgv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_gst",
+   "fieldtype": "Currency",
+   "label": "Total GST"
+  },
+  {
+   "fieldname": "total_budget",
+   "fieldtype": "Currency",
+   "label": "Total Budget",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_pouq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_zjki",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "section_break_stia",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "(40% of Overhead Amount)",
+   "fieldname": "idf_amount",
+   "fieldtype": "Data",
+   "label": "IDF"
+  },
+  {
+   "description": "(25% of Overhead Amount)",
+   "fieldname": "dpf_cle_amount",
+   "fieldtype": "Data",
+   "label": "DPF/CLE"
+  },
+  {
+   "description": "(5% of Overhead Amount)",
+   "fieldname": "staff_welfare_amount",
+   "fieldtype": "Data",
+   "label": "Staff welfare Amount"
+  },
+  {
+   "description": "(5% of Overhead Amount)",
+   "fieldname": "student_welfare_amount",
+   "fieldtype": "Data",
+   "label": "Student welfare Amount"
+  },
+  {
+   "fetch_from": "project_title.project_no",
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "label": "Project Number"
+  },
+  {
+   "fieldname": "section_break_ytjt",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_yrxt",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "prj_amount",
+   "fieldtype": "Currency",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "column_break_aedd",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-02-16 11:19:28.512532",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Research Consultancy Deposit Slip",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

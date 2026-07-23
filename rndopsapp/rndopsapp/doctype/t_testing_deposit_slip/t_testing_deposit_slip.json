@@ -1,0 +1,209 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:T-TEST-DS-.YYYY.-.#####",
+ "creation": "2025-12-12 07:53:38.894934",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_title",
+  "principal_investigator",
+  "client",
+  "gstin_of_funding_agency",
+  "ecs_ac_no",
+  "ecs_dates",
+  "bank",
+  "calculations_section",
+  "amount_inclusive_of_gst",
+  "cgst_9",
+  "sgst_9",
+  "consultancy_fee_x",
+  "overhead_multiplier",
+  "overhead_label",
+  "overhead_amount",
+  "credit_distribution_section",
+  "idf_t_testing_fee",
+  "dpf_t_testing_fee",
+  "staff_welfare_t_testing_fund",
+  "student_welfare_t_testing_fund",
+  "totals_section",
+  "total_gst",
+  "total_budget",
+  "fund_received_ref"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "principal_investigator",
+   "fieldtype": "Link",
+   "label": "Principal Investigator",
+   "options": "User"
+  },
+  {
+   "fieldname": "client",
+   "fieldtype": "Data",
+   "label": "Client"
+  },
+  {
+   "fieldname": "gstin_of_funding_agency",
+   "fieldtype": "Data",
+   "label": "Funding Agency"
+  },
+  {
+   "fieldname": "ecs_ac_no",
+   "fieldtype": "Data",
+   "label": "ECS A/C No."
+  },
+  {
+   "fieldname": "ecs_dates",
+   "fieldtype": "Table",
+   "label": "ECS Dates",
+   "options": "Deposit Slip ECS Date"
+  },
+  {
+   "fieldname": "bank",
+   "fieldtype": "Data",
+   "label": "Bank"
+  },
+  {
+   "fieldname": "calculations_section",
+   "fieldtype": "Section Break",
+   "label": "Calculations"
+  },
+  {
+   "fieldname": "amount_inclusive_of_gst",
+   "fieldtype": "Currency",
+   "label": "Amount Inclusive of GST"
+  },
+  {
+   "fieldname": "cgst_9",
+   "fieldtype": "Currency",
+   "label": "CGST @9%"
+  },
+  {
+   "fieldname": "sgst_9",
+   "fieldtype": "Currency",
+   "label": "SGST @9%"
+  },
+  {
+   "description": "Consultancy Fee (After GST Deduction)",
+   "fieldname": "consultancy_fee_x",
+   "fieldtype": "Currency",
+   "label": "Consultancy Fee X"
+  },
+  {
+   "default": "0.7",
+   "fieldname": "overhead_multiplier",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Overhead Multiplier"
+  },
+  {
+   "fieldname": "overhead_label",
+   "fieldtype": "HTML",
+   "label": "Overhead Label"
+  },
+  {
+   "fieldname": "overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "credit_distribution_section",
+   "fieldtype": "Section Break",
+   "label": "Credit Distribution"
+  },
+  {
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "total_gst",
+   "fieldtype": "Currency",
+   "label": "Total GST"
+  },
+  {
+   "fieldname": "total_budget",
+   "fieldtype": "Currency",
+   "label": "Total Budget",
+   "read_only": 1
+  },
+  {
+   "description": "(40% of the Consultancy fee)",
+   "fieldname": "idf_t_testing_fee",
+   "fieldtype": "Data",
+   "label": "(a.) IDF"
+  },
+  {
+   "description": "(50% of the Consultancy fee)",
+   "fieldname": "dpf_t_testing_fee",
+   "fieldtype": "Data",
+   "label": "(b.) DPF/CE"
+  },
+  {
+   "description": "(5% of Overhead amount)",
+   "fieldname": "staff_welfare_t_testing_fund",
+   "fieldtype": "Data",
+   "label": "(c.) Staff Welfare fund"
+  },
+  {
+   "description": "(5% of Overhead amount)",
+   "fieldname": "student_welfare_t_testing_fund",
+   "fieldtype": "Data",
+   "label": "(d.) Student Welfare fund"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-02-16 11:19:39.617713",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "T Testing Deposit Slip",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

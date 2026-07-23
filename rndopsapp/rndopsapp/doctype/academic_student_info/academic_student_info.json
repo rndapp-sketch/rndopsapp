@@ -1,0 +1,162 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:roll_no",
+ "creation": "2026-07-07 16:48:48.853666",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sec_basic",
+  "sname",
+  "roll_no",
+  "email_id",
+  "col_basic",
+  "d_name",
+  "hostel_name",
+  "dob",
+  "sex",
+  "category_id",
+  "sec_breakdown",
+  "mm",
+  "nn",
+  "oo",
+  "ppp",
+  "year_diff",
+  "status_toggle"
+ ],
+ "fields": [
+  {
+   "fieldname": "sec_basic",
+   "fieldtype": "Section Break",
+   "label": "Student Info"
+  },
+  {
+   "fieldname": "sname",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Student Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "roll_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Roll No",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "email_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email Id"
+  },
+  {
+   "fieldname": "col_basic",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "d_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Department Name"
+  },
+  {
+   "fieldname": "hostel_name",
+   "fieldtype": "Data",
+   "label": "Hostel Name"
+  },
+  {
+   "fieldname": "dob",
+   "fieldtype": "Data",
+   "label": "Date of Birth"
+  },
+  {
+   "fieldname": "sex",
+   "fieldtype": "Data",
+   "label": "Sex"
+  },
+  {
+   "fieldname": "category_id",
+   "fieldtype": "Data",
+   "label": "Category"
+  },
+  {
+   "fieldname": "sec_breakdown",
+   "fieldtype": "Section Break",
+   "label": "Roll Number Breakdown (MM NN OO PPP)"
+  },
+  {
+   "description": "Roll digits 1-2, e.g. 14 for 146106001",
+   "fieldname": "mm",
+   "fieldtype": "Data",
+   "label": "MM (Admission Year Code)"
+  },
+  {
+   "description": "Roll digits 3-4",
+   "fieldname": "nn",
+   "fieldtype": "Data",
+   "label": "NN (Programme Code)"
+  },
+  {
+   "description": "Website OO code mapped to Frappe Department_prornd dept_id (NOT the raw roll code). e.g. bioscience 06 -> 01",
+   "fieldname": "oo",
+   "fieldtype": "Data",
+   "label": "OO (Frappe Department Id)"
+  },
+  {
+   "description": "Roll digits 7-9",
+   "fieldname": "ppp",
+   "fieldtype": "Data",
+   "label": "PPP (Serial No)"
+  },
+  {
+   "description": "(current 2-digit year) minus MM, e.g. 26-14=12",
+   "fieldname": "year_diff",
+   "fieldtype": "Int",
+   "label": "Year Difference (Current Year - MM)"
+  },
+  {
+   "default": "0",
+   "description": "0/1 toggle. Defaults to 0 for everyone.",
+   "fieldname": "status_toggle",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Toggle"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-07 17:18:28.915033",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Academic Student Info",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "sname",
+ "track_changes": 1
+}

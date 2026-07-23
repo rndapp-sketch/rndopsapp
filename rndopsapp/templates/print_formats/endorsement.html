@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Project Endorsement</title>
+    <style>
+        body { font-family: sans-serif; margin: 50px; }
+        h1, h2 { color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Project Endorsement Letter</h1>
+
+    <p>Dear Dean, Research & Development,</p>
+    <p>This letter serves as an endorsement for the following project proposal:</p>
+
+    <h2>Project Details</h2>
+    <table>
+        <tr>
+            <th>Project Title</th>
+            <td>{{ project_title }}</td>
+        </tr>
+        <tr>
+            <th>Objective</th>
+            <td>{{ project_objective }}</td>
+        </tr>
+        <tr>
+            <th>Deliverables</th>
+            <td>{{ project_deliverables }}</td>
+        </tr>
+        <tr>
+            <th>Executive Summary</th>
+            <td>{{ executive_summary }}</td>
+        </tr>
+        <tr>
+            <th>Funding Agency</th>
+            <td>{{ funding_agen }}</td>
+        </tr>
+        <tr>
+            <th>Implementation Department</th>
+            <td>{{ implementation_department }}</td>
+        </tr>
+        <tr>
+            <th>Project Type</th>
+            <td>{{ project_type }}</td>
+        </tr>
+        <tr>
+            <th>Project Duration</th>
+            <td>
+                {% if project_duration_months %}{{ project_duration_months }} Months {% endif %}
+                {% if project_duration_days %}{{ project_duration_days }} Days{% endif %}
+            </td>
+        </tr>
+    </table>
+
+    <h2>Principal Investigator Details</h2>
+    <table>
+        <tr>
+            <th>Name</th>
+            <td>{{ principal_investigator_name }}</td>
+        </tr>
+        <tr>
+            <th>Department</th>
+            <td>{{ applicant_department }}</td>
+        </tr>
+        <tr>
+            <th>Webmail</th>
+            <td>{{ pi_webmail }}</td>
+        </tr>
+        <tr>
+            <th>User ID</th>
+            <td>{{ pi_userid }}</td>
+        </tr>
+        <tr>
+            <th>Additional PI?</th>
+            <td>{{ is_additional_pi }}</td>
+        </tr>
+        <tr>
+            <th>Has Co-PI?</th>
+            <td>{{ has_co_pi }}</td>
+        </tr>
+    </table>
+
+    <p>We kindly request your approval for this project.</p>
+    <p>Sincerely,</p>
+    <p><i>[Your Name/Department]</i></p>
+
+    {% if approver_signature %}
+    <div style="margin-top: 50px;">
+        <p>_________________________</p>
+        <p>Dean, Research & Development</p>
+        <p>Signature: <img src="{{ approver_signature }}" style="max-width: 150px; max-height: 80px;"/></p>
+        <p>Name: {{ approver_name }}</p>
+        <p>Date: {{ approver_date }}</p>
+    </div>
+    {% endif %}
+
+</body>
+</html>

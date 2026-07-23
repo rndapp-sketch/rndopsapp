@@ -1,0 +1,57 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-05 10:32:52.457979",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "expenditure_date",
+  "vendors_name",
+  "particulars",
+  "amount_in_rs",
+  "attachments_optional"
+ ],
+ "fields": [
+  {
+   "fieldname": "expenditure_date",
+   "fieldtype": "Date",
+   "label": "Date"
+  },
+  {
+   "fieldname": "vendors_name",
+   "fieldtype": "Data",
+   "label": "Vendors Name"
+  },
+  {
+   "fieldname": "particulars",
+   "fieldtype": "Data",
+   "label": "Particulars"
+  },
+  {
+   "fieldname": "amount_in_rs",
+   "fieldtype": "Currency",
+   "label": "Amount (Rs.)"
+  },
+  {
+   "fieldname": "attachments_optional",
+   "fieldtype": "Attach",
+   "label": "Attachments (Optional)"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-16 11:19:34.115081",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Expenditure Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
