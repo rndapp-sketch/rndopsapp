@@ -933,6 +933,58 @@ def clear_mattermost_channel(
 
 
 @frappe.whitelist()
+def get_declaration_html(doctype):
+	"""
+	Returns the content of every fieldtype="HTML" DocField on `doctype`
+	(e.g. Travel's applicant-declaration paragraph and its unrelated SCL-balance
+	placeholder, or TA DA Settlement's document-submission instructions),
+	keyed by fieldname — the same fields the on-screen <DeclarationFields>
+	widget shows — for reuse in print-PDF generators. Returning a per-field
+	map (rather than one concatenated string) lets a caller route specific
+	fields to a different print section instead of lumping everything under
+	"Declaration" (e.g. Travel's travel_leave_balance_html belongs under
+	"Special Casual Leave & Leave Period", not the declaration text).
+
+	"DocField" has no DocPerm rows of its own (it's metadata, not document
+	data), so a direct frappe.client.get_list("DocField", ...) call — what
+	<DeclarationFields> and the print generators used before — returns a
+	PermissionError for any role other than System Manager, leaving the
+	Declaration section blank for everyone else. This whitelisted method
+	bypasses that restriction for this one safe, read-only lookup.
+	"""
+	if not doctype:
+		return {"status": "error", "message": "doctype is required"}
+
+	fields = frappe.get_all(
+		"DocField",
+		filters={"parent": doctype, "fieldtype": "HTML"},
+		fields=["fieldname", "label", "options"],
+		order_by="idx",
+		ignore_permissions=True,
+	)
+	field_html = {f.fieldname: (f.options or "").strip() for f in fields if (f.options or "").strip()}
+	return {"status": "success", "fields": field_html}
+
+
+@frappe.whitelist()
+def get_user_designation(email):
+	"""
+	Returns a User's designation_name for the given email.
+
+	"User" read permission is restricted to System Manager / Permanent
+	Employee (see DocPerm), so a plain frappe.client.get_value REST call
+	403s for many approver roles (e.g. Dean, RnD) — this bypasses that via
+	frappe.db.get_value (a raw lookup, not permission-checked) for this one
+	safe, non-sensitive field, used to label commenters in the Activity Log
+	print section.
+	"""
+	if not email:
+		return {"status": "error", "message": "email is required"}
+	designation = frappe.db.get_value("User", email, "designation_name")
+	return {"status": "success", "designation_name": designation or ""}
+
+
+@frappe.whitelist()
 def get_document_activity(doctype, docname):
 	"""
 	Returns a unified, chronologically-sorted activity timeline for a document.

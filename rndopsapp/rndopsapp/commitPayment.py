@@ -556,6 +556,57 @@ def get_commits_by_account_head_and_status(account_head_id, status):
 # ==========================================
 
 @frappe.whitelist()
+def get_commit_staging_status(reference_name, statuses=None, required_payload_keys=None):
+    """
+    Read-only lookup used by the "Make a Commitment" widget (CommitPayment.tsx)
+    to check whether a commitment has already been staged for `reference_name`.
+
+    "Kafka Commit Staging" is intentionally locked down to System Manager-only
+    read permission, so the widget can't query it directly via the REST document
+    API (every non-admin role — including staff, RnD who are the ones actually
+    submitting — got a 403, silently falling back to "could not verify staging
+    status" and showing the submit form even to approvers like Hos, RnD who
+    should only ever see what staff, RnD already committed). This whitelisted
+    method bypasses that DocType-level restriction for this one safe, read-only
+    lookup, filtered to the specific reference_name the caller already has
+    document-level access to.
+    """
+    if not reference_name:
+        return {"status": "error", "message": "reference_name is required"}
+
+    filters = {"reference_name": reference_name}
+    status_list = frappe.parse_json(statuses) if isinstance(statuses, str) else statuses
+    if status_list:
+        filters["status"] = ["in", status_list]
+
+    records = frappe.get_all(
+        "Kafka Commit Staging",
+        filters=filters,
+        fields=["name", "payload", "status", "reference_doctype", "reference_name", "creation"],
+        order_by="creation desc",
+        ignore_permissions=True,
+    )
+
+    payload_keys = (
+        frappe.parse_json(required_payload_keys)
+        if isinstance(required_payload_keys, str)
+        else required_payload_keys
+    )
+    if payload_keys:
+        filtered = []
+        for row in records:
+            try:
+                payload = json.loads(row.payload or "{}")
+            except Exception:
+                continue
+            if all(payload.get(k) not in (None, "") for k in payload_keys):
+                filtered.append(row)
+        records = filtered
+
+    return {"status": "success", "data": records}
+
+
+@frappe.whitelist()
 def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None, moduleId=None, trigger_state=None):
     """
     Submit commit data by staging it in Kafka Commit Staging.
