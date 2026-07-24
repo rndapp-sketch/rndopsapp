@@ -11,7 +11,7 @@
   "students_section",
   "students",
   "project_details_section",
-  "project_code",
+  "project_no",
   "project_title",
   "account_head",
   "details_of_supervisor_section",
@@ -57,14 +57,6 @@
    "label": "Project Details"
   },
   {
-   "fieldname": "project_code",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Project Code",
-   "options": "Project Registration",
-   "reqd": 1
-  },
-  {
    "fieldname": "project_title",
    "fieldtype": "Long Text",
    "label": "Project Title",
@@ -74,7 +66,8 @@
    "fieldname": "account_head",
    "fieldtype": "Link",
    "label": "Account Head",
-   "options": "Budget Head"
+   "options": "Budget Head",
+   "reqd": 1
   },
   {
    "fieldname": "details_of_supervisor_section",
@@ -134,14 +127,22 @@
    "fieldname": "checkbox3",
    "fieldtype": "Check",
    "label": "This part-time employment can be cancelled by the competent authority without giving any notice period. "
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Project Number",
+   "read_only": 1,
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-13 22:25:46.556608",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-07-22 17:36:53.086531",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Top Up Fellowship",
  "naming_rule": "Expression",

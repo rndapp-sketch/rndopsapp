@@ -3609,11 +3609,65 @@ def get_pr_link_graph(docname):
 		return {"status": "error", "message": str(e)}
 
 
+@frappe.whitelist()
+def get_fund_sanction_budget_breakup(fund_sanction_name):
+	"""
+	Returns the sanctioned_budget_breakup child table rows for a single Fund Sanction
+	document, for the PR Link Graph's Fund Sanction node detail panel.
+	"""
+	if not frappe.db.exists("Fund Sanction", fund_sanction_name):
+		return {"status": "error", "message": f"No Fund Sanction found: {fund_sanction_name}"}
+
+	rows = frappe.get_all(
+		"Project Sanctioned Budget",
+		filters={
+			"parent": fund_sanction_name,
+			"parenttype": "Fund Sanction",
+			"parentfield": "sanctioned_budget_breakup",
+		},
+		fields=[
+			"account_head", "total_proposal_of_heads",
+			"first_year_budget", "second_year_budget", "third_year_budget",
+			"fourth_year_budget", "fifth_year_budget", "sixth_year_budget",
+			"is_total_row", "idx",
+		],
+		order_by="idx asc",
+	)
+
+	return {"status": "success", "fund_sanction": fund_sanction_name, "rows": rows}
+
+
 # ============================================================
 # ---- Cascade Delete: wipe a Project Registration + every associated document ----
 # Reuses the exact same link map as get_pr_link_graph (direct/indirect/chained),
 # so "associated documents" here always matches what the PR Link Graph visualizes.
 # ============================================================
+
+def _delete_external_project(project_no):
+	"""
+	Sends a DELETE for this project to the external project API, mirroring the
+	POST in send_project_registration_data_api. Best-effort: failures are
+	reported back to the caller but never raised, since a missing/unsynced
+	project on the external side shouldn't block the local cascade delete.
+	"""
+	if not project_no:
+		return {"attempted": False, "message": "No project_no on this Project Registration — external API not called."}
+
+	url = f"http://172.16.134.81:18080/api/projects/{project_no}"
+	try:
+		frappe.logger().info(f"Deleting project {project_no} from {url}")
+		response = requests.delete(url, timeout=10)
+		return {
+			"attempted": True,
+			"url": url,
+			"status_code": response.status_code,
+			"response": response.text,
+			"ok": response.status_code in (200, 202, 204, 404),
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), f"External Project Delete Error: {project_no}")
+		return {"attempted": True, "url": url, "ok": False, "error": str(e)}
+
 
 def _force_delete_single_doc(doctype, docname):
 	"""Force-delete one document, handling submitted docstatus and falling back to raw SQL.
@@ -3693,6 +3747,7 @@ def delete_pr_cascade(identifier, override_password=None):
 		return graph
 
 	pr_name = graph["pr"]["name"]
+	project_no = graph["pr"].get("project_no")
 	deleted = []
 	errors = []
 
@@ -3708,6 +3763,12 @@ def delete_pr_cascade(identifier, override_password=None):
 	# Finally delete the Project Registration itself (reuses MinIO file cleanup).
 	pr_result = delete_project_registrations(json.dumps([pr_name]), override_password=override_password)
 
+	# Also remove the project from the external project-tracking service.
+	external_result = _delete_external_project(project_no)
+	if external_result.get("attempted") and not external_result.get("ok"):
+		errors.append(f"External API delete ({external_result.get('url')}) — "
+			f"{external_result.get('error') or external_result.get('status_code')}")
+
 	return {
 		"status": "success",
 		"pr_name": pr_name,
@@ -3715,4 +3776,5 @@ def delete_pr_cascade(identifier, override_password=None):
 		"deleted": deleted,
 		"errors": errors,
 		"pr_deletion": pr_result,
+		"external_api_delete": external_result,
 	}

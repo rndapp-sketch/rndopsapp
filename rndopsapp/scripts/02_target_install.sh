@@ -61,7 +61,7 @@ fi
 
 # ─────────────────────── Prompt for Passwords ───────────────────────
 section "Frappe v15 Auto-Install Script"
-info "Source: 172.16.135.157"
+info "Source: 172.16.134.191"
 info "Target: $(hostname -I | awk '{print $1}')"
 info "Bench:  ${BENCH_DIR}"
 info "Site:   ${SITE_NAME}"

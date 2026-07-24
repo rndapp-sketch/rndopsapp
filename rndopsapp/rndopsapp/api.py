@@ -792,6 +792,47 @@ def list_rndopsapp_doctypes():
 
 
 @frappe.whitelist()
+def list_doctype_documents(doctype, search=None, limit=100):
+	"""
+	Lightweight document picker for a Rndopsapp-module doctype: latest documents
+	(optionally name-filtered), for the Document Editor's doctype -> document list.
+	"""
+	from frappe.utils import cint
+
+	module = frappe.db.get_value("DocType", doctype, "module")
+	if module != _EXPLORER_MODULE:
+		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
+
+	meta = frappe.get_meta(doctype)
+	fields = ["name", "modified"]
+	if meta.has_field("workflow_state"):
+		fields.append("workflow_state")
+
+	filters = {}
+	if search:
+		filters["name"] = ["like", f"%{search}%"]
+
+	safe_limit = min(cint(limit) or 100, 500)
+	documents = frappe.get_all(doctype, filters=filters, fields=fields, order_by="modified desc", limit=safe_limit)
+	total = frappe.db.count(doctype, filters=filters)
+
+	return {"status": "success", "doctype": doctype, "documents": documents, "shown": len(documents), "total": total}
+
+
+def _get_real_table_columns(doctype):
+	"""
+	Real DB column names for a doctype's table, straight from information_schema.
+	DocType meta can list fields that haven't been migrated into the DB table yet
+	(schema drift), so anything selected in the query builder must also be checked
+	against this before being sent to SQL.
+	"""
+	try:
+		return set(frappe.db.get_table_columns(doctype))
+	except Exception:
+		return None
+
+
+@frappe.whitelist()
 def get_doctype_schema_and_data(doctype, limit=50):
 	"""
 	Return the field schema and a live data preview for a Rndopsapp-module DocType.
@@ -806,6 +847,8 @@ def get_doctype_schema_and_data(doctype, limit=50):
 
 	meta = frappe.get_meta(doctype)
 	skip_types = {"Section Break", "Column Break", "Tab Break", "HTML", "Button"}
+	table_types = {"Table", "Table MultiSelect"}
+	table_columns = _get_real_table_columns(doctype)
 	fields = [
 		{
 			"fieldname": df.fieldname,
@@ -815,7 +858,35 @@ def get_doctype_schema_and_data(doctype, limit=50):
 		}
 		for df in meta.fields
 		if df.fieldtype not in skip_types
+		and df.fieldtype not in table_types
+		and (table_columns is None or df.fieldname in table_columns)
 	]
+	if meta.istable:
+		std_child_fields = [
+			f for f in ("parent", "parentfield", "parenttype") if table_columns is None or f in table_columns
+		]
+		fields = [{"fieldname": f, "label": f, "fieldtype": "Data", "options": ""} for f in std_child_fields] + fields
+
+	child_tables = [
+		{
+			"fieldname": df.fieldname,
+			"label": df.label or df.fieldname,
+			"child_doctype": df.options,
+		}
+		for df in meta.fields
+		if df.fieldtype in table_types and df.options
+	]
+
+	linked_doctypes = []
+	for df in meta.fields:
+		if df.fieldtype != "Link" or not df.options:
+			continue
+		target_module = frappe.db.get_value("DocType", df.options, "module")
+		if target_module != _EXPLORER_MODULE:
+			continue
+		linked_doctypes.append(
+			{"fieldname": df.fieldname, "label": df.label or df.fieldname, "linked_doctype": df.options}
+		)
 
 	safe_limit = min(cint(limit) or 50, 500)
 
@@ -832,6 +903,8 @@ def get_doctype_schema_and_data(doctype, limit=50):
 		"status": "success",
 		"doctype": doctype,
 		"fields": fields,
+		"child_tables": child_tables,
+		"linked_doctypes": linked_doctypes,
 		"data": rows,
 		"total_records": total,
 		"shown": len(rows),
@@ -851,16 +924,33 @@ _QUERY_BUILDER_OPS = {
 }
 
 
+def _valid_fieldnames_for(meta, table_types):
+	"""Selectable/filterable fieldnames for a doctype: real DB columns, minus Table fields."""
+	standard_fields = {"name", "owner", "creation", "modified", "modified_by", "docstatus", "idx"}
+	if meta.istable:
+		standard_fields |= {"parent", "parentfield", "parenttype"}
+	valid_fieldnames = {df.fieldname for df in meta.fields if df.fieldtype not in table_types} | standard_fields
+	table_columns = _get_real_table_columns(meta.name)
+	if table_columns is not None:
+		valid_fieldnames &= table_columns
+	return valid_fieldnames
+
+
 @frappe.whitelist()
-def run_query_builder(doctype, columns=None, filters=None, limit=100):
+def run_query_builder(doctype, columns=None, filters=None, limit=100, child_tables=None):
 	"""
 	No-code query builder backing the Doctype Explorer: builds and runs a safe,
 	parameterized SELECT from structured columns + filters (never raw SQL from the
 	client), and returns the generated SQL text alongside the rows.
 
-	columns: JSON list of fieldnames to select.
+	columns: JSON list of fieldnames to select from the main doctype.
 	filters: JSON list of {"field": str, "operator": str, "value": str}.
-	         operator must be one of _QUERY_BUILDER_OPS' keys.
+	         operator must be one of _QUERY_BUILDER_OPS' keys. Applies to the main doctype only.
+	child_tables: JSON list of {"fieldname": str, "columns": [str, ...]}. "fieldname" must be
+	              one of the doctype's own Table/Table MultiSelect fields; each entry becomes a
+	              LEFT JOIN against that child doctype's table (matched on parent/parentfield),
+	              so the result has one row per parent+child-row combination, with the chosen
+	              child columns included as `<fieldname>__<column>`.
 	"""
 	import json
 
@@ -871,8 +961,8 @@ def run_query_builder(doctype, columns=None, filters=None, limit=100):
 		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
 
 	meta = frappe.get_meta(doctype)
-	standard_fields = {"name", "owner", "creation", "modified", "modified_by", "docstatus", "idx"}
-	valid_fieldnames = {df.fieldname for df in meta.fields} | standard_fields
+	table_types = {"Table", "Table MultiSelect"}
+	valid_fieldnames = _valid_fieldnames_for(meta, table_types)
 
 	if isinstance(columns, str):
 		columns = json.loads(columns) if columns else []
@@ -884,7 +974,7 @@ def run_query_builder(doctype, columns=None, filters=None, limit=100):
 		filters = json.loads(filters) if filters else []
 
 	where_clauses = []
-	params = []
+	where_params = []
 	for f in filters or []:
 		field = (f or {}).get("field")
 		op = ((f or {}).get("operator") or "=").lower()
@@ -894,24 +984,68 @@ def run_query_builder(doctype, columns=None, filters=None, limit=100):
 			continue
 
 		sql_op = _QUERY_BUILDER_OPS[op]
+		qualified_field = f"`tab{doctype}`.`{field}`"
 		if sql_op in ("IS", "IS NOT"):
-			where_clauses.append(f"`{field}` {sql_op} NULL")
+			where_clauses.append(f"{qualified_field} {sql_op} NULL")
 		elif sql_op == "LIKE":
-			where_clauses.append(f"`{field}` LIKE %s")
-			params.append(f"%{value}%")
+			where_clauses.append(f"{qualified_field} LIKE %s")
+			where_params.append(f"%{value}%")
 		else:
-			where_clauses.append(f"`{field}` {sql_op} %s")
-			params.append(value)
+			where_clauses.append(f"{qualified_field} {sql_op} %s")
+			where_params.append(value)
+
+	# -- child table joins: fieldname must be a real Table field on this doctype's own meta,
+	# never trusted from the client directly, so the child doctype/alias are always ours. --
+	table_fields_by_name = {
+		df.fieldname: df for df in meta.fields if df.fieldtype in table_types and df.options
+	}
+
+	if isinstance(child_tables, str):
+		child_tables = json.loads(child_tables) if child_tables else []
+
+	join_sql_parts = []
+	join_params = []
+	child_col_sql_parts = []
+	output_child_columns = []
+	for entry in child_tables or []:
+		fieldname = (entry or {}).get("fieldname")
+		df = table_fields_by_name.get(fieldname)
+		if not df:
+			continue
+		child_doctype = df.options
+		child_meta = frappe.get_meta(child_doctype)
+		child_valid = _valid_fieldnames_for(child_meta, table_types)
+
+		requested_cols = [c for c in (entry.get("columns") or []) if c in child_valid]
+		if not requested_cols:
+			continue
+
+		alias = f"cj_{fieldname}"
+		join_sql_parts.append(
+			f" LEFT JOIN `tab{child_doctype}` `{alias}` ON `{alias}`.`parent` = `tab{doctype}`.`name`"
+			f" AND `{alias}`.`parentfield` = %s"
+		)
+		join_params.append(fieldname)
+		for c in requested_cols:
+			out_name = f"{fieldname}__{c}"
+			child_col_sql_parts.append(f"`{alias}`.`{c}` AS `{out_name}`")
+			output_child_columns.append(out_name)
 
 	safe_limit = min(cint(limit) or 100, 1000)
-	col_sql = ", ".join(f"`{c}`" for c in columns)
+	col_sql = ", ".join([f"`tab{doctype}`.`{c}`" for c in columns] + child_col_sql_parts)
+	join_sql = "".join(join_sql_parts)
 	where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
-	query = f"SELECT {col_sql} FROM `tab{doctype}`{where_sql} ORDER BY modified DESC LIMIT {safe_limit}"
+	query = (
+		f"SELECT {col_sql} FROM `tab{doctype}`{join_sql}{where_sql} "
+		f"ORDER BY `tab{doctype}`.`modified` DESC LIMIT {safe_limit}"
+	)
 
 	try:
-		rows = frappe.db.sql(query, tuple(params), as_dict=True)
+		rows = frappe.db.sql(query, tuple(join_params + where_params), as_dict=True)
 	except Exception as e:
 		return {"status": "error", "message": str(e), "query": query}
+
+	columns = columns + output_child_columns
 
 	return {
 		"status": "success",
@@ -983,6 +1117,348 @@ def update_project_registration(docname, fields):
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "update_project_registration failed")
+		return {"status": "error", "message": str(e)}
+
+
+# -------------------- GENERIC DOCUMENT EDITOR (any Rndopsapp doctype + child tables) --------------------
+# Backs the /document_edit page: load any Rndopsapp-module document (including its
+# child table rows) for editing, then write back only the fields that actually
+# changed via frappe.db.set_value — never a full-document overwrite — so fields the
+# editor didn't render (or the user didn't touch) can never be silently wiped.
+
+_DOC_EDIT_PROTECTED_FIELDS = {
+	"name", "owner", "creation", "modified", "modified_by", "doctype",
+	"docstatus", "idx", "workflow_state", "workflow_action", "amended_from",
+}
+_DOC_EDIT_SKIP_TYPES = {"Column Break", "Tab Break", "HTML", "Button", "Fold", "Heading"}
+
+
+def _doc_edit_field_list(meta, table_types):
+	"""
+	Editable field metadata for a doctype: real DB columns, minus Table/structural fields.
+	Each field carries the label of the Section Break it falls under (if any), so the
+	Document Editor can group the flat field list into the doctype's real form sections.
+	"""
+	table_columns = _get_real_table_columns(meta.name)
+	fields = []
+	current_section = None
+	for df in meta.fields:
+		if df.fieldtype == "Section Break":
+			current_section = df.label or None
+			continue
+		if (
+			df.fieldtype in _DOC_EDIT_SKIP_TYPES
+			or df.fieldtype in table_types
+			or (table_columns is not None and df.fieldname not in table_columns)
+		):
+			continue
+		fields.append({
+			"fieldname": df.fieldname,
+			"label": df.label or df.fieldname,
+			"fieldtype": df.fieldtype,
+			"options": df.options or "",
+			"reqd": bool(df.reqd),
+			"read_only": bool(df.read_only) or df.fieldname in _DOC_EDIT_PROTECTED_FIELDS,
+			"description": df.description or "",
+			"section": current_section,
+		})
+	return fields
+
+
+def _doc_edit_link_options(meta):
+	"""
+	{fieldname: [{value, label}, ...]} for every Link field on this doctype, capped at 200
+	rows each — same "fetch the linked doctype's name + title" pattern already used by
+	e_non_routine_deposit_slip.get_e_non_routine_deposit_slip_fields for its link_options.
+	"""
+	options = {}
+	for df in meta.fields:
+		if df.fieldtype != "Link" or not df.options:
+			continue
+		linked_doctype = df.options
+		try:
+			if linked_doctype == "User":
+				rows = frappe.get_all(
+					linked_doctype, fields=["name as value", "full_name as label"],
+					limit=200, order_by="modified desc",
+				)
+			else:
+				linked_meta = frappe.get_meta(linked_doctype)
+				title_field = linked_meta.title_field
+				label_expr = f"{title_field} as label" if title_field and title_field != "name" else "name as label"
+				rows = frappe.get_all(
+					linked_doctype, fields=["name as value", label_expr],
+					limit=200, order_by="modified desc",
+				)
+		except Exception:
+			rows = []
+		options[df.fieldname] = rows
+	return options
+
+
+def _doc_edit_schema(doctype, meta, table_types):
+	"""Field + child-table schema shared by get_document_for_edit and get_new_document_schema."""
+	fields = _doc_edit_field_list(meta, table_types)
+	link_options = _doc_edit_link_options(meta)
+
+	child_tables = []
+	for df in meta.fields:
+		if df.fieldtype not in table_types or not df.options:
+			continue
+		child_doctype = df.options
+		child_meta = frappe.get_meta(child_doctype)
+		child_tables.append({
+			"fieldname": df.fieldname,
+			"label": df.label or df.fieldname,
+			"child_doctype": child_doctype,
+			"fields": _doc_edit_field_list(child_meta, table_types),
+			"link_options": _doc_edit_link_options(child_meta),
+		})
+
+	return fields, child_tables, link_options
+
+
+@frappe.whitelist()
+def get_document_for_edit(doctype, docname):
+	"""
+	Returns editable field schema + current values for a Rndopsapp-module document,
+	including its child tables, for the Document Editor page.
+	"""
+	module = frappe.db.get_value("DocType", doctype, "module")
+	if module != _EXPLORER_MODULE:
+		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
+
+	if not frappe.db.exists(doctype, docname):
+		return {"status": "error", "message": f"'{docname}' not found in {doctype}."}
+
+	meta = frappe.get_meta(doctype)
+	table_types = {"Table", "Table MultiSelect"}
+	fields, child_tables, link_options = _doc_edit_schema(doctype, meta, table_types)
+
+	select_fieldnames = list(dict.fromkeys([f["fieldname"] for f in fields] + ["name"]))
+	data = frappe.db.get_value(doctype, docname, select_fieldnames, as_dict=True) or {}
+
+	for ct in child_tables:
+		child_select = list(dict.fromkeys([cf["fieldname"] for cf in ct["fields"]] + ["name", "idx"]))
+		ct["rows"] = frappe.get_all(
+			ct["child_doctype"],
+			filters={"parent": docname, "parenttype": doctype, "parentfield": ct["fieldname"]},
+			fields=child_select,
+			order_by="idx asc",
+		)
+
+	return {
+		"status": "success",
+		"doctype": doctype,
+		"docname": docname,
+		"fields": fields,
+		"data": data,
+		"child_tables": child_tables,
+		"link_options": link_options,
+	}
+
+
+@frappe.whitelist()
+def get_new_document_schema(doctype):
+	"""
+	Same shape as get_document_for_edit, but for a brand-new (not yet created)
+	Rndopsapp-module document: no existing data, empty child table rows.
+	"""
+	module = frappe.db.get_value("DocType", doctype, "module")
+	if module != _EXPLORER_MODULE:
+		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
+
+	meta = frappe.get_meta(doctype)
+	table_types = {"Table", "Table MultiSelect"}
+	fields, child_tables, link_options = _doc_edit_schema(doctype, meta, table_types)
+	for ct in child_tables:
+		ct["rows"] = []
+
+	return {
+		"status": "success",
+		"doctype": doctype,
+		"docname": None,
+		"fields": fields,
+		"data": {},
+		"child_tables": child_tables,
+		"link_options": link_options,
+	}
+
+
+@frappe.whitelist()
+def create_document(doctype, values=None, child_table_rows=None):
+	"""
+	Creates a brand-new Rndopsapp-module document from the Document Editor's "+ New"
+	form. Only whitelisted (real-column, non-Table) fields are set; child table rows
+	are appended the same way get_document_for_edit/update_document_fields shape them.
+
+	values: JSON dict {fieldname: value} for the new document.
+	child_table_rows: JSON list of {"fieldname": <Table field>, "rows": [{field: value, ...}, ...]}
+	"""
+	if isinstance(values, str):
+		values = json.loads(values) if values else {}
+	if isinstance(child_table_rows, str):
+		child_table_rows = json.loads(child_table_rows) if child_table_rows else []
+
+	module = frappe.db.get_value("DocType", doctype, "module")
+	if module != _EXPLORER_MODULE:
+		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
+
+	meta = frappe.get_meta(doctype)
+	table_types = {"Table", "Table MultiSelect"}
+	valid_fieldnames = _valid_fieldnames_for(meta, table_types) - _DOC_EDIT_PROTECTED_FIELDS
+	table_fields_by_name = {
+		df.fieldname: df for df in meta.fields if df.fieldtype in table_types and df.options
+	}
+
+	try:
+		doc = frappe.new_doc(doctype)
+		for field, value in (values or {}).items():
+			if field in valid_fieldnames:
+				doc.set(field, value)
+
+		for entry in child_table_rows or []:
+			fieldname = (entry or {}).get("fieldname")
+			df = table_fields_by_name.get(fieldname)
+			if not df:
+				continue
+			child_doctype = df.options
+			child_meta = frappe.get_meta(child_doctype)
+			child_valid = _valid_fieldnames_for(child_meta, table_types) - {
+				"parent", "parentfield", "parenttype",
+			}
+			for row in entry.get("rows") or []:
+				row_data = {f: v for f, v in (row or {}).items() if f in child_valid}
+				if row_data:
+					doc.append(fieldname, row_data)
+
+		doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		return {"status": "success", "doctype": doctype, "docname": doc.name}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "create_document failed")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def update_document_fields(doctype, docname, changes=None, child_table_changes=None):
+	"""
+	Applies only the changed fields to a Rndopsapp-module document (and optionally its
+	child tables) via frappe.db.set_value per field — every other field is left
+	completely untouched.
+
+	changes: JSON dict {fieldname: new_value} for the parent document.
+	child_table_changes: JSON list of
+	    {"fieldname": <Table field on the parent doctype>,
+	     "updated": [{"name": <child row name>, "changes": {field: value}}, ...],
+	     "inserted": [{field: value, ...}, ...],
+	     "deleted": [<child row name>, ...]}
+	"""
+	if isinstance(changes, str):
+		changes = json.loads(changes) if changes else {}
+	if isinstance(child_table_changes, str):
+		child_table_changes = json.loads(child_table_changes) if child_table_changes else []
+
+	module = frappe.db.get_value("DocType", doctype, "module")
+	if module != _EXPLORER_MODULE:
+		return {"status": "error", "message": f"'{doctype}' is not part of the {_EXPLORER_MODULE} module."}
+
+	if not frappe.db.exists(doctype, docname):
+		return {"status": "error", "message": f"'{docname}' not found in {doctype}."}
+
+	meta = frappe.get_meta(doctype)
+	table_types = {"Table", "Table MultiSelect"}
+	valid_fieldnames = _valid_fieldnames_for(meta, table_types) - _DOC_EDIT_PROTECTED_FIELDS
+	table_fields_by_name = {
+		df.fieldname: df for df in meta.fields if df.fieldtype in table_types and df.options
+	}
+
+	def _row_belongs_here(child_doctype, row_name, fieldname):
+		owner = frappe.db.get_value(child_doctype, row_name, ["parent", "parentfield"], as_dict=True)
+		return bool(owner) and owner.parent == docname and owner.parentfield == fieldname
+
+	updated_fields = []
+	child_summary = []
+
+	try:
+		for field, value in (changes or {}).items():
+			if field not in valid_fieldnames:
+				continue
+			frappe.db.set_value(doctype, docname, field, value, update_modified=False)
+			updated_fields.append(field)
+
+		for entry in child_table_changes or []:
+			fieldname = (entry or {}).get("fieldname")
+			df = table_fields_by_name.get(fieldname)
+			if not df:
+				continue
+			child_doctype = df.options
+			child_meta = frappe.get_meta(child_doctype)
+			child_valid = _valid_fieldnames_for(child_meta, table_types) - {
+				"parent", "parentfield", "parenttype",
+			}
+
+			n_updated = n_inserted = n_deleted = 0
+
+			for row in entry.get("updated") or []:
+				row_name = (row or {}).get("name")
+				row_changes = (row or {}).get("changes") or {}
+				if not row_name or not _row_belongs_here(child_doctype, row_name, fieldname):
+					continue
+				for cfield, cvalue in row_changes.items():
+					if cfield not in child_valid:
+						continue
+					frappe.db.set_value(child_doctype, row_name, cfield, cvalue, update_modified=False)
+				n_updated += 1
+
+			if entry.get("inserted"):
+				max_idx = frappe.db.sql(
+					f"SELECT COALESCE(MAX(idx), 0) FROM `tab{child_doctype}` WHERE parent=%s AND parentfield=%s",
+					(docname, fieldname),
+				)[0][0]
+				for new_row in entry.get("inserted") or []:
+					max_idx += 1
+					row_doc = frappe.new_doc(child_doctype)
+					row_doc.parent = docname
+					row_doc.parenttype = doctype
+					row_doc.parentfield = fieldname
+					row_doc.idx = max_idx
+					for cfield, cvalue in (new_row or {}).items():
+						if cfield in child_valid:
+							row_doc.set(cfield, cvalue)
+					row_doc.insert(ignore_permissions=True)
+					n_inserted += 1
+
+			for row_name in entry.get("deleted") or []:
+				if not _row_belongs_here(child_doctype, row_name, fieldname):
+					continue
+				frappe.db.sql(f"DELETE FROM `tab{child_doctype}` WHERE name=%s", (row_name,))
+				n_deleted += 1
+
+			if n_updated or n_inserted or n_deleted:
+				child_summary.append({
+					"fieldname": fieldname, "updated": n_updated, "inserted": n_inserted, "deleted": n_deleted,
+				})
+
+		now = frappe.utils.now()
+		user = frappe.session.user
+		frappe.db.set_value(doctype, docname, {"modified": now, "modified_by": user}, update_modified=False)
+		frappe.db.commit()
+
+		return {
+			"status": "success",
+			"doctype": doctype,
+			"docname": docname,
+			"updated_fields": updated_fields,
+			"child_tables": child_summary,
+			"modified": now,
+			"modified_by": user,
+		}
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "update_document_fields failed")
 		return {"status": "error", "message": str(e)}
 
 

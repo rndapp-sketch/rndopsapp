@@ -1162,6 +1162,7 @@
    "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category T: Routine/Testing</b><br>\n                                        The project is category T based.<br>\n                                        </div>"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.gstin_of_funding_agency",
    "fieldname": "gstin_number",
    "fieldtype": "Data",
@@ -1289,7 +1290,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-08 12:39:18.055224",
+ "modified": "2026-07-21 17:37:08.046594",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",

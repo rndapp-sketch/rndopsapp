@@ -27,6 +27,23 @@ class ConsultancyDepositSlipConsumerMapper:
         """Get Frappe doctype for category."""
         return CATEGORY_DOCTYPE_MAP.get(category, "D Consultancy Deposit Slip")
 
+    @staticmethod
+    def get_project_registration_name(project_number: str) -> Optional[str]:
+        """
+        Look up the Project Registration document name from project_no field.
+        Mirrors FundReceivedConsumerMapper.get_project_registration_name.
+        """
+        if not project_number:
+            return None
+
+        prj_name = frappe.db.get_value(
+            'Project Registration',
+            {'project_no': project_number},
+            'name'
+        )
+
+        return prj_name or project_number
+
     @classmethod
     def find_document(cls, dto: ConsultancyDepositSlipUpdateDTO) -> Tuple[Optional[str], Optional[str]]:
         """
@@ -72,6 +89,14 @@ class ConsultancyDepositSlipConsumerMapper:
             bool: True if successful
         """
         try:
+            # Map and apply project_number → look up Project Registration name.
+            # Only doctypes with a project_title field (E Non Routine, T Testing) carry this link;
+            # D Consultancy / Other Event use consultancy_title instead, so has_field guards the skip.
+            if dto.projectNumber and frappe.get_meta(doctype).has_field('project_title'):
+                prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
+                if prj_reg_name:
+                    frappe.db.set_value(doctype, doc_name, 'project_title', prj_reg_name)
+
             # Update amount fields
             if dto.amountReceived:
                 frappe.db.set_value(doctype, doc_name, 'amount_inclusive_of_gst', dto.amountReceived)

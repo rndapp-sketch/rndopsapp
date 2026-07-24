@@ -59,7 +59,8 @@
    "allow_on_submit": 1,
    "fieldname": "sanctioned_letter_no",
    "fieldtype": "Data",
-   "label": "Sanctioned Letter No."
+   "label": "Sanctioned Letter No.",
+   "reqd": 1
   },
   {
    "fieldname": "sanctioned_letter_date",
@@ -176,7 +177,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-17 10:49:32.595845",
+ "modified": "2026-07-23 10:42:57.189013",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Sanction",

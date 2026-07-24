@@ -113,7 +113,7 @@
   },
   {
    "fieldname": "total_amount",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
    "label": "Total Amount",
    "read_only": 1
   },

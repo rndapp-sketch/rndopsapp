@@ -15,6 +15,23 @@ class ResearchDepositSlipConsumerMapper:
     DOCTYPE = "Research Deposit Slip"
     DOCTYPE_ALTERNATIVES = ["Research Consultancy Deposit Slip"]
 
+    @staticmethod
+    def get_project_registration_name(project_number: str) -> Optional[str]:
+        """
+        Look up the Project Registration document name from project_no field.
+        Mirrors FundReceivedConsumerMapper.get_project_registration_name.
+        """
+        if not project_number:
+            return None
+
+        prj_name = frappe.db.get_value(
+            'Project Registration',
+            {'project_no': project_number},
+            'name'
+        )
+
+        return prj_name or project_number
+
     @classmethod
     def find_document(cls, dto: ResearchDepositSlipUpdateDTO) -> tuple:
         """
@@ -77,6 +94,12 @@ class ResearchDepositSlipConsumerMapper:
                     'sgst': 'sgst_9',
                     'ref': 'fund_received_ref'
                 })
+
+            # Map and apply project_number → look up Project Registration name
+            if dto.projectNumber and frappe.get_meta(doctype).has_field('project_title'):
+                prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
+                if prj_reg_name:
+                    frappe.db.set_value(doctype, doc_name, 'project_title', prj_reg_name)
 
             # Update amount fields
             if dto.amountReceived and f_map['amount']:

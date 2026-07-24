@@ -17,21 +17,28 @@ from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
 _MM_URL = "http://172.16.135.118:8065/api/v4/posts"
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
 _MM_KAFKA_CHANNEL = "yh7piky97iycjrdytia1hqy99a"  # "kafka logs" channel
+_MM_SALARY_CHANNEL = "knetjx859tfu8g3tecr1tu8mne"  # "Salary Module" channel
 
 
-def _mm_notify(message: str):
+def _mm_notify(message: str, channel_id: str = _MM_KAFKA_CHANNEL):
     """Fire-and-forget Mattermost notification. Never blocks or raises."""
     def _post():
         try:
             requests.post(
                 _MM_URL,
-                json={"channel_id": _MM_KAFKA_CHANNEL, "message": message},
+                json={"channel_id": channel_id, "message": message},
                 headers={"Authorization": _MM_TOKEN, "Content-Type": "application/json"},
                 timeout=(2, 3),
             )
         except Exception:
             pass
     threading.Thread(target=_post, daemon=True).start()
+
+
+def _mm_notify_salary_json(title: str, data: dict):
+    """Post the full salary payload/result as a JSON code block to the Salary Module channel."""
+    body = json.dumps(data, default=str, indent=2)
+    _mm_notify(f"**{title}**\n```json\n{body}\n```", channel_id=_MM_SALARY_CHANNEL)
 
 # External API endpoints
 LEDGER_API_BASE_URL = "http://172.16.134.81:18080/api/commit-payment-transactions"
@@ -127,24 +134,45 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
     """
     Return active salary tenure data for a Project Staff employee.
     """
+    raw_form_dict = dict(frappe.form_dict)
+    print(f"[SALARY_PAYMENT_DATA] Raw data received: {raw_form_dict}")
+    _mm_notify_salary_json("Salary Payment Data - Raw Request Received", raw_form_dict)
+
     if not ps_emp_id:
-        return {"status": "error", "message": "Employee ID is required"}
+        print("[SALARY_PAYMENT_DATA] ERROR: Employee ID is required")
+        _mm_notify(":x: **Salary Payment Data Error**\n**Error:** Employee ID is required", channel_id=_MM_SALARY_CHANNEL)
+        return [{"status": "error", "message": "Employee ID is required"}]
 
     try:
         if yyyy_month and _salary_staging_has_ps_emp_id(ps_emp_id, yyyy_month):
-            return {"status": "Pending Approval in Account Portal", "message": "Salary already initiated"}
+            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Already staged for {yyyy_month} — Pending Approval in Account Portal")
+            _mm_notify(
+                f":information_source: **Salary Already Initiated**\n"
+                f"**Employee:** {ps_emp_id}\n"
+                f"**Month:** {yyyy_month}",
+                channel_id=_MM_SALARY_CHANNEL,
+            )
+            return [{"status": "Pending Approval in Account Portal", "message": "Salary already initiated"}]
 
         staff_records = frappe.get_all(
             "Project Staff Details",
             filters={"ps_emp_id": ps_emp_id},
             fields=["name", "scr_id", "project_no"],
         )
+        print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Project Staff Details found: {staff_records}")
 
         if not staff_records:
-            return {
+            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] ERROR: No Project Staff Details found")
+            _mm_notify(
+                f":x: **Salary Payment Data Error**\n"
+                f"**Employee:** {ps_emp_id}\n"
+                f"**Error:** No Project Staff Details found for the given Employee ID",
+                channel_id=_MM_SALARY_CHANNEL,
+            )
+            return [{
                 "status": "error",
                 "message": "No Project Staff Details found for the given Employee ID",
-            }
+            }]
 
         current_date = getdate(today())
         valid_records = []
@@ -170,6 +198,20 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                     "basic_salary": basic_salary,
                 })
 
+            # Fallback: some Project Staff Details records keep the current tenure on the
+            # parent doc itself (ps_joining_date / ps_term_completion_date / ps_basic_salary)
+            # instead of a table_ymed row — treat that as the tenure when table_ymed is empty.
+            if not valid_tenures:
+                top_level_completion = staff_doc.get("ps_term_completion_date")
+                if top_level_completion:
+                    top_level_completion = getdate(top_level_completion)
+                    if current_date <= top_level_completion:
+                        valid_tenures.append({
+                            "joining_date": staff_doc.get("ps_joining_date"),
+                            "term_completion_date": top_level_completion,
+                            "basic_salary": flt(staff_doc.get("ps_basic_salary")),
+                        })
+
             if not valid_tenures:
                 continue
 
@@ -188,10 +230,17 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
             })
 
         if not valid_records:
-            return {
+            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] ERROR: No active tenure found")
+            _mm_notify(
+                f":x: **Salary Payment Data Error**\n"
+                f"**Employee:** {ps_emp_id}\n"
+                f"**Error:** No active tenure found for the given Employee ID",
+                channel_id=_MM_SALARY_CHANNEL,
+            )
+            return [{
                 "status": "error",
                 "message": "No active tenure found for the given Employee ID",
-            }
+            }]
 
         latest_record = max(
             valid_records,
@@ -212,7 +261,16 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
             interview_id = frappe.db.get_value("Selection Committee Report", scr_id, "interview_id")
 
         recruitment_doc_name = interview_id
+        print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] scr_id={scr_id} project_no={project_no} recruitment_doc_name={recruitment_doc_name}")
+
         if not recruitment_doc_name or not frappe.db.exists("Recruitment Adhoc Contractual", recruitment_doc_name):
+            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual — returning empty list")
+            _mm_notify(
+                f":warning: **Salary Payment Data**\n"
+                f"**Employee:** {ps_emp_id}\n"
+                f"**Info:** No matching Recruitment Adhoc Contractual found (interview_id={interview_id}) — returning empty list",
+                channel_id=_MM_SALARY_CHANNEL,
+            )
             return []
 
         merged_commit_records = []
@@ -227,9 +285,17 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                 try:
                     merged_commit_records.extend(future.result())
                 except Exception:
+                    print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] ERROR fetching Account Head Commits for status={status}")
                     frappe.log_error(
                         frappe.get_traceback(),
                         f"Salary Account Head Commit API Error: {status}"
+                    )
+                    _mm_notify(
+                        f":x: **Salary Payment Data - API Error**\n"
+                        f"**Employee:** {ps_emp_id}\n"
+                        f"**Status:** {status}\n"
+                        f"**Error:** Failed to fetch Account Head Commits",
+                        channel_id=_MM_SALARY_CHANNEL,
                     )
 
         filtered_records = []
@@ -259,11 +325,24 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
             })
             filtered_records.append(filtered_record)
 
+        print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Returning {len(filtered_records)} filtered record(s)")
+        _mm_notify_salary_json(
+            f"Salary Payment Data - Response ({ps_emp_id})",
+            {"ps_emp_id": ps_emp_id, "yyyy_month": yyyy_month, "count": len(filtered_records), "data": filtered_records},
+        )
         return filtered_records
 
     except Exception as e:
+        print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] EXCEPTION: {str(e)}")
         frappe.log_error(frappe.get_traceback(), "Salary Payment Data Error")
-        return {"status": "error", "message": str(e)}
+        _mm_notify(
+            f":rotating_light: **Salary Payment Data Exception**\n"
+            f"**Employee:** {ps_emp_id}\n"
+            f"**Month:** {yyyy_month or '-'}\n"
+            f"**Error:** {str(e)}",
+            channel_id=_MM_SALARY_CHANNEL,
+        )
+        return [{"status": "error", "message": str(e)}]
 
 
 @frappe.whitelist()
@@ -301,8 +380,8 @@ def get_project_available_amounts(project_number):
                     "availableCommitAmount": flt(data.get("availableCommitAmount", 0)),
                     "availablePaymentAmount": flt(data.get("availablePaymentAmount", 0)),
                     # Formatted display values
-                    "actualBalance": flt(data.get("availableCommitAmount", 0)),
-                    "committable": flt(data.get("availablePaymentAmount", 0))
+                    "actualBalance": flt(data.get("availablePaymentAmount", 0)),
+                    "committable": flt(data.get("availableCommitAmount", 0))
                 }
             }
         else:
@@ -327,6 +406,15 @@ def get_project_available_amounts(project_number):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Project Available Amounts Error")
         return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_project_available_amounts_test(project_number):
+    """
+    TESTING ONLY - guest-accessible clone of get_project_available_amounts.
+    Remove before going to production.
+    """
+    return get_project_available_amounts(project_number)
 
 # Define topics for commit and payment (assuming these topics based on user request "same for payment also")
 # Ideally these should be defined in kafka_sync.py constant list, but for now using string literals or importing if added.
@@ -1074,6 +1162,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                 f"**frapAppId:** {frapAppId}\n"
                 f"**Amount:** {payment_amount or '-'}"
             )
+            _mm_notify_salary_json("Salary Payment - Before Publish", salary_payload)
 
             if salary_year_month:
                 _append_salary_staging_record(salary_year_month, salary_payload)
@@ -1149,6 +1238,9 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             )
             print(f"[PAYMENT_DEBUG] Salary kafka_publish_payment returned: {_sal_success}")
 
+            _dto_result = _sal_doc.as_dict()
+            _dto_result["kafka_publish_success"] = _sal_success
+
             if _sal_success:
                 _mm_notify(
                     f":white_check_mark: **Salary Kafka Published**\n"
@@ -1158,6 +1250,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                     f"**Amount:** {_sal_doc.payment_amount or '-'}\n"
                     f"**Budget Head:** {_sal_doc.budget_head or '-'}"
                 )
+                _mm_notify_salary_json("Salary Payment - After DTO Publish", _dto_result)
                 return {
                     "status": "success",
                     "message": "Salary payment published to Kafka",
@@ -1171,6 +1264,7 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                     f"**Doc:** {_sal_doc.name}\n"
                     f"**Project:** {_sal_doc.project_ref_number or '-'}"
                 )
+                _mm_notify_salary_json("Salary Payment - After DTO Publish (FAILED)", _dto_result)
                 return {"status": "error", "message": "Failed to publish salary payment to Kafka"}
 
         # Normalize name: treat "None", "null", empty string as actual None
@@ -1692,4 +1786,252 @@ def get_workflow_state_history(doctype, docname, limit=30):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "get_workflow_state_history failed")
         return {"status": "error", "message": str(e)}
+
+
+# ============================================================
+# SALARY STAGING SEARCH ENDPOINT (Salary View page)
+# ============================================================
+
+_SALARY_MONTH_ORDER = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+
+@frappe.whitelist(allow_guest=True)
+def search_salary_records(query=None, year=None, month=None, status=None, page=1, page_size=20):
+    """
+    Flatten and search Salary Staging records (one row per employee per month).
+
+    Each `Salary Staging` doc is named "{year}_{month}" (e.g. "2026_june") and
+    stores its `salary_record` field as a JSON array of commit payloads, each
+    carrying a `salary_user_details` block with the employee's pay breakup.
+    This flattens all such docs into rows and supports free-text search plus
+    year/month/status filters, paginated.
+
+    Args:
+        query     (str): Free-form search — matches employee id/name/email,
+                          department, designation, project number, year_month.
+        year      (str): Optional exact year filter, e.g. "2026".
+        month     (str): Optional exact month filter, e.g. "june".
+        status    (str): Optional exact status filter, e.g. "PENDING_PUBLISH".
+        page      (int): 1-based page number (default 1).
+        page_size (int): Results per page (default 20, capped at 200).
+
+    Returns:
+        {
+            "status": "success",
+            "total": <int>,
+            "page": <int>,
+            "page_size": <int>,
+            "results": [ {year_month, year, month, employee_id, employee_name,
+                          email, department, designation, basic_salary, hra,
+                          working_days, gross_pay, total_deduction, net_pay,
+                          status, project_number, commit_date}, ... ],
+            "available_year_months": [<all Salary Staging doc names>],
+            "available_statuses": [<distinct status values found>],
+        }
+    """
+    try:
+        page = max(1, int(page or 1))
+        page_size = min(200, max(1, int(page_size or 20)))
+        
+        name_filters = {}
+        if year and month:
+            name_filters["name"] = f"{str(year).strip()}_{str(month).strip().lower()}"
+        elif year:
+            name_filters["name"] = ["like", f"{str(year).strip()}_%"]
+        elif month:
+            name_filters["name"] = ["like", f"%_{str(month).strip().lower()}"]
+
+        staging_docs = frappe.get_all(
+            "Salary Staging",
+            filters=name_filters,
+            fields=["name", "salary_record"],
+            limit_page_length=0,
+        )
+
+        dept_cache = {}
+
+        def resolve_dept(dept_id):
+            if not dept_id:
+                return "—"
+            if dept_id not in dept_cache:
+                dept_cache[dept_id] = frappe.db.get_value("Department_prornd", dept_id, "dept_name") or dept_id
+            return dept_cache[dept_id]
+
+        rows = []
+        statuses_seen = set()
+
+        for doc in staging_docs:
+            year_month = doc.name
+            if "_" in year_month:
+                yr, mo = year_month.split("_", 1)
+            else:
+                yr, mo = year_month, ""
+
+            try:
+                records = json.loads(doc.salary_record or "[]")
+                if not isinstance(records, list):
+                    records = [records]
+            except Exception:
+                records = []
+
+            for r in records:
+                ud = r.get("salary_user_details") or {}
+                bd = r.get("salary_backend_details") or {}
+                rec_status = r.get("status")
+                if rec_status:
+                    statuses_seen.add(rec_status)
+
+                rows.append({
+                    "year_month": year_month,
+                    "year": yr,
+                    "month": mo,
+                    "employee_id": ud.get("employee_id") or bd.get("ps_emp_id"),
+                    "employee_name": ud.get("first_name"),
+                    "email": ud.get("email_id"),
+                    "department": resolve_dept(ud.get("department")),
+                    "designation": ud.get("designation"),
+                    "basic_salary": ud.get("basic_salary"),
+                    "hra": ud.get("hra"),
+                    "working_days": ud.get("working_days"),
+                    "gross_pay": ud.get("gross_pay"),
+                    "total_deduction": ud.get("total_deduction"),
+                    "net_pay": ud.get("net_pay"),
+                    "status": rec_status,
+                    "project_number": r.get("projectNumber") or bd.get("project_no"),
+                    "commit_date": r.get("commitDate"),
+                })
+
+        if status:
+            rows = [r for r in rows if (r.get("status") or "").lower() == str(status).lower()]
+
+        if query:
+            q = str(query).strip().lower()
+
+            def matches(r):
+                haystack = [
+                    r.get("employee_id"), r.get("employee_name"), r.get("email"),
+                    r.get("department"), r.get("designation"), r.get("project_number"),
+                    r.get("year_month"),
+                ]
+                return any(q in str(f).lower() for f in haystack if f)
+
+            rows = [r for r in rows if matches(r)]
+
+        rows.sort(key=lambda r: (
+            -(int(r["year"]) if str(r["year"]).isdigit() else 0),
+            -_SALARY_MONTH_ORDER.get((r.get("month") or "").lower(), 0),
+            (r.get("employee_name") or "").lower(),
+        ))
+
+        total = len(rows)
+        offset = (page - 1) * page_size
+        page_rows = rows[offset: offset + page_size]
+
+        all_year_months = (
+            [d.name for d in staging_docs] if not (year or month)
+            else [d.name for d in frappe.get_all("Salary Staging", fields=["name"], limit_page_length=0)]
+        )
+
+        return {
+            "status": "success",
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "results": page_rows,
+            "available_year_months": sorted(all_year_months, reverse=True),
+            "available_statuses": sorted(statuses_seen) or ["PENDING_APPROVAL", "PENDING_PUBLISH", "PUBLISHED", "FAILED"],
+        }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "search_salary_records error")
+        return {"status": "error", "message": str(e)}
 # END OJS
+
+
+@frappe.whitelist()
+def delete_salary_record(year_month=None, employee_id=None, project_number=None, commit_date=None, override_password=None):
+    """
+    Remove a single employee's entry from a Salary Staging doc's `salary_record`
+    JSON array (one Salary Staging doc holds all employees' records for a month,
+    so this is a read-modify-write, not a doc-level delete). If the array becomes
+    empty, the Salary Staging doc itself is deleted. Password-gated like the other
+    Danger Zone actions (set_workflow_state, delete_project_registrations).
+    """
+    from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
+
+    if override_password != ADMIN_ACTION_PASSWORD:
+        return {"status": "error", "message": "Incorrect password. Record not deleted."}
+
+    if not year_month or not employee_id:
+        return {"status": "error", "message": "year_month and employee_id are required"}
+
+    if not frappe.db.exists("Salary Staging", year_month):
+        return {"status": "error", "message": "Salary Staging record not found"}
+
+    lock_name = f"salary_staging_{year_month}"
+    got_lock = frappe.db.sql("SELECT GET_LOCK(%s, 10)", lock_name)[0][0]
+    if not got_lock:
+        return {"status": "error", "message": "Could not acquire salary staging lock, please retry"}
+
+    try:
+        staging_doc = frappe.get_doc("Salary Staging", year_month)
+        try:
+            records = json.loads(staging_doc.salary_record or "[]")
+            if not isinstance(records, list):
+                records = [records]
+        except Exception:
+            records = []
+
+        def matches(r):
+            ud = r.get("salary_user_details") or {}
+            bd = r.get("salary_backend_details") or {}
+            rec_emp_id = ud.get("employee_id") or bd.get("ps_emp_id")
+            if str(rec_emp_id) != str(employee_id):
+                return False
+            if project_number and str(r.get("projectNumber") or bd.get("project_no")) != str(project_number):
+                return False
+            if commit_date and str(r.get("commitDate")) != str(commit_date):
+                return False
+            return True
+
+        before_count = len(records)
+        remaining = [r for r in records if not matches(r)]
+        removed_count = before_count - len(remaining)
+
+        if removed_count == 0:
+            return {"status": "error", "message": "No matching record found to delete"}
+
+        user = frappe.session.user
+        ip = _get_client_ip()
+
+        if remaining:
+            staging_doc.salary_record = json.dumps(remaining, default=str)
+            staging_doc.save(ignore_permissions=True)
+        else:
+            frappe.delete_doc("Salary Staging", year_month, ignore_permissions=True)
+
+        frappe.db.commit()
+
+        _mm_notify(
+            f":wastebasket: **Salary Record Deleted**\n"
+            f"**Month:** {year_month}\n"
+            f"**Employee:** {employee_id}\n"
+            f"**Deleted by:** {user}\n"
+            f"**IP:** {ip}\n"
+            f"**Remaining records in month:** {len(remaining)}"
+        )
+
+        return {
+            "status": "success",
+            "message": f"Deleted {removed_count} record(s) for {employee_id} in {year_month}",
+            "removed_count": removed_count,
+            "remaining_count": len(remaining),
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "delete_salary_record failed")
+        return {"status": "error", "message": str(e)}
+    finally:
+        frappe.db.sql("SELECT RELEASE_LOCK(%s)", lock_name)

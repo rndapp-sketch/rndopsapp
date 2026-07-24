@@ -22,7 +22,8 @@
    "depends_on": "Depends On: eval:doc.label.startsWith(\"PDF\")",
    "fieldname": "recipient_name",
    "fieldtype": "Date",
-   "label": "Recipient Name (for PDF)"
+   "label": "Recipient Name (for PDF)",
+   "options": "IDF (40%)\nDPF (50%)\nStudent Welfate Fund (5%)\nStaff Welfare Fund (5%)"
   },
   {
    "fieldname": "percentage_of_overhead",
@@ -39,7 +40,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-02-16 11:19:29.276118",
+ "modified": "2026-07-23 13:00:46.365828",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Deposit Slip Credit Distribution",

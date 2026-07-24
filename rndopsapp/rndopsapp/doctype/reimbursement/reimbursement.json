@@ -65,8 +65,10 @@
   {
    "fieldname": "account_head",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Account Head",
-   "options": "Budget Head"
+   "options": "Budget Head",
+   "reqd": 1
   },
   {
    "fieldname": "comment",
@@ -77,7 +79,8 @@
    "fieldname": "table_bosk",
    "fieldtype": "Table",
    "label": "Particulars of Items",
-   "options": "Particulars of Items Reimbursement"
+   "options": "Particulars of Items Reimbursement",
+   "reqd": 1
   },
   {
    "depends_on": "eval:doc.self_other==\"Other\"",
@@ -231,7 +234,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-15 10:29:41.330149",
+ "modified": "2026-07-22 11:25:34.461125",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",

@@ -14,10 +14,10 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 
 # ─────────────────────── Configuration ───────────────────────
-SOURCE_BENCH="$HOME/project/frappe_dev/prornd"
+SOURCE_BENCH="$HOME/frappe-dev/prornd"
 SITE_NAME="prornd.local"
-TARGET_USER="rndops"
-TARGET_IP="172.16.135.157"
+TARGET_USER="iitg_oc_2025"
+TARGET_IP="172.16.134.191"
 TARGET_DIR="/home/${TARGET_USER}/frappe_transfer"
 
 # Apps to zip and transfer (private/custom apps not on public GitHub)
@@ -43,7 +43,8 @@ bench --site "${SITE_NAME}" backup --with-files
 # Find the latest backup files
 BACKUP_DIR="${SOURCE_BENCH}/sites/${SITE_NAME}/private/backups"
 LATEST_DB=$(ls -t "${BACKUP_DIR}"/*-database.sql.gz 2>/dev/null | head -1)
-LATEST_PUB=$(ls -t "${BACKUP_DIR}"/*-files.tar 2>/dev/null | head -1)
+#LATEST_PUB=$(ls -t "${BACKUP_DIR}"/*-files.tar 2>/dev/null | head -1)
+LATEST_PUB=$(ls -t "${BACKUP_DIR}"/*-files.tar 2>/dev/null | grep -v "private-files.tar" | head -1)
 LATEST_PRIV=$(ls -t "${BACKUP_DIR}"/*-private-files.tar 2>/dev/null | head -1)
 LATEST_CONFIG=$(ls -t "${BACKUP_DIR}"/*-site_config_backup.json 2>/dev/null | head -1)
 

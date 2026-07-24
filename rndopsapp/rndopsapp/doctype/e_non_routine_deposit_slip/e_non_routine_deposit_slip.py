@@ -194,12 +194,18 @@ def save_e_non_routine_deposit_slip(doc_data):
 			"ecs_ac_no": "ecs_ac_no",
 			"bank": "bank",
 			"amount_inclusive_of_gst": "amount_inclusive_of_gst",
+			"income_tax_tds": "income_tax_tds",
+			"gst_tds_2": "gst_tds_2",
+			"amount_actually_received": "amount_actually_received",
+			"cgst_9": "cgst_9",
+			"sgst_9": "sgst_9",
 			"igst_18": "igst_18",
 			"consultancy_fee_x": "consultancy_fee_x",
 			"overhead_multiplier": "overhead_multiplier",
 			"overhead_amount": "overhead_amount",
 			"total_gst": "total_gst",
 			"total_budget": "total_budget",
+			"category_e": "category_e",
 		}
 
 		for form_field, doctype_field in field_mapping.items():

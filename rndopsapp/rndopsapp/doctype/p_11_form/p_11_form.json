@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:P_11-{YYYY}{MM}{DD}-{#####}",
  "creation": "2026-02-25 15:31:58.734607",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -129,10 +130,11 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-11 15:21:02.857244",
- "modified_by": "Administrator",
+ "modified": "2026-07-16 18:32:49.009736",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "P_11 Form",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {

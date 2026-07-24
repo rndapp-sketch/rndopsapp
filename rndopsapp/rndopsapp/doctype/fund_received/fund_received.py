@@ -17,8 +17,30 @@ from rndopsapp.rndopsapp.doctype.project_registration.project_registration impor
 class FundReceived(Document):
 	def validate(self):
 		"""Validate and auto-populate sanction letter details from linked Fund Sanction"""
+		self.populate_project_title_from_sanction()
 		self.populate_sanction_details()
-	
+
+	def populate_project_title_from_sanction(self):
+		"""
+		Fallback: if prjreg_title is empty, resolve it from the Fund Sanction
+		linked via sanction_ref_no (Fund Sanction.project_proposal is the
+		Project Registration link).
+		"""
+		if getattr(self, 'prjreg_title', None):
+			return
+
+		sanction_name = getattr(self, 'sanction_ref_no', None)
+		if not sanction_name:
+			return
+
+		try:
+			project_proposal = frappe.db.get_value("Fund Sanction", sanction_name, "project_proposal")
+			if project_proposal:
+				self.prjreg_title = project_proposal
+				print(f"✅ Resolved prjreg_title '{project_proposal}' for {self.name} via sanction_ref_no '{sanction_name}'")
+		except Exception as e:
+			frappe.log_error(f"Error resolving prjreg_title from sanction_ref_no for Fund Received: {e}", "Fund Received Validate Error")
+
 	def populate_sanction_details(self):
 		"""
 		Fetch sanction letter number and date from the Fund Sanction 
@@ -733,6 +755,14 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 				# We don't save yet, we let the subsequent flow handle the save
 			else:
 				print(f"DEBUG: Could not resolve prjreg_title '{doc.prjreg_title}' to a valid Project Registration.")
+		elif not doc.prjreg_title and doc.sanction_ref_no:
+			# prjreg_title is empty - resolve via the linked Fund Sanction's project_proposal
+			project_proposal = frappe.db.get_value("Fund Sanction", doc.sanction_ref_no, "project_proposal")
+			if project_proposal:
+				print(f"DEBUG: prjreg_title empty. Resolved '{project_proposal}' via sanction_ref_no '{doc.sanction_ref_no}'.")
+				doc.prjreg_title = project_proposal
+			else:
+				print(f"DEBUG: prjreg_title empty and could not resolve via sanction_ref_no '{doc.sanction_ref_no}'.")
 
 
 		# Fetch the workflow for this doctype

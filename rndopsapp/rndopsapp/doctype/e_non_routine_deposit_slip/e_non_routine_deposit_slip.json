@@ -17,6 +17,11 @@
   "bank",
   "calculations_section",
   "amount_inclusive_of_gst",
+  "income_tax_tds",
+  "gst_tds_2",
+  "amount_actually_received",
+  "cgst_9",
+  "sgst_9",
   "igst_18",
   "consultancy_fee_x",
   "overhead_multiplier",
@@ -85,6 +90,31 @@
    "label": "Amount Inclusive of GST"
   },
   {
+   "fieldname": "income_tax_tds",
+   "fieldtype": "Currency",
+   "label": "Income Tax TDS"
+  },
+  {
+   "fieldname": "gst_tds_2",
+   "fieldtype": "Currency",
+   "label": "GST TDS @ 2%"
+  },
+  {
+   "fieldname": "amount_actually_received",
+   "fieldtype": "Currency",
+   "label": "Amount actually received in II&SI Bank A/c"
+  },
+  {
+   "fieldname": "cgst_9",
+   "fieldtype": "Currency",
+   "label": "CGST @9%"
+  },
+  {
+   "fieldname": "sgst_9",
+   "fieldtype": "Currency",
+   "label": "SGST @9%"
+  },
+  {
    "fieldname": "igst_18",
    "fieldtype": "Currency",
    "label": "IGST @18%"
@@ -96,7 +126,7 @@
    "label": "Consultancy Fee X"
   },
   {
-   "default": "0.1",
+   "default": "0.3",
    "fieldname": "overhead_multiplier",
    "fieldtype": "Float",
    "label": "Overhead Multiplier"
@@ -160,7 +190,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-24 12:42:25.468130",
+ "modified": "2026-07-23 12:29:50.242651",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "E Non Routine Deposit Slip",
