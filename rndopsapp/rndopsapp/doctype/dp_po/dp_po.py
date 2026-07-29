@@ -310,8 +310,13 @@ def generate_dp_po_from_sanction_sheet(dp_docname, sanction_sheet_name):
 
         # Funding agency from Project Registration
         if dp_doc.get("project_no"):
-            funding_agency = frappe.db.get_value(
-                "Project Registration", {"project_no": dp_doc.project_no}, "funding_agency"
+            funding_agent = frappe.db.get_value(
+                "Project Registration", {"project_no": dp_doc.project_no}, "funding_agen"
+            )
+            funding_agency = (
+                frappe.db.get_value("fundingagency_", funding_agent, "funding_agency_name")
+                if funding_agent
+                else None
             )
             doc.funding_agency = funding_agency or ""
 

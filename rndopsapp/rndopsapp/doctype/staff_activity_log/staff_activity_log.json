@@ -21,16 +21,19 @@
             "fieldname": "user",
             "fieldtype": "Link",
             "in_list_view": 1,
+            "in_standard_filter": 1,
             "label": "User",
             "options": "User",
-            "reqd": 1
+            "reqd": 1,
+            "search_index": 1
         },
         {
             "fieldname": "timestamp",
             "fieldtype": "Datetime",
             "in_list_view": 1,
             "label": "Timestamp",
-            "reqd": 1
+            "reqd": 1,
+            "search_index": 1
         },
         {
             "fieldname": "doctype_name",
@@ -50,8 +53,10 @@
             "fieldname": "form_category",
             "fieldtype": "Select",
             "in_list_view": 1,
+            "in_standard_filter": 1,
             "label": "Form Category",
-            "options": "\nPurchase\nFinancial\nProject\nHR / Staff\nDeposits\nTravel\nIPR\nOther"
+            "options": "\nPurchase\nFinancial\nProject\nHR / Staff\nDeposits\nTravel\nIPR\nOther",
+            "search_index": 1
         },
         {
             "fieldname": "from_state",

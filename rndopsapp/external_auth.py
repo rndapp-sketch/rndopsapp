@@ -9,6 +9,109 @@ def get_external_auth_url():
 	return frappe.conf.get("external_auth_url", "http://172.16.135.27:3001/auth/login")
 
 
+def get_client_ip():
+	"""
+	Real client IP, preferring the proxy-set headers (X-Forwarded-For, then X-Real-IP)
+	over the raw socket address. frappe.local.request_ip is unset during before_login
+	(HTTPRequest hasn't run yet), so this falls back to reading headers directly the
+	same way clear_admin_ip_lock does.
+	"""
+	ip = getattr(frappe.local, "request_ip", None)
+	if ip:
+		return ip
+	xff = frappe.get_request_header("X-Forwarded-For")
+	if xff:
+		return xff.split(",", 1)[0].strip()
+	real_ip = frappe.get_request_header("X-Real-IP")
+	if real_ip:
+		return real_ip.strip()
+	return frappe.get_request_header("REMOTE_ADDR") or "Unknown"
+
+
+def get_client_reported_ip():
+	"""
+	IP the frontend claims for itself (e.g. resolved via a public IP-echo service),
+	sent as `client_ip` on the login POST. Client-supplied and therefore spoofable —
+	stored only as a secondary, informational field. `ip_address` (server-derived)
+	remains the authoritative value for audit purposes.
+	"""
+	value = frappe.local.form_dict.get("client_ip")
+	return value.strip() if value else None
+
+
+def log_admin_access(
+	user,
+	event_type,
+	target_user=None,
+	status="Success",
+	details=None,
+	action_doctype=None,
+	action_docname=None,
+	action_type=None,
+):
+	"""Audit trail for the prorndadmin bypass account: login attempts, impersonation,
+	logout, and (when action_doctype is given) individual document actions taken
+	while impersonating someone."""
+	try:
+		log = frappe.new_doc("ProRnd Admin Access Log")
+		log.timestamp = frappe.utils.now_datetime()
+		log.user = user
+		log.event_type = event_type
+		log.target_user = target_user
+		log.status = status
+		log.action_doctype = action_doctype
+		log.action_docname = action_docname
+		log.action_type = action_type
+		log.ip_address = get_client_ip()
+		log.client_reported_ip = get_client_reported_ip()
+		log.user_agent = frappe.get_request_header("User-Agent") or ""
+		log.details = details or ""
+		log.insert(ignore_permissions=True)
+		frappe.db.commit()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "ProRnd Admin Access Log failed")
+
+
+_IMPERSONATED_DOC_EVENTS = {
+	"after_insert": "Insert",
+	"on_update": "Update",
+	"on_submit": "Submit",
+	"on_cancel": "Cancel",
+	"on_trash": "Delete",
+}
+
+
+def log_impersonated_action(doc, method):
+	"""
+	doc_events hook, registered for "*" (every doctype) on after_insert/on_update/
+	on_submit/on_cancel/on_trash. Only ever logs anything if the CURRENT session is
+	an active impersonation — i.e. frappe.session.data.impersonated_by is set by
+	LoginManager.impersonate() (see auth.py:350). Records which doctype/document
+	prorndadmin touched while wearing another user's identity, so impersonation
+	sessions are auditable action-by-action, not just as a single opaque login.
+	"""
+	# frappe.session.data is None during the login flow itself (e.g. the Activity Log
+	# row that add_authentication_log() inserts on every login attempt, before session
+	# boot has populated .data) — guard so login isn't broken by this audit hook.
+	impersonated_by = (frappe.session.data or {}).get("impersonated_by")
+	if not impersonated_by:
+		return
+	if doc.doctype == "ProRnd Admin Access Log":
+		return
+
+	action = _IMPERSONATED_DOC_EVENTS.get(method, method)
+	log_admin_access(
+		user=impersonated_by,
+		event_type="Document Action",
+		target_user=frappe.session.user,
+		status="Success",
+		details=f"{impersonated_by} (as {frappe.session.user}) {action} {doc.doctype} {doc.name}",
+		action_doctype=doc.doctype,
+		action_docname=doc.name,
+		action_type=action,
+	)
+
+
 def clear_admin_ip_lock():
 	"""
 	Called via before_login hook, before HTTPRequest() runs.
@@ -34,10 +137,7 @@ def clear_admin_ip_lock():
 		return
 
 	# Correct prorndadmin credentials — clear IP tracker so authenticate() proceeds.
-	# frappe.local.request_ip is still None here (set inside HTTPRequest which hasn't
-	# run yet), so derive the IP from headers the same way set_request_ip() does.
-	xff = frappe.get_request_header("X-Forwarded-For")
-	ip = xff.split(",", 1)[0].strip() if xff else (frappe.get_request_header("REMOTE_ADDR") or "127.0.0.1")
+	ip = get_client_ip()
 	frappe.cache.hdel("login_failed_count", ip)
 	frappe.cache.hdel("login_failed_time", ip)
 
@@ -66,6 +166,25 @@ def _resolve_to_username(user_input: str) -> str:
 	if "@" in user_input:
 		return user_input.split("@")[0]
 	return user_input
+
+
+def _resolve_verification_staff_user(user_input: str) -> str | None:
+	"""If user_input resolves to a Frappe User whose only login purpose is the
+	Project Verification portal (has the 'Verification Staff' role), return their
+	Frappe User name so native auth can be used. Otherwise None.
+
+	Uses frappe.permissions.get_roles() directly rather than the frappe.get_roles()
+	convenience wrapper: this runs during before_login, before any session exists,
+	and frappe.get_roles() unconditionally returns ["Guest"] whenever
+	frappe.local.session isn't set yet — silently ignoring the username argument."""
+	import frappe.permissions
+
+	name = frappe.db.get_value("User", user_input, "name")
+	if not name:
+		return None
+	if "Verification Staff" in frappe.permissions.get_roles(name):
+		return name
+	return None
 
 
 def _find_frappe_user(user_input: str, ext_username: str) -> dict | None:
@@ -104,8 +223,14 @@ def _prorndadmin_find_by_credentials(user_input: str, password: str):
 
 	if not hmac.compare_digest(password, _PRORNDADMIN_PASSWORD):
 		frappe.log_error(
-			f"prorndadmin login failed from IP {frappe.local.request_ip}",
+			f"prorndadmin login failed from IP {get_client_ip()}",
 			"AdminBypass",
+		)
+		log_admin_access(
+			user=user_input,
+			event_type="Login",
+			status="Failed",
+			details=f"Invalid prorndadmin password for input '{user_input}'",
 		)
 		return frappe._dict({"name": user_input, "enabled": 1, "is_authenticated": False})
 
@@ -116,9 +241,21 @@ def _prorndadmin_find_by_credentials(user_input: str, password: str):
 		frappe.log_error(
 			f"prorndadmin Frappe User record missing (input={user_input})", "AdminBypass"
 		)
+		log_admin_access(
+			user=user_input,
+			event_type="Login",
+			status="Failed",
+			details=f"Frappe User record missing for input '{user_input}'",
+		)
 		return frappe._dict({"name": user_input, "enabled": 0, "is_authenticated": False})
 
 	add_authentication_log("prorndadmin bypass login", user["name"], status="Success")
+	log_admin_access(
+		user=user["name"],
+		event_type="Login",
+		status="Success",
+		details=f"prorndadmin bypass login as {user['name']}",
+	)
 	user["is_authenticated"] = True
 	return user
 
@@ -139,6 +276,13 @@ def _external_find_by_credentials(cls, user_name: str, password: str, validate_p
 	# prorndadmin uses local hardcoded password — never proxied to LDAP
 	if _resolve_to_username(user_name) == _PRORNDADMIN_USERNAME:
 		return _prorndadmin_find_by_credentials(user_name, password)
+
+	# Verification Staff are portal-only accounts with no presence in the external
+	# microservice (they're not IITG SSO identities) — check their Frappe-stored
+	# password natively instead of proxying, same as Administrator above.
+	verification_user = _resolve_verification_staff_user(user_name)
+	if verification_user:
+		return cls._original_find_by_credentials.__func__(cls, verification_user, password, validate_password)
 
 	# Non-login calls (password change, API key) use native auth
 	is_login = (
@@ -214,9 +358,43 @@ def impersonate_user(target_user: str):
 		operation="Impersonate",
 		status="Success",
 	)
+	log_admin_access(
+		user=frappe.session.user,
+		event_type="Impersonate",
+		target_user=target_name,
+		status="Success",
+		details=f"{frappe.session.user} impersonated {target_name}",
+	)
 	frappe.db.commit()
 
 	# Swap session — rewrites sid cookie and all session state for target_name
 	frappe.local.login_manager.impersonate(target_name)
 
 	return {"message": f"Impersonating {target_name}"}
+
+
+def log_admin_logout(login_manager=None, **kwargs):
+	"""
+	on_logout hook. Frappe flags impersonated sessions via set_impersonated(), stashing
+	the original user in session data — use that to attribute the logout back to
+	prorndadmin even though frappe.session.user is the impersonated account by then.
+	"""
+	impersonated_by = frappe.session.data.get("impersonated_by")
+	if impersonated_by:
+		log_admin_access(
+			user=impersonated_by,
+			event_type="Logout",
+			target_user=frappe.session.user,
+			status="Success",
+			details=f"{impersonated_by} ended impersonation of {frappe.session.user}",
+		)
+		return
+
+	username = frappe.db.get_value("User", frappe.session.user, "username")
+	if username == _PRORNDADMIN_USERNAME:
+		log_admin_access(
+			user=frappe.session.user,
+			event_type="Logout",
+			status="Success",
+			details="prorndadmin logged out",
+		)

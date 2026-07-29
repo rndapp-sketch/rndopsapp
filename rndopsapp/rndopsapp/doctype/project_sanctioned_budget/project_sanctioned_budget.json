@@ -23,6 +23,7 @@
    "allow_on_submit": 1,
    "fieldname": "account_head",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Account Head"
   },
   {

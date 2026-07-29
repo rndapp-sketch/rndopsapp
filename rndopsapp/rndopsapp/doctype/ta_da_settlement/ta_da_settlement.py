@@ -6,6 +6,82 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
+
+# "For Office Use" fields: filled in by `staff, RnD` only, while the document
+# sits at "Pending Staff Approval". Hidden from the applicant on the frontend;
+# also gated here so a non-staff caller can't slip values into these fields
+# via the API (the DocType itself has no permlevel restriction on them).
+OFFICE_USE_INPUT_FIELDS = [
+	"railways_air_steamer_busfare",
+	"road_mileage",
+	"local_conveyance",
+	"food_charges",
+	"cccommodation_charges",
+	"registration_fee_other",
+	"less_advance_paid_to_applicant",
+]
+
+
+def can_edit_office_use_fields():
+	user_roles = frappe.get_roles(frappe.session.user)
+	return bool(
+		{"staff, RnD", "System Manager", "Administrator"} & set(user_roles)
+	)
+
+
+def _resolve_ta_da_project_docname(doc):
+	"""
+	Resolve the Project Registration docname this settlement belongs to, via
+	its linked Travel application — same "Project Registration" namespace
+	every other module (Disbursal of Honorarium, Direct Purchase, etc.)
+	stores its MinIO uploads under, so files stay grouped by project.
+	"""
+	if getattr(doc, "ta_da_travel_application", None):
+		project_docname = frappe.db.get_value(
+			"Travel", doc.ta_da_travel_application, "travel_project_title"
+		)
+		if project_docname:
+			return project_docname
+	return doc.project_no or doc.name
+
+
+def _upload_ta_da_file_to_minio(val, project_docname, folder="ta_da_settlement"):
+	"""Upload a base64 file dict ({file_name, file_data}) to MinIO. Returns the MinIO URL or None."""
+	import base64
+
+	try:
+		from rndopsapp.minio import get_rnd_file_service
+
+		filename = val["file_name"]
+		content_b64 = val["file_data"]
+
+		if isinstance(content_b64, str) and content_b64.startswith("data:"):
+			content_b64 = content_b64.split(",", 1)[1]
+
+		file_content = base64.b64decode(content_b64)
+
+		upload_result = get_rnd_file_service().save_file(
+			filename=filename,
+			content=file_content,
+			is_private=False,
+			doctype="Project Registration",
+			docname=project_docname,
+			folder=folder,
+		)
+
+		if upload_result.get("status"):
+			file_url = upload_result.get("data", {}).get("file_url")
+			frappe.logger().info(f"[TA DA Settlement] File uploaded to MinIO: {file_url}")
+			return file_url
+
+		frappe.log_error(
+			f"MinIO upload failed: {upload_result.get('message')}",
+			"TA DA Settlement MinIO Upload",
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "TA DA Settlement MinIO Upload Error")
+	return None
 
 
 def extract_eval_expression(expression):
@@ -260,10 +336,31 @@ def save_ta_da_settlement(doc_data):
 			"project_no": "project_no",
 		}
 
+		# "For Office Use" fields are only ever settable by staff, RnD (or admins) —
+		# never by the applicant. total_admissible_amount / net_amount are never
+		# taken from the client; they're always recomputed below.
+		office_use_editable = can_edit_office_use_fields()
+		if office_use_editable:
+			for fieldname in OFFICE_USE_INPUT_FIELDS:
+				field_mapping[fieldname] = fieldname
+
 		# Update document with mapped data
 		for form_field, doctype_field in field_mapping.items():
 			if form_field in data and data[form_field] not in [None, ""]:
 				doc.set(doctype_field, data[form_field])
+
+		# Recompute the "For Office Use" totals server-side so they can never
+		# drift from the individual line items, regardless of what the client sent.
+		if office_use_editable:
+			doc.total_admissible_amount = (
+				flt(doc.railways_air_steamer_busfare)
+				+ flt(doc.road_mileage)
+				+ flt(doc.local_conveyance)
+				+ flt(doc.food_charges)
+				+ flt(doc.cccommodation_charges)
+				+ flt(doc.registration_fee_other)
+			)
+			doc.net_amount = flt(doc.total_admissible_amount) - flt(doc.less_advance_paid_to_applicant)
 
 		# Fetch and set applicant_category for workflow evaluations
 		if doc.webmail_id:
@@ -288,6 +385,95 @@ def save_ta_da_settlement(doc_data):
 							"ta_da_expense_type_other_expense": expense.get("ta_da_expense_type_other_expense"),
 							"ta_da_amount_other_expense": expense.get("ta_da_amount_other_expense", 0),
 							"ta_da_proof_other_expense": expense.get("ta_da_proof_other_expense"),
+						},
+					)
+
+		# Handle child table - ta_da_journey_particulars_table
+		journey_particulars = data.get("ta_da_journey_particulars_table")
+		if isinstance(journey_particulars, list):
+			doc.set("ta_da_journey_particulars_table", [])  # Clear existing
+			for row in journey_particulars:
+				if any(
+					row.get(f)
+					for f in (
+						"departure_station",
+						"departure_date",
+						"arrival_station",
+						"arrival_date",
+						"mode_of_journey",
+						"fare",
+						"ticket_pnr_no",
+					)
+				):
+					doc.append(
+						"ta_da_journey_particulars_table",
+						{
+							"departure_station": row.get("departure_station"),
+							"departure_date": row.get("departure_date"),
+							"arrival_station": row.get("arrival_station"),
+							"arrival_date": row.get("arrival_date"),
+							"mode_of_journey": row.get("mode_of_journey"),
+							"mode_of_journey_other": row.get("mode_of_journey_other"),
+							"fare": row.get("fare", 0),
+							"ticket_pnr_no": row.get("ticket_pnr_no"),
+						},
+					)
+
+		# Handle child table - ta_da_local_conveyance_table
+		local_conveyance_rows = data.get("ta_da_local_conveyance_table")
+		if isinstance(local_conveyance_rows, list):
+			doc.set("ta_da_local_conveyance_table", [])  # Clear existing
+			for row in local_conveyance_rows:
+				if any(
+					row.get(f)
+					for f in (
+						"conveyance_date",
+						"conveyance_time",
+						"from_location",
+						"to_location",
+						"distance_traveled_km",
+						"mode_of_journey",
+						"fare",
+					)
+				):
+					doc.append(
+						"ta_da_local_conveyance_table",
+						{
+							"conveyance_date": row.get("conveyance_date"),
+							"conveyance_time": row.get("conveyance_time"),
+							"from_location": row.get("from_location"),
+							"to_location": row.get("to_location"),
+							"distance_traveled_km": row.get("distance_traveled_km", 0),
+							"mode_of_journey": row.get("mode_of_journey"),
+							"mode_of_journey_other": row.get("mode_of_journey_other"),
+							"fare": row.get("fare", 0),
+						},
+					)
+
+		# Handle child table - ta_da_supporting_docs (file uploads go to MinIO,
+		# grouped under the linked project — same convention every other
+		# module in this app uses)
+		supporting_docs = data.get("ta_da_supporting_docs")
+		if isinstance(supporting_docs, list):
+			project_docname = None
+			doc.set("ta_da_supporting_docs", [])  # Clear existing
+			for row in supporting_docs:
+				supporting_file = row.get("supporting_file")
+				file_url = None
+
+				if isinstance(supporting_file, dict) and supporting_file.get("file_data"):
+					if project_docname is None:
+						project_docname = _resolve_ta_da_project_docname(doc)
+					file_url = _upload_ta_da_file_to_minio(supporting_file, project_docname)
+				elif isinstance(supporting_file, str):
+					file_url = supporting_file  # already-uploaded URL (re-save)
+
+				if row.get("file_description") or file_url:
+					doc.append(
+						"ta_da_supporting_docs",
+						{
+							"file_description": row.get("file_description"),
+							"supporting_file": file_url,
 						},
 					)
 
@@ -510,6 +696,12 @@ def perform_ta_da_settlement_action(docname, action):
 
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
+
+		# NOTE: staff, RnD is intentionally NOT required to have a non-zero
+		# Total Admissible Amount before Forward/Approve — a Travel application
+		# can legitimately be settled for 0 (e.g. leave-permission-only travel
+		# where no balance is claimed), so a zero total is a valid, deliberate
+		# entry, not a sign the "For Office Use" section was skipped.
 
 		# Update workflow state
 		doc.workflow_state = next_state

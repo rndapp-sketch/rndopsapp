@@ -1,6 +1,8 @@
 import json
 import os
 
+import requests
+
 import frappe
 from frappe import _
 from frappe.utils import sanitize_html
@@ -1762,6 +1764,58 @@ def clear_mattermost_channel(
 
 
 @frappe.whitelist()
+def get_declaration_html(doctype):
+	"""
+	Returns the content of every fieldtype="HTML" DocField on `doctype`
+	(e.g. Travel's applicant-declaration paragraph and its unrelated SCL-balance
+	placeholder, or TA DA Settlement's document-submission instructions),
+	keyed by fieldname — the same fields the on-screen <DeclarationFields>
+	widget shows — for reuse in print-PDF generators. Returning a per-field
+	map (rather than one concatenated string) lets a caller route specific
+	fields to a different print section instead of lumping everything under
+	"Declaration" (e.g. Travel's travel_leave_balance_html belongs under
+	"Special Casual Leave & Leave Period", not the declaration text).
+
+	"DocField" has no DocPerm rows of its own (it's metadata, not document
+	data), so a direct frappe.client.get_list("DocField", ...) call — what
+	<DeclarationFields> and the print generators used before — returns a
+	PermissionError for any role other than System Manager, leaving the
+	Declaration section blank for everyone else. This whitelisted method
+	bypasses that restriction for this one safe, read-only lookup.
+	"""
+	if not doctype:
+		return {"status": "error", "message": "doctype is required"}
+
+	fields = frappe.get_all(
+		"DocField",
+		filters={"parent": doctype, "fieldtype": "HTML"},
+		fields=["fieldname", "label", "options"],
+		order_by="idx",
+		ignore_permissions=True,
+	)
+	field_html = {f.fieldname: (f.options or "").strip() for f in fields if (f.options or "").strip()}
+	return {"status": "success", "fields": field_html}
+
+
+@frappe.whitelist()
+def get_user_designation(email):
+	"""
+	Returns a User's designation_name for the given email.
+
+	"User" read permission is restricted to System Manager / Permanent
+	Employee (see DocPerm), so a plain frappe.client.get_value REST call
+	403s for many approver roles (e.g. Dean, RnD) — this bypasses that via
+	frappe.db.get_value (a raw lookup, not permission-checked) for this one
+	safe, non-sensitive field, used to label commenters in the Activity Log
+	print section.
+	"""
+	if not email:
+		return {"status": "error", "message": "email is required"}
+	designation = frappe.db.get_value("User", email, "designation_name")
+	return {"status": "success", "designation_name": designation or ""}
+
+
+@frappe.whitelist()
 def get_document_activity(doctype, docname):
 	"""
 	Returns a unified, chronologically-sorted activity timeline for a document.
@@ -2404,6 +2458,74 @@ def _cascade_project_no(pr_name, old_value, new_value):
     return updated
 
 
+def _as_bool(value, default=True):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _sync_external_project_number(
+    old_project_no,
+    new_project_no,
+    reason=None,
+    update_archive_tables=True,
+    update_audit_tables=True,
+    update_beneficiary_project_number=True,
+):
+    """
+    Mirrors the local project_no cascade over to the external account portal
+    (172.16.134.81:18080), which exposes its own
+    POST /api/projects/{projectNumber}/change-project-number for this. Best-effort,
+    like _delete_external_project: a failure here is reported back to the caller
+    but never raised, since the portal being unreachable shouldn't block a change
+    that already succeeded locally.
+    """
+    if not old_project_no:
+        return {
+            "attempted": False,
+            "message": "No prior project_no on this Project Registration — external portal not called.",
+        }
+
+    url = f"http://172.16.134.81:18080/api/projects/{old_project_no}/change-project-number"
+    payload = {
+        "newProjectNumber": new_project_no,
+        "reason": reason or "",
+        "updateArchiveTables": _as_bool(update_archive_tables),
+        "updateAuditTables": _as_bool(update_audit_tables),
+        "updateBeneficiaryProjectNumber": _as_bool(update_beneficiary_project_number),
+    }
+    headers = {"Content-Type": "application/json"}
+
+    try:
+        frappe.logger().info(
+            f"Changing project number on external portal: {old_project_no} -> {new_project_no} ({url})"
+        )
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+        try:
+            body = response.json()
+        except ValueError:
+            body = response.text
+
+        return {
+            "attempted": True,
+            "url": url,
+            "payload": payload,
+            "status_code": response.status_code,
+            "response": body,
+            "ok": response.status_code in (200, 201, 202),
+        }
+    except Exception as e:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"External Project Number Change Error: {old_project_no} -> {new_project_no}",
+        )
+        return {"attempted": True, "url": url, "payload": payload, "ok": False, "error": str(e)}
+
+
 def _add_project_no_change_comment(pr_name, old_value, new_value, updated):
     try:
         pr_doc = frappe.get_doc("Project Registration", pr_name)
@@ -2418,11 +2540,19 @@ def _add_project_no_change_comment(pr_name, old_value, new_value, updated):
 
 
 @frappe.whitelist()
-def apply_project_no_change(identifier, new_project_no):
+def apply_project_no_change(
+    identifier,
+    new_project_no,
+    reason=None,
+    update_archive_tables=True,
+    update_audit_tables=True,
+    update_beneficiary_project_number=True,
+):
     """
     Change a Project Registration's project_no to a MANUALLY entered value and
     cascade it to every dependent DocType/field that caches it (see
-    _PROJECT_NO_SYNC_MAP), in a single transaction. Only System Manager can
+    _PROJECT_NO_SYNC_MAP), in a single transaction, then mirror the change to the
+    external account portal (172.16.134.81:18080). Only System Manager can
     perform this — it mutates dozens of tables.
     """
     if "System Manager" not in frappe.get_roles(frappe.session.user):
@@ -2461,6 +2591,21 @@ def apply_project_no_change(identifier, new_project_no):
 
     _add_project_no_change_comment(pr_name, old_value, new_project_no, updated)
 
+    external_portal = _sync_external_project_number(
+        old_value,
+        new_project_no,
+        reason=reason,
+        update_archive_tables=update_archive_tables,
+        update_audit_tables=update_audit_tables,
+        update_beneficiary_project_number=update_beneficiary_project_number,
+    )
+    warnings = []
+    if external_portal.get("attempted") and not external_portal.get("ok"):
+        warnings.append(
+            "Local database updated successfully, but the external account portal sync failed: "
+            + (external_portal.get("error") or f"HTTP {external_portal.get('status_code')}")
+        )
+
     return {
         "status": "success",
         "pr_name": pr_name,
@@ -2468,6 +2613,8 @@ def apply_project_no_change(identifier, new_project_no):
         "new_project_no": new_project_no,
         "updated": updated,
         "total_updated": sum(u["count"] for u in updated),
+        "external_portal": external_portal,
+        "warnings": warnings,
     }
 
 
@@ -2503,12 +2650,20 @@ def suggest_generated_project_no(identifier):
 
 
 @frappe.whitelist()
-def generate_new_project_no_and_apply(identifier, generation_data=None):
+def generate_new_project_no_and_apply(
+    identifier,
+    generation_data=None,
+    reason=None,
+    update_archive_tables=True,
+    update_audit_tables=True,
+    update_beneficiary_project_number=True,
+):
     """
     Auto-generate a fresh, properly formatted project number via the
     'Project Number Generation' series (consuming the sequence and creating an
-    audit record there), set it on the PR, and cascade it to every dependent
-    DocType/field. Only System Manager can perform this.
+    audit record there), set it on the PR, cascade it to every dependent
+    DocType/field, then mirror the change to the external account portal
+    (172.16.134.81:18080). Only System Manager can perform this.
     """
     import json
 
@@ -2551,6 +2706,21 @@ def generate_new_project_no_and_apply(identifier, generation_data=None):
 
     _add_project_no_change_comment(pr_name, old_value, new_project_no, updated)
 
+    external_portal = _sync_external_project_number(
+        old_value,
+        new_project_no,
+        reason=reason,
+        update_archive_tables=update_archive_tables,
+        update_audit_tables=update_audit_tables,
+        update_beneficiary_project_number=update_beneficiary_project_number,
+    )
+    warnings = []
+    if external_portal.get("attempted") and not external_portal.get("ok"):
+        warnings.append(
+            "Local database updated successfully, but the external account portal sync failed: "
+            + (external_portal.get("error") or f"HTTP {external_portal.get('status_code')}")
+        )
+
     return {
         "status": "success",
         "pr_name": pr_name,
@@ -2559,5 +2729,7 @@ def generate_new_project_no_and_apply(identifier, generation_data=None):
         "png_docname": new_project_no,
         "updated": updated,
         "total_updated": sum(u["count"] for u in updated),
+        "external_portal": external_portal,
+        "warnings": warnings,
     }
 

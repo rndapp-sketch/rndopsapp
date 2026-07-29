@@ -26,6 +26,7 @@ def _student_field_order_from_json():
 
 PARENT_SIMPLE_FIELDS = [
 	"project_code",
+	"project_no",
 	"project_title",
 	"account_head",
 	"pi_webmail",

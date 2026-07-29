@@ -1,0 +1,77 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "creation": "2026-07-20 00:00:00.000000",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "conveyance_date",
+        "conveyance_time",
+        "from_location",
+        "to_location",
+        "distance_traveled_km",
+        "mode_of_journey",
+        "mode_of_journey_other",
+        "fare"
+    ],
+    "fields": [
+        {
+            "fieldname": "conveyance_date",
+            "fieldtype": "Date",
+            "label": "Date"
+        },
+        {
+            "fieldname": "conveyance_time",
+            "fieldtype": "Time",
+            "label": "Time"
+        },
+        {
+            "fieldname": "from_location",
+            "fieldtype": "Data",
+            "label": "From"
+        },
+        {
+            "fieldname": "to_location",
+            "fieldtype": "Data",
+            "label": "To"
+        },
+        {
+            "fieldname": "distance_traveled_km",
+            "fieldtype": "Float",
+            "label": "Distance Traveled (in Kms)"
+        },
+        {
+            "fieldname": "mode_of_journey",
+            "fieldtype": "Select",
+            "label": "Mode of Journey",
+            "options": "Road\nRail\nOther"
+        },
+        {
+            "depends_on": "eval:doc.mode_of_journey == 'Other'",
+            "fieldname": "mode_of_journey_other",
+            "fieldtype": "Data",
+            "label": "Specify Other Mode"
+        },
+        {
+            "fieldname": "fare",
+            "fieldtype": "Currency",
+            "label": "Fare (in INR)"
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-07-20 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "TA DA Local Conveyance Particular",
+    "owner": "Administrator",
+    "permissions": [],
+    "row_format": "Dynamic",
+    "rows_threshold_for_grid_search": 20,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

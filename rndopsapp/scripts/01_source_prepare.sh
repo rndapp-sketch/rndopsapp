@@ -16,8 +16,8 @@ export PATH="$HOME/.local/bin:$PATH"
 # ─────────────────────── Configuration ───────────────────────
 SOURCE_BENCH="$HOME/frappe-dev/prornd"
 SITE_NAME="prornd.local"
-TARGET_USER="iitg_oc_2025"
-TARGET_IP="172.16.134.191"
+TARGET_USER="rndjts"
+TARGET_IP="172.16.134.58"
 TARGET_DIR="/home/${TARGET_USER}/frappe_transfer"
 
 # Apps to zip and transfer (private/custom apps not on public GitHub)

@@ -208,8 +208,14 @@ def get_travel_fields(doc_name=None):
 	except Exception:
 		pass
 
-	# Inject live SCL balance into the HTML field so React sees real data
-	scl_html = _build_scl_balance_html(current_user)
+	# Inject live SCL balance into the HTML field so React sees real data.
+	# For an existing document, the balance must be computed for the actual
+	# traveler (doc.webmail_id_travel) — not the person currently viewing the
+	# page. Otherwise an approver (HoD/HoS/etc.) opening someone else's Travel
+	# request sees their own (usually non-existent) SCL eligibility instead of
+	# the applicant's, even though the applicant correctly filled it in.
+	scl_target_user = (related_data.get("webmail_id_travel") if doc_name else None) or current_user
+	scl_html = _build_scl_balance_html(scl_target_user)
 	for f in fields:
 		if f["fieldname"] == "travel_leave_balance_html":
 			f["options"] = scl_html
@@ -222,7 +228,7 @@ def get_travel_fields(doc_name=None):
 		"related_data": related_data,
 		"client_scripts": client_scripts,
 		"child_table_meta": child_table_meta,
-		"scl_balance": _get_raw_scl_balance(current_user),
+		"scl_balance": _get_raw_scl_balance(scl_target_user),
 	}
 
 
@@ -576,6 +582,8 @@ def get_travel_workflow_actions(docname):
 	"""
 	Get available workflow actions for the current user based on document state.
 	"""
+	from frappe.model.workflow import is_transition_condition_satisfied
+
 	doc = frappe.get_doc("Travel", docname)
 	current_state = doc.workflow_state or "Draft"
 	user_roles = frappe.get_roles(frappe.session.user)
@@ -604,8 +612,15 @@ def get_travel_workflow_actions(docname):
 			transition_roles = [transition_roles]
 
 		# User can perform action if they have allowed role
-		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
-			allowed_actions.append(transition.action)
+		if not (any(role in user_roles for role in transition_roles) or "System Manager" in user_roles):
+			continue
+
+		# e.g. the Director-approval branch is gated on doc.nature_of_travel ==
+		# "International" (see docs/travel-director-approval-implementation.md)
+		if not is_transition_condition_satisfied(transition, doc):
+			continue
+
+		allowed_actions.append(transition.action)
 
 	return list(dict.fromkeys(allowed_actions))
 
@@ -616,6 +631,8 @@ def perform_travel_action(docname, action):
 	Executes the selected workflow action and updates the document state.
 	On 'Approved' state, publishes staged commit data to Kafka (two-phase commit pattern).
 	"""
+	from frappe.model.workflow import is_transition_condition_satisfied
+
 	try:
 		doc = frappe.get_doc("Travel", docname)
 		current_state = doc.workflow_state or "Draft"
@@ -645,10 +662,22 @@ def perform_travel_action(docname, action):
 				if isinstance(allowed_roles, str):
 					allowed_roles = [allowed_roles]
 
-				if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
-					next_state = t.next_state
-					transition = t
-					break
+				if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
+					continue
+
+				# e.g. Director approval only applies when doc.nature_of_travel ==
+				# "International", and the final Approve from "Pending Director
+				# Approval" requires doc.director_signed_pdf to be set (see
+				# docs/travel-director-approval-implementation.md). A transition
+				# whose condition fails is treated as not found, same as a role
+				# mismatch — this is what actually prevents the action, not just
+				# the frontend hiding the button.
+				if not is_transition_condition_satisfied(t, doc):
+					continue
+
+				next_state = t.next_state
+				transition = t
+				break
 
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
@@ -844,3 +873,60 @@ def cancel_travel_scl(docname):
 		"status": "success",
 		"message": f"Reversed {days} SCL day(s) for {employee} ({year}).",
 	}
+
+
+# ---------------------------------------------------------------------------
+# Director Approval (International travel) — see
+# docs/travel-director-approval-implementation.md for the full design.
+#
+# This is a real Workflow branch (state "Pending Director Approval", added by
+# rndopsapp.patchs.add_travel_director_approval_workflow), not a flag on the
+# doctype: the Dean's "Send for Director Approval" and "Approve" actions are
+# ordinary transitions in Travel_Workflow, gated by `condition` expressions
+# (see is_transition_condition_satisfied usage in get_travel_workflow_actions /
+# perform_travel_action above). The only Travel-specific field this flow needs
+# is director_signed_pdf (Attach, hidden from the applicant's form).
+# ---------------------------------------------------------------------------
+
+DIRECTOR_UPLOAD_ROLES = ["staff, RnD", "RnD Staff", "R&D Staff", "System Manager"]
+
+
+@frappe.whitelist()
+def attach_director_pdf_travel(docname, file_url):
+	"""Called by staff, RnD after the Director signs the printed review copy."""
+	if not frappe.db.exists("Travel", docname):
+		frappe.throw(_("Travel document not found."))
+
+	user_roles = frappe.get_roles(frappe.session.user)
+	if not any(role in user_roles for role in DIRECTOR_UPLOAD_ROLES):
+		frappe.throw(_("You are not permitted to perform this action."), frappe.PermissionError)
+
+	if not file_url:
+		frappe.throw(_("No file was uploaded."))
+
+	doc = frappe.get_doc("Travel", docname)
+
+	if doc.workflow_state != "Pending Director Approval":
+		frappe.throw(_("This application is not currently awaiting a Director-signed copy."))
+
+	frappe.db.set_value("Travel", docname, "director_signed_pdf", file_url)
+	frappe.db.commit()
+
+	return {"status": "success", "director_signed_pdf": file_url}
+
+
+@frappe.whitelist()
+def get_pending_director_uploads_travel():
+	"""Return Travel documents awaiting a Director-signed copy, for the staff,
+	RnD upload screen (DirectorPdfUpload.tsx)."""
+	docs = frappe.get_all(
+		"Travel",
+		filters={"workflow_state": "Pending Director Approval"},
+		fields=[
+			"name", "workflow_state", "modified",
+			"applicant_name_travel", "travel_project_number",
+			"department_travel", "director_signed_pdf",
+		],
+		order_by="modified desc",
+	)
+	return {"status": "success", "data": docs}

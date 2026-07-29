@@ -156,7 +156,12 @@ doc_events = {
 		"on_update": [
 			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.log_workflow_transition",
-		]
+			"rndopsapp.external_auth.log_impersonated_action",
+		],
+		"after_insert": ["rndopsapp.external_auth.log_impersonated_action"],
+		"on_submit": ["rndopsapp.external_auth.log_impersonated_action"],
+		"on_cancel": ["rndopsapp.external_auth.log_impersonated_action"],
+		"on_trash": ["rndopsapp.external_auth.log_impersonated_action"],
 	}
 }
 
@@ -211,11 +216,13 @@ scheduler_events = {
 # ----------------
 before_request = [
 	"rndopsapp.rndopsapp.kafka.consumer_service.ensure_consumer_running",
+	"rndopsapp.rndopsapp.doctype.project_verification.project_verification.restrict_verification_staff_routes",
 ]
 before_login = [
 	"rndopsapp.external_auth.clear_admin_ip_lock",
 	"rndopsapp.external_auth.patch_find_by_credentials",
 ]
+on_logout = ["rndopsapp.external_auth.log_admin_logout"]
 # after_request = ["rndopsapp.utils.after_request"]
 
 # Job Events

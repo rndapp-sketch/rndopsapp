@@ -79,14 +79,15 @@
   "travel_additional_responsibility",
   "travel_additional_responsibility_details",
   "arrangement_for_classes_during_the_proposed_leave_section",
+  "selection_arrangement",
   "travel_classes_arrangement",
-  "alternative_arrangement",
   "comments__remarks_if_any_section",
   "travel_comment_if_any",
   "travel_declaration_section",
   "declaration_section",
   "travel_declaration_text",
   "travel_declaration_accepted",
+  "director_signed_pdf",
   "workflow_state"
  ],
  "fields": [
@@ -317,7 +318,7 @@
    "label": "Arrangement for Classes During the Proposed Leave"
   },
   {
-   "depends_on": "eval:doc.if_traveler == 'Self';",
+   "depends_on": "eval:doc.selection_arrangement == 'Yes';",
    "fieldname": "travel_classes_arrangement",
    "fieldtype": "Int",
    "label": "Number of Classes",
@@ -517,13 +518,6 @@
    "options": "\nRequired\nNot Required"
   },
   {
-   "depends_on": "eval:doc.travel_classes_arrangement > 0;",
-   "fieldname": "alternative_arrangement",
-   "fieldtype": "Select",
-   "label": "Alternative Arrangement",
-   "options": "\nYes\nNo"
-  },
-  {
    "fieldname": "column_break_tewx",
    "fieldtype": "Column Break",
    "hidden": 1
@@ -556,13 +550,28 @@
    "fieldtype": "Data",
    "label": "Workflow State",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "director_signed_pdf",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Director Signed PDF",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "selection_arrangement",
+   "fieldtype": "Select",
+   "label": "Is Arrangement done?",
+   "options": "\nYes\nNo"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-08 11:05:30.766695",
+ "modified": "2026-07-28 10:38:02.407831",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Travel",
@@ -578,6 +587,7 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
    "submit": 1,
    "write": 1
@@ -591,6 +601,91 @@
    "read": 1,
    "report": 1,
    "role": "All_ProRnd_User",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Ado_RnD",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Dean, RnD",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "select": 1,
    "share": 1,
    "submit": 1,
    "write": 1
