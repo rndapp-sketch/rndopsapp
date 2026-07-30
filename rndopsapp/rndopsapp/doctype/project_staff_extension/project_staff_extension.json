@@ -1,0 +1,167 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-07-09 12:41:01.131554",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_cnpf",
+  "amended_from",
+  "section_break_mjfu",
+  "ex_proj_name",
+  "ex_proj_no",
+  "ex_name",
+  "ex_emp_id",
+  "ex_designation",
+  "department",
+  "ex_doj",
+  "ex_date_of_expiry",
+  "ex_last_ex_date",
+  "ex_no_of_mon_worked",
+  "ex_no_of_days_worked",
+  "ex_period",
+  "ex_period_pi",
+  "ex_period_staff",
+  "increment_by_pi",
+  "increment_by_staff",
+  "ex_current_basic"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_cnpf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Project Staff Extension",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_mjfu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "ex_proj_name",
+   "fieldtype": "Small Text",
+   "label": "Project Name "
+  },
+  {
+   "fieldname": "ex_proj_no",
+   "fieldtype": "Data",
+   "label": "Project Number"
+  },
+  {
+   "fieldname": "ex_name",
+   "fieldtype": "Data",
+   "label": "Name"
+  },
+  {
+   "fieldname": "ex_emp_id",
+   "fieldtype": "Data",
+   "label": "Employee Id "
+  },
+  {
+   "fieldname": "ex_designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fieldname": "ex_doj",
+   "fieldtype": "Date",
+   "label": "Date of Joining"
+  },
+  {
+   "fieldname": "ex_date_of_expiry",
+   "fieldtype": "Date",
+   "label": "Date of Expiry of Tenure"
+  },
+  {
+   "fieldname": "ex_last_ex_date",
+   "fieldtype": "Date",
+   "label": "Date of Last Extension",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ex_no_of_mon_worked",
+   "fieldtype": "Data",
+   "label": "Number of Months worked"
+  },
+  {
+   "fieldname": "ex_no_of_days_worked",
+   "fieldtype": "Data",
+   "label": "Number of Days worked"
+  },
+  {
+   "fieldname": "ex_period",
+   "fieldtype": "Select",
+   "label": "Period Of Re-Engagement/Extension Sought (Month)",
+   "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11"
+  },
+  {
+   "fieldname": "ex_current_basic",
+   "fieldtype": "Data",
+   "label": "Current Basic Pay"
+  },
+  {
+   "fieldname": "ex_period_pi",
+   "fieldtype": "Select",
+   "label": "Period Of Re-Engagement/Extension suggested by PI (Month)",
+   "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11"
+  },
+  {
+   "fieldname": "ex_period_staff",
+   "fieldtype": "Select",
+   "label": "Period Of Re-Engagement/Extension allowed by Staff (Month)",
+   "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11"
+  },
+  {
+   "fieldname": "increment_by_pi",
+   "fieldtype": "Data",
+   "label": "Increment by PI"
+  },
+  {
+   "fieldname": "increment_by_staff",
+   "fieldtype": "Data",
+   "label": "Increment by Staff"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-28 12:09:21.398246",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Project Staff Extension",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

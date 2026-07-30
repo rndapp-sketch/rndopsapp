@@ -46,6 +46,21 @@ class ProjectStaffDetails(Document):
 		finally:
 			frappe.flags.allocating_project_staff_leave = False
 
+	def get_date_of_last_extension(self):
+		"""
+		Calculates the Date of Last Extension based on the child table `table_ymed` (tenure details).
+		Gets the pstd_joining_date from the newest/latest row.
+		"""
+		tenures = self.get("table_ymed") or []
+		valid_tenures = [t for t in tenures if t.pstd_joining_date]
+
+		if not valid_tenures:
+			return None
+
+		from frappe.utils import getdate
+		sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
+		return sorted_tenures[-1].pstd_joining_date
+
 
 def generate_emp_id():
 	"""
@@ -901,8 +916,10 @@ def get_my_basic_details():
 			psd.ps_designation,
 			psd.ps_emp_id,
 			psd.project_no,
+			pr.project_title AS project_name,
 			psd.ps_joining_date,
 			psd.ps_term_completion_date,
+			psd.ps_basic_salary,
 			psd.bank_account_number,
 			psd.ps_aadhar_number,
 			psd.ps_pan,
@@ -915,13 +932,58 @@ def get_my_basic_details():
 			ON u.username = SUBSTRING_INDEX(psd.erp_mail, '@', 1)
 		LEFT JOIN `tabDepartment_prornd` dept
 			ON dept.name = psd.ps_department
+		LEFT JOIN `tabProject Registration` pr
+			ON pr.project_no = psd.project_no
 		WHERE u.name = %(user)s
 		LIMIT 1
 		""",
 		{"user": user},
 		as_dict=True,
 	)
-	return rows[0] if rows else None
+	if not rows:
+		return None
+
+	res = dict(rows[0])
+
+	# Fetch Date of Last Extension
+	doc = frappe.get_doc("Project Staff Details", res["name"])
+	res["ex_last_ex_date"] = doc.get_date_of_last_extension()
+
+	# Fetch latest tenure details from the child table
+	tenures = doc.get("table_ymed") or []
+	valid_tenures = [t for t in tenures if t.pstd_joining_date]
+	if valid_tenures:
+		from frappe.utils import getdate
+		sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
+		latest_tenure = sorted_tenures[-1]
+
+		# Preserve original parent ps_joining_date and ps_term_completion_date.
+		# Expiry of present tenure is fetched from the latest tenure's completion date.
+		res["ex_date_of_expiry"] = latest_tenure.pstd_term_completion_date
+		res["ps_basic_salary"] = latest_tenure.pstd_basic_salary
+
+	j_date = res.get("ps_joining_date")
+	if j_date:
+		from frappe.utils import getdate, today
+		jd = getdate(j_date)
+		cd = getdate(today())
+		if cd >= jd:
+			days_diff = (cd - jd).days + 1
+			months = int(days_diff / 30.437)
+			if months < 1:
+				res["no_of_months_worked"] = 0
+				res["no_of_days_worked"] = days_diff
+			else:
+				res["no_of_months_worked"] = months
+				res["no_of_days_worked"] = 0
+		else:
+			res["no_of_months_worked"] = 0
+			res["no_of_days_worked"] = 0
+	else:
+		res["no_of_months_worked"] = 0
+		res["no_of_days_worked"] = 0
+
+	return res
 
 
 

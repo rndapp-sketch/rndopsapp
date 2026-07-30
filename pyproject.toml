@@ -54,3 +54,7 @@ typing-modules = ["frappe.types.DF"]
 quote-style = "double"
 indent-style = "tab"
 docstring-code-format = true
+
+[tool.pyright]
+venvPath = "/home/rndops/project/frappe_dev/prornd"
+venv = "env"

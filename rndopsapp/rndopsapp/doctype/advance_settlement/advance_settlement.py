@@ -232,6 +232,24 @@ def get_advance_settlement_fields(doc_name=None):
 
 
 @frappe.whitelist()
+def get_advance_settlement_doc(docname=None):
+	"""
+	Whitelisted API to fetch Advance Settlement document for frontend viewing/editing.
+	Ignores standard desk permissions so portal users can view their documents.
+	"""
+	if not docname:
+		docname = frappe.form_dict.get("docname") or frappe.form_dict.get("name")
+	if not docname:
+		return None
+	docname = str(docname).strip('"').strip("'")
+	if frappe.db.exists("Advance Settlement", docname):
+		doc = frappe.get_doc("Advance Settlement", docname)
+		return doc.as_dict()
+	return None
+
+
+
+@frappe.whitelist()
 def get_user_details_advance_settlement(user_email):
 	"""
 	Fetches details for a specific user to populate form fields.
