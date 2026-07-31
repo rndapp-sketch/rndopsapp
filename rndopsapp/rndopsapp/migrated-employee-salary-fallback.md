@@ -1,7 +1,11 @@
 # Implementation Plan — Miscellaneous Commit Fallback for Migrated-Employee Salary Payments
 
-> **Status: PROPOSAL — not implemented.** Nothing in this document has been coded yet.
-> Review and approve before any change lands in `commitPayment.py` or elsewhere.
+> **Status: IMPLEMENTED.** The design below was built as proposed — see §8 for what
+> actually landed. Line references to `commitPayment.py` throughout §1-§7 describe
+> the codebase *as it was before this change*; the added/modified code now lives at
+> the locations noted in §8. Assumptions from §6 were applied as their listed
+> defaults (project-level match with `linked_application` tie-break preference) —
+> revisit them if actual usage patterns don't match.
 
 ---
 
@@ -397,23 +401,37 @@ field this design needs (`module`, `linked_application`, `commit_decommit`,
 
 ---
 
-## 8. Implementation Steps (for after approval)
+## 8. Implementation Steps — What Actually Landed
 
-1. Add `_find_migrated_employee_commit(project_no, ps_emp_id)` helper to
-   `commitPayment.py`, placed near the other private helpers
-   (`_fetch_account_head_commits_by_status`, `_get_project_title_by_number`).
-2. Modify `salary_payment_data`'s recruitment-linkage branch
-   ([`commitPayment.py:266-274`](commitPayment.py#L266)) to call the new helper
-   and return its result, or the new validation-error dict, instead of the bare
-   `[]`.
-3. Add Mattermost observability for the fallback path (consistent with the
-   existing `_mm_notify` pattern elsewhere in this file) — e.g. a `:information_source:`
-   notification when the fallback is used successfully, and a distinct message
-   when it fails to find anything, so ops can see migrated-employee activity in
-   the "Salary Module" Mattermost channel without digging through logs.
-4. Update the three documentation files listed in §5.
-5. Manual verification (no automated test harness currently exists for this
-   flow, per the existing `test_miscellaneous_commit.py` being a stub):
+1. ✅ Added `_find_migrated_employee_commit(project_no, ps_emp_id)` to
+   `commitPayment.py` ([`commitPayment.py:87-166`](commitPayment.py#L87)), placed
+   right after `_fetch_account_head_commits_by_status` and before
+   `_json_contains_ps_emp_id` — matches §4.2 as designed: resolves `project_no` →
+   `Project Registration` name, queries `Miscellaneous Commit` with
+   `ignore_permissions=True` (§6 point 3), prefers a `linked_application` match to
+   `ps_emp_id` before falling back to the most-recently-approved candidate (§6
+   point 1's default), then re-fetches the real ledger row keyed by
+   `frapAppId=<candidate.name>` + `projectNumber=project_no`.
+2. ✅ Modified `salary_payment_data`'s recruitment-linkage branch
+   (now at [`commitPayment.py:352-385`](commitPayment.py#L352), originally
+   §4.1's target of `commitPayment.py:266-274`) to call the new helper and
+   return its result, or the new validation-error dict, instead of the bare `[]`.
+3. ✅ Added Mattermost observability: `:information_source:` **Salary Payment
+   Data — Migrated Employee Fallback** on a successful match, `:x:` **Salary
+   Payment Data — No Funding Source** when nothing is found — both on the
+   existing `_MM_SALARY_CHANNEL`, consistent with every other notification in
+   this file.
+4. ✅ Updated all three documentation files listed in §5
+   ([`MISCELLANEOUS_COMMIT.md`](doctype/miscellaneous_commit/MISCELLANEOUS_COMMIT.md)
+   §8, [`salary-payment-workflow.md`](salary-payment-workflow.md) §2.1a + §8,
+   [`salary-module-full-flow.md`](salary-module-full-flow.md) Step 4a + §9) —
+   including re-syncing every `commitPayment.py:NNN` line reference in both
+   workflow docs, since the new ~86-line helper and the ~25-net-line change to
+   `salary_payment_data` shifted every function defined afterward.
+5. ⏳ **Manual verification — not yet run in this session** (no live Frappe site
+   attached; `python3 -m py_compile commitPayment.py` passes, confirming no
+   syntax errors, but the flow itself needs to be exercised against a real site).
+   Before treating this as production-ready, run:
    - Create a `Project Staff Details` row with no `scr_id` (or a dangling one).
    - Create and approve a `Miscellaneous Commit` for the same project with
      `module="Recruitment Adhoc Contractual"`, a valid `budget_head`, and
@@ -427,8 +445,8 @@ field this design needs (`module`, `linked_application`, `commit_decommit`,
      the Miscellaneous Commit's name.
    - Negative test: repeat with no Miscellaneous Commit present at all, confirm
      the new validation-error message is returned.
-6. No schema/migration changes needed — confirm no `bench migrate` step is
-   required before this ships.
+6. ✅ No schema/migration changes were needed — no DocType JSON touched, no
+   `bench migrate` required.
 
 ---
 

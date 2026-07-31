@@ -61,6 +61,7 @@
   },
   {
    "allow_on_submit": 1,
+   "depends_on": "(doc.month_days == \"Month\" and doc.upfa_duration_months <= 11) or (doc.month_days == \"Days\" and doc.upfa_duration_months <= 336)",
    "fieldname": "upfa_duration_months",
    "fieldtype": "Int",
    "label": "Duration "
@@ -94,7 +95,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-11 11:16:13.420121",
+ "modified": "2026-07-30 17:30:22.570616",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Unified Project Post Details",

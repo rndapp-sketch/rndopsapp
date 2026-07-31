@@ -13,6 +13,10 @@ from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
     publish_commit as kafka_publish_commit,
     publish_payment as kafka_publish_payment
 )
+from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import (
+    get_project_number,
+    resolve_budget_head_id,
+)
 
 _MM_URL = "http://172.16.135.118:8065/api/v4/posts"
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
@@ -82,6 +86,92 @@ def _fetch_account_head_commits_by_status(status):
                 return value
 
     return []
+
+
+def _find_migrated_employee_commit(project_no, ps_emp_id):
+    """
+    Fallback funding-source lookup for employees migrated from the legacy system,
+    who have no Recruitment Adhoc Contractual / Selection Committee Report chain.
+
+    Looks for an Approved, project-level "Miscellaneous Commit" (module ==
+    "Recruitment Adhoc Contractual", commit_decommit == "Commit") for the same
+    project, then re-fetches the corresponding ledger row by
+    (frapAppId=<Miscellaneous Commit name>, projectNumber=project_no) so the
+    caller gets back a row shaped identically to a normal Recruitment-sourced
+    commit — including the ledger-assigned transactionCommitNumber the frontend
+    needs to build a payment.
+
+    Returns a single-element list (same shape salary_payment_data normally
+    returns for a match) or None if nothing usable was found.
+    """
+    project_ref = frappe.db.get_value("Project Registration", {"project_no": project_no}, "name") or project_no
+
+    candidates = frappe.get_all(
+        "Miscellaneous Commit",
+        filters={
+            "project_number": project_ref,
+            "module": "Recruitment Adhoc Contractual",
+            "commit_decommit": "Commit",
+            "workflow_state": "Approved",
+        },
+        fields=["name", "budget_head", "project_number", "commit_amount", "linked_application", "modified"],
+        order_by="modified desc",
+        ignore_permissions=True,
+        limit_page_length=0,
+    )
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] project_no={project_no} project_ref={project_ref} candidates={[c.name for c in candidates]}")
+
+    if not candidates:
+        return None
+
+    # Prefer a Miscellaneous Commit explicitly tagged to this employee via
+    # linked_application; otherwise use the most recently approved project-level entry.
+    chosen = None
+    if ps_emp_id:
+        for c in candidates:
+            if str(c.get("linked_application") or "").strip() == str(ps_emp_id).strip():
+                chosen = c
+                break
+    if not chosen:
+        chosen = candidates[0]
+
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] chosen Miscellaneous Commit={chosen.name}")
+
+    merged_commit_records = []
+    with ThreadPoolExecutor(max_workers=len(SALARY_COMMIT_STATUSES)) as executor:
+        future_to_status = {
+            executor.submit(_fetch_account_head_commits_by_status, status): status
+            for status in SALARY_COMMIT_STATUSES
+        }
+        for future in as_completed(future_to_status):
+            status = future_to_status[future]
+            try:
+                merged_commit_records.extend(future.result())
+            except Exception:
+                print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] ERROR fetching Account Head Commits for status={status}")
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"Migrated Employee Fallback Commit API Error: {status}"
+                )
+
+    for record in merged_commit_records:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("frapAppId")) != chosen.name or str(record.get("projectNumber")) != str(project_no):
+            continue
+
+        matched = dict(record)
+        matched["projectTitle"] = _get_project_title_by_number(matched.get("projectNumber"))
+        matched["source"] = "miscellaneous_commit"
+        matched["linked_miscellaneous_commit"] = chosen.name
+        print(
+            f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] Matched ledger commit for Miscellaneous Commit "
+            f"{chosen.name}: transactionCommitNumber={matched.get('transactionCommitNumber')}"
+        )
+        return [matched]
+
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] Miscellaneous Commit {chosen.name} is Approved locally but not yet visible on ledger")
+    return None
 
 
 def _json_contains_ps_emp_id(value, ps_emp_id):
@@ -264,14 +354,39 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
         print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] scr_id={scr_id} project_no={project_no} recruitment_doc_name={recruitment_doc_name}")
 
         if not recruitment_doc_name or not frappe.db.exists("Recruitment Adhoc Contractual", recruitment_doc_name):
-            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual — returning empty list")
+            print(
+                f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual "
+                f"(interview_id={interview_id}) — checking Miscellaneous Commit fallback (migrated employee)"
+            )
+
+            fallback_result = _find_migrated_employee_commit(project_no, ps_emp_id)
+            if fallback_result:
+                print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Migrated-employee fallback matched — using Miscellaneous Commit funding source")
+                _mm_notify(
+                    f":information_source: **Salary Payment Data — Migrated Employee Fallback**\n"
+                    f"**Employee:** {ps_emp_id}\n"
+                    f"**Project:** {project_no}\n"
+                    f"**Miscellaneous Commit:** {fallback_result[0].get('linked_miscellaneous_commit')}",
+                    channel_id=_MM_SALARY_CHANNEL,
+                )
+                return fallback_result
+
+            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual and no approved Miscellaneous Commit — returning error")
             _mm_notify(
-                f":warning: **Salary Payment Data**\n"
+                f":x: **Salary Payment Data — No Funding Source**\n"
                 f"**Employee:** {ps_emp_id}\n"
-                f"**Info:** No matching Recruitment Adhoc Contractual found (interview_id={interview_id}) — returning empty list",
+                f"**Project:** {project_no}\n"
+                f"**Error:** No Recruitment Adhoc Contractual (interview_id={interview_id}) and no approved Miscellaneous Commit found",
                 channel_id=_MM_SALARY_CHANNEL,
             )
-            return []
+            return [{
+                "status": "error",
+                "message": (
+                    f"No Recruitment/Selection Committee record found for employee '{ps_emp_id}', "
+                    f"and no approved Miscellaneous Commit exists for project '{project_no}'. "
+                    f"Salary payment cannot proceed."
+                ),
+            }]
 
         merged_commit_records = []
         with ThreadPoolExecutor(max_workers=len(SALARY_COMMIT_STATUSES)) as executor:
@@ -692,6 +807,56 @@ def get_commit_staging_status(reference_name, statuses=None, required_payload_ke
             if all(payload.get(k) not in (None, "") for k in payload_keys):
                 filtered.append(row)
         records = filtered
+
+    return {"status": "success", "data": records}
+
+
+@frappe.whitelist()
+def get_account_head_payment_dlq_errors(project_ref_number=None, budget_head=None, limit=5):
+    """
+    Read-only lookup for the payment submission widget to check whether the
+    external ledger microservice rejected an AccountHeadPayment event after it
+    was published (e.g. "Advance settlement payment requires parent commit
+    amount and bill amount"). That failure happens asynchronously downstream
+    of submit_payment_data/submit_advance_settlement_payment returning
+    "success", so it can only be surfaced by polling this endpoint.
+
+    project_ref_number / budget_head are the same values the frontend already
+    holds for the document (Project Registration name, Budget Head name/id) —
+    they are resolved here the same way AccountHeadPaymentMapper.map_to_dto
+    resolves them before publishing, so the lookup lines up with whatever
+    projectNumber/accountHeadId the external consumer echoed back on failure.
+
+    "Kafka Payment DLQ Log" is System Manager-only, so this bypasses that
+    DocType-level restriction for one safe, filtered, read-only lookup.
+    """
+    if not project_ref_number and not budget_head:
+        return {"status": "error", "message": "project_ref_number or budget_head is required"}
+
+    filters = {}
+    if project_ref_number:
+        filters["project_number"] = get_project_number(project_ref_number)
+    if budget_head:
+        account_head_id = resolve_budget_head_id(budget_head)
+        if account_head_id is not None:
+            filters["account_head_id"] = account_head_id
+
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 5
+
+    records = frappe.get_all(
+        "Kafka Payment DLQ Log",
+        filters=filters,
+        fields=[
+            "name", "error_type", "error_message", "project_number",
+            "account_head_id", "reference_name", "failed_at", "creation",
+        ],
+        order_by="creation desc",
+        limit_page_length=limit,
+        ignore_permissions=True,
+    )
 
     return {"status": "success", "data": records}
 

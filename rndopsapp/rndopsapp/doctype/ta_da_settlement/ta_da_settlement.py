@@ -30,6 +30,26 @@ def can_edit_office_use_fields():
 	)
 
 
+def _coerce_scalar_field_value(fieldname, value):
+	"""
+	Guard against a Select/Autocomplete field on the form sending the whole
+	{value, label} option object instead of just the selected value —
+	pymysql can't serialize a dict as a SQL param, so this used to blow up
+	doc.insert()/doc.save() with an opaque 'dict can not be used as
+	parameter' TypeError deep inside db_insert, with no indication of which
+	field was at fault. Unwraps the common option shapes; anything else is
+	rejected here with a clear, field-named error instead.
+	"""
+	if not isinstance(value, dict):
+		return value
+	for key in ("value", "name", "label"):
+		if key in value and not isinstance(value[key], (dict, list)):
+			return value[key]
+	frappe.throw(
+		f"Invalid value received for '{fieldname}': expected a plain value, got an object ({value})."
+	)
+
+
 def _resolve_ta_da_project_docname(doc):
 	"""
 	Resolve the Project Registration docname this settlement belongs to, via
@@ -347,7 +367,7 @@ def save_ta_da_settlement(doc_data):
 		# Update document with mapped data
 		for form_field, doctype_field in field_mapping.items():
 			if form_field in data and data[form_field] not in [None, ""]:
-				doc.set(doctype_field, data[form_field])
+				doc.set(doctype_field, _coerce_scalar_field_value(doctype_field, data[form_field]))
 
 		# Recompute the "For Office Use" totals server-side so they can never
 		# drift from the individual line items, regardless of what the client sent.

@@ -49,7 +49,7 @@
  "fields": [
   {
    "fieldname": "consultancy_title",
-   "fieldtype": "Data",
+   "fieldtype": "Text",
    "label": "Project Title"
   },
   {
@@ -255,7 +255,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-10 11:19:16.768220",
+ "modified": "2026-07-29 15:48:35.918791",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "D Consultancy Deposit Slip",

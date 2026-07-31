@@ -2733,3 +2733,170 @@ def generate_new_project_no_and_apply(
         "warnings": warnings,
     }
 
+
+# -------------------- USER + UNIVERSAL REGISTRATION COMBINED PROFILE --------------------
+# Universal Registration__ does not link to core User directly - it links to
+# Universal User__ (via universal_user_u_r), and Universal User__ stores the core
+# User.name in auth_user_id_u_r. These helpers walk that chain (falling back to an
+# email match on either hop) and flatten User + Universal User__ + Universal
+# Registration__ into one dict, since callers just want one combined record per person.
+
+
+def _build_user_registration_profile(user_doc_name=None, registration_doc_name=None, email_override=None):
+	"""
+	Flat dict merging whichever of User / Universal User__ / Universal
+	Registration__ records exist for one person. Not all three need to exist -
+	external/vendor registrations often never get a core Frappe User account -
+	so this degrades gracefully instead of requiring a User doc.
+
+	Pass `user_doc_name` (a core User docname, or an email to resolve one from)
+	and/or `registration_doc_name` (a Universal Registration__ docname) as the
+	known starting point(s). `email_override` forces the email used to bridge
+	between the three doctypes when their link fields aren't populated.
+
+	Returns None if none of the three records can be found at all.
+	"""
+	user_dict = {}
+	universal_user_dict = {}
+	registration_dict = {}
+
+	if registration_doc_name:
+		registration_dict = frappe.get_doc("Universal Registration__", registration_doc_name).as_dict()
+
+	user_name = None
+	if user_doc_name:
+		user_name = (
+			user_doc_name
+			if frappe.db.exists("User", user_doc_name)
+			else frappe.db.get_value("User", {"email": user_doc_name}, "name")
+		)
+
+	lookup_email = (
+		email_override
+		or (frappe.db.get_value("User", user_name, "email") if user_name else None)
+		or (user_doc_name if user_doc_name and not user_name else None)
+		or (registration_dict.get("email_address_u_r") if registration_dict else None)
+	)
+
+	universal_user_name = registration_dict.get("universal_user_u_r") if registration_dict else None
+	if user_name and not universal_user_name:
+		universal_user_name = frappe.db.get_value("Universal User__", {"auth_user_id_u_r": user_name}, "name")
+	if not universal_user_name and lookup_email:
+		universal_user_name = frappe.db.get_value("Universal User__", {"email_u_r": lookup_email}, "name")
+
+	if universal_user_name:
+		universal_user_dict = frappe.get_doc("Universal User__", universal_user_name).as_dict()
+		if not user_name:
+			user_name = universal_user_dict.get("auth_user_id_u_r")
+
+	if not user_name and lookup_email:
+		user_name = frappe.db.get_value("User", {"email": lookup_email}, "name")
+
+	if user_name:
+		user_dict = frappe.get_doc("User", user_name).as_dict()
+
+	if not registration_dict and universal_user_name:
+		registration_name = frappe.db.get_value(
+			"Universal Registration__", {"universal_user_u_r": universal_user_name}, "name"
+		)
+		if registration_name:
+			registration_dict = frappe.get_doc("Universal Registration__", registration_name).as_dict()
+
+	if not registration_dict and lookup_email:
+		registration_name = frappe.db.get_value(
+			"Universal Registration__", {"email_address_u_r": lookup_email}, "name"
+		)
+		if registration_name:
+			registration_dict = frappe.get_doc("Universal Registration__", registration_name).as_dict()
+
+	if not user_dict and not universal_user_dict and not registration_dict:
+		return None
+
+	# Append everything into one flat record. Registration/Universal User values
+	# win over User's on overlapping keys (name, owner, ...) since they're the
+	# more specific record for this profile.
+	merged = {}
+	merged.update(user_dict)
+	merged.update(universal_user_dict)
+	merged.update(registration_dict)
+	return merged
+
+
+@frappe.whitelist(allow_guest=True)
+def get_user_registration_profile(user=None, email=None, search=None):
+	"""
+	Combined User + Universal Registration__ profile(s). Any of the three
+	underlying records (User, Universal User__, Universal Registration__) may
+	be missing for a given person, so this never requires all three to exist.
+
+	Without `search`: returns a single flat dict for `user` (a core User
+	docname/email, or the email on a Universal Registration__/Universal
+	User__ record that has no core User account; defaults to the logged-in
+	user). `email` optionally overrides the email used to bridge the doctypes
+	when link fields aren't populated.
+
+	With `search`: returns a list of flat profiles for every person whose User
+	(full_name/email/name) or Universal Registration__ (full_name_u_r/
+	email_address_u_r/org_name_u_r/mobile_number_u_r) record matches the text.
+	"""
+	from frappe import _
+
+	if search:
+		like = f"%{search}%"
+
+		matched_user_names = frappe.get_all(
+			"User",
+			or_filters=[
+				["full_name", "like", like],
+				["email", "like", like],
+				["name", "like", like],
+			],
+			pluck="name",
+			limit=50,
+		)
+
+		registration_names = frappe.get_all(
+			"Universal Registration__",
+			or_filters=[
+				["full_name_u_r", "like", like],
+				["email_address_u_r", "like", like],
+				["org_name_u_r", "like", like],
+				["mobile_number_u_r", "like", like],
+			],
+			pluck="name",
+			limit=50,
+		)
+
+		try:
+			profiles = {}
+			for u in matched_user_names:
+				profile = _build_user_registration_profile(user_doc_name=u)
+				if profile:
+					profiles[profile.get("name") or u] = profile
+
+			for reg_name in registration_names:
+				profile = _build_user_registration_profile(registration_doc_name=reg_name)
+				if profile:
+					profiles.setdefault(profile.get("name") or reg_name, profile)
+
+			return list(profiles.values())
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), _("Error searching user registration profiles"))
+			frappe.throw(_("An error occurred while searching user registration profiles."))
+
+	user = user or frappe.session.user
+	email = str(email).strip('"').strip("'") if email else None
+
+	try:
+		profile = _build_user_registration_profile(user_doc_name=user, email_override=email)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), _("Error fetching user registration profile"))
+		frappe.throw(_("An error occurred while fetching the user's registration profile."))
+
+	if not profile:
+		frappe.throw(
+			_("No User, Universal User__, or Universal Registration__ record found for '{0}'.").format(user)
+		)
+
+	return profile
+
