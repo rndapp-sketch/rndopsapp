@@ -10,6 +10,8 @@
   "amended_from",
   "trvel_leave_balance_section",
   "if_traveler",
+  "travel_other_pi",
+  "travel_other_pi_id",
   "travel_project_title",
   "travel_project_number",
   "section_break_lroa",
@@ -149,6 +151,21 @@
    "options": "\nSelf\nOther"
   },
   {
+   "default": "Self",
+   "fieldname": "travel_other_pi",
+   "fieldtype": "Select",
+   "label": "Is this travel charged to another PI's project?",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "depends_on": "eval:doc.travel_other_pi == \"Other\"",
+   "fieldname": "travel_other_pi_id",
+   "fieldtype": "Link",
+   "label": "Other PI Webmail Id",
+   "mandatory_depends_on": "eval:doc.travel_other_pi == \"Other\"",
+   "options": "User"
+  },
+  {
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "other_traveler",
    "fieldtype": "Link",
@@ -221,11 +238,12 @@
    "label": "Project Number"
   },
   {
+   "depends_on": "eval:doc.travel_other_pi != \"Other\"",
    "fieldname": "travel_project_title",
    "fieldtype": "Link",
    "label": "Project Title",
-   "options": "Project Registration",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.travel_other_pi != \"Other\"",
+   "options": "Project Registration"
   },
   {
    "description": "If you require an advance, a separate Advance Request form must be submitted.",
@@ -540,12 +558,13 @@
    "options": "\nYes\nNo"
   },
   {
+   "depends_on": "eval:doc.travel_other_pi != \"Other\"",
    "fieldname": "account_head",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Account Head",
-   "options": "Budget Head",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.travel_other_pi != \"Other\"",
+   "options": "Budget Head"
   },
   {
    "fieldname": "column_break_gqur",
