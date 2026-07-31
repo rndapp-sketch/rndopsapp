@@ -63,6 +63,7 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval:doc.self_other==\"Self\"",
    "fieldname": "account_head",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -182,18 +183,22 @@
    "fieldtype": "Data"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Other\"",
    "fieldname": "reimbursement_for_id",
    "fieldtype": "Link",
    "label": "PI Webmail Id",
+   "mandatory_depends_on": "eval:doc.self_other==\"Other\"",
    "options": "User"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Other\"",
    "fetch_from": "reimbursement_for_id.department_name",
    "fieldname": "reimbursement_for_department",
    "fieldtype": "Data",
    "label": "Department"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Other\"",
    "fetch_from": "reimbursement_for_id.designation_name",
    "fieldname": "reimbursement_for_designation",
    "fieldtype": "Data",
@@ -209,8 +214,7 @@
    "fieldname": "self_other",
    "fieldtype": "Select",
    "label": "Applying for self or other?",
-   "options": "\nSelf\nOther",
-   "read_only": 1
+   "options": "\nSelf\nOther"
   },
   {
    "fieldname": "section_break_ujss",

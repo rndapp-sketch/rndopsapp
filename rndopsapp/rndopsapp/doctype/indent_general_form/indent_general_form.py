@@ -56,6 +56,12 @@ def get_indent_general_form_fields(doc_name=None):
     
     # 4. Populate Link Options (e.g. for dropdowns)
     # link_options["some_link_field"] = frappe.get_all("Some Master", fields=["name as value", "title as label"])
+    # Other-PI dropdown: restrict to Permanent Employees (all PIs are Permanent Employees)
+    try:
+        from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import _get_permanent_employee_options
+        link_options["igf_other_pi_id"] = _get_permanent_employee_options()
+    except Exception:
+        pass
 
     # 5. Client Scripts (CRITICAL: Fetch enabled client scripts for frontend logic)
     client_scripts = []
@@ -217,7 +223,14 @@ def get_indent_general_form_workflow_actions(docname):
     return {"actions": list(set(allowed_actions)), "current_state": current_state}
 
 @frappe.whitelist()
-def perform_indent_general_form_action(docname, action):
+def get_igf_pi_projects(pi=None):
+    """Projects owned by the (session) PI — used by the Other-PI approval step."""
+    from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+    return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def perform_indent_general_form_action(docname, action, extra_data=None):
     # 1. Get Workflow
     wf_name = frappe.db.get_value("Workflow", {"document_type": DOCTYPE, "is_active": 1}, "name")
     if not wf_name:
@@ -227,6 +240,44 @@ def perform_indent_general_form_action(docname, action):
 
     doc = frappe.get_doc(DOCTYPE, docname)
     current_state = doc.workflow_state or wf.initial_state
+
+    # --- Other-PI routing ---------------------------------------------------
+    # On Submit, if the indent is charged to another PI's project, route it to
+    # that specific PI (Pending Other PI) instead of straight to Staff.
+    if action == "Submit" and current_state == "Draft" and (doc.get("igf_other_pi") or "").strip() == "Other":
+        if not doc.get("igf_other_pi_id"):
+            frappe.throw("Please select the Other PI before submitting.")
+        doc.workflow_state = "Pending Other PI"
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        return {"status": "success", "next_state": "Pending Other PI"}
+
+    # At the Other-PI step, only the assigned PI (or System Manager) may act,
+    # and on approval they charge one of THEIR OWN projects.
+    if current_state == "Pending Other PI":
+        is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+        assigned_pi = (doc.get("igf_other_pi_id") or "").lower()
+        if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+            frappe.throw("You are not authorised to act on this indent.")
+
+        if action in ("Forward", "Approve"):
+            from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+            if isinstance(extra_data, str):
+                extra_data = json.loads(extra_data or "{}")
+            extra_data = extra_data or {}
+            project_name = (extra_data.get("project_name") or "").strip()
+            if not project_name:
+                frappe.throw("Please select a project before approving.")
+            owns = next((p for p in get_pi_projects() if p.get("value") == project_name), None)
+            if not owns:
+                frappe.throw("Selected project does not belong to you.")
+            doc.igf_project_title = project_name
+            doc.igf_project_code = owns.get("project_no") or owns.get("project_number")
+            doc.workflow_state = "Pending Staff Approval"
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            return {"status": "success", "next_state": "Pending Staff Approval"}
+        # Reject / Put Back fall through to the normal transition resolver below.
 
     # Director-PDF gate: cannot Approve from Pending Director Approval
     # until Staff has uploaded the Director-signed scan.

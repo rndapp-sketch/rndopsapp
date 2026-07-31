@@ -21,6 +21,8 @@
         "icss_applying_for_department_centre_section",
         "icss_applying_for_designation",
         "icss_project_details_section",
+        "icss_other_pi",
+        "icss_other_pi_id",
         "project_ref",
         "project_no",
         "icss_account_head",
@@ -60,12 +62,28 @@
             "label": "Project Details"
         },
         {
+            "default": "Self",
+            "fieldname": "icss_other_pi",
+            "fieldtype": "Select",
+            "label": "Is this charged to another PI's project?",
+            "options": "\nSelf\nOther"
+        },
+        {
+            "depends_on": "eval:doc.icss_other_pi == \"Other\"",
+            "fieldname": "icss_other_pi_id",
+            "fieldtype": "Link",
+            "label": "Other PI Webmail Id",
+            "mandatory_depends_on": "eval:doc.icss_other_pi == \"Other\"",
+            "options": "User"
+        },
+        {
+            "depends_on": "eval:doc.icss_other_pi != \"Other\"",
             "fieldname": "icss_account_head",
             "fieldtype": "Link",
             "label": "Account Head",
+            "mandatory_depends_on": "eval:doc.icss_other_pi != \"Other\"",
             "options": "Budget Head",
-            "placeholder": "Select the Account Head",
-            "reqd": 1
+            "placeholder": "Select the Account Head"
         },
         {
             "fieldname": "icss_other_account_head",
@@ -148,6 +166,7 @@
             "label": "Applying For Designation"
         },
         {
+            "depends_on": "eval:doc.icss_other_pi != \"Other\"",
             "fieldname": "project_ref",
             "fieldtype": "Link",
             "label": "Project Reference",
