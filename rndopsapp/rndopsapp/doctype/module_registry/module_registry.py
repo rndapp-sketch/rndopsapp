@@ -55,9 +55,6 @@ def get_pending_task(page_name="pending-task"):
 	)
 	dept_head_values = {d.name for d in _head_depts}
 
-	print(f"\n--- DEBUG START: User '{current_user}' ---")
-	# print(f"Your Roles: {user_roles}") # Commented out to reduce noise
-
 	# 2. Get Parent Module Registry
 	parent = frappe.get_all(
 		"Module Registry", filters={"page_name": page_name}, fields=["name"], limit_page_length=1
@@ -69,7 +66,6 @@ def get_pending_task(page_name="pending-task"):
 	parent_doc = frappe.get_doc("Module Registry", parent[0].name)
 
 	child_rows = getattr(parent_doc, "doctype_name", []) or []
-	print("child_rows:", child_rows)
 	# Extract both doctype_name and mod_vis
 	doctype_data = [(row.doctype_name, row.mod_vis) for row in child_rows if row.doctype_name]
 
@@ -223,7 +219,24 @@ def get_pending_task(page_name="pending-task"):
 		if head_field and not meta.has_field(head_field):
 			head_field = None
 
+		# Some states must be scoped to a single specific user (not just a role)
+		# whose email is stored on the document, e.g. Reimbursement's Other-PI
+		# route parks the form at 'Pending PI Approval' for the chosen PI only.
+		specific_approver_map = {
+			"Reimbursement": ("Pending PI Approval", "reimbursement_for_id"),
+			"Travel": ("Pending Other PI", "travel_other_pi_id"),
+			"Indent General Form": ("Pending Other PI", "igf_other_pi_id"),
+			"Indent Cum Sanction Sheet": ("Pending Other PI", "icss_other_pi_id"),
+			"Rate Contract": ("Pending Other PI", "other_pi_email"),
+		}
+		sa_state = sa_field = None
+		sa = specific_approver_map.get(dt)
+		if sa and meta.has_field(sa[1]):
+			sa_state, sa_field = sa
+
 		extra_fields = [head_field] if head_field else []
+		if sa_field and sa_field not in extra_fields:
+			extra_fields.append(sa_field)
 		if dt == "Travel" and meta.has_field("department_travel") and "department_travel" not in extra_fields:
 			extra_fields.append("department_travel")
 
@@ -250,6 +263,13 @@ def get_pending_task(page_name="pending-task"):
 			if head_field and r.get(status_field) == "Pending Head Approval" and not is_system_manager:
 				head_email = (r.get(head_field) or "").strip().lower()
 				if head_email != current_user.lower():
+					continue
+
+			# Specific-approver states (e.g. Reimbursement "Pending PI Approval")
+			# are visible only to the exact user stored on the document.
+			if sa_field and r.get(status_field) == sa_state and not is_system_manager:
+				approver_email = (r.get(sa_field) or "").strip().lower()
+				if approver_email != current_user.lower():
 					continue
 
 			# Travel: filter "Pending Head Approval" to the dept head of the document's department

@@ -211,6 +211,13 @@ def get_travel_fields(doc_name=None):
 				limit_page_length=500
 			)
 
+	# Other-PI dropdown: restrict to Permanent Employees (all PIs are Permanent Employees)
+	try:
+		from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import _get_permanent_employee_options
+		link_options["travel_other_pi_id"] = _get_permanent_employee_options()
+	except Exception:
+		pass
+
 	# Department options (explicit)
 	try:
 		departments = frappe.get_all(
@@ -531,7 +538,25 @@ def submit_travel(docname):
 
 		workflow = get_workflow("Travel")
 		transitions = get_transitions(doc, workflow)
-		transition = next((t for t in transitions if t["action"] == "Submit"), None)
+
+		# Other-PI flow: the travel is charged to a project owned by a different
+		# PI, so route it to that PI (Pending Other PI) instead of the normal chain.
+		is_other_pi = (doc.get("travel_other_pi") or "").strip() == "Other"
+		if is_other_pi and not doc.get("travel_other_pi_id"):
+			frappe.throw(_("Please select the Other PI before submitting."))
+
+		if is_other_pi:
+			transition = next(
+				(t for t in transitions
+				 if t["action"] == "Submit" and t["next_state"] == "Pending Other PI"),
+				None,
+			)
+		else:
+			transition = next(
+				(t for t in transitions
+				 if t["action"] == "Submit" and t["next_state"] != "Pending Other PI"),
+				None,
+			)
 
 		if not transition:
 			frappe.throw(_("Submit action is not available for your role on this document."))
@@ -657,16 +682,43 @@ def get_travel_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_travel_action(docname, action):
+def get_travel_pi_projects(pi=None):
+	"""Projects owned by the (session) PI — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+	return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def get_travel_project_account_heads(project_name):
+	"""Account heads for a given project — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_project_account_heads
+	return get_project_account_heads(project_name)
+
+
+@frappe.whitelist()
+def perform_travel_action(docname, action, extra_data=None):
 	"""
 	Executes the selected workflow action and updates the document state.
 	On 'Approved' state, publishes staged commit data to Kafka (two-phase commit pattern).
+
+	extra_data (optional JSON/dict): when the Other PI acts from the
+	'Pending Other PI' state they choose which of their own projects to charge
+	and the account head — passed here and persisted onto the document.
 	"""
 	from frappe.model.workflow import is_transition_condition_satisfied
 
 	try:
 		doc = frappe.get_doc("Travel", docname)
 		current_state = doc.workflow_state or "Draft"
+
+		# Only the specifically-assigned Other PI (or a System Manager) may act on a
+		# travel parked in 'Pending Other PI' — the 'Permanent Employee' role on the
+		# transition is not enough on its own.
+		if current_state == "Pending Other PI":
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			assigned_pi = (doc.get("travel_other_pi_id") or "").lower()
+			if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this travel application."))
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.db.get_value(
@@ -712,6 +764,46 @@ def perform_travel_action(docname, action):
 
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
+
+		# Other-PI approval: the PI charges the travel to one of THEIR OWN projects
+		# and picks that project's account head. Validate ownership + head, then persist.
+		if current_state == "Pending Other PI" and action in ("Forward", "Approve"):
+			from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
+				get_pi_projects,
+				get_project_account_heads,
+			)
+			if isinstance(extra_data, str):
+				extra_data = json.loads(extra_data or "{}")
+			extra_data = extra_data or {}
+
+			project_name = (extra_data.get("project_name") or "").strip()
+			account_head = (extra_data.get("account_head") or "").strip()
+			if not project_name or not account_head:
+				frappe.throw(_("Please select a project and account head before approving."))
+
+			# project must belong to the acting PI
+			owns = next((p for p in get_pi_projects() if p.get("value") == project_name), None)
+			if not owns:
+				frappe.throw(_("Selected project does not belong to you."))
+
+			# head must be one of that project's account heads
+			valid_heads = {h["value"].lower() for h in get_project_account_heads(project_name)}
+			if account_head.lower() not in valid_heads:
+				frappe.throw(_("Selected account head is not valid for this project."))
+
+			# resolve the head label to a Budget Head master record if one exists,
+			# otherwise fall back to the free-text account head note.
+			if frappe.db.exists("Budget Head", account_head):
+				bh_name = account_head
+			else:
+				bh_name = frappe.db.get_value("Budget Head", {"budget_head": account_head}, "name")
+			if bh_name:
+				doc.account_head = bh_name
+			else:
+				doc.account_head = frappe.db.get_value("Budget Head", {"budget_head": "Other"}, "name") or None
+
+			doc.travel_project_title = project_name
+			doc.travel_project_number = owns.get("project_no") or owns.get("project_number")
 
 		# Update workflow state
 		doc.workflow_state = next_state

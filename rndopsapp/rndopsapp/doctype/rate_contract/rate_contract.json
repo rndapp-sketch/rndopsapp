@@ -15,6 +15,7 @@
   "section_break_eyku",
   "select_form_type",
   "section_break_piwc",
+  "rc_other_pi",
   "project_number",
   "account_head",
   "other_account_head",
@@ -77,6 +78,14 @@
    "options": "Select\nP3 (CHEMICALS/GLASSWARE/PLASTIC WARE UNDER RC)\nP4 (UPS, UPS BATTERY, HP PRINTER CARTRIDGES,GAS,FURNITURE ETC. UNDER RC)"
   },
   {
+   "default": "Self",
+   "fieldname": "rc_other_pi",
+   "fieldtype": "Select",
+   "label": "Is this charged to another PI's project?",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "depends_on": "eval:doc.rc_other_pi != \"Other\"",
    "fieldname": "project_number",
    "fieldtype": "Link",
    "label": "Project Number",
@@ -192,6 +201,7 @@
    "options": "Principal Supplier"
   },
   {
+   "depends_on": "eval:doc.rc_other_pi != \"Other\"",
    "fieldname": "account_head",
    "fieldtype": "Link",
    "in_filter": 1,
@@ -310,10 +320,11 @@
    "fieldtype": "Section Break"
   },
   {
-   "depends_on": "eval:doc.is_project_of_other_pi == \"Yes\" && doc.piheadmentor_user_id_other_pi == frappe.session.user\r\n",
+   "depends_on": "eval:doc.rc_other_pi == \"Other\"",
    "fieldname": "other_pi_email",
    "fieldtype": "Link",
    "label": "Webmail-ID of other PI",
+   "mandatory_depends_on": "eval:doc.rc_other_pi == \"Other\"",
    "options": "User"
   },
   {

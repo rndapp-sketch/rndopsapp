@@ -164,6 +164,12 @@ def get_rate_contract_fields(doc_name=None):
 	link_options["amended_from"] = frappe.get_all(
 		"Rate Contract", fields=["name as value", "name as label"], limit=200
 	)
+	# Other-PI dropdown: restrict to Permanent Employees (all PIs are Permanent Employees)
+	try:
+		from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import _get_permanent_employee_options
+		link_options["other_pi_email"] = _get_permanent_employee_options()
+	except Exception:
+		pass
 
 	return {
 		"fields": fields,
@@ -264,38 +270,191 @@ def save_rate_contract(doc_data):
 @frappe.whitelist()
 def submit_rate_contract(docname):
 	"""
-	Submit a Rate Contract document.
+	Submit a Rate Contract via its workflow (states are docstatus 0 throughout).
+	Other-PI submissions route to 'Pending Other PI' for the chosen PI only.
 	"""
 	try:
 		doc = frappe.get_doc("Rate Contract", docname)
-		
-		if doc.docstatus == 0:
-			doc.submit()
-			frappe.db.commit()
-			return {
-				"status": "success",
-				"message": f"Rate Contract '{docname}' submitted successfully.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		elif doc.docstatus == 1:
+		current_state = doc.get("workflow_state") or "Draft"
+		if current_state != "Draft":
 			return {
 				"status": "info",
-				"message": f"Rate Contract '{docname}' is already submitted.",
+				"message": f"Rate Contract '{docname}' is already submitted (state: {current_state}).",
 				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		else:
-			return {
-				"status": "error",
-				"message": f"Rate Contract '{docname}' is cancelled and cannot be submitted.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
+				"workflow_state": current_state,
 			}
 
+		if (doc.get("rc_other_pi") or "").strip() == "Other":
+			if not doc.get("other_pi_email"):
+				frappe.throw(_("Please select the Other PI before submitting."))
+			next_state = "Pending Other PI"
+		else:
+			next_state = "Pending Staff Approval"
+
+		frappe.db.set_value("Rate Contract", docname, "workflow_state", next_state, update_modified=True)
+		frappe.db.commit()
+		return {
+			"status": "success",
+			"message": f"Rate Contract '{docname}' submitted successfully.",
+			"docname": docname,
+			"workflow_state": next_state,
+		}
+
+	except frappe.ValidationError:
+		frappe.db.rollback()
+		raise
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Rate Contract Submit Error")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_rate_contract_pi_projects(pi=None):
+	"""Projects owned by the (session) PI — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+	return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def get_rate_contract_project_account_heads(project_name):
+	"""Account heads for a given project — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_project_account_heads
+	return get_project_account_heads(project_name)
+
+
+@frappe.whitelist()
+def get_rate_contract_workflow_actions(docname):
+	"""Available workflow actions for the current user on a Rate Contract."""
+	doc = frappe.get_doc("Rate Contract", docname)
+	current_state = doc.get("workflow_state") or "Draft"
+	user_roles = frappe.get_roles(frappe.session.user)
+	is_sm = "System Manager" in user_roles
+
+	# Other-PI step: scoped to the assigned PI only.
+	if current_state == "Pending Other PI":
+		assigned = (doc.get("other_pi_email") or "").lower()
+		if is_sm or assigned == (frappe.session.user or "").lower():
+			return ["Forward", "Reject", "Put Back"]
+		return []
+
+	wf_name = frappe.db.get_value("Workflow", {"document_type": "Rate Contract", "is_active": 1}, "name")
+	if not wf_name:
+		return []
+	wf = frappe.get_doc("Workflow", wf_name)
+	actions = []
+	for t in wf.transitions:
+		if t.state != current_state:
+			continue
+		allowed = t.get("allowed") or []
+		if isinstance(allowed, str):
+			allowed = [allowed]
+		if any(r in user_roles for r in allowed) or is_sm:
+			actions.append(t.action)
+	return list(dict.fromkeys(actions))
+
+
+@frappe.whitelist()
+def perform_rate_contract_action(docname, action, extra_data=None):
+	"""
+	Execute a workflow action on a Rate Contract (states stay docstatus 0).
+	At 'Pending Other PI' the assigned PI charges one of their own projects + head.
+	"""
+	try:
+		doc = frappe.get_doc("Rate Contract", docname)
+		current_state = doc.get("workflow_state") or "Draft"
+		user_roles = frappe.get_roles(frappe.session.user)
+		is_sm = "System Manager" in user_roles
+
+		# ── Other-PI step: self-contained, scoped to the assigned PI ──
+		if current_state == "Pending Other PI":
+			assigned = (doc.get("other_pi_email") or "").lower()
+			if not is_sm and assigned != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this rate contract."))
+
+			if action in ("Forward", "Approve"):
+				if isinstance(extra_data, str):
+					extra_data = json.loads(extra_data or "{}")
+				extra_data = extra_data or {}
+				project_name = (extra_data.get("project_name") or "").strip()
+				account_head = (extra_data.get("account_head") or "").strip()
+				if not project_name or not account_head:
+					frappe.throw(_("Please select a project and account head before approving."))
+				from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
+					get_pi_projects, get_project_account_heads,
+				)
+				owns = next((p for p in get_pi_projects() if p.get("value") == project_name), None)
+				if not owns:
+					frappe.throw(_("Selected project does not belong to you."))
+				valid_heads = {h["value"].lower() for h in get_project_account_heads(project_name)}
+				if account_head.lower() not in valid_heads:
+					frappe.throw(_("Selected account head is not valid for this project."))
+				if frappe.db.exists("Budget Head", account_head):
+					bh_name = account_head
+				else:
+					bh_name = frappe.db.get_value("Budget Head", {"budget_head": account_head}, "name")
+				doc.project_number = project_name
+				doc.project_no = owns.get("project_no") or owns.get("project_number")
+				if bh_name:
+					doc.account_head = bh_name
+					doc.other_account_head = None
+				else:
+					doc.other_account_head = account_head
+				doc.flags.ignore_permissions = True
+				doc.flags.ignore_validate_update_after_submit = True
+				doc.save(ignore_permissions=True)
+				next_state = "Pending Staff Approval"
+			elif action == "Reject":
+				next_state = "Rejected"
+			elif action == "Put Back":
+				next_state = "Draft"
+			else:
+				frappe.throw(_("Unsupported action '{0}' at this stage.").format(action))
+
+			frappe.db.set_value("Rate Contract", docname, "workflow_state", next_state, update_modified=True)
+			frappe.db.commit()
+			return {
+				"status": "success",
+				"message": f"Action '{action}' completed. New State: {next_state}",
+				"docname": docname,
+				"workflow_state": next_state,
+				"next_actions": get_rate_contract_workflow_actions(docname),
+			}
+
+		# ── Normal chain: match a transition by state + action + role ──
+		wf_name = frappe.db.get_value("Workflow", {"document_type": "Rate Contract", "is_active": 1}, "name")
+		if not wf_name:
+			frappe.throw(_("No active workflow found for Rate Contract."))
+		wf = frappe.get_doc("Workflow", wf_name)
+		next_state = None
+		for t in wf.transitions:
+			if t.state != current_state or t.action != action:
+				continue
+			allowed = t.get("allowed") or []
+			if isinstance(allowed, str):
+				allowed = [allowed]
+			if any(r in user_roles for r in allowed) or is_sm:
+				next_state = t.next_state
+				break
+		if not next_state:
+			frappe.throw(_(f"No valid transition for action '{action}' from state '{current_state}'."))
+
+		frappe.db.set_value("Rate Contract", docname, "workflow_state", next_state, update_modified=True)
+		frappe.db.commit()
+		return {
+			"status": "success",
+			"message": f"Action '{action}' completed. New State: {next_state}",
+			"docname": docname,
+			"workflow_state": next_state,
+			"next_actions": get_rate_contract_workflow_actions(docname),
+		}
+
+	except frappe.ValidationError:
+		frappe.db.rollback()
+		raise
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Rate Contract Action Error")
 		return {"status": "error", "message": str(e)}
 
 

@@ -478,6 +478,44 @@ def get_project_available_amounts(project_number):
     if not project_number:
         return {"status": "error", "message": "Project number is required"}
 
+    def _dev_fallback():
+        """
+        DEV-ONLY fallback. The balance is normally served by an external ledger
+        service that is often unreachable in local setups (IP-restricted 403),
+        which makes every project read zero and locks all application modules.
+        When developer_mode is on we fall back to the locally recorded Fund
+        Received total so the flow can be tested. Never runs in production
+        (developer_mode is 0) and only when the ledger call itself fails.
+        """
+        if not frappe.conf.get("developer_mode"):
+            return None
+        try:
+            pr_name = frappe.db.get_value(
+                "Project Registration", {"project_no": project_number}, "name"
+            ) or project_number
+            received = flt(frappe.db.sql(
+                "SELECT IFNULL(SUM(fund_received_amt), 0) FROM `tabFund Received` WHERE prjreg_title = %s",
+                (pr_name,),
+            )[0][0])
+            if received <= 0:
+                return None
+            return {
+                "status": "success",
+                "source": "local_dev_fallback",
+                "data": {
+                    "projectNumber": project_number,
+                    "totalFundReceived": received,
+                    "totalCommitted": 0,
+                    "totalPaid": 0,
+                    "availableCommitAmount": received,
+                    "availablePaymentAmount": received,
+                    "actualBalance": received,
+                    "committable": received,
+                },
+            }
+        except Exception:
+            return None
+
     try:
         api_url = f"{LEDGER_API_BASE_URL}/total-available-amounts?projectNumber={project_number}"
 
@@ -504,7 +542,7 @@ def get_project_available_amounts(project_number):
                 f"Ledger API Error - Status: {response.status_code}, Response: {response.text}",
                 "Get Project Available Amounts API Error"
             )
-            return {
+            return _dev_fallback() or {
                 "status": "error",
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
@@ -512,15 +550,15 @@ def get_project_available_amounts(project_number):
 
     except requests.exceptions.Timeout:
         frappe.log_error("Ledger API timeout", "Get Project Available Amounts Timeout")
-        return {"status": "error", "message": "API request timed out"}
+        return _dev_fallback() or {"status": "error", "message": "API request timed out"}
 
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Project Available Amounts Connection Error")
-        return {"status": "error", "message": "Could not connect to the ledger API"}
+        return _dev_fallback() or {"status": "error", "message": "Could not connect to the ledger API"}
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Project Available Amounts Error")
-        return {"status": "error", "message": str(e)}
+        return _dev_fallback() or {"status": "error", "message": str(e)}
 
 
 @frappe.whitelist(allow_guest=True)
