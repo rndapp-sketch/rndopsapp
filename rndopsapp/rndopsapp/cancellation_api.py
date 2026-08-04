@@ -127,7 +127,7 @@ def get_my_applications():
 		except Exception:
 			continue
 
-		# Fetch documents owned by the current user
+		# Fetch documents owned strictly by the current user
 		try:
 			fields_to_fetch = ["name", "creation", "modified", "owner", "docstatus"]
 			if status_field:
@@ -272,11 +272,46 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 		if not frappe.db.exists(reference_doctype, reference_name):
 			frappe.throw(_("Document {0} ({1}) does not exist.").format(reference_name, reference_doctype))
 
-		# Verify the user owns the document (or is System Manager)
+		# Verify the user owns the document, is System Manager, or is designated Head/PI for the document
 		ref_doc = frappe.get_doc(reference_doctype, reference_name)
 		user_roles = frappe.get_roles(current_user)
 		if ref_doc.owner != current_user and "System Manager" not in user_roles:
-			frappe.throw(_("You can only cancel documents that you own."))
+			_head_depts = frappe.db.sql(
+				"SELECT name FROM `tabDepartment_prornd` WHERE dept_head = %s",
+				current_user,
+				as_dict=True,
+			)
+			dept_head_values = {d.name for d in _head_depts}
+			doc_dept = (
+				getattr(ref_doc, "department_travel", None)
+				or getattr(ref_doc, "department", None)
+				or getattr(ref_doc, "dept", None)
+			)
+			is_dept_head = bool(doc_dept and doc_dept in dept_head_values)
+
+			associated_fields = [
+				"head",
+				"head_approver",
+				"department_head",
+				"current_approver",
+				"reimbursement_for_id",
+				"travel_other_pi_id",
+				"igf_other_pi_id",
+				"icss_other_pi_id",
+				"other_pi_email",
+				"pi_id",
+				"pi",
+				"pi_webmail",
+				"pi_mentor_user",
+				"pi_userid",
+			]
+			is_head_or_pi = any(
+				getattr(ref_doc, f, None)
+				and str(getattr(ref_doc, f)).strip().lower() == current_user.lower()
+				for f in associated_fields
+			)
+			if not (is_dept_head or is_head_or_pi):
+				frappe.throw(_("You can only cancel documents that you own or head."))
 
 		# Check the document is not already in a terminal state, unless it is approved
 		ref_state = getattr(ref_doc, "workflow_state", None)
