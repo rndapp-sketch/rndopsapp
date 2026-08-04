@@ -239,6 +239,10 @@ def get_pending_task(page_name="pending-task"):
 			extra_fields.append(sa_field)
 		if dt == "Travel" and meta.has_field("department_travel") and "department_travel" not in extra_fields:
 			extra_fields.append("department_travel")
+		if dt == "Cancellation Request":
+			for f in ["reference_doctype", "reference_name"]:
+				if f not in extra_fields:
+					extra_fields.append(f)
 
 		try:
 			records = frappe.get_list(
@@ -260,6 +264,59 @@ def get_pending_task(page_name="pending-task"):
 		mapped = []
 		for r in records:
 			# print("r:",r)
+			if dt == "Cancellation Request" and not is_system_manager:
+				ref_dt = r.get("reference_doctype")
+				ref_name = r.get("reference_name")
+				if ref_dt and ref_name and frappe.db.exists(ref_dt, ref_name):
+					ref_doc = frappe.db.get_value(ref_dt, ref_name, "*", as_dict=True)
+					if ref_doc:
+						curr_status = r.get(status_field)
+
+						# A) Head Approval filtering for the underlying reference document
+						if curr_status == "Pending Head Approval":
+							if ref_dt == "Travel":
+								doc_dept = (ref_doc.get("department_travel") or "").strip()
+								if doc_dept not in dept_head_values:
+									continue
+							elif ref_dt in head_field_map:
+								h_field = head_field_map[ref_dt]
+								h_email = (ref_doc.get(h_field) or "").strip().lower()
+								if h_email and h_email != current_user.lower():
+									continue
+							else:
+								h_email = (
+									ref_doc.get("head")
+									or ref_doc.get("head_approver")
+									or ref_doc.get("department_head")
+									or ref_doc.get("dept_head")
+									or ""
+								).strip().lower()
+								if h_email and h_email != current_user.lower():
+									continue
+
+						# B) Specific Approver / Other PI filtering for reference document
+						ref_sa = specific_approver_map.get(ref_dt)
+						if ref_sa:
+							ref_sa_state, ref_sa_field = ref_sa
+							if curr_status == ref_sa_state:
+								appr_email = (ref_doc.get(ref_sa_field) or "").strip().lower()
+								if appr_email and appr_email != current_user.lower():
+									continue
+
+						# C) Pending PI Approval filtering for reference document
+						if curr_status == "Pending PI Approval":
+							pi_email = (
+								ref_doc.get("reimbursement_for_id")
+								or ref_doc.get("pi_id")
+								or ref_doc.get("pi_webmail")
+								or ref_doc.get("pi")
+								or ref_doc.get("pi_email")
+								or ref_doc.get("pi_mentor_user")
+								or ""
+							).strip().lower()
+							if pi_email and pi_email != current_user.lower():
+								continue
+
 			if head_field and r.get(status_field) == "Pending Head Approval" and not is_system_manager:
 				head_email = (r.get(head_field) or "").strip().lower()
 				if head_email != current_user.lower():
