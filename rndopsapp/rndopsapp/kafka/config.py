@@ -30,6 +30,12 @@ TOPIC_LOAN_REQUEST_DLQ = 'loan-request-event-dlq'
 TOPIC_ACCOUNTS_FUND_RECEIVED = 'accounts-fundreceived-update'
 TOPIC_DEPOSIT_SLIP_UPDATE = 'accounts-depositslip-update'
 
+# DLQ published by the external ledger microservice's AccountHeadPayment
+# Consumer when it can't process an account-head-payment-events message
+# (e.g. "Advance settlement payment requires parent commit amount and bill
+# amount"). We consume it here purely to surface the failure to the frontend.
+TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ = 'account-head-payment-events-dlq'
+
 # All Producer Topics List
 ALL_PRODUCER_TOPICS = [
     TOPIC_PROJECT, TOPIC_PROJECT_DLQ,
@@ -43,6 +49,7 @@ ALL_PRODUCER_TOPICS = [
 ALL_CONSUMER_TOPICS = [
     TOPIC_ACCOUNTS_FUND_RECEIVED,
     TOPIC_DEPOSIT_SLIP_UPDATE,
+    TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ,
 ]
 
 # --- SCHEMA VERSIONS ---

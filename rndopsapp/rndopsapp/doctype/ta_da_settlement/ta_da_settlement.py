@@ -30,6 +30,26 @@ def can_edit_office_use_fields():
 	)
 
 
+def _coerce_scalar_field_value(fieldname, value):
+	"""
+	Guard against a Select/Autocomplete field on the form sending the whole
+	{value, label} option object instead of just the selected value —
+	pymysql can't serialize a dict as a SQL param, so this used to blow up
+	doc.insert()/doc.save() with an opaque 'dict can not be used as
+	parameter' TypeError deep inside db_insert, with no indication of which
+	field was at fault. Unwraps the common option shapes; anything else is
+	rejected here with a clear, field-named error instead.
+	"""
+	if not isinstance(value, dict):
+		return value
+	for key in ("value", "name", "label"):
+		if key in value and not isinstance(value[key], (dict, list)):
+			return value[key]
+	frappe.throw(
+		f"Invalid value received for '{fieldname}': expected a plain value, got an object ({value})."
+	)
+
+
 def _resolve_ta_da_project_docname(doc):
 	"""
 	Resolve the Project Registration docname this settlement belongs to, via
@@ -347,7 +367,7 @@ def save_ta_da_settlement(doc_data):
 		# Update document with mapped data
 		for form_field, doctype_field in field_mapping.items():
 			if form_field in data and data[form_field] not in [None, ""]:
-				doc.set(doctype_field, data[form_field])
+				doc.set(doctype_field, _coerce_scalar_field_value(doctype_field, data[form_field]))
 
 		# Recompute the "For Office Use" totals server-side so they can never
 		# drift from the individual line items, regardless of what the client sent.
@@ -374,17 +394,35 @@ def save_ta_da_settlement(doc_data):
 				print(f"Error fetching applicant category for user {doc.webmail_id}: {e}")
 
 		# Handle child table - ta_da_other_expenses_p
+		# ta_da_proof_other_expense is an Attach field — a not-yet-uploaded row
+		# arrives as {file_name, file_data} and must be pushed to MinIO first,
+		# same as ta_da_supporting_docs below, otherwise db_insert() chokes
+		# trying to bind a dict as a SQL parameter.
 		other_expenses = data.get("ta_da_other_expenses_p")
 		if isinstance(other_expenses, list):
+			project_docname = None
 			doc.set("ta_da_other_expenses_p", [])  # Clear existing
 			for expense in other_expenses:
 				if expense.get("ta_da_expense_type_other_expense") or expense.get("ta_da_amount_other_expense"):
+					proof_file = expense.get("ta_da_proof_other_expense")
+					file_url = None
+
+					if isinstance(proof_file, dict) and proof_file.get("file_data"):
+						if project_docname is None:
+							project_docname = _resolve_ta_da_project_docname(doc)
+						file_url = _upload_ta_da_file_to_minio(proof_file, project_docname)
+					elif isinstance(proof_file, str):
+						file_url = proof_file  # already-uploaded URL (re-save)
+
 					doc.append(
 						"ta_da_other_expenses_p",
 						{
-							"ta_da_expense_type_other_expense": expense.get("ta_da_expense_type_other_expense"),
+							"ta_da_expense_type_other_expense": _coerce_scalar_field_value(
+								"ta_da_expense_type_other_expense",
+								expense.get("ta_da_expense_type_other_expense"),
+							),
 							"ta_da_amount_other_expense": expense.get("ta_da_amount_other_expense", 0),
-							"ta_da_proof_other_expense": expense.get("ta_da_proof_other_expense"),
+							"ta_da_proof_other_expense": file_url,
 						},
 					)
 
@@ -412,7 +450,9 @@ def save_ta_da_settlement(doc_data):
 							"departure_date": row.get("departure_date"),
 							"arrival_station": row.get("arrival_station"),
 							"arrival_date": row.get("arrival_date"),
-							"mode_of_journey": row.get("mode_of_journey"),
+							"mode_of_journey": _coerce_scalar_field_value(
+								"mode_of_journey", row.get("mode_of_journey")
+							),
 							"mode_of_journey_other": row.get("mode_of_journey_other"),
 							"fare": row.get("fare", 0),
 							"ticket_pnr_no": row.get("ticket_pnr_no"),
@@ -444,7 +484,9 @@ def save_ta_da_settlement(doc_data):
 							"from_location": row.get("from_location"),
 							"to_location": row.get("to_location"),
 							"distance_traveled_km": row.get("distance_traveled_km", 0),
-							"mode_of_journey": row.get("mode_of_journey"),
+							"mode_of_journey": _coerce_scalar_field_value(
+								"mode_of_journey", row.get("mode_of_journey")
+							),
 							"mode_of_journey_other": row.get("mode_of_journey_other"),
 							"fare": row.get("fare", 0),
 						},

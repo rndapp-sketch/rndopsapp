@@ -6,6 +6,7 @@
 # For license information, please see license.txt
 
 import json
+import math
 
 import frappe
 from frappe import _
@@ -24,7 +25,43 @@ class ProjectStaffDetails(Document):
 	# Employee ID is allocated when the staff submits the joining form
 	# (see `submit_project_staff_details`), not at draft-insert time, so
 	# abandoned drafts don't burn numbers in the series.
-	pass
+	def on_update(self):
+		self._allocate_leave_if_approved()
+
+	def on_submit(self):
+		self._allocate_leave_if_approved()
+
+	def on_update_after_submit(self):
+		self._allocate_leave_if_approved()
+
+	def _allocate_leave_if_approved(self):
+		if (self.workflow_state or "").strip() != "Approved":
+			return
+
+		if getattr(frappe.flags, "allocating_project_staff_leave", False):
+			return
+
+		frappe.flags.allocating_project_staff_leave = True
+		try:
+			_allocate_leave_data_on_approval(self)
+		finally:
+			frappe.flags.allocating_project_staff_leave = False
+
+	def get_date_of_last_extension(self):
+		"""
+		Calculates the Date of Last Extension based on the child table `table_ymed` (tenure details).
+		Gets the pstd_joining_date from the newest/latest row.
+		"""
+		tenures = self.get("table_ymed") or []
+		valid_tenures = [t for t in tenures if t.pstd_joining_date]
+
+		if not valid_tenures:
+			return None
+
+		from frappe.utils import getdate
+
+		sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
+		return sorted_tenures[-1].pstd_joining_date
 
 
 def generate_emp_id():
@@ -465,7 +502,7 @@ def perform_project_staff_details_action(docname, action):
 
 		# Once the document reaches the 'Approved' state, capture a tenure row
 		# (joining date / term completion date / basic salary) in the child table.
-		if (updated.workflow_state or "") == "Approved":
+		if (updated.workflow_state or "").strip() == "Approved":
 			_populate_tenure_on_approval(updated)
 			_allocate_leave_data_on_approval(updated)
 
@@ -518,6 +555,10 @@ def _populate_tenure_on_approval(doc):
 	doc.save(ignore_permissions=True)
 
 
+def round_up_to_half(value):
+	return math.ceil(value * 2) / 2
+
+
 def get_tenure_months(joining_date, term_completion_date):
 	if not joining_date or not term_completion_date:
 		return 0
@@ -535,26 +576,30 @@ def get_tenure_months(joining_date, term_completion_date):
 
 def _allocate_leave_data_on_approval(doc):
 	try:
-		# Calculate tenure in months
-		tenure_months = get_tenure_months(doc.ps_joining_date, doc.ps_term_completion_date)
-		if tenure_months <= 0:
-			return
+		# Always reload key fields from DB — the in-memory doc may predate the
+		# ps_emp_id assignment that happens at Submit time.
+		ps_data = frappe.db.get_value(
+			"Project Staff Details",
+			doc.name,
+			[
+				"ps_emp_id",
+				"erp_mail",
+				"ps_joining_date",
+				"ps_term_completion_date",
+				"ps_department",
+			],
+			as_dict=True,
+		)
 
-		cl = round(tenure_months * 8.0 / 11.0, 2)
-		el = int(max(0, (tenure_months - 1) * 2.5))
-
-		# Get username from erp_mail
-		erp_mail = (doc.erp_mail or "").strip()
-		if not erp_mail or "@" not in erp_mail:
+		if not ps_data:
 			frappe.log_error(
-				f"Cannot allocate leave for Project Staff Details {doc.name}: erp_mail is empty or invalid.",
+				f"Cannot allocate leave for Project Staff Details {doc.name}: record not found in DB.",
 				"Leave Allocation Error",
 			)
 			return
-		emp_username = erp_mail.split("@", 1)[0]
 
-		# Fetch emp_id (using doc.ps_emp_id, fallback to db query if not loaded)
-		emp_id = doc.ps_emp_id or frappe.db.get_value("Project Staff Details", doc.name, "ps_emp_id")
+		emp_id = ps_data.ps_emp_id
+
 		if not emp_id:
 			frappe.log_error(
 				f"Cannot allocate leave for Project Staff Details {doc.name}: ps_emp_id is not set.",
@@ -562,27 +607,62 @@ def _allocate_leave_data_on_approval(doc):
 			)
 			return
 
-		# Check if Leave Data already exists for this employee id
-		if frappe.db.exists("Leave Data", emp_id):
-			leave_data_doc = frappe.get_doc("Leave Data", emp_id)
-			leave_data_doc.emp_username = emp_username
+		joining_date = ps_data.ps_joining_date or doc.ps_joining_date
+		term_completion_date = ps_data.ps_term_completion_date or doc.ps_term_completion_date
+
+		tenure_months = get_tenure_months(joining_date, term_completion_date)
+
+		if tenure_months <= 0:
+			frappe.log_error(
+				f"Cannot allocate leave for Project Staff Details {doc.name}: "
+				f"tenure_months={tenure_months} "
+				f"(joining={joining_date}, completion={term_completion_date}).",
+				"Leave Allocation Error",
+			)
+			return
+
+		# Round up to the next 0.5
+		cl = round_up_to_half(tenure_months * 8.0 / 11.0)
+		el = round_up_to_half(max(0, (tenure_months - 1) * 2.5))
+
+		# emp_username derived from erp_mail; optional — leave blank if not yet set.
+		erp_mail = (ps_data.erp_mail or "").strip()
+		emp_username = erp_mail.split("@", 1)[0] if "@" in erp_mail else ""
+
+		department = ps_data.ps_department or doc.ps_department or ""
+
+		# Check by both document name (autoname=field:emp_id) and by field value
+		# to handle any existing records that may have been named differently.
+		existing_name = frappe.db.get_value("Leave Data", {"emp_id": emp_id}, "name")
+
+		if existing_name:
+			leave_data_doc = frappe.get_doc("Leave Data", existing_name)
+
+			if emp_username:
+				leave_data_doc.emp_username = emp_username
+
 			leave_data_doc.emp_class = "Project Staff"
-			leave_data_doc.department = doc.ps_department
+			leave_data_doc.department = department
 			leave_data_doc.cl = cl
 			leave_data_doc.el = el
+
 			leave_data_doc.save(ignore_permissions=True)
+
 		else:
 			leave_data_doc = frappe.new_doc("Leave Data")
 			leave_data_doc.emp_id = emp_id
 			leave_data_doc.emp_username = emp_username
 			leave_data_doc.emp_class = "Project Staff"
-			leave_data_doc.department = doc.ps_department
+			leave_data_doc.department = department
 			leave_data_doc.cl = cl
 			leave_data_doc.el = el
+
 			leave_data_doc.insert(ignore_permissions=True)
-	except Exception as e:
+
+	except Exception:
 		frappe.log_error(
-			frappe.get_traceback(), f"Failed to allocate leave for Project Staff Details {doc.name}"
+			frappe.get_traceback(),
+			f"Failed to allocate leave for Project Staff Details {doc.name}",
 		)
 
 
@@ -611,6 +691,13 @@ def _sync_project_staff_to_user(doc):
 
 	full_name = " ".join(p for p in [doc.ps_first_name, doc.ps_middle_name, doc.ps_last_name] if p)
 
+	roles = ["project staff"]
+	if frappe.db.exists("User", erp_mail):
+		existing_roles = [r.role for r in frappe.get_doc("User", erp_mail).roles]
+		for r in existing_roles:
+			if r not in roles:
+				roles.append(r)
+
 	payload = {
 		"email": erp_mail,
 		"username": erp_mail.split("@", 1)[0],
@@ -623,6 +710,7 @@ def _sync_project_staff_to_user(doc):
 		"designation_name": doc.ps_designation,
 		"piheadmentor_user_id": doc.pi_id,
 		"enabled": 1,
+		"roles": roles,
 	}
 
 	save_user_data(payload)
@@ -692,4 +780,149 @@ def submit_project_staff_details(docname):
 		else:
 			emp_id = frappe.db.get_value("Project Staff Details", docname, "ps_emp_id")
 		result["ps_emp_id"] = emp_id
+
+		if (result.get("workflow_state") or "").strip() == "Approved":
+			_allocate_leave_data_on_approval(frappe.get_doc("Project Staff Details", docname))
+			frappe.db.commit()
 	return result
+
+
+@frappe.whitelist()
+def get_my_project_staff_details():
+	"""
+	Return the Project Staff Details row whose `erp_mail` matches the
+	logged-in user's email. Uses session user server-side so the client
+	does not need List permission on Project Staff Details.
+	"""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Authentication required."), frappe.PermissionError)
+
+	rows = frappe.get_all(
+		"Project Staff Details",
+		filters={"erp_mail": user},
+		fields=[
+			"name",
+			"erp_mail",
+			"ps_first_name",
+			"ps_middle_name",
+			"ps_last_name",
+			"ps_department",
+			"ps_designation",
+			"project_no",
+			"bank_account_number",
+			"ps_aadhar_number",
+			"ps_pan",
+			"ps_joining_date",
+			"ps_term_completion_date",
+		],
+		limit=1,
+		ignore_permissions=True,
+	)
+	return rows[0] if rows else None
+
+
+@frappe.whitelist()
+def get_my_basic_details():
+	"""
+	Return Basic Details for the currently logged-in user by joining the
+	User doctype's `username` against the part of `erp_mail` before '@'
+	in Project Staff Details.
+	"""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Authentication required."), frappe.PermissionError)
+
+	rows = frappe.db.sql(
+		"""
+		SELECT
+			psd.name,
+			psd.erp_mail,
+			psd.ps_first_name,
+			psd.ps_middle_name,
+			psd.ps_last_name,
+			psd.ps_fathers_name,
+			psd.ps_gender,
+			psd.ps_date_of_birth,
+			psd.ps_blood_group,
+			psd.ps_maritial_status,
+			psd.ps_citizenship,
+			psd.ps_phone_number,
+			psd.ps_email_id,
+			psd.ps_present_address,
+			psd.ps_permanent_address,
+			psd.ps_department,
+			COALESCE(dept.dept_name, psd.ps_department) AS ps_department_name,
+			psd.ps_designation,
+			psd.ps_emp_id,
+			psd.project_no,
+			pr.project_title AS project_name,
+			psd.ps_joining_date,
+			psd.ps_term_completion_date,
+			psd.ps_basic_salary,
+			psd.bank_account_number,
+			psd.ps_aadhar_number,
+			psd.ps_pan,
+			psd.ps_photo,
+			u.username,
+			u.full_name,
+			u.email
+		FROM `tabProject Staff Details` psd
+		INNER JOIN `tabUser` u
+			ON u.username = SUBSTRING_INDEX(psd.erp_mail, '@', 1)
+		LEFT JOIN `tabDepartment_prornd` dept
+			ON dept.name = psd.ps_department
+		LEFT JOIN `tabProject Registration` pr
+			ON pr.project_no = psd.project_no
+		WHERE u.name = %(user)s
+		LIMIT 1
+		""",
+		{"user": user},
+		as_dict=True,
+	)
+	if not rows:
+		return None
+
+	res = dict(rows[0])
+
+	# Fetch Date of Last Extension
+	doc = frappe.get_doc("Project Staff Details", res["name"])
+	res["ex_last_ex_date"] = doc.get_date_of_last_extension()
+
+	# Fetch latest tenure details from the child table
+	tenures = doc.get("table_ymed") or []
+	valid_tenures = [t for t in tenures if t.pstd_joining_date]
+	if valid_tenures:
+		from frappe.utils import getdate
+
+		sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
+		latest_tenure = sorted_tenures[-1]
+
+		# Preserve original parent ps_joining_date and ps_term_completion_date.
+		# Expiry of present tenure is fetched from the latest tenure's completion date.
+		res["ex_date_of_expiry"] = latest_tenure.pstd_term_completion_date
+		res["ps_basic_salary"] = latest_tenure.pstd_basic_salary
+
+	j_date = res.get("ps_joining_date")
+	if j_date:
+		from frappe.utils import getdate, today
+
+		jd = getdate(j_date)
+		cd = getdate(today())
+		if cd >= jd:
+			days_diff = (cd - jd).days + 1
+			months = int(days_diff / 30.437)
+			if months < 1:
+				res["no_of_months_worked"] = 0
+				res["no_of_days_worked"] = days_diff
+			else:
+				res["no_of_months_worked"] = months
+				res["no_of_days_worked"] = 0
+		else:
+			res["no_of_months_worked"] = 0
+			res["no_of_days_worked"] = 0
+	else:
+		res["no_of_months_worked"] = 0
+		res["no_of_days_worked"] = 0
+
+	return res

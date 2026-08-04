@@ -776,50 +776,113 @@ def create_custom_designation(designation_name, designation_type="Project Staff"
 # Contractual document (identified by docname) without touching
 # any other field. All four target fields carry allow_on_submit=1
 # so updates are safe on submitted documents as well.
+#
+# EDITED BY OJS | 2026-07-30
+# UPDATE — Added a required `user` param to every endpoint below.
+# These are allow_guest=True, so the Guest session has no permission
+# to write; the caller now sends the acting user's username, which
+# is validated against the User doctype and the write runs as that
+# user (frappe.set_user) so it passes permission checks and
+# modified_by is correctly attributed, then the session is restored.
+# Also added print() statements so each request, rejection, success,
+# and error shows up live in the bench terminal for quick debugging.
+#
+# EDITED BY OJS | 2026-07-30 (2)
+# FIX — Frontend sends `user` as a bare webmail id (no @domain), per this
+# doctype's own webmail_id convention, so frappe.db.exists("User", user)
+# was failing for every request. Added _resolve_user() to look up the
+# User whose name starts with "<user>@" when no exact match exists.
 # ============================================================
 
-def _update_single_field(docname, fieldname, value):
-	"""Internal helper to update a single field on a Recruitment Adhoc Contractual doc."""
+def _resolve_user(user):
+	"""Resolve `user` to a full User name (email).
+
+	Callers may send either the full email (matches a User name directly) or
+	just the webmail id without the domain (this doctype's own convention —
+	see the webmail_id field description). In the latter case, look up the
+	User whose name starts with "<user>@". Returns (resolved_name, error_message).
+	"""
+	if frappe.db.exists("User", user):
+		return user, None
+
+	if "@" not in user:
+		matches = frappe.get_all("User", filters={"name": ["like", f"{user}@%"]}, pluck="name")
+		if len(matches) == 1:
+			return matches[0], None
+		if len(matches) > 1:
+			return None, f"user '{user}' is ambiguous, matches: {', '.join(matches)}"
+
+	return None, f"User '{user}' not found"
+
+
+def _update_single_field(docname, fieldname, value, user=None):
+	"""Internal helper to update a single field on a Recruitment Adhoc Contractual doc.
+
+	Runs as `user` (instead of Guest) so the write passes permission checks and
+	`modified_by` reflects the actual acting user.
+	"""
+	print(f"[recruitment_adhoc_contractual] update requested — docname={docname!r} field={fieldname!r} value={value!r} user={user!r}")
+
 	if not docname:
+		print("[recruitment_adhoc_contractual] rejected — docname is required")
 		return {"status": "error", "message": "docname is required"}
 
+	if not user:
+		print("[recruitment_adhoc_contractual] rejected — user is required")
+		return {"status": "error", "message": "user is required"}
+
+	resolved_user, resolve_error = _resolve_user(user)
+	if resolve_error:
+		print(f"[recruitment_adhoc_contractual] rejected — {resolve_error}")
+		return {"status": "error", "message": resolve_error}
+	if resolved_user != user:
+		print(f"[recruitment_adhoc_contractual] resolved user '{user}' -> '{resolved_user}'")
+	user = resolved_user
+
 	if not frappe.db.exists("Recruitment Adhoc Contractual", docname):
+		print(f"[recruitment_adhoc_contractual] rejected — document '{docname}' not found")
 		return {"status": "error", "message": f"Document '{docname}' not found"}
 
+	original_user = frappe.session.user
 	try:
+		frappe.set_user(user)
 		frappe.db.set_value("Recruitment Adhoc Contractual", docname, fieldname, value)
 		frappe.db.commit()
+		print(f"[recruitment_adhoc_contractual] success — {docname}.{fieldname} = {value!r} (by {user})")
 		return {"status": "success", "docname": docname, fieldname: value}
 	except Exception as e:
 		frappe.db.rollback()
+		print(f"[recruitment_adhoc_contractual] error — {fieldname} update failed for {docname}: {e}")
 		frappe.log_error(frappe.get_traceback(), f"update {fieldname} failed for {docname}")
 		return {"status": "error", "message": str(e)}
+	finally:
+		frappe.set_user(original_user)
 
 
 @frappe.whitelist(allow_guest=True)
-def update_walk_in(docname, walk_in):
+def update_walk_in(docname, walk_in, user=None):
 	"""Update only the walk_in field ('Yes' / 'No' / '')."""
 	if walk_in not in ("", "Yes", "No", None):
 		return {"status": "error", "message": "walk_in must be 'Yes', 'No', or empty"}
-	return _update_single_field(docname, "walk_in", walk_in or "")
+	return _update_single_field(docname, "walk_in", walk_in or "", user=user)
 
 
 @frappe.whitelist(allow_guest=True)
-def update_upfa_interview_date(docname, upfa_interview_date):
+def update_upfa_interview_date(docname, upfa_interview_date, user=None):
 	"""Update only the upfa_interview_date field (Date, YYYY-MM-DD)."""
-	return _update_single_field(docname, "upfa_interview_date", upfa_interview_date or None)
+	return _update_single_field(docname, "upfa_interview_date", upfa_interview_date or None, user=user)
 
 
 @frappe.whitelist(allow_guest=True)
-def update_upfa_interview_time(docname, upfa_interview_time):
+def update_upfa_interview_time(docname, upfa_interview_time, user=None):
 	"""Update only the upfa_interview_time field (Time, HH:MM:SS)."""
-	return _update_single_field(docname, "upfa_interview_time", upfa_interview_time or None)
+	return _update_single_field(docname, "upfa_interview_time", upfa_interview_time or None, user=user)
 
 
 @frappe.whitelist(allow_guest=True)
-def update_last_date_of_appllication(docname, last_date_of_appllication):
+def update_last_date_of_appllication(docname, last_date_of_appllication, user=None):
 	"""Update only the last_date_of_appllication field (Date, YYYY-MM-DD)."""
-	return _update_single_field(docname, "last_date_of_appllication", last_date_of_appllication or None)
+	return _update_single_field(docname, "last_date_of_appllication", last_date_of_appllication or None, user=user)
 
 # END OF EDIT — OJS | 2026-04-21 IST
 # ============================================================

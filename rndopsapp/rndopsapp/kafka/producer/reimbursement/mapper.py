@@ -252,11 +252,15 @@ class AccountHeadCommitMapper:
             print(f"[COMMIT_MAPPER] final particulars_list={particulars_list}")
             particulars = ", ".join(particulars_list) if particulars_list else f"Commitment for {doc.name}"
 
-        # Get module information — use explicit override first, then resolve from doctype
+        # Get module information — use explicit override first, then resolve from doc.module or doctype
         doctype_name = getattr(doc, 'doctype', '')
+        doc_module = getattr(doc, 'module', None)
         if module_id is None:
-            module_id = get_module_id(doctype_name) or 7
-        print(f"[COMMIT_MAPPER] Mapping doctype '{doctype_name}' to module_id: {module_id}")
+            if doc_module:
+                module_id = get_module_id(doc_module)
+            if module_id is None:
+                module_id = get_module_id(doctype_name) or 7
+        print(f"[COMMIT_MAPPER] Mapping doctype '{doctype_name}' (module: '{doc_module}') to module_id: {module_id}")
 
         # Use explicit frap_app_id if provided, otherwise fall back to project_name
         resolved_frap_app_id = frap_app_id if frap_app_id is not None else (project_name or "")

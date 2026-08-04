@@ -4,13 +4,19 @@
 import frappe
 from .fund_received import handle_fund_received_update
 from .deposit_slip import handle_deposit_slip_update
-from ..config import TOPIC_ACCOUNTS_FUND_RECEIVED, TOPIC_DEPOSIT_SLIP_UPDATE
+from .payment_dlq import handle_account_head_payment_dlq_error
+from ..config import (
+    TOPIC_ACCOUNTS_FUND_RECEIVED,
+    TOPIC_DEPOSIT_SLIP_UPDATE,
+    TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ,
+)
 
 
 # Topic to Handler Mapping
 TOPIC_HANDLERS = {
     TOPIC_ACCOUNTS_FUND_RECEIVED: handle_fund_received_update,
     TOPIC_DEPOSIT_SLIP_UPDATE: handle_deposit_slip_update,
+    TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ: handle_account_head_payment_dlq_error,
 }
 
 

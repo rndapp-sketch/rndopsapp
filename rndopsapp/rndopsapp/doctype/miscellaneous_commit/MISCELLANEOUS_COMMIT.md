@@ -240,3 +240,37 @@ frontend rather than the desk form (whose `.js` controller is empty).
   **Workflow** document (`document_type = "Miscellaneous Commit"`), not in this
   app's source — check the site directly (Workflow list) for the authoritative
   state diagram.
+
+---
+
+## 8. Secondary use: funding source for migrated-employee salary payments
+
+Beyond ad-hoc project commits, `Miscellaneous Commit` doubles as the **fallback
+funding source for salary payments to employees migrated from the legacy
+system**, who have no `Recruitment Adhoc Contractual` / `Selection Committee
+Report` record in this app. This is exactly why `module` includes a
+`"Recruitment Adhoc Contractual"` option and `linked_application` becomes
+mandatory for it (§1) — those fields were built for this case.
+
+**To fund a migrated employee's salary from a project's budget:** create a
+`Miscellaneous Commit` with:
+
+| Field | Value |
+|---|---|
+| `project_number` | The employee's project |
+| `module` | `"Recruitment Adhoc Contractual"` (required — this is the match key the fallback filters on) |
+| `commit_decommit` | `"Commit"` (a `"De-Commit"` row is never used as a funding source) |
+| `linked_application` | Optional. If set to the employee's `ps_emp_id`, the fallback prefers this record over other approved commits on the same project when there's more than one candidate. If left generic, the commit is treated as a shared, project-level pool any migrated employee on that project can draw from. |
+| `budget_head`, `commit_amount`, `commit_particular` | As normal |
+
+Once this document reaches `workflow_state == "Approved"`, it publishes to Kafka
+exactly like any other Miscellaneous Commit (§4) — the ledger then holds a real
+commit row keyed by `frapAppId = <this document's name>`. The salary module's
+`commitPayment.salary_payment_data` looks for exactly that row
+(`_find_migrated_employee_commit`, in
+[`commitPayment.py`](../../commitPayment.py)) whenever an employee's Recruitment/
+SCR chain doesn't resolve. Full design and rationale:
+[`migrated-employee-salary-fallback.md`](../../migrated-employee-salary-fallback.md); step-by-step flow:
+[`salary-payment-workflow.md`](../../salary-payment-workflow.md#2-1a-migrated-employee-fallback)
+and
+[`salary-module-full-flow.md`](../../salary-module-full-flow.md#step-4c--migrated-employee-fallback-only-runs-if-recruitmentscr-linkage-is-missing).

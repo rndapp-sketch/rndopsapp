@@ -87,17 +87,17 @@ looks like.
 
 ### 2.1 `salary_payment_data(ps_emp_id, yyyy_month=None)`
 
-*File:* [`commitPayment.py:133-345`](commitPayment.py#L133) — `@frappe.whitelist(allow_guest=True)`
+*File:* [`commitPayment.py:219-456`](commitPayment.py#L219) — `@frappe.whitelist(allow_guest=True)`
 
 **Sequence:**
 
 1. **Duplicate-submission guard** — if `yyyy_month` is supplied, calls
    `_salary_staging_has_ps_emp_id(ps_emp_id, yyyy_month)`
-   ([`commitPayment.py:99-129`](commitPayment.py#L99)), which:
+   ([`commitPayment.py:185-215`](commitPayment.py#L185)), which:
    - Loads the `Salary Staging` doc for that month (if it exists).
    - Parses `salary_record` (a JSON array, one line per staged payload).
    - Recursively searches every nested dict/list for a `ps_emp_id` match via
-     `_json_contains_ps_emp_id` ([`commitPayment.py:87-96`](commitPayment.py#L87)).
+     `_json_contains_ps_emp_id` ([`commitPayment.py:173-182`](commitPayment.py#L173)).
    - If found → returns immediately: `{"status": "Pending Approval in Account Portal", "message": "Salary already initiated"}`. This prevents double-paying the same employee in the same month.
 
 2. **Tenure resolution** — Queries `Project Staff Details` for every row matching
@@ -131,6 +131,61 @@ committed against this employee/project), or an error/status dict.
 > This endpoint answers "has budget been committed for this employee, and have they
 > already been staged for payment this month?" — it never writes anything.
 
+### 2.1a Migrated-employee fallback (`_find_migrated_employee_commit`)
+
+*File:* [`commitPayment.py`](commitPayment.py) — helper defined just before
+`_json_contains_ps_emp_id`; invoked from step 3 above the moment
+`recruitment_doc_name` fails to resolve (blank `scr_id`, a `Selection Committee
+Report` that doesn't exist, or an `interview_id` that doesn't match a real
+`Recruitment Adhoc Contractual` document).
+
+Employees migrated from the legacy system never had a `Recruitment Adhoc
+Contractual` / `Selection Committee Report` created in this app, so step 3 always
+fails for them. Instead of returning `[]` immediately, `salary_payment_data` now
+calls this helper before giving up:
+
+1. Resolves `project_no` → the `Project Registration` document name.
+2. Searches `Miscellaneous Commit` for candidates matching
+   `project_number = <resolved project>`, `module = "Recruitment Adhoc
+   Contractual"`, `commit_decommit = "Commit"`, `workflow_state = "Approved"`
+   (`ignore_permissions=True` — same reasoning as `get_commit_staging_status`:
+   this endpoint is `allow_guest=True` and `Miscellaneous Commit` isn't guest
+   readable).
+3. If multiple candidates exist, prefers one whose `linked_application` exactly
+   matches `ps_emp_id`; otherwise takes the most recently approved one
+   (`order_by="modified desc"`).
+4. Re-fetches the real ledger row for that candidate — same
+   `_fetch_account_head_commits_by_status` / `SALARY_COMMIT_STATUSES` call as
+   step 4 below, but matched on `frapAppId == <Miscellaneous Commit name>` and
+   `projectNumber == project_no` (not `moduleId == "11"`, since a Miscellaneous
+   Commit's `moduleId` on the ledger is resolved from the `Miscellaneous Commit`
+   doctype itself, not hardcoded to 11). This step exists so the caller gets back
+   a row with a real ledger-assigned `transactionCommitNumber` — the local
+   `Miscellaneous Commit` document doesn't have one.
+5. Returns `[<matched row>]` (tagged with `source: "miscellaneous_commit"` and
+   `linked_miscellaneous_commit: <name>`) if the ledger has already ingested the
+   commit, or `None` if the Miscellaneous Commit is Approved locally but not yet
+   visible on the ledger (same `PENDING`-style lag documented in §9.3/§10.1 of
+   [`salary-module-full-flow.md`](salary-module-full-flow.md)).
+
+If the helper returns nothing usable, `salary_payment_data` returns a hard
+validation error instead of a silent `[]`:
+
+```json
+[{"status": "error", "message": "No Recruitment/Selection Committee record found for employee '<ps_emp_id>', and no approved Miscellaneous Commit exists for project '<project_no>'. Salary payment cannot proceed."}]
+```
+
+**Why the payment phase (`submit_payment_data`) needed no changes:**
+`_is_recruitment_salary_payment` (§3.1 below) already routes into the salary
+branch based on `moduleName`/`moduleId == "11"` — which the frontend always sends
+for a salary commit payload — not on `frapAppId` resolving to a real
+`Recruitment Adhoc Contractual` document. A payment built from this fallback's
+row (`frapAppId = <Miscellaneous Commit name>`) is detected and processed
+identically to a normal Recruitment-sourced payment; the resulting
+`AccountHeadPayment`'s Kafka event correlates correctly with the commit the
+Miscellaneous Commit itself already published. Full design rationale and edge
+cases: [`migrated-employee-salary-fallback.md`](migrated-employee-salary-fallback.md).
+
 > **⚠️ Known gotcha — `PENDING` commits are invisible here.** `SALARY_COMMIT_STATUSES`
 > deliberately excludes `PENDING` (and `SETTLED`). If the ledger still has the
 > employee's commit sitting at `PENDING`, this endpoint returns an empty list even
@@ -159,7 +214,7 @@ by whatever sent the request).
 
 ### 3.1 Salary Detection — `_is_recruitment_salary_payment`
 
-*File:* [`commitPayment.py:910-922`](commitPayment.py#L910)
+*File:* [`commitPayment.py:1021-1033`](commitPayment.py#L1021)
 
 A request is treated as a salary payment if **any** of these are true:
 
@@ -172,7 +227,7 @@ frapAppId exists as a "Recruitment Adhoc Contractual" document
 ```
 
 All inputs fall back to `frappe.form_dict` via `_get_form_value`
-([`commitPayment.py:902-907`](commitPayment.py#L902)), which accepts both
+([`commitPayment.py:1013-1018`](commitPayment.py#L1013)), which accepts both
 snake_case and camelCase keys (`moduleId`/`module_id`, `frapAppId`/`frap_app_id`).
 
 If none match, the function falls through to the **generic payment path**
@@ -180,7 +235,7 @@ If none match, the function falls through to the **generic payment path**
 
 ### 3.2 Building the Staging Payload
 
-`submit_payment_data` ([`commitPayment.py:1127-1150`](commitPayment.py#L1127)):
+`submit_payment_data` ([`commitPayment.py:1224-1247`](commitPayment.py#L1224)):
 
 - Starts from `dict(frappe.form_dict)` (everything the client posted).
 - Overwrites with the explicit function arguments (`doctype`, `name`,
@@ -193,7 +248,7 @@ If none match, the function falls through to the **generic payment path**
 
 ### 3.3 Staging & Locking — `_append_salary_staging_record`
 
-*File:* [`commitPayment.py:947-1049`](commitPayment.py#L947)
+*File:* [`commitPayment.py:1058-1160`](commitPayment.py#L1058)
 
 This is a **read-modify-write on a single JSON column**, so concurrent salary
 submissions for the same month would race (last writer wins, silently dropping
@@ -223,7 +278,7 @@ got_lock = frappe.db.sql("SELECT GET_LOCK(%s, 10)", lock_name)[0][0]
 
 ### 3.4 Resolving Project & Budget Head
 
-Back in `submit_payment_data` ([`commitPayment.py:1174-1199`](commitPayment.py#L1174)):
+Back in `submit_payment_data` ([`commitPayment.py:1224-1249`](commitPayment.py#L1224)):
 
 - `_sal_project`: prefers the explicit `project_name`, otherwise
   `project_name`/`projectNumber`/`project_no` from the form. If it isn't already a
@@ -241,7 +296,7 @@ Back in `submit_payment_data` ([`commitPayment.py:1174-1199`](commitPayment.py#L
 
 ### 4.1 Salary Path — Document Creation
 
-([`commitPayment.py:1201-1259`](commitPayment.py#L1201))
+([`commitPayment.py:1312-1370`](commitPayment.py#L1312))
 
 ```python
 _sal_doc = frappe.new_doc("AccountHeadPayment")
@@ -275,7 +330,7 @@ commit phase below, which does gate on workflow approval).
 
 ### 4.2 Generic (Non-Salary) Path — For Contrast
 
-([`commitPayment.py:1261-1444`](commitPayment.py#L1261)) — used by Reimbursement,
+([`commitPayment.py:1372-1555`](commitPayment.py#L1372)) — used by Reimbursement,
 Travel, TA/DA Settlement, etc. Same shape, but:
 
 - Supports **updating** an existing document (`name` provided and exists) vs.
@@ -293,12 +348,12 @@ Salary *payment* assumes budget was already **committed** for the employee. That
 commit is a separate, earlier action:
 
 1. `submit_commit_data(doctype, frapAppId, name, ..., trigger_state=None)`
-   ([`commitPayment.py:640-717`](commitPayment.py#L640)) — called when the
+   ([`commitPayment.py:751-828`](commitPayment.py#L751)) — called when the
    Recruitment Adhoc Contractual record is created/edited. It does **not**
    publish anything; it just upserts a `Kafka Commit Staging` row keyed by
    `(reference_doctype, reference_name, trigger_state)`, with `trigger_state`
    defaulting to `"Approved"`.
-2. `check_workflow_and_publish(doc, method)` ([`commitPayment.py:720-826`](commitPayment.py#L720))
+2. `check_workflow_and_publish(doc, method)` ([`commitPayment.py:831-937`](commitPayment.py#L831))
    is registered against **every doctype's** `on_update` in
    [`hooks.py:154-161`](../hooks.py#L154). Whenever any document saves, it:
    - Finds `Kafka Commit Staging` rows for `(doc.doctype, doc.name)` still
@@ -549,22 +604,23 @@ sequenceDiagram
 
 | Component | File | Responsibility |
 |---|---|---|
-| `salary_payment_data` | [`commitPayment.py:133`](commitPayment.py#L133) | Eligibility + already-staged check (read-only) |
-| `_salary_staging_has_ps_emp_id` / `_json_contains_ps_emp_id` | [`commitPayment.py:99`](commitPayment.py#L99) / [`:87`](commitPayment.py#L87) | Duplicate-submission detection inside staged JSON |
+| `salary_payment_data` | [`commitPayment.py:219`](commitPayment.py#L219) | Eligibility + already-staged check (read-only) |
+| `_salary_staging_has_ps_emp_id` / `_json_contains_ps_emp_id` | [`commitPayment.py:185`](commitPayment.py#L185) / [`:87`](commitPayment.py#L173) | Duplicate-submission detection inside staged JSON |
 | `_fetch_account_head_commits_by_status` | [`commitPayment.py:67`](commitPayment.py#L67) | External ledger REST call, per status |
 | `_get_project_title_by_number` | [`commitPayment.py:53`](commitPayment.py#L53) | Project title enrichment |
-| `_is_recruitment_salary_payment` | [`commitPayment.py:910`](commitPayment.py#L910) | Salary-vs-generic branch detection |
-| `_get_form_value` | [`commitPayment.py:902`](commitPayment.py#L902) | snake_case/camelCase form fallback |
-| `_salary_payload_identity` | [`commitPayment.py:925`](commitPayment.py#L925) | Human-readable id for logs/Mattermost |
-| `_append_salary_staging_record` | [`commitPayment.py:947`](commitPayment.py#L947) | Locked upsert into `Salary Staging` |
-| `submit_payment_data` | [`commitPayment.py:1053`](commitPayment.py#L1053) | Main entry point: salary branch + generic branch |
-| `submit_commit_data` | [`commitPayment.py:640`](commitPayment.py#L640) | Stage a commit for later workflow-triggered publish |
-| `check_workflow_and_publish` | [`commitPayment.py:720`](commitPayment.py#L720) | `on_update` hook — fires commit publish on workflow state match |
-| `manually_publish_staged_commit` | [`commitPayment.py:830`](commitPayment.py#L830) | Admin re-trigger for stuck commit staging rows |
-| `publish_salary_staging` | [`commitPayment.py:1446`](commitPayment.py#L1446) | Admin re-trigger: replay every un-published record in a month's staging doc |
-| `search_salary_records` | [`commitPayment.py:1793`](commitPayment.py#L1793) | *(new)* Flattens all `Salary Staging` docs into searchable/paginated rows for an ops/admin UI |
-| `delete_salary_record` | [`commitPayment.py:1946`](commitPayment.py#L1946) | *(new)* Password-gated removal of one employee's entry from a month's `salary_record` array |
-| `get_workflow_states` / `get_document_state` / `set_workflow_state` / `get_workflow_state_history` | [`commitPayment.py:1644`](commitPayment.py#L1644) / [`:1659`](commitPayment.py#L1659) / [`:1678`](commitPayment.py#L1678) / [`:1724`](commitPayment.py#L1724) | *(new)* Generic workflow-state admin endpoints, not salary-specific but co-located in this file |
+| `_find_migrated_employee_commit` | [`commitPayment.py:87`](commitPayment.py#L87) | *(new)* Miscellaneous Commit fallback funding-source lookup for migrated employees (§2.1a) |
+| `_is_recruitment_salary_payment` | [`commitPayment.py:1081`](commitPayment.py#L1081) | Salary-vs-generic branch detection |
+| `_get_form_value` | [`commitPayment.py:1073`](commitPayment.py#L1073) | snake_case/camelCase form fallback |
+| `_salary_payload_identity` | [`commitPayment.py:1096`](commitPayment.py#L1096) | Human-readable id for logs/Mattermost |
+| `_append_salary_staging_record` | [`commitPayment.py:1118`](commitPayment.py#L1118) | Locked upsert into `Salary Staging` |
+| `submit_payment_data` | [`commitPayment.py:1224`](commitPayment.py#L1224) | Main entry point: salary branch + generic branch |
+| `submit_commit_data` | [`commitPayment.py:811`](commitPayment.py#L811) | Stage a commit for later workflow-triggered publish |
+| `check_workflow_and_publish` | [`commitPayment.py:891`](commitPayment.py#L891) | `on_update` hook — fires commit publish on workflow state match |
+| `manually_publish_staged_commit` | [`commitPayment.py:1001`](commitPayment.py#L1001) | Admin re-trigger for stuck commit staging rows |
+| `publish_salary_staging` | [`commitPayment.py:1617`](commitPayment.py#L1617) | Admin re-trigger: replay every un-published record in a month's staging doc |
+| `search_salary_records` | [`commitPayment.py:1964`](commitPayment.py#L1964) | *(new)* Flattens all `Salary Staging` docs into searchable/paginated rows for an ops/admin UI |
+| `delete_salary_record` | [`commitPayment.py:2117`](commitPayment.py#L2117) | *(new)* Password-gated removal of one employee's entry from a month's `salary_record` array |
+| `get_workflow_states` / `get_document_state` / `set_workflow_state` / `get_workflow_state_history` | [`commitPayment.py:1830`](commitPayment.py#L1830) / [`:1659`](commitPayment.py#L1770) / [`:1678`](commitPayment.py#L1789) / [`:1724`](commitPayment.py#L1835) | *(new)* Generic workflow-state admin endpoints, not salary-specific but co-located in this file |
 | `_mm_notify` | [`commitPayment.py:23`](commitPayment.py#L23) | Fire-and-forget Mattermost POST (daemon thread) |
 | `AccountHeadPaymentMapper` / `AccountHeadCommitMapper` | [`kafka/producer/reimbursement/mapper.py`](kafka/producer/reimbursement/mapper.py) | Frappe doc → DTO, incl. `resolve_budget_head_id`, `get_project_number` |
 | `AccountHeadPaymentDTO` / `AccountHeadCommitDTO` | [`kafka/producer/reimbursement/dto.py`](kafka/producer/reimbursement/dto.py) | Wire-format dataclasses |
@@ -583,7 +639,8 @@ sequenceDiagram
 | Failure scenario | Where caught | Behavior | Mattermost alert |
 |---|---|---|---|
 | No active tenure / employee not found | `salary_payment_data` | Returns `{"status": "error", ...}` | — |
-| Recruitment doc not found from `interview_id` | `salary_payment_data` | Returns `[]` | — |
+| Recruitment doc not found from `interview_id`, and an approved Miscellaneous Commit exists for the project | `salary_payment_data` → `_find_migrated_employee_commit` (§2.1a) | Returns the ledger row sourced from the Miscellaneous Commit, same shape as a normal match | `:information_source:` Salary Payment Data — Migrated Employee Fallback |
+| Recruitment doc not found from `interview_id`, and no approved Miscellaneous Commit exists (or it's Approved but not yet on the ledger) | `salary_payment_data` → `_find_migrated_employee_commit` (§2.1a) | Returns `{"status": "error", "message": "No Recruitment/Selection Committee record found ... and no approved Miscellaneous Commit exists ..."}` | `:x:` Salary Payment Data — No Funding Source |
 | Commit exists on ledger but is still `status: "PENDING"` (not `COMMITTED`/`PARTIALLY_PAID`/`OVERPAYMENT`) | `salary_payment_data` filtering (§2.1) | Returns `[]` (`count: 0`) even though a real commit row exists — reads as "no committed budget-head entry found" to the caller | — |
 | External ledger API down (`by-status` call) | `_fetch_account_head_commits_by_status` (per-thread) | `frappe.log_error`, that status's rows are simply missing from the merge | — |
 | Salary staging lock not acquired within 10s | `_append_salary_staging_record` | Returns error; **record NOT staged** | `:x:` Salary Staging Lock Timeout |
@@ -656,8 +713,8 @@ Endpoints actually used against `ACCOUNT_HEAD_COMMIT_API_URL`:
 | Path | Used by | Purpose |
 |---|---|---|
 | `GET /by-status/{status}` | `_fetch_account_head_commits_by_status` (commitPayment.py:67), `po_commit_adjustment.py` | Read commits filtered by status |
-| `GET /by-account-head/{id}` | `get_commits_by_account_head` (commitPayment.py:525) | Read commits for one budget head |
-| `GET /by-account-head/{id}/status/{status}` | `get_commits_by_account_head_and_status` (commitPayment.py:574) | Read commits for one budget head, filtered by status |
+| `GET /by-account-head/{id}` | `get_commits_by_account_head` (commitPayment.py:645) | Read commits for one budget head |
+| `GET /by-account-head/{id}/status/{status}` | `get_commits_by_account_head_and_status` (commitPayment.py:694) | Read commits for one budget head, filtered by status |
 | `POST /status/by-project-frap` | `cancellation_request.py:166` | **The only status-update call in this codebase** — sets `status: "CANCELLED"` in place by `(project, frapAppId)`. Nothing calls this (or an equivalent) to advance a commit from `PENDING` to `COMMITTED`. |
 
 ### 9.4 Frappe Hooks (`hooks.py`)

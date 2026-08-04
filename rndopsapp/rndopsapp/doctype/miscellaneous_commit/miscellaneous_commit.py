@@ -259,10 +259,12 @@ def perform_miscellaneous_commit_action(docname, action):
 		if action == "Submit":
 			from frappe.utils import flt
 			from rndopsapp.rndopsapp.commitPayment import submit_commit_data
+			from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import get_module_id
 			project_no = frappe.db.get_value("Project Registration", doc.project_number, "project_no") or doc.project_number
 			# Commit -> positive amount, De-Commit -> negative amount
 			signed_amount = flt(doc.commit_amount)
 			signed_amount = -abs(signed_amount) if doc.commit_decommit == "De-Commit" else abs(signed_amount)
+			resolved_module_id = get_module_id(doc.module) if doc.module else None
 			submit_commit_data(
 				doctype=DOCTYPE,
 				frapAppId=doc.name,
@@ -271,6 +273,7 @@ def perform_miscellaneous_commit_action(docname, action):
 				commit_amount=signed_amount,
 				budget_head=doc.budget_head,
 				commitParticular=doc.commit_particular,
+				moduleId=resolved_module_id,
 				trigger_state="Approved",
 			)
 

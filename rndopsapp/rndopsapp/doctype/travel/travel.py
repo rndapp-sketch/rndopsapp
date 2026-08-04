@@ -9,6 +9,54 @@ from frappe.model.document import Document
 from frappe.utils import date_diff, getdate
 
 
+def _resolve_travel_project_docname(doc):
+	"""
+	Resolve the Project Registration docname this Travel application belongs
+	to, so file uploads land in the same "Project Registration" MinIO
+	namespace every other module (TA DA Settlement, Disbursal of Honorarium,
+	Direct Purchase, etc.) groups its uploads under.
+	"""
+	return doc.travel_project_title or doc.name
+
+
+def _upload_travel_file_to_minio(val, project_docname, folder="travel"):
+	"""Upload a base64 file dict ({file_name, file_data}) to MinIO. Returns the MinIO URL or None."""
+	import base64
+
+	try:
+		from rndopsapp.minio import get_rnd_file_service
+
+		filename = val.get("file_name", "attachment")
+		content_b64 = val["file_data"]
+
+		if isinstance(content_b64, str) and content_b64.startswith("data:"):
+			content_b64 = content_b64.split(",", 1)[1]
+
+		file_content = base64.b64decode(content_b64)
+
+		upload_result = get_rnd_file_service().save_file(
+			filename=filename,
+			content=file_content,
+			is_private=False,
+			doctype="Project Registration",
+			docname=project_docname,
+			folder=folder,
+		)
+
+		if upload_result.get("status"):
+			file_url = upload_result.get("data", {}).get("file_url")
+			frappe.logger().info(f"[Travel] File uploaded to MinIO: {file_url}")
+			return file_url
+
+		frappe.log_error(
+			f"MinIO upload failed: {upload_result.get('message')}",
+			"Travel MinIO Upload",
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel MinIO Upload Error")
+	return None
+
+
 def extract_eval_expression(expression):
 	"""
 	Extracts the JavaScript expression from a Frappe 'eval:' string.
@@ -340,10 +388,9 @@ def _build_scl_balance_html(employee):
 @frappe.whitelist()
 def save_travel(doc_data):
 	"""Saves or updates the Travel data from the React form.
-	Handles file uploads for Attach fields.
+	Handles file uploads for Attach fields (uploaded to MinIO, grouped under
+	the linked project — same convention every other module in this app uses).
 	"""
-	from frappe.utils.file_manager import save_file
-	
 	try:
 		data = json.loads(doc_data) if isinstance(doc_data, str) else doc_data
 		print("Received data for Travel:", data)  # Debug log
@@ -398,59 +445,43 @@ def save_travel(doc_data):
 			print(f"Updated existing Travel doc: {doc.name}")
 
 		# 4. Second Pass: Process Files and Tables (Now we have doc.name)
+		project_docname = None
+
+		def _project_docname():
+			nonlocal project_docname
+			if project_docname is None:
+				project_docname = _resolve_travel_project_docname(doc)
+			return project_docname
+
 		for fieldname, value in file_fields:
 			df = meta.get_field(fieldname)
-			
+
 			if df.fieldtype == "Table" and isinstance(value, list):
 				doc.set(fieldname, []) # Clear existing
 				child_meta = frappe.get_meta(df.options)
-				
+
 				for child_row in value:
 					row_dict = child_row.copy()
-					
+
 					# Handle files in child row
 					for cf in child_meta.fields:
 						if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
 							f_val = row_dict[cf.fieldname]
-							
+
 							if isinstance(f_val, dict) and f_val.get("file_data"):
-								try:
-									saved_file = save_file(
-										f_val.get("file_name", "attachment"),
-										f_val["file_data"],
-										"Travel",
-										doc.name, # Attach to parent
-										decode=True,
-										is_private=1,
-										df=cf.fieldname
-									)
-									row_dict[cf.fieldname] = saved_file.file_url
-									print(f"Child table file saved: {saved_file.file_url}")
-								except Exception as e:
-									frappe.log_error(f"Child File Error: {e}")
-									
+								file_url = _upload_travel_file_to_minio(f_val, _project_docname())
+								row_dict[cf.fieldname] = file_url
+								print(f"Child table file uploaded to MinIO: {file_url}")
+
 					doc.append(fieldname, row_dict)
-					
+
 			elif df.fieldtype in ["Attach", "Attach Image"]:
 				if isinstance(value, dict) and value.get("file_data"):
-					try:
-						print(f"Uploading file for {fieldname}...")
-						saved_file = save_file(
-							value.get("file_name", "attachment"),
-							value["file_data"],
-							"Travel",
-							doc.name,
-							decode=True,
-							is_private=1,
-							df=fieldname
-						)
-						# Explicitly update the field in DB immediately? No, doc.save() will do it.
-						doc.set(fieldname, saved_file.file_url)
-						print(f"Set {fieldname} to {saved_file.file_url}")
-					except Exception as e:
-						frappe.log_error(f"File Upload Error for {fieldname}: {str(e)}")
-						print(f"Error uploading {fieldname}: {e}")
-				
+					print(f"Uploading file for {fieldname} to MinIO...")
+					file_url = _upload_travel_file_to_minio(value, _project_docname())
+					doc.set(fieldname, file_url)
+					print(f"Set {fieldname} to {file_url}")
+
 				elif isinstance(value, str):
 					# Keep existing URL
 					doc.set(fieldname, value)

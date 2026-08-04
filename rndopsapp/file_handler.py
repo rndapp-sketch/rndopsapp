@@ -184,11 +184,18 @@ def migrate_local_file_to_minio(file_url, doctype, docname, fieldname=None):
         file_doc = frappe.get_doc("File", {"file_url": file_url})
 
         # Read file from local disk
-        site_path = frappe.get_site_path()
-        file_path = os.path.join(site_path, file_url.lstrip("/"))
+        if file_url.startswith("/files/"):
+            file_path = frappe.get_site_path("public", file_url.lstrip("/"))
+        else:
+            file_path = frappe.get_site_path(file_url.lstrip("/"))
 
         if not os.path.exists(file_path):
-            return {"status": False, "message": f"File not found: {file_path}"}
+            # Fallback attempts for path resolution
+            alt_path = frappe.get_site_path("public", "files", os.path.basename(file_url))
+            if os.path.exists(alt_path):
+                file_path = alt_path
+            else:
+                return {"status": False, "message": f"File not found: {file_path}"}
 
         with open(file_path, "rb") as f:
             file_content = f.read()

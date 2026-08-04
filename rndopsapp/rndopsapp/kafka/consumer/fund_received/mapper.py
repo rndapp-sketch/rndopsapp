@@ -12,8 +12,8 @@ class FundReceivedConsumerMapper:
     Maps Fund Received Update DTO to Frappe document field updates.
     """
 
-    @staticmethod
-    def find_document(dto: FundReceivedUpdateDTO) -> Optional[str]:
+    @classmethod
+    def find_document(cls, dto: FundReceivedUpdateDTO) -> Optional[str]:
         """
         Find Fund Received document by various identifiers.
 
@@ -34,15 +34,19 @@ class FundReceivedConsumerMapper:
             if frappe.db.exists('Fund Received', ref_num_str):
                 return ref_num_str
 
-        # Fallback: Find by sanction letter and project
+        # Fallback: Find by sanction letter and project. prjreg_title is a Link
+        # field holding a Project Registration docname, not the raw project
+        # number, so resolve project_no -> docname first before filtering on it.
         if dto.sanctionLetterNo and dto.projectNumber:
-            filters = {
-                'sanctioned_letter_no': dto.sanctionLetterNo,
-                'prjreg_title': dto.projectNumber
-            }
-            found_name = frappe.db.get_value('Fund Received', filters, 'name')
-            if found_name:
-                return found_name
+            prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
+            if prj_reg_name:
+                filters = {
+                    'sanctioned_letter_no': dto.sanctionLetterNo,
+                    'prjreg_title': prj_reg_name
+                }
+                found_name = frappe.db.get_value('Fund Received', filters, 'name')
+                if found_name:
+                    return found_name
 
         return None
 
@@ -56,23 +60,23 @@ class FundReceivedConsumerMapper:
 
         Returns:
             str: Project Registration document name (e.g. '2026032701DST000704'),
-                 or the original project_number if not found.
+                 or None if no Project Registration has this project_no (yet).
+                 NOTE: prjreg_title is a Link field to Project Registration, so it
+                 must only ever be set to a real docname — never to the raw
+                 project_number. Callers must skip the update when this returns None
+                 rather than falling back to the raw value, which would corrupt the
+                 link (see apps/rndopsapp .../kafka/consumer/fund_received/mapper.py
+                 history for the bug this guards against).
         """
         if not project_number:
-            return project_number
+            return None
 
         # Search Project Registration where project_no matches
-        prj_name = frappe.db.get_value(
+        return frappe.db.get_value(
             'Project Registration',
             {'project_no': project_number},
             'name'
         )
-
-        if prj_name:
-            return prj_name
-
-        # Fallback: return original project_number if no match found
-        return project_number
 
     # Ordered workflow states — higher index = further along in the workflow.
     # Source of truth: fund_received_with_kafka workflow (verified from DB).
@@ -132,13 +136,24 @@ class FundReceivedConsumerMapper:
                     'sanctioned_letter_no', dto.sanctionLetterNo
                 )
 
-            # Map and apply project_number → look up Project Registration name
+            # Map and apply project_number → look up Project Registration name.
+            # prjreg_title is a Link field: only ever write a real Project
+            # Registration docname into it, never the raw project number — if no
+            # Project Registration has this project_no yet, skip the update and
+            # leave prjreg_title untouched rather than corrupting the link.
             if dto.projectNumber and frappe.db.has_column('Fund Received', 'prjreg_title'):
                 prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
-                frappe.db.set_value(
-                    'Fund Received', doc_name,
-                    'prjreg_title', prj_reg_name
-                )
+                if prj_reg_name:
+                    frappe.db.set_value(
+                        'Fund Received', doc_name,
+                        'prjreg_title', prj_reg_name
+                    )
+                else:
+                    frappe.logger().warning(
+                        f"[FundReceivedConsumerMapper] No Project Registration found for "
+                        f"project_no='{dto.projectNumber}' — skipped prjreg_title update on "
+                        f"{doc_name} to avoid writing an invalid Link value."
+                    )
 
             # Map and apply amount_received
             if dto.amountReceived is not None and frappe.db.has_column('Fund Received', 'fund_received_amt'):
