@@ -1,0 +1,10 @@
+{
+  "interpreter_path": "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/env/bin/python",
+  "search_paths": [
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/frappe",
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/erpnext",
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/hrms",
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/rndopsapp",
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/env/lib/python3.11/site-packages"
+  ]
+}
