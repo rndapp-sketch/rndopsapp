@@ -1,4 +1,5 @@
 import base64
+import os
 
 import frappe
 
@@ -97,7 +98,7 @@ def get_fund_sanction_form_data(project_proposal=None):
 import json
 
 import frappe
-import requests
+import requests  # type: ignore
 from frappe.utils import flt
 
 API_URL = "http://172.16.134.81:18080/api/sanction-details/addSanctionDetails"
@@ -252,24 +253,28 @@ def get_sanctions_for_project(project_name):
 		if doc_dict.get("sanction_related_files"):
 			# Loop through each file attached to this sanction document
 			for file_info in doc_dict.get("sanction_related_files"):
+				file_url = None
 				try:
 					# Get the File document from the file_url
 					file_url = file_info.get("sanction_file")
 					if not file_url:
 						continue
 
-					# The actual file document contains the content
-					file_doc = frappe.get_doc("File", {"file_url": file_url})
+					# Get file document name by file_url
+					file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+					if not file_name:
+						continue
+
+					file_doc = frappe.get_doc("File", str(file_name))
 
 					# Get the raw binary content of the file
-					file_content = file_doc.get_content()
+					file_content = getattr(file_doc, "get_content", lambda: b"")()
 
 					# Encode the binary content into a Base64 string (as utf-8 text)
 					base64_content = base64.b64encode(file_content).decode("utf-8")
 
 					# Add the base64 content as a new key to the file's dictionary
-					# We also include the file_name for convenience on the frontend
-					file_info["file_name"] = file_doc.file_name
+					file_info["file_name"] = getattr(file_doc, "file_name", os.path.basename(str(file_url)))
 					file_info["file_data"] = base64_content
 
 				except Exception as e:
@@ -301,22 +306,27 @@ def get_all_workflow_states(workflow_name=None):
 		doc = frappe.get_doc("Workflow", workflow_name)
 
 		states_info = []
-		for s in doc.states:
-			states_info.append({"state": s.state, "allow_edit": s.allow_edit or []})
+		for s in getattr(doc, "states", []) or []:
+			s_state = getattr(s, "state", None) or (s.get("state") if isinstance(s, dict) else None)
+			s_edit = getattr(s, "allow_edit", None) or (s.get("allow_edit") if isinstance(s, dict) else None)
+			states_info.append({"state": s_state, "allow_edit": s_edit or []})
 
-		return {"workflow": doc.name, "states": states_info}
+		return {"workflow": getattr(doc, "name", workflow_name), "states": states_info}
 
 	# Else fetch ALL workflows
 	workflows = frappe.get_all("Workflow", fields=["name"])
 
 	for wf in workflows:
-		doc = frappe.get_doc("Workflow", wf.name)
+		wf_name = wf.name if hasattr(wf, "name") else (wf.get("name") if isinstance(wf, dict) else str(wf))
+		doc = frappe.get_doc("Workflow", str(wf_name))
 
 		states_info = []
-		for s in doc.states:
-			states_info.append({"state": s.state, "allow_edit": s.allow_edit or []})
+		for s in getattr(doc, "states", []) or []:
+			s_state = getattr(s, "state", None) or (s.get("state") if isinstance(s, dict) else None)
+			s_edit = getattr(s, "allow_edit", None) or (s.get("allow_edit") if isinstance(s, dict) else None)
+			states_info.append({"state": s_state, "allow_edit": s_edit or []})
 
-		result.append({"workflow": wf.name, "states": states_info})
+		result.append({"workflow": wf_name, "states": states_info})
 
 	return result
 
@@ -332,17 +342,18 @@ def get_workflow_transitions(workflow_name):
 	if not frappe.db.exists("Workflow", workflow_name):
 		frappe.throw(f"Workflow '{workflow_name}' does not exist.")
 
-	doc = frappe.get_doc("Workflow", workflow_name)
+	doc = frappe.get_doc("Workflow", str(workflow_name))
 
 	transitions = []
-	for t in doc.transitions:
+	for t in getattr(doc, "transitions", []) or []:
+		get_val = lambda obj, key: getattr(obj, key, None) or (obj.get(key) if isinstance(obj, dict) else None)
 		transitions.append({
-			"state": t.state,
-			"action": t.action,
-			"next_state": t.next_state,
-			"allowed": t.allowed,
-			"allow_self_approval": t.allow_self_approval,
-			"condition": t.condition
+			"state": get_val(t, "state"),
+			"action": get_val(t, "action"),
+			"next_state": get_val(t, "next_state"),
+			"allowed": get_val(t, "allowed"),
+			"allow_self_approval": get_val(t, "allow_self_approval"),
+			"condition": get_val(t, "condition")
 		})
 
 	return transitions
@@ -520,19 +531,107 @@ def map_child_row_fields(child_doctype, row_data):
 	"""
 	Remap child table row field names from frontend keys to the actual
 	DocType field names. Falls back to the original key if no mapping exists.
+	Sanitizes Select and Int fields to conform strictly to DocType options.
 	"""
 	mapping = CHILD_ROW_FIELD_MAPPINGS.get(child_doctype, {})
-	if not mapping:
-		return row_data  # No mapping defined - return as-is
 
 	remapped = {}
-	for key, value in row_data.items():
+	for key, value in (row_data or {}).items():
 		# Skip internal Frappe keys that shouldn't be passed
 		if key in ('doctype', 'parent', 'parentfield', 'parenttype', 'idx'):
 			continue
 		doctype_key = mapping.get(key, key)
 		remapped[doctype_key] = value
+
+	# Sanitize Select / Int fields per child doctype
+	if child_doctype == "Personal Qualification__":
+		# Level
+		raw_level = str(remapped.get("level_u_r") or "").strip()
+		allowed_levels = ["10th", "12th", "Diploma", "Bachelor", "Master", "PhD"]
+		if raw_level and raw_level not in allowed_levels:
+			l_lower = raw_level.lower()
+			if "master" in l_lower or "m.tech" in l_lower or "mtech" in l_lower or "m.sc" in l_lower:
+				remapped["level_u_r"] = "Master"
+			elif "phd" in l_lower or "doctor" in l_lower or "ph.d" in l_lower:
+				remapped["level_u_r"] = "PhD"
+			elif "diploma" in l_lower:
+				remapped["level_u_r"] = "Diploma"
+			elif "12" in l_lower or "higher" in l_lower:
+				remapped["level_u_r"] = "12th"
+			elif "10" in l_lower or "matric" in l_lower or "secondary" in l_lower:
+				remapped["level_u_r"] = "10th"
+			else:
+				remapped["level_u_r"] = "Bachelor"
+
+		# Result Type
+		raw_res = str(remapped.get("result_type_u_r") or "").strip()
+		allowed_res = ["Percentage", "CGPA", "Grade"]
+		if raw_res and raw_res not in allowed_res:
+			remapped["result_type_u_r"] = "Percentage" if "%" in raw_res else "CGPA"
+
+		# Score (Select field in doctype)
+		raw_score = str(remapped.get("score_u_r") or "").strip()
+		allowed_score = ["Percentage", "CGPA", "Grade"]
+		if raw_score and raw_score not in allowed_score:
+			remapped["score_u_r"] = remapped.get("result_type_u_r") or "CGPA"
+
+		# Year of Passing (Int field)
+		if "year_of_passing_u_r" in remapped:
+			try:
+				remapped["year_of_passing_u_r"] = int(float(str(remapped["year_of_passing_u_r"])))
+			except (ValueError, TypeError):
+				remapped["year_of_passing_u_r"] = None
+
+	elif child_doctype == "Personal Experience__":
+		raw_emp = str(remapped.get("employment_type_u_r") or "").strip()
+		allowed_emp = ["Full-time", "Contract", "Internship", "Freelance"]
+		if raw_emp and raw_emp not in allowed_emp:
+			e_lower = raw_emp.lower()
+			if "contract" in e_lower:
+				remapped["employment_type_u_r"] = "Contract"
+			elif "intern" in e_lower:
+				remapped["employment_type_u_r"] = "Internship"
+			elif "free" in e_lower:
+				remapped["employment_type_u_r"] = "Freelance"
+			else:
+				remapped["employment_type_u_r"] = "Full-time"
+
+		if "total_experience_u_r" in remapped:
+			try:
+				remapped["total_experience_u_r"] = int(float(str(remapped["total_experience_u_r"])))
+			except (ValueError, TypeError):
+				remapped["total_experience_u_r"] = None
+
+	elif child_doctype == "Universal Documents__":
+		raw_type = str(remapped.get("document_type_u_r") or "").strip()
+		allowed_types = ["Identity", "Legal", "Tax", "Certificate", "Experience"]
+		if raw_type and raw_type not in allowed_types:
+			t_lower = raw_type.lower()
+			if "tax" in t_lower or "pan" in t_lower or "gst" in t_lower:
+				remapped["document_type_u_r"] = "Tax"
+			elif "cert" in t_lower:
+				remapped["document_type_u_r"] = "Certificate"
+			elif "exp" in t_lower:
+				remapped["document_type_u_r"] = "Experience"
+			elif "legal" in t_lower:
+				remapped["document_type_u_r"] = "Legal"
+			else:
+				remapped["document_type_u_r"] = "Identity"
+
+	elif child_doctype == "Universal Bank Details__":
+		raw_acc = str(remapped.get("account_type_u_r") or "").strip()
+		allowed_acc = ["Savings", "Current", "Salary"]
+		if raw_acc and raw_acc not in allowed_acc:
+			a_lower = raw_acc.lower()
+			if "current" in a_lower:
+				remapped["account_type_u_r"] = "Current"
+			elif "salary" in a_lower:
+				remapped["account_type_u_r"] = "Salary"
+			else:
+				remapped["account_type_u_r"] = "Savings"
+
 	return remapped
+
 
 
 # ---- Flat-field assemblers for Bank / Education / Experience ----
@@ -623,46 +722,83 @@ _KYC_FLAT_FIELDS = {
 
 def _assemble_kyc_child_rows(data):
 	"""
-	Convert flat KYC identity fields into rows inside the
+	Convert flat KYC identity & file fields into rows inside the
 	uploaded_documents_u_r child table (Universal Documents__).
-
-	For each KYC key found in data:
-	  - Remove the flat key from data
-	  - Add / update a row in data['uploaded_documents_u_r'] that has
-	    document_name_u_r = <name>, document_type_u_r = <type>,
-	    id_number_u_r = <value>
-
-	Mutates `data` in place and returns it.
+	Extracts and preserves file URLs (file_u_r) for Aadhaar, PAN, and Other IDs.
 	"""
-	new_rows = []
-	for flat_key, (doc_name, doc_type) in _KYC_FLAT_FIELDS.items():
-		value = data.pop(flat_key, None)
-		if value not in (None, ""):
-			new_rows.append({
-				"document_name_u_r": doc_name,
-				"document_type_u_r": doc_type,
-				"id_number_u_r": str(value),
-			})
+	aadhaar_num = data.pop("aadhaar_number", None) or data.pop("aadhaar_number_u_r", None)
+	aadhaar_file = data.pop("aadhaar_file", None) or data.pop("aadhaar_file_u_r", None)
+	aadhaar_file_back = data.pop("aadhaar_file_back", None) or data.pop("aadhaar_file_back_u_r", None)
+	aadhaar_expiry = data.pop("aadhaar_expiry", None) or data.pop("aadhaar_expiry_u_r", None)
 
-	if not new_rows:
-		return data
+	pan_num = data.pop("pan_number", None) or data.pop("pan_number_u_r", None)
+	pan_file = data.pop("pan_file", None) or data.pop("pan_file_u_r", None)
 
-	existing = data.get("uploaded_documents_u_r", [])
-	if not isinstance(existing, list):
-		existing = []
+	other_num = data.pop("other_identity_number", None) or data.pop("other_identity_number_u_r", None)
+	other_file = data.pop("other_file", None) or data.pop("other_file_u_r", None)
+	other_file_back = data.pop("other_file_back", None) or data.pop("other_file_back_u_r", None)
+	other_expiry = data.pop("other_expiry", None) or data.pop("other_expiry_u_r", None)
 
-	# Build an index of already-present rows by document_name so we can update
-	# in-place rather than duplicate them.
-	existing_idx = {row.get("document_name_u_r"): i for i, row in enumerate(existing)}
+	# Existing uploaded_documents from frontend payload
+	existing_docs = data.get("uploaded_documents") or data.get("uploaded_documents_u_r") or []
+	if not isinstance(existing_docs, list):
+		existing_docs = []
 
-	for row in new_rows:
-		doc_name = row["document_name_u_r"]
-		if doc_name in existing_idx:
-			existing[existing_idx[doc_name]].update(row)
-		else:
-			existing.append(row)
+	# Build a dict by document_name_u_r
+	doc_map = {}
+	for row in existing_docs:
+		if isinstance(row, dict) and row.get("document_name_u_r"):
+			doc_map[row["document_name_u_r"]] = dict(row)
 
-	data["uploaded_documents_u_r"] = existing
+	# Merge Aadhaar Front
+	if aadhaar_num or aadhaar_file:
+		row = doc_map.get("Aadhaar Front") or doc_map.get("Aadhaar") or {}
+		row["document_name_u_r"] = "Aadhaar Front"
+		row["document_type_u_r"] = "Identity"
+		if aadhaar_num: row["id_number_u_r"] = str(aadhaar_num)
+		if aadhaar_file: row["file_u_r"] = str(aadhaar_file)
+		if aadhaar_expiry: row["expiry_date_u_r"] = str(aadhaar_expiry)
+		doc_map["Aadhaar Front"] = row
+		doc_map.pop("Aadhaar", None)
+
+	# Merge Aadhaar Back
+	if aadhaar_file_back:
+		row = doc_map.get("Aadhaar Back") or {}
+		row["document_name_u_r"] = "Aadhaar Back"
+		row["document_type_u_r"] = "Identity"
+		row["file_u_r"] = str(aadhaar_file_back)
+		doc_map["Aadhaar Back"] = row
+
+	# Merge PAN
+	if pan_num or pan_file:
+		row = doc_map.get("PAN") or {}
+		row["document_name_u_r"] = "PAN"
+		row["document_type_u_r"] = "Tax"
+		if pan_num: row["id_number_u_r"] = str(pan_num)
+		if pan_file: row["file_u_r"] = str(pan_file)
+		doc_map["PAN"] = row
+
+	# Merge Other ID
+	if other_num or other_file:
+		row = doc_map.get("Other ID") or doc_map.get("Other") or {}
+		row["document_name_u_r"] = "Other ID"
+		row["document_type_u_r"] = "Identity"
+		if other_num: row["id_number_u_r"] = str(other_num)
+		if other_file: row["file_u_r"] = str(other_file)
+		if other_expiry: row["expiry_date_u_r"] = str(other_expiry)
+		doc_map["Other ID"] = row
+		doc_map.pop("Other", None)
+
+	# Merge Other Back
+	if other_file_back:
+		row = doc_map.get("Other Back") or {}
+		row["document_name_u_r"] = "Other Back"
+		row["document_type_u_r"] = "Identity"
+		row["file_u_r"] = str(other_file_back)
+		doc_map["Other Back"] = row
+
+	data["uploaded_documents_u_r"] = list(doc_map.values())
+	data.pop("uploaded_documents", None)
 	return data
 
 
@@ -771,18 +907,22 @@ def get_or_load_user_registration():
 		# Strategy 2: Try by user's email
 		if not docname:
 			try:
-				user_doc = frappe.get_doc("User", current_user)
-				if user_doc.email:
-					existing = frappe.db.get_list(
-						"Universal Registration__",
-						filters={"email_address_u_r": user_doc.email},
-						fields=["name"],
-						limit=1
-					)
-					if existing:
-						docname = existing[0]["name"]
-						lookup_method = "user_email"
-						print(f"[DEBUG] ✓ Found registration by user email: {docname}")
+				existing = None
+				current_user_str = str(current_user) if current_user else ""
+				if current_user_str and current_user_str != "Guest":
+					user_doc = frappe.get_doc("User", current_user_str)
+					user_email_val = getattr(user_doc, "email", None) or (user_doc.get("email") if hasattr(user_doc, "get") else None)
+					if user_email_val:
+						existing = frappe.db.get_list(
+							"Universal Registration__",
+							filters={"email_address_u_r": user_email_val},
+							fields=["name"],
+							limit=1
+						)
+				if existing:
+					docname = existing[0]["name"]
+					lookup_method = "user_email"
+					print(f"[DEBUG] ✓ Found registration by user email: {docname}")
 			except Exception as e:
 				print(f"[DEBUG] ✗ Search by user email failed: {e}")
 		
@@ -987,7 +1127,7 @@ def save_universal_registration_data(data=None, **kwargs):
 		
 		user_email = data.get("email_address_u_r")
 		# Check if universal_user_u_r was already set from the form data
-		if not doc.universal_user_u_r and user_email:
+		if not doc.get("universal_user_u_r") and user_email:
 			# Try to find the Universal User by email
 			try:
 				universal_user = frappe.db.get_value(
@@ -996,7 +1136,7 @@ def save_universal_registration_data(data=None, **kwargs):
 					"name"
 				)
 				if universal_user:
-					doc.universal_user_u_r = universal_user
+					doc.set("universal_user_u_r", universal_user)
 			except Exception as e:
 				pass  # Silently skip if lookup fails
 		
@@ -1008,7 +1148,7 @@ def save_universal_registration_data(data=None, **kwargs):
 			if frappe.session.user == "Guest":
 				doc.owner = "Administrator"
 			else:
-				doc.owner = frappe.session.user
+				doc.owner = str(frappe.session.user or "Administrator")
 
 		doc.flags.ignore_permissions = True
 		doc.flags.ignore_mandatory = True
@@ -1082,18 +1222,24 @@ def get_universal_registration_details(docname):
 		doc = frappe.get_doc("Universal Registration__", docname)
 		doc_dict = doc.as_dict()
 
-		# -- Inject flat KYC fields from uploaded_documents_u_r child rows --
-		# Map document_name_u_r → parent-level flat field name
-		_DOC_NAME_TO_FLAT = {
-			"Aadhaar": "aadhaar_number_u_r",
-			"PAN":     "pan_number_u_r",
-			"Other":   "other_identity_number_u_r",
-		}
+		# -- Inject flat KYC fields & file URLs from uploaded_documents_u_r child rows --
 		for row in doc_dict.get("uploaded_documents_u_r", []):
 			doc_name = row.get("document_name_u_r", "")
-			flat_key = _DOC_NAME_TO_FLAT.get(doc_name)
-			if flat_key and row.get("id_number_u_r"):
-				doc_dict[flat_key] = row["id_number_u_r"]
+			if doc_name in ("Aadhaar Front", "Aadhaar"):
+				if row.get("id_number_u_r"):   doc_dict["aadhaar_number_u_r"] = row["id_number_u_r"]
+				if row.get("file_u_r"):        doc_dict["aadhaar_file_u_r"]   = row["file_u_r"]
+				if row.get("expiry_date_u_r"): doc_dict["aadhaar_expiry_u_r"] = str(row["expiry_date_u_r"])
+			elif doc_name == "Aadhaar Back":
+				if row.get("file_u_r"):        doc_dict["aadhaar_file_back_u_r"] = row["file_u_r"]
+			elif doc_name == "PAN":
+				if row.get("id_number_u_r"):   doc_dict["pan_number_u_r"] = row["id_number_u_r"]
+				if row.get("file_u_r"):        doc_dict["pan_file_u_r"]   = row["file_u_r"]
+			elif doc_name in ("Other ID", "Other"):
+				if row.get("id_number_u_r"):   doc_dict["other_identity_number_u_r"] = row["id_number_u_r"]
+				if row.get("file_u_r"):        doc_dict["other_file_u_r"]            = row["file_u_r"]
+				if row.get("expiry_date_u_r"): doc_dict["other_expiry_u_r"]          = str(row["expiry_date_u_r"])
+			elif doc_name == "Other Back":
+				if row.get("file_u_r"):        doc_dict["other_file_back_u_r"] = row["file_u_r"]
 
 		return {
 			"status": "success",
@@ -1310,3 +1456,39 @@ def get_project_staff_details_count(filters=None):
 
     count = frappe.db.count("Project Staff Details", filters=filters or None)
     return {"doctype": "Project Staff Details", "count": count}
+
+
+@frappe.whitelist(allow_guest=True)
+def upload_file():
+	"""
+	Custom upload file endpoint for universal registration.
+	Allows guest uploads without requiring API key/secret or session login.
+	"""
+	files = frappe.request.files
+	if "file" not in files:
+		frappe.throw("No file attached", frappe.ValidationError)
+
+	uploaded_file = files["file"]
+	content = uploaded_file.stream.read()
+	filename = uploaded_file.filename
+
+	is_private = frappe.form_dict.get("is_private", 0)
+	doctype = frappe.form_dict.get("doctype")
+	docname = frappe.form_dict.get("docname")
+	fieldname = frappe.form_dict.get("fieldname")
+
+	doc = frappe.get_doc({
+		"doctype": "File",
+		"attached_to_doctype": doctype,
+		"attached_to_name": docname,
+		"attached_to_field": fieldname,
+		"file_name": filename,
+		"is_private": frappe.utils.cint(is_private),
+		"content": content,
+	})
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	return doc.as_dict()
+
+

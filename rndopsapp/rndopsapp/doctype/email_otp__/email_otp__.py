@@ -102,12 +102,11 @@ def send_otp_for_signup(email, full_name=None):
 		# Set expiry time (10 minutes from now)
 		expiry_time = add_to_date(now_datetime(), minutes=10)
 		
-		# Create OTP record (store full_name so it can be retrieved at password-setup step)
+		# Create OTP record
 		otp_doc = frappe.get_doc({
 			"doctype": "Email OTP__",
 			"email_u_r": email,
 			"otp_u_r": otp,
-			"full_name_u_r": full_name or "",
 			"purpose_u_r": "Registration",
 			"expiry_time_u_r": expiry_time,
 			"is_verified_u_r": 0,
@@ -171,7 +170,7 @@ def verify_otp(email, otp_value):
 	"""
 	try:
 		# Find OTP record
-		otp_records = frappe.get_list(
+		otp_records = frappe.get_all(
 			"Email OTP__",
 			filters={
 				"email_u_r": email,
@@ -179,7 +178,8 @@ def verify_otp(email, otp_value):
 				"is_verified_u_r": 0
 			},
 			order_by="creation desc",
-			limit=1
+			limit=1,
+			ignore_permissions=True
 		)
 		
 		if not otp_records:
@@ -268,7 +268,7 @@ def resend_otp(email):
 			}
 		
 		# Find the latest unverified OTP
-		otp_records = frappe.get_list(
+		otp_records = frappe.get_all(
 			"Email OTP__",
 			filters={
 				"email_u_r": email,
@@ -276,7 +276,8 @@ def resend_otp(email):
 				"is_verified_u_r": 0
 			},
 			order_by="creation desc",
-			limit=1
+			limit=1,
+			ignore_permissions=True
 		)
 		
 		if not otp_records:
@@ -470,16 +471,17 @@ def create_user_with_password(email, password, full_name=None):
 			}
 		
 		# Check if OTP was verified for this email
-		otp_records = frappe.get_list(
+		otp_records = frappe.get_all(
 			"Email OTP__",
 			filters={
 				"email_u_r": email,
 				"is_verified_u_r": 1,
 				"purpose_u_r": "Registration"
 			},
-			fields=["name", "full_name_u_r"],
+			fields=["name"],
 			order_by="verified_at_u_r desc",
-			limit=1
+			limit=1,
+			ignore_permissions=True
 		)
 		
 		if not otp_records:
@@ -489,9 +491,9 @@ def create_user_with_password(email, password, full_name=None):
 				"success": False
 			}
 		
-		# Read full_name from parameter or OTP record
+		# Read full_name from parameter or default to formatted username from email
 		username_part = email.split("@")[0].lower()
-		full_name = full_name or otp_records[0].get("full_name_u_r") or username_part
+		full_name = full_name or username_part.replace(".", " ").replace("_", " ").title()
 		
 		# Hash password for Universal User__
 		password_hash, password_salt = _hash_password(password)
