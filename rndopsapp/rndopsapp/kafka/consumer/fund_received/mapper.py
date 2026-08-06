@@ -40,10 +40,9 @@ class FundReceivedConsumerMapper:
         if dto.sanctionLetterNo and dto.projectNumber:
             prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
             if prj_reg_name:
-                filters = {
-                    'sanctioned_letter_no': dto.sanctionLetterNo,
-                    'prjreg_title': prj_reg_name
-                }
+                filters = {'prjreg_title': prj_reg_name}
+                if frappe.db.has_column('Fund Received', 'sanctioned_letter_no'):
+                    filters['sanctioned_letter_no'] = dto.sanctionLetterNo
                 found_name = frappe.db.get_value('Fund Received', filters, 'name')
                 if found_name:
                     return found_name

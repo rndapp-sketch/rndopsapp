@@ -81,8 +81,9 @@
   },
   {
    "fieldname": "project_title",
-   "fieldtype": "Data",
-   "label": "Project Title"
+   "fieldtype": "Long Text",
+   "label": "Project Title",
+   "read_only": 1
   },
   {
    "fieldname": "date_of_registration",
@@ -111,9 +112,10 @@
   {
    "default": "PDF",
    "fieldname": "disbursal_project_number",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "label": "Project Number",
-   "options": "Select\nPDF"
+   "options": "Select\nPDF",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_vaha",
@@ -210,7 +212,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-12 14:20:50.177611",
+ "modified": "2026-08-06 13:24:35.278592",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Consultancy",

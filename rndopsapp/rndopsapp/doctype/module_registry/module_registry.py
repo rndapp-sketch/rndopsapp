@@ -269,13 +269,19 @@ def get_pending_task(page_name="pending-task"):
 @frappe.whitelist()
 def get_pending_application():
 	"""
-	Returns Leave Module applications pending the current user's approval as PI.
-	Filters Leave Module by pi == frappe.session.user and workflow_state == "Pending PI Approval".
+	Returns applications pending the current user's approval as PI, combining:
+	- Leave Module: filtered by pi == frappe.session.user, workflow_state == "Pending PI Approval".
+	- Project Staff Extension: has no "pi" field, so instead matched via whichever
+	  of these identifies the applicant as this PI's staff (ex_emp_id is free text
+	  and often left blank, so the owner-based check is the reliable path):
+	    a) ex_emp_id against Project Staff Details.pi_id / User.piheadmentor_user_id
+	    b) the document's owner being a User whose piheadmentor_user_id == current user
+	Each record is tagged with "doctype" so callers can tell the two apart.
 	"""
 
 	current_user = frappe.session.user
 
-	records = frappe.get_list(
+	leave_records = frappe.get_list(
 		"Leave Module",
 		filters={
 			"pi": current_user,
@@ -286,6 +292,48 @@ def get_pending_application():
 		order_by="modified desc",
 		limit_page_length=10000,
 	)
+	for r in leave_records:
+		r["doctype"] = "Leave Module"
+
+	pi_users = frappe.get_all(
+		"User",
+		filters={"piheadmentor_user_id": current_user},
+		fields=["name", "employee_id"],
+	)
+	pi_owner_emails = [u.name for u in pi_users]
+
+	pi_emp_ids_from_details = frappe.get_all(
+		"Project Staff Details",
+		filters={"pi_id": current_user},
+		pluck="ps_emp_id",
+	)
+	pi_emp_ids_from_user = [u.employee_id for u in pi_users]
+	pi_emp_ids = {e for e in (pi_emp_ids_from_details + pi_emp_ids_from_user) if e}
+
+	extension_records = []
+	if pi_emp_ids or pi_owner_emails:
+		or_filters = []
+		if pi_emp_ids:
+			or_filters.append(["ex_emp_id", "in", list(pi_emp_ids)])
+		if pi_owner_emails:
+			or_filters.append(["owner", "in", pi_owner_emails])
+
+		extension_records = frappe.get_list(
+			"Project Staff Extension",
+			filters={
+				"workflow_state": "Pending PI Approval",
+				"docstatus": 1,
+			},
+			or_filters=or_filters,
+			fields=["name", "ex_name", "ex_proj_name", "ex_proj_no", "ex_emp_id", "workflow_state", "modified", "owner", "docstatus", "creation"],
+			order_by="modified desc",
+			limit_page_length=10000,
+			ignore_permissions=True,
+		)
+		for r in extension_records:
+			r["doctype"] = "Project Staff Extension"
+
+	records = sorted(leave_records + extension_records, key=lambda r: r["modified"], reverse=True)
 
 	return {"user": current_user, "results": records}
 

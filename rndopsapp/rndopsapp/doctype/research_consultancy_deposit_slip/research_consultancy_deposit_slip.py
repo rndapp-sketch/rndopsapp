@@ -269,6 +269,27 @@ def submit_research_consultancy_deposit_slip(docname):
 
 
 @frappe.whitelist()
+def update_research_consultancy_deposit_slip_fields(docname, changes=None, child_table_changes=None):
+	"""
+	Update only the given fields (and optionally ecs_dates / credit_distribution
+	rows) on a Research Consultancy Deposit Slip document, including after its
+	workflow_state has reached a locked state. Restricted to `staff, RnD` /
+	System Manager. See
+	rndopsapp.rndopsapp.deposit_slip_common.update_locked_deposit_slip.
+
+	changes: JSON dict {fieldname: new_value}.
+	child_table_changes: JSON list of
+	    {"fieldname": "ecs_dates" | "credit_distribution",
+	     "updated": [{"name": <row name>, "changes": {field: value}}, ...],
+	     "inserted": [{field: value, ...}, ...],
+	     "deleted": [<row name>, ...]}
+	"""
+	from rndopsapp.rndopsapp.deposit_slip_common import update_locked_deposit_slip
+
+	return update_locked_deposit_slip("Research Consultancy Deposit Slip", docname, changes, child_table_changes)
+
+
+@frappe.whitelist()
 def get_research_consultancy_deposit_slip_workflow_actions():
 	"""Returns available workflow actions based on user role."""
 	user_roles = frappe.get_roles(frappe.session.user)

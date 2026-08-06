@@ -283,6 +283,27 @@ def submit_e_non_routine_deposit_slip(docname):
 
 
 @frappe.whitelist()
+def update_e_non_routine_deposit_slip_fields(docname, changes=None, child_table_changes=None):
+	"""
+	Update only the given fields (and optionally ecs_dates / credit_distribution
+	/ additional_project_credits rows) on an E Non Routine Deposit Slip
+	document, including after its workflow_state has reached a locked state.
+	Restricted to `staff, RnD` / System Manager. See
+	rndopsapp.rndopsapp.deposit_slip_common.update_locked_deposit_slip.
+
+	changes: JSON dict {fieldname: new_value}.
+	child_table_changes: JSON list of
+	    {"fieldname": "ecs_dates" | "credit_distribution" | "additional_project_credits",
+	     "updated": [{"name": <row name>, "changes": {field: value}}, ...],
+	     "inserted": [{field: value, ...}, ...],
+	     "deleted": [<row name>, ...]}
+	"""
+	from rndopsapp.rndopsapp.deposit_slip_common import update_locked_deposit_slip
+
+	return update_locked_deposit_slip("E Non Routine Deposit Slip", docname, changes, child_table_changes)
+
+
+@frappe.whitelist()
 def get_e_non_routine_deposit_slip_workflow_actions(doc_name):
 	"""Returns available workflow actions for the current doc state and user role."""
 	doc = frappe.get_doc("E Non Routine Deposit Slip", doc_name)

@@ -298,3 +298,23 @@ def submit_research_deposit_slip(docname):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Research Deposit Slip Submit Error")
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def update_research_deposit_slip_fields(docname, changes=None, child_table_changes=None):
+	"""
+	Update only the given fields (and optionally child table rows) on a
+	Research Deposit Slip document, including after its workflow_state has
+	reached a locked state. Restricted to `staff, RnD` / System Manager. See
+	rndopsapp.rndopsapp.deposit_slip_common.update_locked_deposit_slip.
+
+	changes: JSON dict {fieldname: new_value}.
+	child_table_changes: JSON list of
+	    {"fieldname": "ecs_dates" | "pdf_credit_distribution" | "dpf_credit_distributions",
+	     "updated": [{"name": <row name>, "changes": {field: value}}, ...],
+	     "inserted": [{field: value, ...}, ...],
+	     "deleted": [<row name>, ...]}
+	"""
+	from rndopsapp.rndopsapp.deposit_slip_common import update_locked_deposit_slip
+
+	return update_locked_deposit_slip("Research Deposit Slip", docname, changes, child_table_changes)

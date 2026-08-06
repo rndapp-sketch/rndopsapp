@@ -739,19 +739,20 @@ def send_project_registration_data_api(doc):
 
 
 @frappe.whitelist()
-def get_available_workflow_actions(docname):
+def get_available_workflow_actions(docname=None):
+	if not docname:
+		return []
+
 	doc = frappe.get_doc("Project Registration", docname)
 	current_state = doc.workflow_state or "Draft"
 	user_roles = frappe.get_roles(frappe.session.user)
 
 	workflow_name = frappe.get_value("Workflow", {"document_type": doc.doctype}, "name")
-	frappe.logger().warning(f"Jimmy Logging Debug workflow_name (WARNING): {workflow_name}")
 
 	# if not workflow_name:
 	# 	return []
 
 	workflow = frappe.get_doc("Workflow", workflow_name)
-	frappe.logger().warning(f"Jimmy Logging Debug workflow (WARNING): {workflow}")
 
 	allowed_actions = []
 
@@ -777,7 +778,6 @@ def get_available_workflow_actions(docname):
 
 	# Remove duplicates
 	allowed_actions = list(dict.fromkeys(allowed_actions))
-	frappe.logger().warning(f"Jimmy Logging Debug allowed_actions (WARNING) final: {allowed_actions}")
 	return allowed_actions
 
 

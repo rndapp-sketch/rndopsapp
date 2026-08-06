@@ -203,12 +203,12 @@ def unshare_document(doctype, name, user):
 
 
 @frappe.whitelist()
-def get_project_activity(doctype, docname):
+def get_project_activity(doctype=None, docname=None):
 	"""
 	Fetches all comments and communications for a given document.
 	"""
-	# Log the docname being fetched
-	frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: docname = {docname}")
+	if not doctype or not docname:
+		return []
 
 	try:
 		# Fetch comments for the given document
@@ -218,9 +218,6 @@ def get_project_activity(doctype, docname):
 			fields=["content", "owner", "creation", "comment_type"],
 			order_by="creation desc",
 		)
-
-		# Log the fetched comments
-		frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: comments = {comments}")
 
 		return comments
 	except Exception:
@@ -229,12 +226,12 @@ def get_project_activity(doctype, docname):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_activity_test(doctype, docname):
+def get_activity_test(doctype=None, docname=None):
 	"""
 	Fetches all comments and communications for a given document.
 	"""
-	# Log the docname being fetched
-	frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: docname = {docname}")
+	if not doctype or not docname:
+		return []
 
 	try:
 		# Fetch comments for the given document
@@ -244,9 +241,6 @@ def get_activity_test(doctype, docname):
 			fields=["content", "owner", "creation", "comment_type"],
 			order_by="creation desc",
 		)
-
-		# Log the fetched comments
-		frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: comments = {comments}")
 
 		return comments
 	except Exception:

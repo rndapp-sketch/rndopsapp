@@ -1463,7 +1463,43 @@ def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_typ
 
 		new_doc.insert(ignore_permissions=True)
 		# Note: No commit here, as it's part of the larger transaction in perform_fund_received_action
-		
+
+		# Force-advance the Fund Received to "Pending HoS Approval" the moment the Deposit
+		# Slip actually exists, using the same atomic conditional-UPDATE pattern as the Kafka
+		# consumer (never move backward). This is deliberately NOT left to the caller's later
+		# doc.save()/db_set: a concurrent stale request (e.g. a lagging "Approve" call reading
+		# workflow_state before this transition landed) can otherwise win the race and blindly
+		# db_set the Fund Received back to an earlier state after we've already created the
+		# slip here — see incident on REC_3107262287-prjreg_refnum (2026-07-31), where exactly
+		# that race left the Fund Received stuck one step behind its Deposit Slip.
+		_state_priority = {
+			'Draft':                                                 0,
+			'Pending Misc. Staff Approval':                          1,
+			'PENDING_APPROVAL':                                      2,
+			'Pending Misc. Staff Approval(Deposit Slip Pending)':    3,
+			'Pending HoS Approval':                                  4,
+			'Approved':                                              5,
+			'Fund Received':                                         6,
+		}
+		_target_state = "Pending HoS Approval"
+		_allowed_from = [s for s, p in _state_priority.items() if p <= _state_priority[_target_state]]
+		_placeholders = ', '.join(['%s'] * len(_allowed_from))
+		frappe.db.sql(
+			f"""
+			UPDATE `tabFund Received`
+			SET workflow_state = %s, modified = NOW()
+			WHERE name = %s AND workflow_state IN ({_placeholders})
+			""",
+			[_target_state, fund_received_doc.name] + _allowed_from,
+		)
+		# Only sync the one field the UPDATE above may have changed — a full reload()
+		# would also discard any other in-memory fix-ups the caller made on this doc
+		# (e.g. the prjreg_title correction in perform_fund_received_action) before
+		# handing it to us, since those haven't been saved yet at this point.
+		fund_received_doc.workflow_state = frappe.db.get_value(
+			"Fund Received", fund_received_doc.name, "workflow_state"
+		)
+
 		print(f"Created Deposit Slip: {new_doc.name} with workflow_state: {new_doc.workflow_state}")
 		
 		# Log successful deposit slip creation

@@ -286,7 +286,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
 
     try:
         doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
-        current_state = doc.workflow_state or "Draft"
+        current_state = doc.get("workflow_state") or "Draft"
         user_roles = frappe.get_roles(frappe.session.user)
 
         print(f"Current State: '{current_state}' | User: {frappe.session.user}")
@@ -310,7 +310,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
         transition = None
 
         print("Iterating over workflow transitions...")
-        for t in workflow.transitions:
+        for t in getattr(workflow, "transitions", []):
             print(f"  Checking Transition -> State: '{t.state}', Action: '{t.action}'")
 
             if t.state == current_state and t.action == action:
@@ -366,8 +366,8 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
             print(f"[ERROR] {error_msg}")
             frappe.throw(error_msg)
 
-        doc.workflow_state = next_state
-        state_doc = next((s for s in workflow.states if s.state == next_state), None)
+        doc.set("workflow_state", next_state)
+        state_doc = next((s for s in getattr(workflow, "states", []) if getattr(s, "state", None) == next_state), None)
 
         if state_doc:
             print(f"Target state doc_status: {state_doc.doc_status} (Current docstatus: {doc.docstatus})")
