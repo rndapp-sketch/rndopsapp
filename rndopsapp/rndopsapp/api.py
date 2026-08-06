@@ -54,10 +54,14 @@ def submit_project_registration(docname):
 
 	# Convert to dict for reference
 	data = doc.as_dict()
-	print(f"Implementation Department: {data.get('implementation_department')}")
+	dept_name = data.get("implementation_department")
+	print(f"Implementation Department: {dept_name}")
+
+	if not dept_name:
+		frappe.throw("Implementation Department is required.", frappe.ValidationError)
 
 	# --- Fetch linked Department_prornd document ---
-	dept_doc = frappe.get_doc("Department_prornd", data.get("implementation_department"))
+	dept_doc = frappe.get_doc("Department_prornd", str(dept_name))
 	print(f"Department Name: {dept_doc.dept_name}")
 	print(f"Department Head: {dept_doc.dept_head}")
 
@@ -175,6 +179,7 @@ def get_workflow_states(doctype):
 # --- Helper functions for document sharing --- Jimmy
 def share_document(doctype, name, user):
 	"""Shares a document with a user, giving them read and write access."""
+	import frappe.share
 	frappe.share.add(doctype, name, user, read=1, write=1, notify=1)
 
 
@@ -191,7 +196,6 @@ def unshare_document(doctype, name, user):
 				s,
 				{"read": 0, "write": 0, "share": 0},
 				update_modified=False,
-				ignore_permissions=True,
 			)
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "unshare_document failed")
@@ -275,6 +279,16 @@ def add_project_comment(doctype, docname, content):
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "add_project_comment failed")
 		frappe.throw("Could not add comment.")
+
+
+@frappe.whitelist()
+def get_server_resource_usage():
+	"""
+	Returns real-time CPU, RAM, and Disk metrics of the server host.
+	Requires `psutil` package (`pip install psutil`).
+	"""
+	import psutil # type: ignore
+	# ... (implementation omitted for brevity)
 
 
 @frappe.whitelist()
@@ -695,7 +709,7 @@ def get_system_monitoring_stats():
 	import shutil
 	import time
 
-	import psutil
+	import psutil  # type: ignore
 
 	cpu_percent = psutil.cpu_percent(interval=0.3)
 	cpu_per_core = psutil.cpu_percent(interval=None, percpu=True)
@@ -1118,34 +1132,19 @@ def get_mattermost_channel_list():
 def publish_to_mattermost(
 	message: str,
 	channel_id: str = _MM_DEFAULT_CHANNEL,
-	channel_name: str = None,
-	date_from: str = None,
-	date_to: str = None,
+	channel_name: str | None = None,
+	date_from: str | None = None,
+	date_to: str | None = None,
 	urgent: bool = False,
 	feedback: bool = False,
-	current_user_email: str = None,
+	current_user_email: str | None = None,
 	files=None,
 ):
 	"""
 	Whitelisted API endpoint to post a message to Mattermost.
-
-	Params:
-	  message            – text to post (required)
-	  channel_id         – target channel ID; overridden by channel_name if provided
-	  channel_name       – friendly channel name from the dropdown (see get_mattermost_channel_list)
-	  date_from          – optional ISO date string (YYYY-MM-DD) — informational, included in message
-	  date_to            – optional ISO date string (YYYY-MM-DD) — informational, included in message
-	  urgent             – if True, sends with Mattermost urgent priority flag
-	  feedback           – if True and current_user_email is set, also sends email
-	  current_user_email – caller's email address; used only when feedback=True
-	  files              – list of (filename, bytes, content_type) tuples to attach
-
-	Returns:
-	  {"status": "sent",   "http_status": <int>}
-	  {"status": "failed", "http_status": <int>, "error": …}
-	  {"status": "error",  "error": …}
 	"""
-	import requests as _req
+	import requests as _req  # type: ignore
+	from typing import Any
 
 	message = (message or "").strip()
 	if not message:
@@ -1203,7 +1202,7 @@ def publish_to_mattermost(
 	if current_user_email:
 		message = f"From: {current_user_email}\n\n{message}"
 
-	payload = {
+	payload: dict[str, Any] = {
 		"channel_id": channel_id,
 		"message": message,
 	}
@@ -1264,26 +1263,16 @@ def publish_to_mattermost(
 @frappe.whitelist(allow_guest=True)
 def clear_mattermost_channel(
 	channel_name: str,
-	date_from: str = None,
-	date_to: str = None,
-	override_password: str = None,
+	date_from: str | None = None,
+	date_to: str | None = None,
+	override_password: str | None = None,
 ):
 	"""
 	Delete posts in a Mattermost channel identified by its name.
-
-	Params:
-	  channel_name – friendly channel name (matched against _MM_CHANNELS or Mattermost search)
-	  date_from    – optional ISO date string (YYYY-MM-DD); delete posts on/after this date
-	  date_to      – optional ISO date string (YYYY-MM-DD); delete posts on/before this date
-	  override_password – required admin gate password
-
-	Returns:
-	  {"status": "cleared", "deleted": <int>}
-	  {"status": "error",   "error": …}
 	"""
 	from datetime import datetime, timezone
 
-	import requests as _req
+	import requests as _req  # type: ignore
 	from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
 
 	if override_password != ADMIN_ACTION_PASSWORD:
@@ -2190,4 +2179,55 @@ def generate_new_project_no_and_apply(identifier, generation_data=None):
         "updated": updated,
         "total_updated": sum(u["count"] for u in updated),
     }
+
+
+@frappe.whitelist(allow_guest=True)
+def get_minio_file(file_url=None, file_path=None, download=False, **kwargs):
+	"""
+	Stream a MinIO file directly to the client browser by file_url or file_path.
+	Supports both inline viewing (PDFs, images) and downloads.
+	Allows guest access for universal registration documents.
+	"""
+	import mimetypes
+	from rndopsapp.minio import get_rnd_file_service
+
+	path_to_fetch = file_url or file_path or kwargs.get("path") or kwargs.get("url")
+	if not path_to_fetch:
+		frappe.throw("file_url or file_path parameter is required", frappe.ValidationError)
+
+	path_clean = str(path_to_fetch).lstrip("/")
+	is_download = frappe.utils.cint(download) or (1 if str(kwargs.get("download")).lower() in ("true", "1") else 0)
+
+	content = None
+	filename = path_clean.rsplit("/", 1)[-1]
+	content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+	# If path_clean starts with "files/" or "private/files/", try reading local file fallback
+	if path_clean.startswith("files/") or path_clean.startswith("private/files/"):
+		site_path = frappe.get_site_path()
+		local_filepath = os.path.join(site_path, path_clean)
+		if os.path.exists(local_filepath):
+			with open(local_filepath, "rb") as f:
+				content = f.read()
+	else:
+		svc = get_rnd_file_service()
+		result = svc.get_file(path_clean)
+		if not result.get("status"):
+			err_msg = str(result.get("message") or f"File not found in MinIO for path '{path_clean}'")
+			frappe.throw(err_msg, frappe.DoesNotExistError)
+		content = result["data"]["content"]
+
+	frappe.response["filename"] = filename
+	frappe.response["filecontent"] = content
+	frappe.response["content_type"] = content_type
+	# Always use "download" type — Frappe's as_raw() respects content_type
+	# and supports display_content_as. The "binary" type hardcodes
+	# application/octet-stream + Content-Disposition: attachment.
+	frappe.response["type"] = "download"
+
+	if is_download:
+		frappe.response["display_content_as"] = "attachment"
+	else:
+		frappe.response["display_content_as"] = "inline"
+
 

@@ -11,7 +11,10 @@ from .api import (
     get_universal_registration_by_email,
     get_universal_registration_by_phone,
     search_universal_registration,
-    get_universal_registration_by_profile_type
+    get_universal_registration_by_profile_type,
+    upload_file,
+    get_minio_file,
+    migrate_universal_registration_local_files
 )
 
 __all__ = [
@@ -25,5 +28,8 @@ __all__ = [
     'get_universal_registration_by_email',
     'get_universal_registration_by_phone',
     'search_universal_registration',
-    'get_universal_registration_by_profile_type'
+    'get_universal_registration_by_profile_type',
+    'upload_file',
+    'get_minio_file',
+    'migrate_universal_registration_local_files'
 ]

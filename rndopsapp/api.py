@@ -1100,19 +1100,25 @@ def save_universal_registration_data(data=None, **kwargs):
 
 					doc.append(fieldname, child_row)
 					
-			# Handle Attach fields (Base64)
+			# Handle Attach fields (Base64) - Store in MinIO
 			elif df.fieldtype in ["Attach", "Attach Image"] and isinstance(value, dict) and value.get("file_data"):
 				try:
-					saved_file = save_file(
-						value["file_name"],
-						value["file_data"],
-						doc.doctype,
-						doc.name,
-						decode=True,
-						is_private=0,
-						df=fieldname
+					from rndopsapp.minio import get_rnd_file_service
+					from rndopsapp.file_handler import get_file_category_for_doctype
+					file_bytes = base64.b64decode(value["file_data"]) if isinstance(value["file_data"], str) else value["file_data"]
+					file_service = get_rnd_file_service()
+					folder = get_file_category_for_doctype(doc.doctype, fieldname)
+					upload_result = file_service.save_file(
+						filename=value.get("file_name", "attached_file"),
+						content=file_bytes,
+						is_private=False,
+						doctype=doc.doctype,
+						docname=doc.name,
+						folder=folder,
+						use_hash=True,
 					)
-					doc.set(fieldname, saved_file.file_url)
+					if upload_result.get("status"):
+						doc.set(fieldname, upload_result["data"]["file_url"])
 				except Exception as e:
 					frappe.log_error(f"File Upload Error: {str(e)}")
 					pass
@@ -1315,16 +1321,22 @@ def update_universal_registration_data(docname, data):
 					
 			elif df.fieldtype in ["Attach", "Attach Image"] and isinstance(value, dict) and value.get("file_data"):
 				try:
-					saved_file = save_file(
-						value["file_name"],
-						value["file_data"],
-						doc.doctype,
-						doc.name,
-						decode=True,
-						is_private=0,
-						df=fieldname
+					from rndopsapp.minio import get_rnd_file_service
+					from rndopsapp.file_handler import get_file_category_for_doctype
+					file_bytes = base64.b64decode(value["file_data"]) if isinstance(value["file_data"], str) else value["file_data"]
+					file_service = get_rnd_file_service()
+					folder = get_file_category_for_doctype(doc.doctype, fieldname)
+					upload_result = file_service.save_file(
+						filename=value.get("file_name", "attached_file"),
+						content=file_bytes,
+						is_private=False,
+						doctype=doc.doctype,
+						docname=doc.name,
+						folder=folder,
+						use_hash=True,
 					)
-					doc.set(fieldname, saved_file.file_url)
+					if upload_result.get("status"):
+						doc.set(fieldname, upload_result["data"]["file_url"])
 				except Exception as e:
 					frappe.log_error(f"File Upload Error: {str(e)}")
 				
@@ -1463,7 +1475,11 @@ def upload_file():
 	"""
 	Custom upload file endpoint for universal registration.
 	Allows guest uploads without requiring API key/secret or session login.
+	Uploads directly to MinIO object storage according to MINIO file structure rules.
 	"""
+	from rndopsapp.minio import get_rnd_file_service
+	from rndopsapp.file_handler import get_file_category_for_doctype
+
 	files = frappe.request.files
 	if "file" not in files:
 		frappe.throw("No file attached", frappe.ValidationError)
@@ -1472,23 +1488,131 @@ def upload_file():
 	content = uploaded_file.stream.read()
 	filename = uploaded_file.filename
 
-	is_private = frappe.form_dict.get("is_private", 0)
-	doctype = frappe.form_dict.get("doctype")
-	docname = frappe.form_dict.get("docname")
-	fieldname = frappe.form_dict.get("fieldname")
+	is_private = frappe.utils.cint(frappe.form_dict.get("is_private", 0))
+	doctype = frappe.form_dict.get("doctype") or frappe.form_dict.get("attached_to_doctype") or "Universal Registration__"
+	docname = frappe.form_dict.get("docname") or frappe.form_dict.get("attached_to_name") or "temp_uploads"
+	fieldname = frappe.form_dict.get("fieldname") or frappe.form_dict.get("attached_to_field")
+	folder = (
+		frappe.form_dict.get("folder")
+		or frappe.form_dict.get("category")
+		or frappe.form_dict.get("document_type")
+		or (get_file_category_for_doctype(doctype, fieldname) if fieldname else "documents")
+	)
 
-	doc = frappe.get_doc({
-		"doctype": "File",
-		"attached_to_doctype": doctype,
-		"attached_to_name": docname,
-		"attached_to_field": fieldname,
-		"file_name": filename,
-		"is_private": frappe.utils.cint(is_private),
-		"content": content,
-	})
-	doc.save(ignore_permissions=True)
+	file_service = get_rnd_file_service()
+	upload_result = file_service.save_file(
+		filename=filename,
+		content=content,
+		is_private=bool(is_private),
+		doctype=doctype,
+		docname=docname,
+		folder=folder,
+		use_hash=True,
+	)
+
+	if not upload_result.get("status"):
+		frappe.throw(f"MinIO Upload failed: {upload_result.get('message')}")
+
+	file_url = upload_result.get("data", {}).get("file_url")
+	file_doc_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+	if not file_doc_name:
+		frappe.throw(f"File record not found for URL: {file_url}")
+	file_doc = frappe.get_doc("File", str(file_doc_name))
+	
+	if doctype or docname or fieldname:
+		updates = {}
+		if doctype: updates["attached_to_doctype"] = doctype
+		if docname: updates["attached_to_name"] = docname
+		if fieldname: updates["attached_to_field"] = fieldname
+		frappe.db.set_value("File", file_doc.name, updates)
+		frappe.db.commit()
+		file_doc.update(updates)
+
+	return file_doc.as_dict()
+
+
+@frappe.whitelist(allow_guest=True)
+def migrate_universal_registration_local_files():
+	"""
+	Migrates all local disk files attached to Universal Registration or orphaned identity documents
+	to MinIO object storage.
+	"""
+	from rndopsapp.file_handler import migrate_local_file_to_minio
+
+	files = frappe.get_all(
+		"File",
+		filters={"file_url": ["like", "/files/%"]},
+		fields=["name", "file_name", "file_url", "attached_to_doctype", "attached_to_name", "attached_to_field"]
+	)
+
+	migrated = []
+	failed = []
+
+	for f in files:
+		file_url = f.get("file_url")
+		doctype = f.get("attached_to_doctype") or "Universal Registration__"
+		docname = f.get("attached_to_name") or "temp_uploads"
+		fieldname = f.get("attached_to_field") or "attachment"
+
+		res = migrate_local_file_to_minio(file_url, doctype, docname, fieldname)
+		if res.get("status"):
+			migrated.append({"old_url": file_url, "new_url": res.get("file_url")})
+		else:
+			failed.append({"file_url": file_url, "error": res.get("message")})
+
 	frappe.db.commit()
+	return {"migrated_count": len(migrated), "failed_count": len(failed), "migrated": migrated, "failed": failed}
 
-	return doc.as_dict()
+
+@frappe.whitelist(allow_guest=True)
+def get_minio_file(file_url=None, file_path=None, download=False, **kwargs):
+	"""
+	Stream a MinIO file directly to the client browser by file_url or file_path.
+	Supports both inline viewing (PDFs, images) and downloads.
+	Allows guest access for universal registration documents.
+	"""
+	import mimetypes
+	from rndopsapp.minio import get_rnd_file_service
+
+	path_to_fetch = file_url or file_path or kwargs.get("path") or kwargs.get("url")
+	if not path_to_fetch:
+		frappe.throw("file_url or file_path parameter is required", frappe.ValidationError)
+
+	path_clean = str(path_to_fetch).lstrip("/")
+	is_download = frappe.utils.cint(download) or (1 if str(kwargs.get("download")).lower() in ("true", "1") else 0)
+
+	content = None
+	filename = path_clean.rsplit("/", 1)[-1]
+	content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+	# If path_clean starts with "files/" or "private/files/", try reading local file fallback
+	if path_clean.startswith("files/") or path_clean.startswith("private/files/"):
+		site_path = frappe.get_site_path()
+		local_filepath = os.path.join(site_path, path_clean)
+		if os.path.exists(local_filepath):
+			with open(local_filepath, "rb") as f:
+				content = f.read()
+	else:
+		svc = get_rnd_file_service()
+		result = svc.get_file(path_clean)
+		if not result.get("status"):
+			err_msg = str(result.get("message") or f"File not found in MinIO for path '{path_clean}'")
+			frappe.throw(err_msg, frappe.DoesNotExistError)
+		content = result["data"]["content"]
+
+	frappe.response["filename"] = filename
+	frappe.response["filecontent"] = content
+	frappe.response["content_type"] = content_type
+	# Always use "download" type — Frappe's as_raw() respects content_type
+	# and supports display_content_as. The "binary" type hardcodes
+	# application/octet-stream + Content-Disposition: attachment.
+	frappe.response["type"] = "download"
+
+	if is_download:
+		frappe.response["display_content_as"] = "attachment"
+	else:
+		frappe.response["display_content_as"] = "inline"
+
+
 
 
