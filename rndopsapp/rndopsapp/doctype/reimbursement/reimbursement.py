@@ -303,6 +303,12 @@ def _get_permanent_employee_options():
 			limit_page_length=0,
 			order_by="full_name asc",
 		)
+		# Two accounts can share the same full name (e.g. a personal login and a
+		# role account), which makes the picker ambiguous and lets the applicant
+		# select the wrong PI. Always show the email alongside the name.
+		for u in users:
+			name = (u.get("label") or "").strip()
+			u["label"] = f"{name} ({u['value']})" if name else u["value"]
 		return users
 	except Exception:
 		return []

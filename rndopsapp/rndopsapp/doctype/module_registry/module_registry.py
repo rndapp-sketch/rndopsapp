@@ -396,8 +396,15 @@ def get_pending_task(page_name="pending-task"):
 @frappe.whitelist()
 def get_pending_application():
 	"""
-	Returns Leave Module applications pending the current user's approval as PI.
-	Filters Leave Module by pi == frappe.session.user and workflow_state == "Pending PI Approval".
+	Returns applications pending the current user's approval as PI.
+
+	Two sources:
+	1. Leave Module — pi == session user, state "Pending PI Approval".
+	2. Other-PI forms — the applicant charged the form to a project owned by
+	   this user, so it is parked with them ("Pending Other PI", or
+	   "Pending PI Approval" for Reimbursement) until they pick the funding
+	   project/account head. Without this the designated PI has no inbox for
+	   them, since the Pending Task page is not shown to Permanent Employees.
 	"""
 
 	current_user = frappe.session.user
@@ -413,6 +420,42 @@ def get_pending_application():
 		order_by="modified desc",
 		limit_page_length=10000,
 	)
+	for r in records:
+		r["doctype"] = "Leave Module"
+
+	# doctype -> (other-PI field, state it waits in, applicant-name field)
+	other_pi_sources = {
+		"Travel": ("travel_other_pi_id", "Pending Other PI", "applicant_name_travel"),
+		"Indent General Form": ("igf_other_pi_id", "Pending Other PI", "igf_indenter"),
+		"Indent Cum Sanction Sheet": ("icss_other_pi_id", "Pending Other PI", "icss_applicant_name"),
+		"Reimbursement": ("reimbursement_for_id", "Pending PI Approval", "applicant_webmail"),
+	}
+
+	for dt, (pi_field, state, name_field) in other_pi_sources.items():
+		try:
+			meta = frappe.get_meta(dt)
+			if not meta.has_field(pi_field):
+				continue
+			fields = ["name", "workflow_state", "modified", "owner", "docstatus", "creation"]
+			if meta.has_field(name_field):
+				fields.append(name_field)
+			rows = frappe.get_list(
+				dt,
+				filters={pi_field: current_user, "workflow_state": state},
+				fields=fields,
+				order_by="modified desc",
+				limit_page_length=10000,
+				ignore_permissions=True,
+			)
+			for r in rows:
+				r["doctype"] = dt
+				r["pi"] = current_user
+				r["username"] = r.get(name_field) or r.get("owner")
+				records.append(r)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"get_pending_application: {dt} lookup failed")
+
+	records.sort(key=lambda r: r.get("modified") or "", reverse=True)
 
 	return {"user": current_user, "results": records}
 
