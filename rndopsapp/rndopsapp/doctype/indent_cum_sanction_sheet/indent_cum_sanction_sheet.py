@@ -65,6 +65,14 @@ ICSS_PUT_BACK_RULES = {
         "roles": ["Permanent Employee", "head_approver_1", "HoD", "System Manager"],
         "targets": ["Requestor"],
     },
+    # The Other PI (whose project would fund the indent) can send it back
+    # instead of forwarding — to the requestor, or to the requestor's own PI
+    # when it arrived here via the PS → PI → Other PI path. Access is further
+    # scoped to the *assigned* Other PI inside put_back_icss().
+    "Pending Other PI": {
+        "roles": ["Other PI", "Permanent Employee", "System Manager"],
+        "targets": ["PI", "Requestor"],
+    },
     "Pending Staff Approval": {
         "roles": ["staff, RnD", "System Manager"],
         "targets": ["PI", "Requestor"],
@@ -1697,6 +1705,15 @@ def put_back_icss(docname, target, reason=None):
         doc = frappe.get_doc(DOCTYPE, docname)
         current_state = doc.workflow_state or "Draft"
         user_roles = frappe.get_roles(frappe.session.user)
+
+        # The Other-PI step is scoped to the specifically-assigned PI — the
+        # 'Permanent Employee' role in ICSS_PUT_BACK_RULES is not enough on its
+        # own (mirrors the guard in perform_icss_action for Forward/Approve).
+        if current_state == "Pending Other PI":
+            is_system_manager = "System Manager" in user_roles
+            assigned_pi = (doc.get("icss_other_pi_id") or "").lower()
+            if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+                frappe.throw(_("You are not authorised to act on this indent."))
 
         # Validate blocked states
         if current_state in PUT_BACK_BLOCKED_STATES:

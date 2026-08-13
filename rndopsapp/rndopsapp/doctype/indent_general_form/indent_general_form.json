@@ -101,7 +101,8 @@
    "fetch_from": "igf_project_title.project_no",
    "fieldname": "igf_project_code",
    "fieldtype": "Data",
-   "label": "Project Code"
+   "label": "Project Code",
+   "depends_on": "eval:doc.igf_other_pi != \"Other\""
   },
   {
    "default": "Self",
