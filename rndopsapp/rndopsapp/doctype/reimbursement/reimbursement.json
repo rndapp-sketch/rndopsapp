@@ -60,7 +60,8 @@
    "hidden": 1,
    "label": "Project Number",
    "options": "Project Registration",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:doc.self_other==\"Self\""
   },
   {
    "depends_on": "eval:doc.self_other==\"Self\"",
@@ -69,7 +70,7 @@
    "in_list_view": 1,
    "label": "Account Head",
    "options": "Budget Head",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.self_other==\"Self\""
   },
   {
    "fieldname": "comment",
@@ -120,7 +121,8 @@
    "fieldtype": "Link",
    "hidden": 1,
    "label": "Project Name",
-   "options": "Project Registration"
+   "options": "Project Registration",
+   "depends_on": "eval:doc.self_other==\"Self\""
   },
   {
    "fieldname": "declarations",
