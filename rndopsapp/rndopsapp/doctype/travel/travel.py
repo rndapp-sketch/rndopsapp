@@ -510,6 +510,108 @@ def save_travel(doc_data):
 		frappe.throw(f"Failed to save Travel: {str(e)}")
 
 
+def _assign_travel_to_other_pi(doc):
+	"""Assign the Travel doc to the selected Other PI so it appears in their
+	Pending Tasks and they get notified while it sits in 'Pending Other PI'."""
+	other_pi = (doc.get("travel_other_pi_id") or "").strip()
+	if not other_pi:
+		return
+	try:
+		from frappe.desk.form.assign_to import add as assign_add
+
+		existing = frappe.get_all(
+			"ToDo",
+			filters={
+				"reference_type": "Travel",
+				"reference_name": doc.name,
+				"allocated_to": other_pi,
+				"status": "Open",
+			},
+			limit=1,
+		)
+		if not existing:
+			assign_add(
+				{
+					"assign_to": [other_pi],
+					"doctype": "Travel",
+					"name": doc.name,
+					"description": _(
+						"Travel application awaiting your approval "
+						"(charged to your project)."
+					),
+					"notify": 1,
+				}
+			)
+	except Exception:
+		# Assignment is a convenience — never let it block the submission.
+		frappe.log_error(frappe.get_traceback(), "Travel Other-PI assignment failed")
+
+
+def _clear_other_pi_assignment(doc):
+	"""Close the Other-PI's assignment once they've acted on the travel."""
+	other_pi = (doc.get("travel_other_pi_id") or "").strip()
+	if not other_pi:
+		return
+	try:
+		from frappe.desk.form.assign_to import remove as assign_remove
+
+		assign_remove("Travel", doc.name, other_pi)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel Other-PI unassign failed")
+
+
+def _resolve_dept_head(user_id):
+	"""Return the department head (HoD user) for a given user's department.
+
+	user -> User.department_name (a Department_prornd link) -> dept_head.
+	Returns None if anything is missing so callers can fall back gracefully.
+	"""
+	user_id = (user_id or "").strip()
+	if not user_id:
+		return None
+	try:
+		dept = frappe.db.get_value("User", user_id, "department_name")
+		if not dept:
+			return None
+		return frappe.db.get_value("Department_prornd", dept, "dept_head") or None
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel dept-head resolution failed")
+		return None
+
+
+def _assign_travel_to_user(doc, user, description):
+	"""Assign the Travel doc to a specific user (idempotent) so it lands in
+	their Pending Tasks and they get notified. Best-effort — never blocks."""
+	user = (user or "").strip()
+	if not user:
+		return
+	try:
+		from frappe.desk.form.assign_to import add as assign_add
+
+		existing = frappe.get_all(
+			"ToDo",
+			filters={
+				"reference_type": "Travel",
+				"reference_name": doc.name,
+				"allocated_to": user,
+				"status": "Open",
+			},
+			limit=1,
+		)
+		if not existing:
+			assign_add(
+				{
+					"assign_to": [user],
+					"doctype": "Travel",
+					"name": doc.name,
+					"description": description,
+					"notify": 1,
+				}
+			)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel assignment failed")
+
+
 @frappe.whitelist()
 def submit_travel(docname):
 	"""
@@ -569,6 +671,11 @@ def submit_travel(docname):
 		doc.add_comment("Workflow", _(next_state.state))
 
 		frappe.db.commit()
+
+		# Charged to another PI's project — hand the form to that PI.
+		if next_state.state == "Pending Other PI":
+			_assign_travel_to_other_pi(doc)
+
 		return {
 			"status": "success",
 			"message": f"Travel '{docname}' submitted successfully.",
@@ -720,6 +827,17 @@ def perform_travel_action(docname, action, extra_data=None):
 			if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
 				frappe.throw(_("You are not authorised to act on this travel application."))
 
+		# When the travel was charged to another PI's project, the Head-approval
+		# step is re-pointed to that FUNDING PI's department head (set at the
+		# Other-PI forward). Only they (or a System Manager) may act — the
+		# applicant's HoD does not approve a charge on someone else's project.
+		# For the normal flow this field is empty, so the guard is a no-op.
+		if current_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			designated_head = (doc.get("travel_head_approver_id") or "").lower()
+			if not is_system_manager and designated_head != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this travel application — it is with the funding PI's department head."))
+
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.db.get_value(
 			"Workflow",
@@ -805,6 +923,11 @@ def perform_travel_action(docname, action, extra_data=None):
 			doc.travel_project_title = project_name
 			doc.travel_project_number = owns.get("project_no") or owns.get("project_number")
 
+			# Re-point the HoD step to the FUNDING PI's department head — the
+			# charge now sits on the Other PI's project, so their dept HoD (not
+			# the applicant's) approves. Falls back gracefully if unresolved.
+			doc.travel_head_approver_id = _resolve_dept_head(doc.get("travel_other_pi_id"))
+
 		# Update workflow state
 		doc.workflow_state = next_state
 
@@ -817,6 +940,26 @@ def perform_travel_action(docname, action, extra_data=None):
 			doc.cancel()
 		else:
 			doc.save(ignore_permissions=True)
+
+		# The Other PI has acted (Forward/Put Back) — release their assignment
+		# and hand the form to the funding PI's department head.
+		if current_state == "Pending Other PI":
+			_clear_other_pi_assignment(doc)
+			if next_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+				_assign_travel_to_user(
+					doc,
+					doc.travel_head_approver_id,
+					_("Travel application awaiting your approval "
+					  "(charged to a project in your department)."),
+				)
+
+		# The funding-PI's HoD has acted — release their assignment.
+		if current_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+			try:
+				from frappe.desk.form.assign_to import remove as assign_remove
+				assign_remove("Travel", doc.name, doc.travel_head_approver_id)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), "Travel head unassign failed")
 
 		# --- Special Casual Leave deduction on Approval ---
 		if next_state == "Approved" and doc.travel_special_casual_leave == "Required":

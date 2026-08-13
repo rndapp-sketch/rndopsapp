@@ -12,6 +12,7 @@
   "if_traveler",
   "travel_other_pi",
   "travel_other_pi_id",
+  "travel_head_approver_id",
   "travel_project_title",
   "travel_project_number",
   "section_break_lroa",
@@ -167,6 +168,14 @@
    "options": "User"
   },
   {
+   "fieldname": "travel_head_approver_id",
+   "fieldtype": "Link",
+   "label": "Head Approver (funding PI dept)",
+   "options": "User",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
    "depends_on": "eval:doc.if_traveler == 'Other'",
    "fieldname": "other_traveler",
    "fieldtype": "Link",
@@ -233,6 +242,7 @@
    "label": "Assitance Details"
   },
   {
+   "depends_on": "eval:doc.travel_other_pi != \"Other\"",
    "fetch_from": "travel_project_title.project_no",
    "fieldname": "travel_project_number",
    "fieldtype": "Data",

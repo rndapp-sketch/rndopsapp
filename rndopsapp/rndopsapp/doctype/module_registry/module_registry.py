@@ -47,13 +47,36 @@ def get_pending_task(page_name="pending-task"):
 	user_roles = frappe.get_roles(current_user)
 	is_system_manager = "System Manager" in user_roles
 
-	# Find departments this user heads — used for Travel "Pending Head Approval" filtering
+	# Find departments this user heads — used for "Pending Head Approval" filtering.
+	# Both the link ID and the readable name are kept: some doctypes store the
+	# department as a Link (ID), others as plain Data (the department name).
 	_head_depts = frappe.db.sql(
-		"SELECT name FROM `tabDepartment_prornd` WHERE dept_head = %s",
+		"SELECT name, dept_name FROM `tabDepartment_prornd` WHERE dept_head = %s",
 		current_user,
 		as_dict=True,
 	)
 	dept_head_values = {d.name for d in _head_depts}
+	dept_head_names = {(d.dept_name or "").strip().lower() for d in _head_depts if d.dept_name}
+
+	def _heads_this_department(value):
+		"""True when `value` (a Department_prornd ID *or* its name) is a
+		department the current user heads."""
+		v = (value or "").strip()
+		if not v:
+			return False
+		return v in dept_head_values or v.lower() in dept_head_names
+
+	# Reference doctypes that carry the applicant's department but no explicit
+	# head/approver field — their Cancellation Requests must still be scoped to
+	# the head of that department instead of being shown to every head.
+	dept_field_map = {
+		"Travel": "department_travel",
+		"Reimbursement": "applicant_department",
+		"Indent General Form": "igf_department_centre_section",
+		"Indent Cum Sanction Sheet": "icss_applicant_department__centre__section",
+		"Direct Purchase": "applicant_department",
+		"Temporary Advance": "applicant_department",
+	}
 
 	# 2. Get Parent Module Registry
 	parent = frappe.get_all(
@@ -239,6 +262,8 @@ def get_pending_task(page_name="pending-task"):
 			extra_fields.append(sa_field)
 		if dt == "Travel" and meta.has_field("department_travel") and "department_travel" not in extra_fields:
 			extra_fields.append("department_travel")
+		if dt == "Travel" and meta.has_field("travel_head_approver_id") and "travel_head_approver_id" not in extra_fields:
+			extra_fields.append("travel_head_approver_id")
 		if dt == "Cancellation Request":
 			for f in ["reference_doctype", "reference_name"]:
 				if f not in extra_fields:
@@ -274,9 +299,14 @@ def get_pending_task(page_name="pending-task"):
 
 						# A) Head Approval filtering for the underlying reference document
 						if curr_status == "Pending Head Approval":
-							if ref_dt == "Travel":
-								doc_dept = (ref_doc.get("department_travel") or "").strip()
-								if doc_dept not in dept_head_values:
+							# Travel Other-PI: the head step is re-pointed to the
+							# funding PI's department head, so honour that first.
+							travel_head = (ref_doc.get("travel_head_approver_id") or "").strip().lower()
+							if ref_dt == "Travel" and travel_head:
+								if travel_head != current_user.lower():
+									continue
+							elif ref_dt in dept_field_map:
+								if not _heads_this_department(ref_doc.get(dept_field_map[ref_dt])):
 									continue
 							elif ref_dt in head_field_map:
 								h_field = head_field_map[ref_dt]
@@ -291,8 +321,20 @@ def get_pending_task(page_name="pending-task"):
 									or ref_doc.get("dept_head")
 									or ""
 								).strip().lower()
-								if h_email and h_email != current_user.lower():
-									continue
+								if h_email:
+									if h_email != current_user.lower():
+										continue
+								else:
+									# No head field and no known department field:
+									# fall back to any department-looking value so
+									# the request is not exposed to every head.
+									dept_val = (
+										ref_doc.get("applicant_department")
+										or ref_doc.get("department")
+										or ""
+									)
+									if not _heads_this_department(dept_val):
+										continue
 
 						# B) Specific Approver / Other PI filtering for reference document
 						ref_sa = specific_approver_map.get(ref_dt)
@@ -329,15 +371,23 @@ def get_pending_task(page_name="pending-task"):
 				if approver_email != current_user.lower():
 					continue
 
-			# Travel: filter "Pending Head Approval" to the dept head of the document's department
+			# Travel: filter "Pending Head Approval" to the correct dept head.
+			# For an Other-PI form the head is re-pointed to the FUNDING PI's
+			# department head (stored on travel_head_approver_id); otherwise it
+			# falls back to the head of the applicant's own department.
 			if (
 				dt == "Travel"
 				and r.get(status_field) == "Pending Head Approval"
 				and not is_system_manager
 			):
-				doc_dept = (r.get("department_travel") or "").strip()
-				if doc_dept not in dept_head_values:
-					continue
+				head_override = (r.get("travel_head_approver_id") or "").strip().lower()
+				if head_override:
+					if head_override != current_user.lower():
+						continue
+				else:
+					doc_dept = (r.get("department_travel") or "").strip()
+					if doc_dept not in dept_head_values:
+						continue
 
 			mapped.append(
 				{
