@@ -2091,6 +2091,29 @@ def get_document_activity(doctype, docname):
 			}
 		)
 
+	# --- 6. Chain in comments from the external account portal, if this
+	# doctype maps to a known comment category (see get_project_activity) ---
+	for category in DOCTYPE_TO_COMMENT_CATEGORIES.get(doctype, []):
+		for c in _get_account_portal_comments(category, docname):
+			# commentDateTime is ISO "T"-separated; every other timestamp here
+			# is a plain str(datetime) with a space, and entries are sorted by
+			# plain string comparison below, so normalize to match.
+			timestamp = (c.get("commentDateTime") or "").replace("T", " ")
+			entries.append(
+				{
+					"type": "comment",
+					"label": "commented (Account Portal)",
+					"user": "Account Portal",
+					"user_email": None,
+					"timestamp": timestamp,
+					"content": c.get("comment"),
+					"source": "account_portal",
+					"comment_id": c.get("commentId"),
+					"reference_parent_id": c.get("referenceParentId"),
+					"frappe_application_no": c.get("frappeApplicationNo"),
+				}
+			)
+
 	# Creation entry always at the bottom
 	entries.append(
 		{

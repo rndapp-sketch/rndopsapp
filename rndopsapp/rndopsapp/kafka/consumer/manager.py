@@ -12,6 +12,7 @@ from ..config import (
     KAFKA_BOOTSTRAP_SERVERS,
     CONSUMER_GROUP_ID,
     ALL_CONSUMER_TOPICS,
+    NEW_DLQ_CONSUMER_TOPICS,
     CONSUMER_MAX_POLL_RECORDS,
     CONSUMER_RETRY_DELAY_SECONDS,
 )
@@ -99,6 +100,18 @@ def get_consumer():
             _consumer.assign(all_topic_partitions)
             # Default to beginning for early testing/dev as per user's previous code
             _consumer.seek_to_beginning()
+
+            # The DLQ topics just added to ALL_CONSUMER_TOPICS already have a
+            # backlog that predates this consumer (they had no consumer at
+            # all before). Skip straight to the current end for just those
+            # topic-partitions so that backlog is never auto-processed —
+            # only failures from here on are. The topics above keep their
+            # existing beginning-replay behavior unchanged.
+            new_dlq_tps = [tp for tp in all_topic_partitions if tp.topic in NEW_DLQ_CONSUMER_TOPICS]
+            if new_dlq_tps:
+                _consumer.seek_to_end(*new_dlq_tps)
+                log_info(f"Seeked {len(new_dlq_tps)} new DLQ partitions to end (skipping backlog)", "consumer")
+
             log_info(f"Assigned {len(all_topic_partitions)} partitions and seeked to beginning", "consumer")
         else:
             log_error(f"No partitions found for any topic in {ALL_CONSUMER_TOPICS}", "KAFKA_CONFIG_ERROR")

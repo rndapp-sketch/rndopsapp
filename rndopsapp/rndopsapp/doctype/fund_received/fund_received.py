@@ -11,6 +11,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, sanitize_html
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_received
+from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+from rndopsapp.rndopsapp.kafka.config import TOPIC_FUND_RECEIVED
 from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
 
 
@@ -714,6 +716,27 @@ def get_fund_received_workflow_actions(docname):
 		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
 			allowed_actions.append(transition.action)
 
+	# Pending Rectification / Pending Reconciliation / Rejected are entered
+	# only by the Kafka consumer writing workflow_state directly — they have
+	# no real "Put Back" Workflow Transition of their own for the loop above
+	# to find. put_back_action.py's generic tool can still resolve a target
+	# for them via STATE_ALIASES (aliased to PENDING_APPROVAL). Surface
+	# "Put Back" here too, gated to staff, RnD — the same role that owns the
+	# real "Forward" transition out of Pending Rectification, so whoever can
+	# resubmit can also put back — plus RnD Administration/System Manager as
+	# the usual admin override.
+	from rndopsapp.rndopsapp.put_back_action import STATE_ALIASES
+	if (
+		"Put Back" not in allowed_actions
+		and ("Fund Received", current_state) in STATE_ALIASES
+		and (
+			"staff, RnD" in user_roles
+			or "RnD Administration" in user_roles
+			or "System Manager" in user_roles
+		)
+	):
+		allowed_actions.append("Put Back")
+
 	return list(dict.fromkeys(allowed_actions))
 
 
@@ -810,6 +833,47 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 				print(f"Error parsing deposit_slip_data: {e}")
 				deposit_slip_data = None
 		
+		# "Put Back" from a Kafka-consumer-only state (Pending Rectification /
+		# Pending Reconciliation / Rejected) has no real Workflow Transition row
+		# to match below — see get_fund_received_workflow_actions, which surfaces
+		# this same action via put_back_action.py's STATE_ALIASES instead. Route
+		# it through that generic bypass tool here too, short-circuiting before
+		# any of the forward-transition side effects (deposit slip creation,
+		# docstatus submit, Kafka publish) that don't apply to a backward move.
+		from rndopsapp.rndopsapp.put_back_action import STATE_ALIASES, get_put_back_document_states, set_put_back_workflow_state
+		if action == "Put Back" and ("Fund Received", current_state) in STATE_ALIASES:
+			user_roles = frappe.get_roles(frappe.session.user)
+			# Same role set as the fallback in get_fund_received_workflow_actions
+			# above — staff, RnD (owns the real "Forward" out of this state) plus
+			# the usual admin override roles.
+			if not (
+				"staff, RnD" in user_roles
+				or "RnD Administration" in user_roles
+				or "System Manager" in user_roles
+			):
+				frappe.throw("You are not permitted to Put Back from this state.", frappe.PermissionError)
+
+			put_back = get_put_back_document_states("Fund Received", docname)
+			target_states = put_back.get("states") or []
+			if put_back.get("status") != "success" or not target_states:
+				frappe.throw(f"No Put Back target available from state '{current_state}'.")
+
+			result = set_put_back_workflow_state(
+				"Fund Received", docname, target_states[0], frappe.session.user,
+				comment=f"Put Back from {current_state} (via Fund Received workflow actions)",
+			)
+			if result.get("status") != "success":
+				frappe.throw(result.get("message") or "Put Back failed.")
+
+			frappe.db.commit()
+			return {
+				"status": "success",
+				"message": f"Action 'Put Back' completed. New State: {target_states[0]}",
+				"docname": docname,
+				"workflow_state": target_states[0],
+				"next_actions": get_fund_received_workflow_actions(docname),
+			}
+
 		# Find all transitions matching current state and action.
 		# Multiple rows may exist for the same (state, action) when different roles
 		# are each given their own row — but they all target the same next_state.
@@ -899,6 +963,10 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 		if next_state == "PENDING_APPROVAL":
 			try:
 				import datetime
+				record_publish_state(
+					"Fund Received", doc.name, TOPIC_FUND_RECEIVED,
+					current_state, next_state,
+				)
 				success = publish_fund_received(doc)
 				if success:
 					frappe.msgprint(_("Fund Received data synced to Kafka successfully."), indicator='green')
@@ -1476,6 +1544,9 @@ def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_typ
 			'Draft':                                                 0,
 			'Pending Misc. Staff Approval':                          1,
 			'PENDING_APPROVAL':                                      2,
+			'Pending Rectification':                                 2,
+			'Pending Reconciliation':                                2,
+			'Rejected':                                               2,
 			'Pending Misc. Staff Approval(Deposit Slip Pending)':    3,
 			'Pending HoS Approval':                                  4,
 			'Approved':                                              5,

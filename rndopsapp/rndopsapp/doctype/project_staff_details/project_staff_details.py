@@ -7,11 +7,14 @@
 
 import json
 import math
+import re
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.workflow import apply_workflow, get_transitions
+from frappe.utils.csvutils import read_csv_content
+from frappe.utils.xlsxutils import read_xls_file_from_attached_file, read_xlsx_file_from_attached_file
 
 
 def _extract_eval(expression):
@@ -261,6 +264,224 @@ def create_project_staff_details_entry(data):
 	frappe.db.commit()
 
 	return {"status": "success", "docname": doc.name, "ps_emp_id": emp_id}
+
+
+# Header text (as it appears on the `/insert_project_staff` form, or the raw
+# fieldname) -> Project Staff Details fieldname. Matched case/space/punctuation
+# -insensitively, see `_normalize_bulk_import_header`.
+BULK_IMPORT_HEADER_MAP = {
+	"piid": "pi_id",
+	"piidemail": "pi_id",
+	"projectnumber": "project_no",
+	"projectno": "project_no",
+	"scrid": "scr_id",
+	"department": "ps_department",
+	"designation": "ps_designation",
+	"firstname": "ps_first_name",
+	"middlename": "ps_middle_name",
+	"lastname": "ps_last_name",
+	"gender": "ps_gender",
+	"dateofbirth": "ps_date_of_birth",
+	"fathersname": "ps_fathers_name",
+	"bloodgroup": "ps_blood_group",
+	"maritialstatus": "ps_maritial_status",
+	"maritalstatus": "ps_maritial_status",
+	"citizenship": "ps_citizenship",
+	"phonenumber": "ps_phone_number",
+	"emailid": "ps_email_id",
+	"erpmail": "erp_mail",
+	"presentaddress": "ps_present_address",
+	"permanentaddress": "ps_permanent_address",
+	"bankaccountnumber": "bank_account_number",
+	"pan": "ps_pan",
+	"aadharnumber": "ps_aadhar_number",
+	"joiningdate": "ps_joining_date",
+	"termcompletiondate": "ps_term_completion_date",
+	"basicsalary": "ps_basic_salary",
+	"hra": "ps_hra",
+	"medicalallowance": "ps_ma",
+	"hostel": "ps_hostel",
+	"travelallowanceneeded": "ps_ta",
+	"travelallowanceamount": "ps_ta_amount",
+}
+# Also accept the raw fieldnames themselves (e.g. "ps_first_name") as headers.
+BULK_IMPORT_HEADER_MAP.update(
+	{re.sub(r"[^a-z0-9]", "", f): f for f in set(BULK_IMPORT_HEADER_MAP.values())}
+)
+
+BULK_IMPORT_REQUIRED_FIELDS = {
+	"pi_id": "PI Id",
+	"project_no": "Project Number",
+	"ps_department": "Department",
+	"ps_designation": "Designation",
+	"ps_first_name": "First Name",
+	"ps_last_name": "Last Name",
+	"ps_gender": "Gender",
+	"ps_joining_date": "Joining Date",
+}
+
+
+def _normalize_bulk_import_header(header):
+	return re.sub(r"[^a-z0-9]", "", str(header or "").lower())
+
+
+def _find_duplicate_project_staff_row(row_data, seen_in_file):
+	"""
+	Best-effort duplicate check for a bulk-import row: same Aadhar/PAN, or
+	the same project + name + joining date, either already in the doctype
+	or earlier in the same uploaded file. Returns a reason string, or None
+	if the row looks new (and records its identity into `seen_in_file`).
+	"""
+	aadhar = (row_data.get("ps_aadhar_number") or "").strip()
+	pan = (row_data.get("ps_pan") or "").strip()
+	combo = (
+		(row_data.get("project_no") or "").strip().lower(),
+		(row_data.get("ps_first_name") or "").strip().lower(),
+		(row_data.get("ps_last_name") or "").strip().lower(),
+		(row_data.get("ps_joining_date") or "").strip(),
+	)
+	combo_usable = all(combo[:3])
+
+	if aadhar and aadhar in seen_in_file["aadhar"]:
+		return _("Duplicate Aadhar Number within the uploaded file")
+	if pan and pan in seen_in_file["pan"]:
+		return _("Duplicate PAN within the uploaded file")
+	if combo_usable and combo in seen_in_file["combo"]:
+		return _("Duplicate row (same project, name & joining date) within the uploaded file")
+
+	if aadhar and frappe.db.exists("Project Staff Details", {"ps_aadhar_number": aadhar}):
+		return _("Aadhar Number already exists in Project Staff Details")
+	if pan and frappe.db.exists("Project Staff Details", {"ps_pan": pan}):
+		return _("PAN already exists in Project Staff Details")
+	if combo_usable and frappe.db.exists(
+		"Project Staff Details",
+		{
+			"project_no": row_data.get("project_no"),
+			"ps_first_name": row_data.get("ps_first_name"),
+			"ps_last_name": row_data.get("ps_last_name"),
+			"ps_joining_date": row_data.get("ps_joining_date"),
+		},
+	):
+		return _("A record with the same project, name & joining date already exists")
+
+	if aadhar:
+		seen_in_file["aadhar"].add(aadhar)
+	if pan:
+		seen_in_file["pan"].add(pan)
+	if combo_usable:
+		seen_in_file["combo"].add(combo)
+	return None
+
+
+@frappe.whitelist(methods=["POST"])
+def bulk_import_project_staff_details():
+	"""
+	Bulk-imports Project Staff Details from an uploaded CSV/XLS/XLSX file
+	(multipart/form-data, field name "file" — same as the standard Frappe
+	file upload pattern; binary spreadsheets don't belong in a JSON body).
+
+	The first row is treated as the header row; column headers are matched
+	against `BULK_IMPORT_HEADER_MAP` case/space/punctuation-insensitively, so
+	either the friendly labels used on the `/insert_project_staff` form
+	("PI Id", "First Name", ...) or the raw fieldnames ("pi_id",
+	"ps_first_name", ...) both work. Unrecognized columns are ignored.
+
+	Each row is inserted through the same path as `create_project_staff_details_entry`
+	(no ignore_permissions — runs as the logged-in user), after a best-effort
+	duplicate check (see `_find_duplicate_project_staff_row`). One bad row
+	does not abort the rest of the file: every row gets its own try/except and
+	the response reports success/duplicate/error per row plus totals.
+	"""
+	uploaded = frappe.request.files.get("file") if frappe.request else None
+	if not uploaded or not uploaded.filename:
+		frappe.throw(_("No file uploaded."))
+
+	filename = uploaded.filename
+	content = uploaded.read()
+	ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+	if ext == "csv":
+		rows = read_csv_content(content)
+	elif ext in ("xlsx", "xlsm"):
+		rows = read_xlsx_file_from_attached_file(fcontent=content)
+	elif ext == "xls":
+		rows = read_xls_file_from_attached_file(content)
+	else:
+		frappe.throw(_("Unsupported file type '.{0}'. Please upload a .csv, .xls or .xlsx file.").format(ext))
+
+	rows = [r for r in rows if r and any(str(c or "").strip() for c in r)]
+	if not rows:
+		frappe.throw(_("The uploaded file is empty."))
+
+	header_row, data_rows = rows[0], rows[1:]
+	col_field = [BULK_IMPORT_HEADER_MAP.get(_normalize_bulk_import_header(h)) for h in header_row]
+
+	if not any(col_field):
+		frappe.throw(
+			_("Could not recognize any column headers in the uploaded file. Please use the provided template.")
+		)
+
+	results = []
+	seen_in_file = {"aadhar": set(), "pan": set(), "combo": set()}
+	counts = {"success": 0, "duplicate": 0, "error": 0}
+
+	for idx, raw_row in enumerate(data_rows, start=2):  # 2 = first data row, header is row 1
+		row_data = {}
+		for col_idx, field in enumerate(col_field):
+			if not field or col_idx >= len(raw_row):
+				continue
+			value = raw_row[col_idx]
+			if value is None:
+				continue
+			row_data[field] = value.strip() if isinstance(value, str) else str(value).strip()
+
+		if not any(row_data.values()):
+			continue  # fully blank row — skip silently, don't count as an error
+
+		display_name = " ".join(
+			p for p in [row_data.get("ps_first_name"), row_data.get("ps_last_name")] if p
+		) or f"Row {idx}"
+
+		missing = [label for field, label in BULK_IMPORT_REQUIRED_FIELDS.items() if not row_data.get(field)]
+		if missing:
+			counts["error"] += 1
+			results.append(
+				{
+					"row": idx,
+					"name": display_name,
+					"status": "error",
+					"message": _("Missing required field(s): {0}").format(", ".join(missing)),
+				}
+			)
+			continue
+
+		dup_reason = _find_duplicate_project_staff_row(row_data, seen_in_file)
+		if dup_reason:
+			counts["duplicate"] += 1
+			results.append({"row": idx, "name": display_name, "status": "duplicate", "message": dup_reason})
+			continue
+
+		try:
+			created = create_project_staff_details_entry(row_data)
+			counts["success"] += 1
+			results.append(
+				{
+					"row": idx,
+					"name": display_name,
+					"status": "success",
+					"docname": created["docname"],
+					"ps_emp_id": created["ps_emp_id"],
+					"message": _("Created {0} — Employee ID {1}").format(
+						created["docname"], created["ps_emp_id"]
+					),
+				}
+			)
+		except Exception as e:
+			frappe.db.rollback()
+			counts["error"] += 1
+			results.append({"row": idx, "name": display_name, "status": "error", "message": str(e)})
+
+	return {"status": "success", "counts": counts, "results": results}
 
 
 @frappe.whitelist()

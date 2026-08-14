@@ -19,12 +19,24 @@ TOPIC_FUND_RECEIVED = 'fund-received-events'
 TOPIC_DEPOSIT_SLIP = 'deposit-slip-events'
 TOPIC_LOAN_REQUEST = 'loan-request-event'
 
+# account-head-commit-events is published from commitPayment.py (not this
+# kafka/producer/ package tree) via commitPayment.kafka_publish_commit, but
+# the topic name is defined here so both the producer side and the DLQ
+# consumer below share one source of truth.
+TOPIC_ACCOUNT_HEAD_COMMIT = 'account-head-commit-events'
+
 # --- PRODUCER DLQ TOPICS ---
 TOPIC_PROJECT_DLQ = 'project-registration-events-dlq'
 TOPIC_SANCTION_DLQ = 'fund-sanction-events-dlq'
 TOPIC_FUND_RECEIVED_DLQ = 'fund-received-events-dlq'
 TOPIC_DEPOSIT_SLIP_DLQ = 'deposit-slip-events-dlq'
 TOPIC_LOAN_REQUEST_DLQ = 'loan-request-event-dlq'
+
+# DLQ published by the external ledger microservice's AccountHeadCommit
+# Consumer when it can't process an account-head-commit-events message.
+# Mirrors TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ below — republishes the original
+# event unchanged, no error reason included.
+TOPIC_ACCOUNT_HEAD_COMMIT_DLQ = 'account-head-commit-events-dlq'
 
 # --- CONSUMER TOPICS ---
 TOPIC_ACCOUNTS_FUND_RECEIVED = 'accounts-fundreceived-update'
@@ -45,11 +57,25 @@ ALL_PRODUCER_TOPICS = [
     TOPIC_LOAN_REQUEST, TOPIC_LOAN_REQUEST_DLQ,
 ]
 
+# DLQ topics whose consumer must start from the *current end* of the topic
+# the first time it's assigned, instead of replaying from the beginning like
+# the rest of ALL_CONSUMER_TOPICS — these 5 previously had no consumer at
+# all, so each already has a backlog of pre-existing messages that predate
+# this consumer and must not be auto-processed. See consumer/manager.py.
+NEW_DLQ_CONSUMER_TOPICS = [
+    TOPIC_SANCTION_DLQ,
+    TOPIC_FUND_RECEIVED_DLQ,
+    TOPIC_DEPOSIT_SLIP_DLQ,
+    TOPIC_LOAN_REQUEST_DLQ,
+    TOPIC_ACCOUNT_HEAD_COMMIT_DLQ,
+]
+
 # All Consumer Topics List
 ALL_CONSUMER_TOPICS = [
     TOPIC_ACCOUNTS_FUND_RECEIVED,
     TOPIC_DEPOSIT_SLIP_UPDATE,
     TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ,
+    *NEW_DLQ_CONSUMER_TOPICS,
 ]
 
 # --- SCHEMA VERSIONS ---

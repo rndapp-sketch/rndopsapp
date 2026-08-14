@@ -41,6 +41,7 @@ class PaymentDlqConsumerHandler:
             reference_name = PaymentDlqErrorMapper.resolve_reference(dto)
 
             PaymentDlqErrorMapper.save_error(dto, reference_name)
+            PaymentDlqErrorMapper.revert_payment_status(reference_name)
             frappe.db.commit()
 
             log_consumer_event(

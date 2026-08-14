@@ -190,6 +190,43 @@ def publish_message(
     return False
 
 
+def record_publish_state(
+    reference_doctype: str,
+    reference_name: str,
+    topic: str,
+    previous_state: Optional[str],
+    published_state: Optional[str],
+) -> None:
+    """
+    Captures the workflow_state a document had immediately before it's
+    published to Kafka, so an async DLQ consumer — which runs long after this
+    save transaction and can't call get_doc_before_save() itself — knows what
+    to revert to if the downstream ledger service rejects the event.
+
+    Call this right before publish_message()/publish_*, using the same
+    old_state/previous_state each caller already computes for its own
+    on_update logic. Skipped when there's no real transition to revert
+    (brand new documents, or republishing the same state).
+    """
+    if not previous_state or previous_state == published_state:
+        return
+    try:
+        frappe.get_doc({
+            "doctype": "Kafka Publish State Log",
+            "reference_doctype": reference_doctype,
+            "reference_name": reference_name,
+            "topic": topic,
+            "previous_workflow_state": previous_state,
+            "published_state": published_state,
+            "status": "PUBLISHED",
+        }).insert(ignore_permissions=True)
+    except Exception as e:
+        log_error(
+            f"Failed to record publish state for {reference_doctype} {reference_name}: {e}",
+            "PUBLISH_STATE_LOG_ERROR",
+        )
+
+
 # --- DATE UTILITIES ---
 
 def fmt_date(d: Any) -> Optional[str]:
