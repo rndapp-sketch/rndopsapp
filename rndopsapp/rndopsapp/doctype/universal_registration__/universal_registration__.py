@@ -1,11 +1,10 @@
-# Copyright (c) 2026, rndops and contributors
-# For license information, please see license.txt
-
 import frappe
 from frappe.model.document import Document
 from frappe import _
-from frappe.utils.file_manager import save_file
 import json
+import base64
+import mimetypes
+from rndopsapp.minio import get_rnd_file_service
 
 class UniversalRegistration__(Document):
 	pass
@@ -161,6 +160,7 @@ def get_universal_registration___fields(doc_name=None):
 		meta = frappe.get_meta(doctype_name)
 	except Exception:
 		frappe.throw(_("DocType Universal Registration__ not found."))
+		return {"fields": [], "prefill_data": {}, "link_options": {}, "client_scripts": []}
 
 	fields = []
 	
@@ -242,13 +242,14 @@ def get_universal_registration___fields(doc_name=None):
 			prefill_data = doc.as_dict()
 		except Exception:
 			pass
-	elif frappe.session.user != "Guest":
+	elif frappe.session.user and frappe.session.user != "Guest":
 		# Optional: Auto-fill user details if creating new from a logged-in user context
 		try:
-			user_doc = frappe.get_doc("User", frappe.session.user)
+			user_id = str(frappe.session.user)
+			user_doc = frappe.get_doc("User", user_id)
 			prefill_data = {
-				"email_address_u_r": frappe.session.user,
-				"full_name_u_r": user_doc.full_name,
+				"email_address_u_r": user_id,
+				"full_name_u_r": getattr(user_doc, "full_name", ""),
 				"mobile_number_u_r": getattr(user_doc, "mobile_no", "")
 			}
 		except Exception:
@@ -306,12 +307,50 @@ def save_universal_registration___data(data=None, **kwargs):
 		# Get metadata to filter valid fields
 		meta = frappe.get_meta("Universal Registration__")
 
-		# Iterate over data and set fields
+		# Helper to upload file bytes/base64 to MinIO via RNDFileService
+		def upload_to_minio(raw_val, folder_name="documents", default_filename="document.pdf"):
+			try:
+				file_service = get_rnd_file_service()
+				file_name = default_filename
+				pure_b64 = None
+
+				if isinstance(raw_val, dict) and raw_val.get("file_data"):
+					file_name = raw_val.get("file_name") or default_filename
+					pure_b64 = raw_val.get("file_data")
+					if "," in pure_b64:
+						pure_b64 = pure_b64.split(",", 1)[1]
+				elif isinstance(raw_val, str) and raw_val.startswith("data:"):
+					comma_idx = raw_val.find(",")
+					header = raw_val[:comma_idx]
+					pure_b64 = raw_val[comma_idx+1:]
+					ext = "pdf"
+					if "image/png" in header: ext = "png"
+					elif "image/jpeg" in header or "image/jpg" in header: ext = "jpg"
+					file_name = f"{folder_name}_{doc.name}.{ext}"
+
+				if pure_b64:
+					file_bytes = base64.b64decode(pure_b64)
+					res = file_service.save_file(
+						filename=file_name,
+						content=file_bytes,
+						is_private=True,
+						doctype="Universal Registration__",
+						docname=doc.name,
+						folder=folder_name,
+						use_hash=True
+					)
+					if res.get("status") and res.get("data", {}).get("file_url"):
+						return res["data"]["file_url"]
+			except Exception as err:
+				frappe.log_error(f"MinIO Upload Error: {str(err)}", "Universal Registration MinIO Upload")
+			return None
+
+		# Step 1: Set non-file fields and child table structures first
+		files_to_process = []
 		for fieldname, value in data.items():
 			if not meta.has_field(fieldname):
 				continue
 			
-			# Skip empty values
 			if value is None or value == "":
 				continue
 				
@@ -319,7 +358,6 @@ def save_universal_registration___data(data=None, **kwargs):
 			
 			# Handle Phone fields
 			if df.fieldtype == "Phone" and value:
-				# Basic formatting: ensure it has country code if missing
 				phone_str = str(value).strip()
 				if not phone_str.startswith("+"):
 					value = f"+91-{phone_str}"
@@ -330,68 +368,77 @@ def save_universal_registration___data(data=None, **kwargs):
 			if df.fieldtype == "Table" and isinstance(value, list):
 				doc.set(fieldname, [])
 				child_meta = frappe.get_meta(df.options)
+				folder_cat = "documents" if fieldname == "uploaded_documents_u_r" else "attachments"
 				
-				for child_row in value:
+				for child_row_idx, child_row in enumerate(value):
 					if not isinstance(child_row, dict):
 						continue
 						
-					# Parse specific child fields
 					for cf in child_meta.fields:
-						# Handle Phone fields in child table
 						if cf.fieldtype == "Phone" and child_row.get(cf.fieldname):
 							p_val = child_row[cf.fieldname]
 							if not str(p_val).startswith("+"):
 								child_row[cf.fieldname] = f"+91-{p_val}"
 								
-						# Handle Attach fields (Base64) in child table
-						elif cf.fieldtype in ["Attach", "Attach Image"] and child_row.get(cf.fieldname) and isinstance(child_row[cf.fieldname], dict) and child_row[cf.fieldname].get("file_data"):
-							try:
-								saved_file = save_file(
-									child_row[cf.fieldname]["file_name"],
-									child_row[cf.fieldname]["file_data"],
-									"Universal Registration__",
-									doc.name,
-									decode=True,
-									is_private=0,
-									df=cf.fieldname
-								)
-								child_row[cf.fieldname] = saved_file.file_url
-							except Exception as e:
-								frappe.log_error(f"Child Table File Upload Error: {str(e)}")
+						elif cf.fieldtype in ["Attach", "Attach Image"] and child_row.get(cf.fieldname):
+							raw_f = child_row[cf.fieldname]
+							if isinstance(raw_f, dict) or (isinstance(raw_f, str) and raw_f.startswith("data:")):
+								def_fname = f"{child_row.get('document_name_u_r', 'document')}.pdf".replace(" ", "_")
+								files_to_process.append({
+									"type": "table",
+									"fieldname": fieldname,
+									"row_idx": child_row_idx,
+									"cf_name": cf.fieldname,
+									"raw": raw_f,
+									"folder": folder_cat,
+									"default_fname": def_fname
+								})
 								child_row[cf.fieldname] = None
 
 					doc.append(fieldname, child_row)
 					
-			# Handle Attach fields (Base64) - if sent as dict {file_name, file_data}
-			elif df.fieldtype in ["Attach", "Attach Image"] and isinstance(value, dict) and value.get("file_data"):
-				try:
-					saved_file = save_file(
-						value["file_name"],
-						value["file_data"],
-						doc.doctype,
-						doc.name,
-						decode=True,
-						is_private=0,
-						df=fieldname
-					)
-					doc.set(fieldname, saved_file.file_url)
-				except Exception as e:
-					frappe.log_error(f"File Upload Error: {str(e)}")
-					pass
+			# Handle Attach fields in parent doctype
+			elif df.fieldtype in ["Attach", "Attach Image"]:
+				if isinstance(value, dict) or (isinstance(value, str) and value.startswith("data:")):
+					files_to_process.append({
+						"type": "parent",
+						"fieldname": fieldname,
+						"raw": value,
+						"folder": "attachments",
+						"default_fname": f"{fieldname}.pdf"
+					})
+					doc.set(fieldname, None)
+				else:
+					doc.set(fieldname, value)
 				
 			# Standard fields
 			else:
 				doc.set(fieldname, value)
 
-		# For guest users, set owner as system
+		# Step 2: Set owner and save doc to get doc.name assigned
 		if doc.is_new():
-			if frappe.session.user == "Guest":
+			if not frappe.session.user or frappe.session.user == "Guest":
 				doc.owner = "Administrator"
 			else:
-				doc.owner = frappe.session.user
+				doc.owner = str(frappe.session.user)
 
 		doc.flags.ignore_permissions = True
 		doc.save()
+
+		# Step 3: Now process MinIO uploads using the assigned doc.name
+		if files_to_process:
+			for fitem in files_to_process:
+				minio_url = upload_to_minio(fitem["raw"], folder_name=fitem["folder"], default_filename=fitem["default_fname"])
+				if minio_url:
+					if fitem["type"] == "table":
+						table_rows = doc.get(fitem["fieldname"])
+						if table_rows and len(table_rows) > fitem["row_idx"]:
+							table_rows[fitem["row_idx"]].set(fitem["cf_name"], minio_url)
+					elif fitem["type"] == "parent":
+						doc.set(fitem["fieldname"], minio_url)
+			
+			doc.save()
+
 		frappe.db.commit()
 
 		return {"status": "success", "docname": doc.name, "message": "Saved successfully."}
@@ -483,77 +530,123 @@ def update_universal_registration___data(docname, data):
 			data = json.loads(data)
 		
 		doc = frappe.get_doc("Universal Registration__", docname)
-		
-		# Get metadata to filter valid fields
 		meta = frappe.get_meta("Universal Registration__")
-		
-		# Iterate over data and update fields
+
+		def upload_to_minio(raw_val, folder_name="documents", default_filename="document.pdf"):
+			try:
+				file_service = get_rnd_file_service()
+				file_name = default_filename
+				pure_b64 = None
+
+				if isinstance(raw_val, dict) and raw_val.get("file_data"):
+					file_name = raw_val.get("file_name") or default_filename
+					pure_b64 = raw_val.get("file_data")
+					if "," in pure_b64:
+						pure_b64 = pure_b64.split(",", 1)[1]
+				elif isinstance(raw_val, str) and raw_val.startswith("data:"):
+					comma_idx = raw_val.find(",")
+					header = raw_val[:comma_idx]
+					pure_b64 = raw_val[comma_idx+1:]
+					ext = "pdf"
+					if "image/png" in header: ext = "png"
+					elif "image/jpeg" in header or "image/jpg" in header: ext = "jpg"
+					file_name = f"{folder_name}_{doc.name}.{ext}"
+
+				if pure_b64:
+					file_bytes = base64.b64decode(pure_b64)
+					res = file_service.save_file(
+						filename=file_name,
+						content=file_bytes,
+						is_private=True,
+						doctype="Universal Registration__",
+						docname=doc.name,
+						folder=folder_name,
+						use_hash=True
+					)
+					if res.get("status") and res.get("data", {}).get("file_url"):
+						return res["data"]["file_url"]
+			except Exception as err:
+				frappe.log_error(f"MinIO Upload Error: {str(err)}", "Universal Registration MinIO Upload")
+			return None
+
+		files_to_process = []
 		for fieldname, value in data.items():
 			if not meta.has_field(fieldname):
 				continue
 				
 			df = meta.get_field(fieldname)
 			
-			# Handle Phone fields
 			if df.fieldtype == "Phone" and value:
-				if not str(value).startswith("+"):
-					value = f"+91-{value}"
+				phone_str = str(value).strip()
+				if not phone_str.startswith("+"):
+					value = f"+91-{phone_str}"
+				else:
+					value = phone_str
 			
-			# Handle Child Tables
 			if df.fieldtype == "Table" and isinstance(value, list):
 				doc.set(fieldname, [])
 				child_meta = frappe.get_meta(df.options)
+				folder_cat = "documents" if fieldname == "uploaded_documents_u_r" else "attachments"
 				
-				for child_row in value:
+				for child_row_idx, child_row in enumerate(value):
 					if not isinstance(child_row, dict):
 						continue
-					# Handle Parse specific child fields
+						
 					for cf in child_meta.fields:
 						if cf.fieldtype == "Phone" and child_row.get(cf.fieldname):
 							p_val = child_row[cf.fieldname]
 							if not str(p_val).startswith("+"):
 								child_row[cf.fieldname] = f"+91-{p_val}"
-						elif cf.fieldtype in ["Attach", "Attach Image"] and child_row.get(cf.fieldname) and isinstance(child_row[cf.fieldname], dict) and child_row[cf.fieldname].get("file_data"):
-							try:
-								saved_file = save_file(
-									child_row[cf.fieldname]["file_name"],
-									child_row[cf.fieldname]["file_data"],
-									"Universal Registration__",
-									doc.name,
-									decode=True,
-									is_private=0,
-									df=cf.fieldname
-								)
-								child_row[cf.fieldname] = saved_file.file_url
-							except Exception as e:
-								frappe.log_error(f"Child Table File Upload Error: {str(e)}")
+								
+						elif cf.fieldtype in ["Attach", "Attach Image"] and child_row.get(cf.fieldname):
+							raw_f = child_row[cf.fieldname]
+							if isinstance(raw_f, dict) or (isinstance(raw_f, str) and raw_f.startswith("data:")):
+								def_fname = f"{child_row.get('document_name_u_r', 'document')}.pdf".replace(" ", "_")
+								files_to_process.append({
+									"type": "table",
+									"fieldname": fieldname,
+									"row_idx": child_row_idx,
+									"cf_name": cf.fieldname,
+									"raw": raw_f,
+									"folder": folder_cat,
+									"default_fname": def_fname
+								})
 								child_row[cf.fieldname] = None
 
 					doc.append(fieldname, child_row)
 					
-			# Handle Attach fields (Base64)
-			elif df.fieldtype in ["Attach", "Attach Image"] and isinstance(value, dict) and value.get("file_data"):
-				try:
-					saved_file = save_file(
-						value["file_name"],
-						value["file_data"],
-						doc.doctype,
-						doc.name,
-						decode=True,
-						is_private=0,
-						df=fieldname
-					)
-					doc.set(fieldname, saved_file.file_url)
-				except Exception as e:
-					frappe.log_error(f"File Upload Error: {str(e)}")
-					pass
+			elif df.fieldtype in ["Attach", "Attach Image"]:
+				if isinstance(value, dict) or (isinstance(value, str) and value.startswith("data:")):
+					files_to_process.append({
+						"type": "parent",
+						"fieldname": fieldname,
+						"raw": value,
+						"folder": "attachments",
+						"default_fname": f"{fieldname}.pdf"
+					})
+					doc.set(fieldname, None)
+				else:
+					doc.set(fieldname, value)
 				
-			# Standard fields
 			else:
 				doc.set(fieldname, value)
 
 		doc.flags.ignore_permissions = True
 		doc.save()
+
+		if files_to_process:
+			for fitem in files_to_process:
+				minio_url = upload_to_minio(fitem["raw"], folder_name=fitem["folder"], default_filename=fitem["default_fname"])
+				if minio_url:
+					if fitem["type"] == "table":
+						table_rows = doc.get(fitem["fieldname"])
+						if table_rows and len(table_rows) > fitem["row_idx"]:
+							table_rows[fitem["row_idx"]].set(fitem["cf_name"], minio_url)
+					elif fitem["type"] == "parent":
+						doc.set(fitem["fieldname"], minio_url)
+			
+			doc.save()
+
 		frappe.db.commit()
 
 		return {"status": "success", "docname": doc.name, "message": "Updated successfully."}
@@ -566,10 +659,16 @@ def update_universal_registration___data(docname, data):
 @frappe.whitelist()
 def delete_universal_registration__(docname):
 	"""
-	Delete a Universal Registration document.
+	Delete a Universal Registration document and its attached files from MinIO.
 	"""
 	try:
-		frappe.delete_doc("Universal Registration__", docname, force=1)
+		try:
+			file_service = get_rnd_file_service()
+			file_service.delete_by_document("Universal Registration__", docname)
+		except Exception as file_err:
+			frappe.log_error(f"MinIO document cleanup warning: {str(file_err)}")
+
+		frappe.delete_doc("Universal Registration__", docname, force=True)
 		frappe.db.commit()
 		
 		return {"status": "success", "message": f"Document '{docname}' deleted successfully."}

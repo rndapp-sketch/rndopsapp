@@ -32,13 +32,13 @@ class ObjectStorageService:
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
 
-    def upload(self, object_name: str, data: bytes, content_type=None):
+    def upload(self, object_name: str, data: bytes, content_type: Optional[str] = None):
         self.client.put_object(
             self.bucket,
             object_name,
             io.BytesIO(data),
             len(data),
-            content_type=content_type
+            content_type=content_type or "application/octet-stream"
         )
 
     def get(self, object_name: str) -> Optional[bytes]:
@@ -122,10 +122,14 @@ class RNDFileService:
             document_type = folder.strip("/").lower()
             parts.append(document_type)
 
-        # Add filename with hash prefix to ensure uniqueness
-        # Format: {hash[:8]}_{original_filename}
+        # Add filename with hash prefix and docname to ensure uniqueness
+        # Format: {hash[:8]}_{docname}_{original_filename}
         if use_hash:
-            unique_filename = f"{file_hash[:8]}_{filename}"
+            if docname:
+                clean_filename = filename.lstrip("_")
+                unique_filename = f"{file_hash[:8]}_{docname}_{clean_filename}"
+            else:
+                unique_filename = f"{file_hash[:8]}_{filename}"
         else:
             unique_filename = filename
         parts.append(unique_filename)
@@ -283,8 +287,9 @@ class RNDFileService:
             self.storage.delete(path)
 
             # delete metadata
-            file_doc = frappe.get_doc("File", {"file_url": file_url})
-            frappe.delete_doc("File", file_doc.name, ignore_permissions=True)
+            file_name = frappe.db.get_value("File", {"file_url": file_url}, "name")
+            if file_name:
+                frappe.delete_doc("File", str(file_name), ignore_permissions=True)
 
             return self._resp(True, "File deleted")
 
@@ -339,7 +344,7 @@ def get_rnd_file_service():
             endpoint=frappe.conf.minio_endpoint,
             access_key=frappe.conf.minio_access_key,
             secret_key=frappe.conf.minio_secret_key,
-            bucket=frappe.conf.minio_bucket,
+            bucket=frappe.conf.get("minio_bucket", "prod-rnd-files"),
             secure=False,
         )
     )
