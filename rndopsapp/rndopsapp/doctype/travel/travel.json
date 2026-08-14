@@ -242,14 +242,14 @@
    "label": "Assitance Details"
   },
   {
-   "depends_on": "eval:doc.travel_other_pi != \"Other\"",
+   "depends_on": "eval:doc.travel_other_pi != \"Other\" || doc.travel_project_number",
    "fetch_from": "travel_project_title.project_no",
    "fieldname": "travel_project_number",
    "fieldtype": "Data",
    "label": "Project Number"
   },
   {
-   "depends_on": "eval:doc.travel_other_pi != \"Other\"",
+   "depends_on": "eval:doc.travel_other_pi != \"Other\" || doc.travel_project_number",
    "fieldname": "travel_project_title",
    "fieldtype": "Link",
    "label": "Project Title",
@@ -562,7 +562,7 @@
    "options": "\nYes\nNo"
   },
   {
-   "depends_on": "eval:doc.travel_other_pi != \"Other\"",
+   "depends_on": "eval:doc.travel_other_pi != \"Other\" || doc.travel_project_number",
    "fieldname": "account_head",
    "fieldtype": "Link",
    "in_list_view": 1,
