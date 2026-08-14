@@ -17,7 +17,7 @@ import frappe
 from typing import Optional
 
 from .dto import CommitDlqEventDTO
-from ..dlq_common import log_dlq_event
+from ..dlq_common import log_dlq_event, notify_ledger_rejection
 from ...config import TOPIC_ACCOUNT_HEAD_COMMIT_DLQ
 
 STAGING_DOCTYPE = "Kafka Commit Staging"
@@ -62,6 +62,14 @@ class CommitDlqMapper:
             reference_doctype = staging_row.reference_doctype
             reference_name = staging_row.reference_name
             reverted = True
+
+            # The staging row flip above is metadata-only and easy to miss —
+            # the source document itself (e.g. Miscellaneous Commit) stays
+            # in whatever locally-"Approved" state it already reached, with
+            # nothing telling the owner the ledger actually rejected it. The
+            # frontend's commitPayment.get_commit_staging_status only surfaces
+            # this on active polling, so alert the owner directly too.
+            notify_ledger_rejection(reference_doctype, reference_name, DLQ_ERROR_MESSAGE)
 
         log_dlq_event(
             source_topic=TOPIC_ACCOUNT_HEAD_COMMIT_DLQ,

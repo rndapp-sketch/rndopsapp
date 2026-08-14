@@ -283,7 +283,53 @@ during the rollout window.
 
 - `account-head-commit-batch-events-dlq` / `account-head-payment-batch-events-dlq` / `loan-settlement-events*` have no consumer — pick this up if they ever see real traffic.
 - The 18 pre-existing backlog messages across the 5 DLQ topics (as of 2026-08-14) were deliberately left unprocessed per the user's decision (§3) — someone should still review them manually if the underlying documents need correcting.
-- Reverting `workflow_state` on the ~9 doctypes that feed `Kafka Commit Staging` would need a per-doctype "previous state" capture design of its own before it could be done safely.
+- Reverting `workflow_state` on the ~9 doctypes that feed `Kafka Commit Staging` would need a per-doctype "previous state" capture design of its own before it could be done safely. (§7b below closes the *notification* half of this gap, not the revert itself.)
+
+## 7b. Follow-up: silent commit rejections had no owner-facing signal (2026-08-14)
+
+Found via a real report: `Miscellaneous Commit` `20260806MiSCoM002490` sat at
+`workflow_state = Approved` locally — i.e. the app considered it fully done —
+while its `Kafka Commit Staging` row had actually been `FAILED` since the
+§7a race (`Rejected by downstream ledger consumer`). Nothing told the
+owner. `CommitDlqMapper.handle()` (§4.6/commit_dlq) only flipped the
+staging row's `status`; the frontend's `commitPayment.get_commit_staging_status`
+surfaces that on active polling, but once a document reads "Approved" no one
+polls it again — so a real ledger rejection was invisible.
+
+**Fix:** added `notify_ledger_rejection(reference_doctype, reference_name,
+error_message)` to `dlq_common.py` (also home to the new shared
+`ACCOUNT_PORTAL_USER` constant, matching `fund_received/mapper.py`'s), and
+call it from `CommitDlqMapper.handle()` right after the staging row is
+flipped to `FAILED`. Same Comment + Notification Log pattern as Fund
+Received's `_notify_ledger_status_change` — a `[Ledger Status]` Comment on
+the actual business document plus a bell-icon alert to its `owner`, both
+attributed to Account Portal, both best-effort (logged, never raised).
+Dedup on Kafka replay is automatic: `resolve_staging_row` only matches a
+still-`PUBLISHED` row, so a re-delivered DLQ message that already flipped a
+row to `FAILED` resolves to nothing the second time and skips the notify
+entirely.
+
+Applies to all ~9 doctypes that feed `Kafka Commit Staging` (Travel, TA/DA
+Settlement, Disbursal of Honorarium/Consultancy, Top Up Fellowship,
+Recruitment Adhoc Contractual, Indent General Form, Cancellation Request,
+ICSS PO, Miscellaneous Commit), since they share one consumer/mapper.
+
+**Retroactive backfill:** the 3 real rejections already sitting silent from
+the §7a race were notified once by hand (`notify_ledger_rejection` called
+directly against the real doctype/name/error already on file) so their
+owners aren't left waiting for a message that will never be re-delivered:
+
+| Doctype | Name | Owner notified |
+|---|---|---|
+| Miscellaneous Commit | `20260806MiSCoM002490` | pinkyp@rnd.iitg.ac.in |
+| Miscellaneous Commit | `20260806MiSCoM002445` | pinkyp@rnd.iitg.ac.in |
+| Indent Cum Sanction Sheet | `2026080610002443` | dhruba_iisi@iitg.ac.in |
+
+`workflow_state` was **not** touched on any of these — this fix is
+notification-only, matching the "informational, don't touch state" pattern
+already validated for Fund Received's `ledger_status`. The actual revert
+design (per-doctype "previous state" capture for these 9 doctypes) is still
+open, tracked in §7 above.
 
 ## 8. Admin UI: `/kafka_dlq_control`
 
@@ -313,3 +359,31 @@ asked for:
 Linked from `kafka_control.html` two ways: a Quick Links sidebar entry, and a
 dedicated "DLQ Management" card in the Kafka section with an "Open DLQ
 Management" button.
+
+## 9. Admin UI follow-up: "Why" + row details
+
+Follow-up ask: the View tables showed *what* happened (topic, reference,
+reverted y/n) but not *why*, and the only way to see a row's full payload was
+a small "Raw" button whose JSON turned out to be the row's own summary
+fields — not the actual Kafka payload, because `list_event_dlq_logs` and
+`list_payment_dlq_logs` weren't even fetching `raw_payload` from the DB, and
+`list_failed_commit_staging` wasn't fetching `payload` either. Fixed both
+problems together in `kafka/dlq_control_api.py`:
+
+- Every `list_*` function now returns a server-computed `why` string per row
+  — e.g. for `list_event_dlq_logs`, `_why_for_event_row()` distinguishes
+  "reverted because the ledger rejected it and workflow_state went back to
+  X", "couldn't resolve this event to a document", and "resolved but no
+  matching Publish State Log entry was found" — and is explicit when the
+  source system genuinely sends no reason at all (true for every topic
+  except `account-head-payment-events-dlq`), rather than leaving a blank the
+  UI could be misread as a bug.
+- All 4 `list_*` functions now actually fetch their raw payload field
+  (`raw_payload` / `payload`) so the "Details" view shows the real thing.
+
+`kafka_dlq_control.html`: every table row is now clickable (plus an explicit
+"Details" button, since a clickable row isn't always an obvious affordance)
+and opens a shared details modal — a "Why" banner, every field laid out
+clearly, and the raw payload pretty-printed below. Rows are stashed in a
+`DETAILS_STORE` keyed by tab so the click handler looks itself up by index
+instead of round-tripping large JSON through an inline `onclick` attribute.

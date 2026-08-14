@@ -1,13 +1,23 @@
 # Copyright (c) 2026, rndops and contributors
-# Shared helpers for the workflow-state-reverting DLQ consumers
-# (sanction_dlq, fund_received_dlq, deposit_slip_dlq, loan_request_dlq).
+# Shared helpers for the DLQ consumers (sanction_dlq, fund_received_dlq,
+# deposit_slip_dlq, loan_request_dlq, commit_dlq).
 #
-# account-head-commit's DLQ consumer does not use this — it reverts a "Kafka
-# Commit Staging" row instead of a workflow_state, since the ~9 doctypes that
-# feed staging have no captured "previous state" to revert to (see commit_dlq/).
+# account-head-commit's DLQ consumer reverts a "Kafka Commit Staging" row
+# instead of a workflow_state, since the ~9 doctypes that feed staging have
+# no captured "previous state" to revert to (see commit_dlq/) — but it still
+# uses notify_ledger_rejection() below to alert the document owner.
 
 import frappe
 from typing import Optional
+
+# Dedicated system user (User doctype, enabled=0, login disabled) so
+# ledger-driven comments/notifications are attributed to "Account Portal"
+# rather than "Administrator" — every DLQ consumer runs in a background
+# thread under the Administrator session, but this content originates from
+# the external ledger, not an actual admin action. Same convention as
+# kafka/consumer/fund_received/mapper.py::ACCOUNT_PORTAL_USER and the
+# "Account Portal" comments merged into api.py::get_project_activity.
+ACCOUNT_PORTAL_USER = 'account.portal@rndopsapp.local'
 
 
 def find_publish_state_log(reference_doctype: str, reference_name: str, topic: str) -> list:
@@ -80,3 +90,60 @@ def log_dlq_event(
     })
     log_doc.insert(ignore_permissions=True)
     return log_doc.name
+
+
+def notify_ledger_rejection(reference_doctype: str, reference_name: str, error_message: str) -> None:
+    """
+    Alerts a document's owner that the external ledger rejected something
+    published on its behalf, via a Comment (audit trail) + Notification Log
+    (bell-icon alert) — same pattern as
+    kafka/consumer/fund_received/mapper.py::_notify_ledger_status_change,
+    generalized for any doctype. Used by commit_dlq, whose ~9 source
+    doctypes (Travel, TA/DA Settlement, Miscellaneous Commit, etc.) have no
+    workflow_state to revert, so this is the only signal the owner gets that
+    their already-"Approved" document was actually rejected downstream.
+
+    Best-effort: every failure is caught and logged, never raised — a
+    notification failure must not fail DLQ processing of the Kafka message.
+    """
+    if not reference_doctype or not reference_name:
+        return
+
+    message = f"The external ledger rejected this. {error_message}".strip()
+
+    try:
+        comment = frappe.get_doc({
+            'doctype': 'Comment',
+            'comment_type': 'Comment',
+            'reference_doctype': reference_doctype,
+            'reference_name': reference_name,
+            'content': f"[Ledger Status] {message}",
+            'owner': ACCOUNT_PORTAL_USER,
+        })
+        comment.insert(ignore_permissions=True)
+        # insert() only pre-fills owner when unset — force it in case a
+        # future frappe version starts overwriting an explicitly-set one.
+        if comment.owner != ACCOUNT_PORTAL_USER:
+            frappe.db.set_value('Comment', comment.name, 'owner', ACCOUNT_PORTAL_USER)
+    except Exception:
+        frappe.log_error(
+            f"Failed to add ledger-rejection comment on {reference_doctype} {reference_name}",
+            "DLQ Ledger Rejection Notify Error",
+        )
+
+    try:
+        owner = frappe.db.get_value(reference_doctype, reference_name, 'owner')
+        if owner and owner not in ('Administrator', 'Guest'):
+            from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
+            enqueue_create_notification([owner], {
+                'type': 'Alert',
+                'document_type': reference_doctype,
+                'document_name': reference_name,
+                'subject': f"{reference_doctype} {reference_name}: {message}",
+                'from_user': ACCOUNT_PORTAL_USER,
+            })
+    except Exception:
+        frappe.log_error(
+            f"Failed to notify owner of ledger rejection on {reference_doctype} {reference_name}",
+            "DLQ Ledger Rejection Notify Error",
+        )

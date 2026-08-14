@@ -1213,6 +1213,7 @@ def get_my_basic_details():
 	# Fetch latest tenure details from the child table
 	tenures = doc.get("table_ymed") or []
 	valid_tenures = [t for t in tenures if t.pstd_joining_date]
+	res["tenures"] = []
 	if valid_tenures:
 		from frappe.utils import getdate
 
@@ -1223,6 +1224,16 @@ def get_my_basic_details():
 		# Expiry of present tenure is fetched from the latest tenure's completion date.
 		res["ex_date_of_expiry"] = latest_tenure.pstd_term_completion_date
 		res["ps_basic_salary"] = latest_tenure.pstd_basic_salary
+
+		# Full tenure history (each term's joining + completion + basic), oldest first.
+		res["tenures"] = [
+			{
+				"joining_date": str(t.pstd_joining_date) if t.pstd_joining_date else None,
+				"term_completion_date": str(t.pstd_term_completion_date) if t.pstd_term_completion_date else None,
+				"basic_salary": t.pstd_basic_salary,
+			}
+			for t in sorted_tenures
+		]
 
 	j_date = res.get("ps_joining_date")
 	if j_date:
