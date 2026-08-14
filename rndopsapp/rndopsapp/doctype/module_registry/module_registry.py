@@ -13,6 +13,27 @@ class ModuleRegistry(Document):
 import frappe
 from frappe.model.document import Document
 
+# Roles allowed to see cross-user task/history views (get_task_registry,
+# get_document_touch_history). Kept in one place so the two endpoints can't
+# drift out of sync with each other.
+RNDOPS_HISTORY_ROLES = [
+	"staff, RnD",
+	"project staff",
+	"Hos, RnD (Head of Section, RnD)",
+	"Dean, RnD",
+	"Ado_RnD",
+	"HoD (Head of Department)",
+	"HoS (Head of School)",
+	"HoC (Head of Center)",
+	"head_department_center_school",
+	"Director",
+	"RnD Accounts",
+	"RnD Administration",
+	"RnD HR",
+	"RnD Purchase",
+	"System Manager",  # Always allow System Manager for admin access
+]
+
 
 @frappe.whitelist()
 def get_pending_task(page_name="pending-task"):
@@ -359,27 +380,8 @@ def get_task_registry(debug=0):
 	current_user = frappe.session.user
 	user_roles = frappe.get_roles(current_user)
 
-	# Define allowed roles based on system roles
-	allowed_roles = [
-		"staff, RnD",
-		"project staff",
-		"Hos, RnD (Head of Section, RnD)",
-		"Dean, RnD",
-		"Ado_RnD",
-		"HoD (Head of Department)",
-		"HoS (Head of School)",
-		"HoC (Head of Center)",
-		"head_department_center_school",
-		"Director",
-		"RnD Accounts",
-		"RnD Administration",
-		"RnD HR",
-		"RnD Purchase",
-		"System Manager",  # Always allow System Manager for admin access
-	]
-
 	# Check if user has any of the allowed roles
-	has_allowed_role = any(role in allowed_roles for role in user_roles)
+	has_allowed_role = any(role in RNDOPS_HISTORY_ROLES for role in user_roles)
 
 	if not has_allowed_role:
 		return {
@@ -677,3 +679,235 @@ def get_task_registry(debug=0):
 		}
 
 	return response
+
+
+@frappe.whitelist()
+def get_rndopsapp_doctypes():
+	"""
+	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_rndopsapp_doctypes
+
+	Returns the sorted list of non-child doctype names in the Rndopsapp
+	module, for populating the DocType filter dropdown on doc_history.html.
+	"""
+
+	current_user = frappe.session.user
+	user_roles = frappe.get_roles(current_user)
+
+	if not any(role in RNDOPS_HISTORY_ROLES for role in user_roles):
+		return {"success": False, "message": "Access denied.", "doctypes": []}
+
+	doctype_names = frappe.get_all("DocType", filters=[["module", "like", "%rndopsapp%"]], pluck="name")
+
+	doctypes = []
+	for dt in sorted(doctype_names):
+		if not frappe.db.exists("DocType", dt):
+			continue
+		if frappe.get_meta(dt).istable:
+			continue
+		doctypes.append(dt)
+
+	return {"success": True, "doctypes": doctypes}
+
+
+@frappe.whitelist()
+def get_document_touch_history(docname, doctype=None):
+	"""
+	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_document_touch_history
+
+	Given a document id, return every user who ever touched it (edited a
+	field, completed a workflow action, or left a workflow/comment note),
+	merged into one chronological timeline, plus a per-user summary.
+
+	If `doctype` isn't given, every non-child doctype in the Rndopsapp
+	module is checked for a matching name — names are usually unique per
+	doctype (REC_..., SAN_..., project registration numbers, etc.) but if
+	more than one doctype has a document with this exact name, all of them
+	are returned so the caller can disambiguate.
+	"""
+
+	current_user = frappe.session.user
+	user_roles = frappe.get_roles(current_user)
+
+	if not any(role in RNDOPS_HISTORY_ROLES for role in user_roles):
+		return {
+			"success": False,
+			"message": "Access denied. Only authorized RnD roles can access this endpoint.",
+			"matches": [],
+		}
+
+	docname = (docname or "").strip()
+	if not docname:
+		return {"success": False, "message": "Document ID is required.", "matches": []}
+
+	if doctype:
+		if not frappe.db.exists("DocType", doctype):
+			return {"success": False, "message": f"DocType '{doctype}' not found.", "matches": []}
+		candidate_doctypes = [doctype]
+	else:
+		candidate_doctypes = frappe.get_all(
+			"DocType", filters=[["module", "like", "%rndopsapp%"]], pluck="name"
+		)
+
+	matches = []
+	for dt in candidate_doctypes:
+		if not frappe.db.exists("DocType", dt):
+			continue
+
+		meta = frappe.get_meta(dt)
+		if meta.istable:
+			continue
+
+		if not frappe.db.exists(dt, docname):
+			continue
+
+		if not frappe.has_permission(dt, "read"):
+			continue
+
+		matches.append(_build_document_touch_history(dt, docname, meta))
+
+	if not matches:
+		return {
+			"success": True,
+			"docname": docname,
+			"matches": [],
+			"message": f"No document named '{docname}' found in any Rndopsapp doctype you can read.",
+		}
+
+	return {"success": True, "docname": docname, "matches": matches}
+
+
+def _build_document_touch_history(dt, docname, meta):
+	status_field = None
+	for field_name in ["workflow_state", "status", "state"]:
+		if meta.has_field(field_name):
+			status_field = field_name
+			break
+
+	fields = ["name", "owner", "creation", "modified", "modified_by", "docstatus"]
+	if status_field:
+		fields.append(status_field)
+
+	doc = frappe.db.get_value(dt, docname, fields, as_dict=True)
+
+	title_field = meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name")
+	title = docname
+	if title_field != "name":
+		title = frappe.get_value(dt, docname, title_field) or docname
+
+	timeline = [
+		{
+			"user": doc.owner,
+			"timestamp": doc.creation,
+			"source": "Created",
+			"detail": f"Created this {dt}",
+		}
+	]
+
+	# Version log — every saved edit, with which fields changed
+	versions = frappe.get_all(
+		"Version",
+		filters={"ref_doctype": dt, "docname": docname},
+		fields=["owner", "creation", "data"],
+		order_by="creation asc",
+	)
+	for v in versions:
+		field_changes = []
+		if v.data:
+			try:
+				for c in frappe.parse_json(v.data).get("changed") or []:
+					if not c or not c[0]:
+						continue
+					field_changes.append(
+						{
+							"field": c[0],
+							"old": c[1] if len(c) > 1 else None,
+							"new": c[2] if len(c) > 2 else None,
+						}
+					)
+			except Exception:
+				pass
+		field_names = [c["field"] for c in field_changes]
+		detail = f"Edited: {', '.join(field_names)}" if field_names else "Edited document"
+		timeline.append(
+			{
+				"user": v.owner,
+				"timestamp": v.creation,
+				"source": "Version",
+				"detail": detail,
+				"changes": field_changes,
+			}
+		)
+
+	# Workflow Action — completed transitions
+	wf_actions = frappe.get_all(
+		"Workflow Action",
+		filters={"reference_doctype": dt, "reference_name": docname, "status": "Completed"},
+		fields=["completed_by", "completed_by_role", "workflow_state", "creation"],
+		order_by="creation asc",
+	)
+	for w in wf_actions:
+		if not w.completed_by:
+			continue
+		role_suffix = f" (as {w.completed_by_role})" if w.completed_by_role else ""
+		detail = f"Completed workflow action → {w.workflow_state}{role_suffix}"
+		timeline.append(
+			{"user": w.completed_by, "timestamp": w.creation, "source": "Workflow Action", "detail": detail}
+		)
+
+	# Comments — includes both Workflow-type transition notes and plain comments
+	comments = frappe.get_all(
+		"Comment",
+		filters={"reference_doctype": dt, "reference_name": docname},
+		fields=["comment_type", "owner", "creation", "content"],
+		order_by="creation asc",
+	)
+	for c in comments:
+		raw = (c.content or "").replace("<br>", "\n").replace("</strong>", "</strong> ").replace("</div>", "</div> ")
+		content = " ".join(frappe.utils.strip_html(raw).split())
+		source = "Workflow Note" if c.comment_type == "Workflow" else "Comment"
+		timeline.append(
+			{"user": c.owner, "timestamp": c.creation, "source": source, "detail": content or source}
+		)
+
+	timeline.sort(key=lambda e: e["timestamp"] or "")
+
+	users_summary = {}
+	for event in timeline:
+		u = event["user"]
+		if not u:
+			continue
+		entry = users_summary.setdefault(
+			u, {"user": u, "touches": 0, "first_touch": event["timestamp"], "last_touch": event["timestamp"], "sources": set()}
+		)
+		entry["touches"] += 1
+		entry["last_touch"] = event["timestamp"]
+		entry["sources"].add(event["source"])
+
+	users = sorted(
+		(
+			{
+				"user": info["user"],
+				"touches": info["touches"],
+				"first_touch": info["first_touch"],
+				"last_touch": info["last_touch"],
+				"sources": sorted(info["sources"]),
+			}
+			for info in users_summary.values()
+		),
+		key=lambda x: x["last_touch"] or "",
+		reverse=True,
+	)
+
+	return {
+		"doctype": dt,
+		"docname": docname,
+		"title": title,
+		"owner": doc.owner,
+		"current_status": doc.get(status_field) if status_field else None,
+		"creation": doc.creation,
+		"modified": doc.modified,
+		"modified_by": doc.modified_by,
+		"docstatus": doc.docstatus,
+		"timeline": timeline,
+		"users": users,
+	}

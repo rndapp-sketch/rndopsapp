@@ -72,13 +72,23 @@ def generate_emp_id():
 	Uses Frappe's `make_autoname` which atomically increments the underlying
 	`tabSeries` row, so two concurrent submissions can't collide on the same
 	number. The series row is auto-created on first use.
+
+	Some existing records were assigned an emp id directly (bulk imports,
+	admin tools) without going through this series, so the counter can lag
+	behind the real max. Guard against handing out an id that's already
+	taken by re-drawing (the series call itself already advanced the
+	counter, so this never repeats a value) until we land on a free one.
 	"""
 	from frappe.utils import nowdate
 	from frappe.model.naming import make_autoname
 
 	year = nowdate()[:4]
-	# ".####" -> 4-digit zero-padded counter scoped to the "{year}TS" prefix.
-	return make_autoname(f"{year}TS.####")
+	for _ in range(50):
+		# ".####" -> 4-digit zero-padded counter scoped to the "{year}TS" prefix.
+		emp_id = make_autoname(f"{year}TS.####")
+		if not frappe.db.exists("Project Staff Details", {"ps_emp_id": emp_id}):
+			return emp_id
+	frappe.throw(_("Could not allocate a free Employee ID, please try again."))
 
 
 @frappe.whitelist()
@@ -161,6 +171,96 @@ def get_project_staff_details_fields(doc_name=None):
 		"link_options": link_options,
 		"client_scripts": client_scripts,
 	}
+
+
+@frappe.whitelist(methods=["POST"])
+def create_project_staff_details_entry(data):
+	"""
+	Backs the `/insert_project_staff` admin tool page (linked from Kafka
+	Control's Quick Links). Unlike `save_project_staff_details_data` (the
+	staff-facing joining form, which defers ps_emp_id allocation to Submit),
+	this is a quick "add an already-onboarded staff member" tool: it
+	allocates the Employee ID immediately and marks the record Approved,
+	mirroring how bulk-imported staff records are created.
+
+	Deliberately does NOT use ignore_permissions — it runs as whichever
+	Frappe user is logged into that page (via the external_auth-backed
+	session), so Frappe's normal doctype permissions decide whether they're
+	allowed to create a Project Staff Details record.
+	"""
+	if isinstance(data, str):
+		data = json.loads(data)
+
+	field_mapping = [
+		"scr_id",
+		"pi_id",
+		"project_no",
+		"ps_first_name",
+		"ps_middle_name",
+		"ps_last_name",
+		"ps_gender",
+		"ps_email_id",
+		"ps_phone_number",
+		"ps_department",
+		"ps_designation",
+		"ps_date_of_birth",
+		"ps_joining_date",
+		"ps_term_completion_date",
+		"ps_fathers_name",
+		"ps_present_address",
+		"ps_permanent_address",
+		"ps_pan",
+		"ps_aadhar_number",
+		"ps_blood_group",
+		"ps_maritial_status",
+		"ps_basic_salary",
+		"ps_hra",
+		"ps_ma",
+		"ps_ta",
+		"ps_ta_amount",
+		"ps_hostel",
+		"ps_citizenship",
+		"bank_account_number",
+		"erp_mail",
+	]
+
+	doc = frappe.new_doc("Project Staff Details")
+	for field in field_mapping:
+		if data.get(field) not in (None, ""):
+			doc.set(field, data[field])
+
+	# Runs the doctype's normal permission + validation checks for the
+	# logged-in user (no ignore_permissions).
+	doc.insert()
+
+	emp_id = generate_emp_id()
+	# workflow_state can't be set to "Approved" through doc.insert() itself
+	# (Frappe blocks a brand-new document from landing anywhere but the
+	# workflow's first state) — set it directly after insert, same as the
+	# rest of this module does for admin-driven state changes.
+	frappe.db.set_value(
+		"Project Staff Details",
+		doc.name,
+		{"ps_emp_id": emp_id, "workflow_state": "Approved"},
+	)
+
+	# Reload so the in-memory doc picks up ps_emp_id/workflow_state="Approved"
+	# from the db.set_value above — both helpers below either read fresh DB
+	# values by doc.name (leave) or call doc.save() themselves (tenure), and
+	# a stale in-memory workflow_state would make that save() look like an
+	# illegal Draft->Approved jump and throw WorkflowPermissionError.
+	doc.reload()
+
+	# A record reaching "Approved" through the real workflow action
+	# (perform_project_staff_details_action) triggers these same two steps —
+	# run them here too so a record created straight-to-Approved by this
+	# tool isn't missing its tenure row or Leave Data allocation.
+	_populate_tenure_on_approval(doc)
+	_allocate_leave_data_on_approval(doc)
+
+	frappe.db.commit()
+
+	return {"status": "success", "docname": doc.name, "ps_emp_id": emp_id}
 
 
 @frappe.whitelist()

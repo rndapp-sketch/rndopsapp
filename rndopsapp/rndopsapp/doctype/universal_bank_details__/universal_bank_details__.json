@@ -1,105 +1,105 @@
 {
-    "actions": [],
-    "allow_rename": 1,
-    "creation": "2026-02-03 12:28:40.255036",
-    "doctype": "DocType",
-    "editable_grid": 1,
-    "engine": "InnoDB",
-    "field_order": [
-        "beneficiary_name_u_r",
-        "account_number_u_r",
-        "confirm_account_number_u_r",
-        "ifsc_code_u_r",
-        "bank_name_u_r",
-        "branch_name_u_r",
-        "bank_city_u_r",
-        "bank_state_u_r",
-        "account_type_u_r",
-        "attachment_u_r",
-        "bank_passbook_front_page_u_r"
-    ],
-    "fields": [
-        {
-            "fieldname": "beneficiary_name_u_r",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Beneficiary Name"
-        },
-        {
-            "fieldname": "account_number_u_r",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Account Number"
-        },
-        {
-            "fieldname": "confirm_account_number_u_r",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Confirm Account No."
-        },
-        {
-            "fieldname": "ifsc_code_u_r",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "IFSC Code"
-        },
-        {
-            "fieldname": "bank_name_u_r",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Bank Name",
-            "read_only": 1
-        },
-        {
-            "fieldname": "branch_name_u_r",
-            "fieldtype": "Data",
-            "in_list_view": 1,
-            "label": "Branch Name",
-            "read_only": 1
-        },
-        {
-            "fieldname": "account_type_u_r",
-            "fieldtype": "Select",
-            "in_list_view": 1,
-            "label": "Account Type",
-            "options": "\nSavings\nCurrent\nSalary",
-            "placeholder": "Select the Account Type",
-            "read_only": 1
-        },
-        {
-            "fieldname": "attachment_u_r",
-            "fieldtype": "Attach",
-            "label": "Cancelled Cheque"
-        },
-        {
-            "fieldname": "bank_passbook_front_page_u_r",
-            "fieldtype": "Attach",
-            "label": "Bank Passbook Front Page"
-        },
-        {
-            "fieldname": "bank_city_u_r",
-            "fieldtype": "Data",
-            "label": "City"
-        },
-        {
-            "fieldname": "bank_state_u_r",
-            "fieldtype": "Data",
-            "label": "State"
-        }
-    ],
-    "grid_page_length": 50,
-    "index_web_pages_for_search": 1,
-    "istable": 1,
-    "links": [],
-    "modified": "2026-04-23 13:10:56.730064",
-    "modified_by": "Administrator",
-    "module": "Rndopsapp",
-    "name": "Universal Bank Details__",
-    "owner": "Administrator",
-    "permissions": [],
-    "row_format": "Dynamic",
-    "rows_threshold_for_grid_search": 20,
-    "sort_field": "modified",
-    "sort_order": "DESC",
-    "states": []
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-03 12:28:40.255036",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "beneficiary_name_u_r",
+  "account_number_u_r",
+  "confirm_account_number_u_r",
+  "ifsc_code_u_r",
+  "bank_name_u_r",
+  "branch_name_u_r",
+  "bank_city_u_r",
+  "bank_state_u_r",
+  "account_type_u_r",
+  "attachment_u_r",
+  "bank_passbook_front_page_u_r"
+ ],
+ "fields": [
+  {
+   "fieldname": "beneficiary_name_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Beneficiary Name"
+  },
+  {
+   "fieldname": "account_number_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Account Number"
+  },
+  {
+   "fieldname": "confirm_account_number_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Confirm Account No."
+  },
+  {
+   "fieldname": "ifsc_code_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "IFSC Code"
+  },
+  {
+   "fieldname": "bank_name_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bank Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "branch_name_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Branch Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "account_type_u_r",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Account Type",
+   "options": "\nSavings\nCurrent\nSalary",
+   "placeholder": "Select the Account Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attachment_u_r",
+   "fieldtype": "Attach",
+   "label": "Cancelled Cheque"
+  },
+  {
+   "fieldname": "bank_passbook_front_page_u_r",
+   "fieldtype": "Attach",
+   "label": "Bank Passbook Front Page"
+  },
+  {
+   "fieldname": "bank_city_u_r",
+   "fieldtype": "Data",
+   "label": "City"
+  },
+  {
+   "fieldname": "bank_state_u_r",
+   "fieldtype": "Data",
+   "label": "State"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-12 11:00:23.831634",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Universal Bank Details__",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
 }

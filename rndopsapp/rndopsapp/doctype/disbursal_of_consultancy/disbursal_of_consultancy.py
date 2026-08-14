@@ -268,6 +268,30 @@ def get_disbursal_of_consultancy_fields(doc_name=None):
 		"computation_rules": computation_rules
 	}
 
+def _resolve_project_no(value):
+	"""
+	The frontend's project picker is known to sometimes send a Project
+	Registration *docname* (e.g. "2026081101MeiTy002564") instead of its
+	human-readable project_no (e.g. "2627C-0372-CSEN0804SRSH") — the two are
+	unrelated fields on Project Registration, and only project_no is meant
+	to be stored here. Rather than persisting whatever the client sent
+	as-is, resolve it against Project Registration so the record always
+	ends up with the real project_no regardless of which one the picker
+	happened to send.
+
+	- value already a valid project_no -> returned unchanged.
+	- value is a Project Registration docname -> resolved to its project_no.
+	- value matches neither (free text, blank, legacy data) -> returned
+	  unchanged; this must not block saving.
+	"""
+	if not value:
+		return value
+	if frappe.db.exists("Project Registration", {"project_no": value}):
+		return value
+	actual_project_no = frappe.db.get_value("Project Registration", value, "project_no")
+	return actual_project_no or value
+
+
 @frappe.whitelist()
 def save_disbursal_of_consultancy_data(data):
 	"""
@@ -276,14 +300,14 @@ def save_disbursal_of_consultancy_data(data):
 	"""
 	if isinstance(data, str):
 		data = json.loads(data)
-	
+
 	try:
 		# Create or Get Doc
 		if data.get("name"):
 			doc = frappe.get_doc("Disbursal of Consultancy", data.get("name"))
 		else:
 			doc = frappe.new_doc("Disbursal of Consultancy")
-		
+
 		# Map Fields
 		simple_fields = [
 			"amended_from",
@@ -295,14 +319,17 @@ def save_disbursal_of_consultancy_data(data):
 			"date_of_completion",
 			"total_amount_received",
 			"current_balance",
-			"disbursal_project_number", 
+			"disbursal_project_number",
 			"workflow_state" # Just in case
 		]
 
 		for field in simple_fields:
 			if field in data:
 				val = data[field]
-				doc.set(field, val if val != "null" else None)
+				val = val if val != "null" else None
+				if field == "disbursal_project_number":
+					val = _resolve_project_no(val)
+				doc.set(field, val)
 		
 		# Handle File Upload fields (Attach)
 		# please_attach_a_copy_of_completion_report, disbursal_additional_documents

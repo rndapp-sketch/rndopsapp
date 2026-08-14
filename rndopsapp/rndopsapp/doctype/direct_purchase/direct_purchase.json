@@ -184,6 +184,7 @@
   },
   {
    "allow_on_submit": 1,
+   "default": "No",
    "fieldname": "is_foreign",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -196,7 +197,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-11 12:32:50.321049",
+ "modified": "2026-08-10 08:11:45.381373",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Direct Purchase",
