@@ -7,6 +7,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip as publish_research_deposit_slip
+from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+from rndopsapp.rndopsapp.kafka.config import TOPIC_DEPOSIT_SLIP
 
 def extract_eval_expression(expression):
 	"""
@@ -41,9 +43,17 @@ class ResearchDepositSlip(Document):
 
 			if new_state in target_states and old_state != new_state:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
+				record_publish_state(
+					self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
+					old_state, new_state,
+				)
 				publish_research_deposit_slip(self)
 			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0) and new_state not in target_states:
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for Submit")
+				record_publish_state(
+					self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
+					old_state, new_state,
+				)
 				publish_research_deposit_slip(self)
 
 		except Exception as e:

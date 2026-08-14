@@ -5,7 +5,7 @@ import requests
 
 import frappe
 from frappe import _
-from frappe.utils import sanitize_html
+from frappe.utils import get_datetime, sanitize_html
 from frappe.utils.file_manager import save_file
 
 # Re-export so callers using rndopsapp.rndopsapp.api.* still resolve correctly
@@ -201,11 +201,56 @@ def unshare_document(doctype, name, user):
 
 # --- UTILITY FUNCTIONS (OPTIONAL BUT RECOMMENDED) --- jimmy
 
+# Base URL for the external account portal (172.16.134.81:18080), same host
+# already called from _sync_external_project_number, commitPayment.py, etc.
+ACCOUNT_PORTAL_BASE_URL = "http://172.16.134.81:18080"
+
+# Maps a Frappe doctype to the comment "category"(ies) the account portal's
+# GET /api/comments/{category}/{frappeApplicationNo} endpoint expects.
+# frappeApplicationNo is doc.name for all of these (matches the *RefNumFab /
+# *NumberFap / frapAppId values already sent to this same host by the Kafka
+# producers for these doctypes). Loan Request maps to both LOAN and
+# LOAN_SETTLEMENT since the same doc.name covers both the initial loan and
+# its later settlement phase on the account portal.
+DOCTYPE_TO_COMMENT_CATEGORIES = {
+	"Deposit slip": ["DEPOSIT_SLIP"],
+	"Research Deposit Slip": ["DEPOSIT_SLIP"],
+	"Research Consultancy Deposit Slip": ["DEPOSIT_SLIP"],
+	"D Consultancy Deposit Slip": ["DEPOSIT_SLIP"],
+	"E Non Routine Deposit Slip": ["DEPOSIT_SLIP"],
+	"Other Event Deposit Slip": ["DEPOSIT_SLIP"],
+	"T Testing Deposit Slip": ["DEPOSIT_SLIP"],
+	"Fund Received": ["FUND_RECEIVED"],
+	"Loan Request": ["LOAN", "LOAN_SETTLEMENT"],
+	"AccountHeadPayment": ["PAYMENT"],
+}
+
+
+def _get_account_portal_comments(category, frappe_application_no):
+	"""
+	Fetches comments logged against a document on the external account portal,
+	by category + frappeApplicationNo. Best-effort like the other calls to
+	this host: the portal being unreachable shouldn't break local activity
+	display, so failures are logged and an empty list is returned.
+	"""
+	url = f"{ACCOUNT_PORTAL_BASE_URL}/api/comments/{category}/{frappe_application_no}"
+	try:
+		response = requests.get(url, timeout=10)
+		if response.status_code == 404:
+			return []
+		response.raise_for_status()
+		return response.json() or []
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_account_portal_comments failed")
+		return []
+
 
 @frappe.whitelist()
 def get_project_activity(doctype=None, docname=None):
 	"""
-	Fetches all comments and communications for a given document.
+	Fetches all comments and communications for a given document, chaining
+	local Frappe comments together with comments logged on the external
+	account portal (when this doctype maps to a known comment category).
 	"""
 	if not doctype or not docname:
 		return []
@@ -219,7 +264,38 @@ def get_project_activity(doctype=None, docname=None):
 			order_by="creation desc",
 		)
 
-		return comments
+		activity = [
+			{
+				"source": "frappe",
+				"content": c.content,
+				"owner": c.owner,
+				"creation": c.creation,
+				"comment_type": c.comment_type,
+			}
+			for c in comments
+		]
+
+		for category in DOCTYPE_TO_COMMENT_CATEGORIES.get(doctype, []):
+			for c in _get_account_portal_comments(category, docname):
+				activity.append(
+					{
+						"source": "account_portal",
+						"content": c.get("comment"),
+						"owner": None,
+						"creation": c.get("commentDateTime"),
+						"comment_type": c.get("category"),
+						"comment_id": c.get("commentId"),
+						"reference_parent_id": c.get("referenceParentId"),
+						"frappe_application_no": c.get("frappeApplicationNo"),
+					}
+				)
+
+		activity.sort(
+			key=lambda a: get_datetime(a["creation"]) if a.get("creation") else get_datetime("1970-01-01"),
+			reverse=True,
+		)
+
+		return activity
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "get_project_activity failed")
 		return []
@@ -2014,6 +2090,29 @@ def get_document_activity(doctype, docname):
 				"timestamp": str(last_version.creation),
 			}
 		)
+
+	# --- 6. Chain in comments from the external account portal, if this
+	# doctype maps to a known comment category (see get_project_activity) ---
+	for category in DOCTYPE_TO_COMMENT_CATEGORIES.get(doctype, []):
+		for c in _get_account_portal_comments(category, docname):
+			# commentDateTime is ISO "T"-separated; every other timestamp here
+			# is a plain str(datetime) with a space, and entries are sorted by
+			# plain string comparison below, so normalize to match.
+			timestamp = (c.get("commentDateTime") or "").replace("T", " ")
+			entries.append(
+				{
+					"type": "comment",
+					"label": "commented (Account Portal)",
+					"user": "Account Portal",
+					"user_email": None,
+					"timestamp": timestamp,
+					"content": c.get("comment"),
+					"source": "account_portal",
+					"comment_id": c.get("commentId"),
+					"reference_parent_id": c.get("referenceParentId"),
+					"frappe_application_no": c.get("frappeApplicationNo"),
+				}
+			)
 
 	# Creation entry always at the bottom
 	entries.append(

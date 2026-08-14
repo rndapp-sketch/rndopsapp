@@ -175,17 +175,17 @@
   },
   {
    "fieldname": "ss_warranty",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Warranty"
   },
   {
    "fieldname": "ss_delivery",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Delivery"
   },
   {
    "fieldname": "ss_payment",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Payment"
   },
   {
@@ -239,8 +239,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-29 17:33:42.637825",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-08-07 15:21:17.048894",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "sanction_sheet",
  "naming_rule": "Expression",

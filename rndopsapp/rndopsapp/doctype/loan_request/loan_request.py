@@ -371,8 +371,14 @@ def perform_loan_request_action(docname, action, bmr=None, bmr_date=None):
 			frappe.logger().info(f"[Loan Request Kafka] Approval triggered for {docname}. Publishing event.")
 			try:
 				from rndopsapp.rndopsapp.kafka.producer.loan_request import publish_loan_request
+				from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+				from rndopsapp.rndopsapp.kafka.config import TOPIC_LOAN_REQUEST
 				# Reload doc to ensure all fields (including child table) are fresh
 				doc = frappe.get_doc("Loan Request", docname)
+				record_publish_state(
+					"Loan Request", docname, TOPIC_LOAN_REQUEST,
+					current_state, next_state,
+				)
 				success = publish_loan_request(doc)
 				if success:
 					frappe.logger().info(f"[Loan Request Kafka] Successfully published for {docname}.")

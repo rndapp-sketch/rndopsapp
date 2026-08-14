@@ -80,7 +80,7 @@
   },
   {
    "fieldname": "amount",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Amount (In Rs.)"
   },

@@ -13,6 +13,8 @@ from rndopsapp.file_handler import get_file_category_for_doctype
 from rndopsapp.minio import get_rnd_file_service
 from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_sanction
+from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+from rndopsapp.rndopsapp.kafka.config import TOPIC_SANCTION
 
 # from frappe.workflow.doctype.workflow.workflow import get_workflow_name
 
@@ -543,9 +545,11 @@ def save_fund_sanction_data(files=None, **data):
 				)
 
 		# Create or fetch the main Fund Sanction document
+		previous_workflow_state_for_kafka = None
 		if data.get("name"):
 			# Logic for updating an existing document
 			doc = frappe.get_doc("Fund Sanction", data.get("name"))
+			previous_workflow_state_for_kafka = doc.workflow_state
 			doc.update(data)
 			doc.set("sanctioned_budget_breakup", [])
 			doc.set("sanction_related_files", [])
@@ -673,6 +677,10 @@ def save_fund_sanction_data(files=None, **data):
 		kafka_success = False
 		if doc.workflow_state == "Sanction Approved":
 			try:
+				record_publish_state(
+					"Fund Sanction", doc.name, TOPIC_SANCTION,
+					previous_workflow_state_for_kafka, doc.workflow_state,
+				)
 				kafka_success = publish_sanction(doc)
 				if kafka_success:
 					frappe.msgprint(_("Sanction data synced successfully to external system."), indicator="green")
@@ -946,6 +954,10 @@ def perform_fund_sanction_action(docname, action):
 		if next_state == "Sanction Approved":
 			print(f"[FS_ACTION] State is 'Sanction Approved' — publishing to Kafka for {docname}")
 			try:
+				record_publish_state(
+					"Fund Sanction", docname, TOPIC_SANCTION,
+					current_state, next_state,
+				)
 				kafka_success = publish_sanction(doc)
 				kafka_status = "success" if kafka_success else "failed"
 				if kafka_success:

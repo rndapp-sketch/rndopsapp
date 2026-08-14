@@ -243,7 +243,6 @@ def save_disbursal_of_honorarium_data(data, files=None):
 			"department_for",
 			"account_head",
 			"approval_comp_authority",
-			"total_amount"
 		]
 
 		for field in simple_fields:
@@ -337,7 +336,12 @@ def save_disbursal_of_honorarium_data(data, files=None):
 			doc.set("table_weoy", []) # Clear existing
 			for item in items_data:
 				doc.append("table_weoy", item)
-		
+
+		# total_amount is always derived server-side from the honorarium rows,
+		# never trusted from the client (previously a client-computed value could
+		# desync from the row amounts, e.g. comma-formatted "24,000" parsing as 24).
+		doc.total_amount = sum(frappe.utils.flt(row.amount) for row in doc.table_weoy)
+
 		# Save
 		doc.flags.ignore_permissions = True
 		doc.save()

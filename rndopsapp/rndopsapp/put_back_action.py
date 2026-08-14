@@ -9,6 +9,25 @@
 
 import frappe
 
+# Some workflow states are entered only by automation — a Kafka consumer
+# writing workflow_state straight to the DB, never a Workflow Transition a
+# user clicks — so they have no predecessor edge in the transition graph for
+# the backward walk below to find. Each such state is mapped to the state
+# it should be treated as equivalent-position to for Put Back purposes: the
+# walk starts from the aliased state's predecessors instead, so these states
+# get the same put-back chain as whatever they sit alongside in the workflow.
+#
+# Fund Received: Pending Rectification / Pending Reconciliation / Rejected
+# are ledger-driven siblings of PENDING_APPROVAL (same priority tier in
+# FundReceivedConsumerMapper._STATE_PRIORITY) — put back should go to
+# PENDING_APPROVAL's own predecessor (Pending Misc. Staff Approval), not to
+# PENDING_APPROVAL itself.
+STATE_ALIASES = {
+	("Fund Received", "Pending Rectification"): "PENDING_APPROVAL",
+	("Fund Received", "Pending Reconciliation"): "PENDING_APPROVAL",
+	("Fund Received", "Rejected"): "PENDING_APPROVAL",
+}
+
 
 def _get_active_workflow(doctype):
 	workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
@@ -49,13 +68,29 @@ def get_put_back_document_states(doctype, docname):
 		for t in transitions:
 			predecessors.setdefault(t.next_state, []).append(t.state)
 
+		# Automation-only sibling states (see STATE_ALIASES) are never
+		# legitimate predecessors of one another — e.g. Fund Received's
+		# "Rejected" must not be offered as a put-back step on the way from
+		# "Pending Rectification", just because both alias to PENDING_APPROVAL
+		# and one happens to have a real Forward transition into it. Excluding
+		# them from `seen` up front keeps them out of every walk except as the
+		# starting current_state itself.
+		aliased_states_for_doctype = {s for (dt, s) in STATE_ALIASES if dt == doctype}
+
 		states = []
-		seen = {current_state}
+		seen = {current_state} | aliased_states_for_doctype
 		state = current_state
 		while True:
 			preds = [p for p in predecessors.get(state) or [] if p not in seen]
 			if not preds:
-				break
+				# Dead end — if this is a known automation-only state (see
+				# STATE_ALIASES), resume the walk from its alias's own
+				# predecessors instead of giving up with an empty list.
+				alias = STATE_ALIASES.get((doctype, state))
+				if alias and alias not in seen:
+					preds = [p for p in predecessors.get(alias) or [] if p not in seen]
+				if not preds:
+					break
 			prev_state = preds[0]
 			states.append(prev_state)
 			seen.add(prev_state)
