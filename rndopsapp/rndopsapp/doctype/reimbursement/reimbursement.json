@@ -61,10 +61,10 @@
    "label": "Project Number",
    "options": "Project Registration",
    "read_only": 1,
-   "depends_on": "eval:doc.self_other==\"Self\""
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name"
   },
   {
-   "depends_on": "eval:doc.self_other==\"Self\"",
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name",
    "fieldname": "account_head",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -122,7 +122,7 @@
    "hidden": 1,
    "label": "Project Name",
    "options": "Project Registration",
-   "depends_on": "eval:doc.self_other==\"Self\""
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name"
   },
   {
    "fieldname": "declarations",

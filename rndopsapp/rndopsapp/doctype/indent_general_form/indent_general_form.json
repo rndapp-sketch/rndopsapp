@@ -102,7 +102,7 @@
    "fieldname": "igf_project_code",
    "fieldtype": "Data",
    "label": "Project Code",
-   "depends_on": "eval:doc.igf_other_pi != \"Other\""
+   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code"
   },
   {
    "default": "Self",
@@ -120,7 +120,7 @@
    "options": "User"
   },
   {
-   "depends_on": "eval:doc.igf_other_pi != \"Other\"",
+   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code",
    "fieldname": "igf_project_title",
    "fieldtype": "Link",
    "label": "Project Title",

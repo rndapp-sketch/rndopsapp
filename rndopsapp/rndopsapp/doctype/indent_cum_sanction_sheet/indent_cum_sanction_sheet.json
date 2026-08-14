@@ -77,7 +77,7 @@
    "options": "User"
   },
   {
-   "depends_on": "eval:doc.icss_other_pi != \"Other\"",
+   "depends_on": "eval:doc.icss_other_pi != \"Other\" || doc.project_no",
    "fieldname": "icss_account_head",
    "fieldtype": "Link",
    "label": "Account Head",
@@ -166,7 +166,7 @@
    "label": "Applying For Designation"
   },
   {
-   "depends_on": "eval:doc.icss_other_pi != \"Other\"",
+   "depends_on": "eval:doc.icss_other_pi != \"Other\" || doc.project_no",
    "fieldname": "project_ref",
    "fieldtype": "Link",
    "label": "Project Reference",
@@ -177,7 +177,7 @@
    "fieldtype": "Data",
    "label": "Project Number",
    "read_only": 1,
-   "depends_on": "eval:doc.icss_other_pi != \"Other\""
+   "depends_on": "eval:doc.icss_other_pi != \"Other\" || doc.project_no"
   },
   {
    "fieldname": "sub_doctype_reference",
