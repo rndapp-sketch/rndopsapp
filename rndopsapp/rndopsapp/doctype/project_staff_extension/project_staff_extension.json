@@ -25,7 +25,8 @@
   "increment_by_pi",
   "increment_by_staff",
   "ex_current_basic",
-  "workflow_state"
+  "workflow_state",
+  "tenure_row_created"
  ],
  "fields": [
   {
@@ -140,6 +141,14 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Workflow Status"
+  },
+  {
+   "default": "0",
+   "fieldname": "tenure_row_created",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Tenure Row Created",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
