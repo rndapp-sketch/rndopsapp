@@ -723,6 +723,149 @@ def delete_doctype_records(doctype, docnames, override_password=None):
 	return {"deleted": deleted, "not_found": not_found, "errors": errors}
 
 
+def _require_system_manager_for_history(doctype, docname):
+	if "System Manager" not in frappe.get_roles(frappe.session.user):
+		frappe.throw("Only System Manager can view/delete comments/activity logs.", frappe.PermissionError)
+	if not doctype:
+		frappe.throw("doctype is required.")
+	if not docname:
+		frappe.throw("docname is required.")
+	if not frappe.db.exists("DocType", doctype):
+		frappe.throw(f"DocType '{doctype}' does not exist.")
+
+
+@frappe.whitelist()
+def get_document_comments_and_activity(doctype, docname):
+	"""
+	Read-only listing of Comment records (including Workflow-transition
+	comments — same table, distinguished by comment_type) and Activity Log
+	records for a single document, identified by reference_doctype +
+	reference_name. Used to populate a checklist before selective deletion via
+	delete_document_comments_and_activity(). Only accessible by System Manager.
+	"""
+	_require_system_manager_for_history(doctype, docname)
+
+	comments = frappe.db.get_all(
+		"Comment",
+		filters={"reference_doctype": doctype, "reference_name": docname},
+		fields=["name", "comment_type", "comment_email", "content", "owner", "creation"],
+		order_by="creation desc",
+	)
+	activity_logs = frappe.db.get_all(
+		"Activity Log",
+		filters={"reference_doctype": doctype, "reference_name": docname},
+		fields=["name", "subject", "content", "operation", "full_name", "owner", "creation"],
+		order_by="creation desc",
+	)
+
+	# The desk timeline UI ("X created this" / "X last edited this") synthesizes
+	# these two lines directly from the document's own owner/creation and
+	# modified_by/modified fields — they are not Comment or Activity Log rows,
+	# so they can never be selected/deleted here. Returned only as read-only
+	# context so the fetched count can be explained against what's visible on
+	# the desk page (13 real rows + these 2 synthetic lines = 15 shown there).
+	doc_meta = frappe.db.get_value(
+		doctype, docname, ["owner", "creation", "modified_by", "modified"], as_dict=True
+	)
+
+	return {
+		"document_existed": bool(doc_meta),
+		"comments": comments,
+		"activity_logs": activity_logs,
+		"document_meta": doc_meta,
+	}
+
+
+@frappe.whitelist()
+def delete_document_comments_and_activity(
+	doctype, docname, comment_names=None, activity_log_names=None, override_password=None
+):
+	"""
+	Delete a specific, caller-chosen set of Comment and/or Activity Log
+	records for a single document (identified by reference_doctype +
+	reference_name). Does NOT touch the document itself, and does not delete
+	anything not explicitly named — pair with get_document_comments_and_activity()
+	to fetch the candidates first and let the caller pick which ones to remove.
+
+	comment_names / activity_log_names: JSON list (or list) of record names to
+	delete. At least one of the two must contain something.
+
+	The document is not required to still exist — this is also the cleanup
+	tool for orphaned Comment/Activity Log rows left behind after a document
+	was removed via a raw-SQL delete fallback (which skips this cleanup).
+	Only accessible by System Manager.
+	"""
+	from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
+
+	if override_password != ADMIN_ACTION_PASSWORD:
+		return {"status": "error", "message": "Incorrect password. Nothing was deleted."}
+
+	_require_system_manager_for_history(doctype, docname)
+
+	def _parse_names(value):
+		if not value:
+			return []
+		if isinstance(value, str):
+			value = json.loads(value)
+		if not isinstance(value, list):
+			frappe.throw("comment_names/activity_log_names must be a list.")
+		return [str(v) for v in value if v]
+
+	comment_names = _parse_names(comment_names)
+	activity_log_names = _parse_names(activity_log_names)
+
+	if not comment_names and not activity_log_names:
+		return {"status": "error", "message": "No comments or activity logs were selected."}
+
+	document_exists = frappe.db.exists(doctype, docname)
+
+	# Scope the delete to rows that actually belong to this document — a
+	# caller can only pass names that came from get_document_comments_and_activity()
+	# for this same doctype/docname, but the filter is kept anyway as a guard
+	# against a stale/tampered selection deleting an unrelated record.
+	comments_deleted = 0
+	comment_type_counts = {}
+	if comment_names:
+		rows = frappe.db.get_all(
+			"Comment",
+			filters={
+				"name": ["in", comment_names],
+				"reference_doctype": doctype,
+				"reference_name": docname,
+			},
+			fields=["name", "comment_type"],
+		)
+		for row in rows:
+			comment_type_counts[row.comment_type] = comment_type_counts.get(row.comment_type, 0) + 1
+		if rows:
+			frappe.db.delete("Comment", {"name": ["in", [r.name for r in rows]]})
+			comments_deleted = len(rows)
+
+	activity_logs_deleted = 0
+	if activity_log_names:
+		rows = frappe.db.get_all(
+			"Activity Log",
+			filters={
+				"name": ["in", activity_log_names],
+				"reference_doctype": doctype,
+				"reference_name": docname,
+			},
+			fields=["name"],
+		)
+		if rows:
+			frappe.db.delete("Activity Log", {"name": ["in", [r.name for r in rows]]})
+			activity_logs_deleted = len(rows)
+
+	frappe.db.commit()
+
+	return {
+		"document_existed": bool(document_exists),
+		"comments_deleted": comments_deleted,
+		"comment_type_breakdown": comment_type_counts,
+		"activity_logs_deleted": activity_logs_deleted,
+	}
+
+
 # Bench log files that are known to grow unbounded and are safe to truncate:
 # - terminal.log: re-appended in full on every "terminal" tab poll in kafka_control.html
 #   (see rndopsapp.rndopsapp.kafka.log_reader.get_kafka_logs), so it never shrinks on its own.

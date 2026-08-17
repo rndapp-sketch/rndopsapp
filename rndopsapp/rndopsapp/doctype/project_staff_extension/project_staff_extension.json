@@ -78,16 +78,19 @@
    "label": "Department"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_doj",
    "fieldtype": "Date",
    "label": "Date of Joining"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_date_of_expiry",
    "fieldtype": "Date",
    "label": "Date of Expiry of Tenure"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_last_ex_date",
    "fieldtype": "Date",
    "label": "Date of Last Extension",
@@ -110,6 +113,7 @@
    "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_current_basic",
    "fieldtype": "Data",
    "label": "Current Basic Pay"
@@ -137,6 +141,7 @@
    "label": "Increment by Staff"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "workflow_state",
    "fieldtype": "Data",
    "hidden": 1,

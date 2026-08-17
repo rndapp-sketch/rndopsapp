@@ -215,7 +215,6 @@ scheduler_events = {
 # Request Events
 # ----------------
 before_request = [
-	"rndopsapp.rndopsapp.kafka.consumer_service.ensure_consumer_running",
 	"rndopsapp.rndopsapp.doctype.project_verification.project_verification.restrict_verification_staff_routes",
 ]
 before_login = [

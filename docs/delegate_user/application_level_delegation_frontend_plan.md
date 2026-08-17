@@ -1,5 +1,11 @@
 # Application-Level Delegation — Frontend Plan
 
+> **Status: Finalized, ready for implementation.** All open questions were
+> resolved on 2026-08-17 (see backend plan for the corresponding decisions).
+> Coordinate delivery with the backend plan per §1 and §5 below — the new
+> `applications` payload shape must not ship before the backend migration
+> lands.
+
 ## Context
 
 The backend currently accepts and stores `scope_type=application` but does not
@@ -13,7 +19,7 @@ backend fix ships.
 
 ---
 
-## 0. Open access to all logged-in users (Permanent Employee, project staff, students, ...)
+## 0. Open access to all logged-in users (Permanent Employee, project staff, students, ...) [DECIDED: proceed]
 
 Backend plan §"Access control" drops role-based gating entirely — there's no
 "Student" role or Student→User sync in this codebase to allowlist against
@@ -55,7 +61,7 @@ backend now gates only on "is a real logged-in user"
 "applications": "[\"TRV-2026-00001\", \"LOAN-2026-00002\"]"
 ```
 
-**New (pending backend Option B):** send `{doctype, name}` pairs instead:
+**New (backend Option B, decided):** send `{doctype, name}` pairs instead:
 ```json
 "applications": "[{\"doctype\":\"Travel\",\"name\":\"TRV-2026-00001\"},{\"doctype\":\"Loan Request\",\"name\":\"LOAN-2026-00002\"}]"
 ```
@@ -81,11 +87,10 @@ enforced, users need to actually see and manage what's included:
 
 - Expand each delegation card to list the specific projects/applications
   included (not just a count) — e.g. a chip list of `Travel: TRV-2026-00001`.
-- Surface this from `get_active_delegations()` — note the current response
-  only returns counts, so this needs the backend to also return the resolved
-  `project_names` / `applications` lists (or a follow-up detail call) rather
-  than just counts. Flag this as an additional backend response change to
-  coordinate.
+- Surface this from `get_active_delegations()` — **backend plan §6 now covers
+  this**: the response will include resolved `project_names` / `applications`
+  lists (post-migration `{doctype, name}` shape) alongside the existing
+  counts. No follow-up detail call needed.
 
 ---
 
@@ -97,11 +102,11 @@ without revoking it entirely and starting over. Once scope actually matters,
 users will want to remove a single project/application without nuking the
 whole delegation.
 
-**Action:** request a backend addition (either a `remove` list param on
-`delegate_user()`, or a new `remove_from_delegation_scope(delegation_name,
-projects, applications)` endpoint) and build a per-chip "×" remove control on
-the delegation card once it exists. Don't build this against the current
-merge-only API — it can't support it.
+**Decided:** backend plan §6 adds a `remove` list param to `delegate_user()`
+(same call, not a new endpoint) accepting `{doctype, name}` / project-name
+entries to remove. Build a per-chip "×" remove control on the delegation card
+against this once it ships. Don't build against the current merge-only API —
+it can't support it.
 
 ---
 
