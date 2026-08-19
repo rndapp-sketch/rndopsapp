@@ -2309,6 +2309,8 @@ def delegate_user(
 	scope_type=None,
 	project_names=None,
 	applications=None,
+	remove_project_names=None,
+	remove_applications=None,
 	valid_from=None,
 	valid_to=None,
 ):
@@ -2320,6 +2322,8 @@ def delegate_user(
 		scope_type=scope_type,
 		project_names=project_names,
 		applications=applications,
+		remove_project_names=remove_project_names,
+		remove_applications=remove_applications,
 		valid_from=valid_from,
 		valid_to=valid_to,
 	)
@@ -2330,6 +2334,21 @@ def undelegate_user(delegation_name):
 	from rndopsapp.rndopsapp.delegate_user.delegate_user import undelegate_user as _impl
 
 	return _impl(delegation_name=delegation_name)
+
+
+@frappe.whitelist()
+def create_application_on_behalf(doctype, delegator_user, project_name=None, fields=None):
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import create_application_on_behalf as _impl
+
+	if isinstance(fields, str):
+		fields = frappe.parse_json(fields)
+
+	return _impl(
+		doctype=doctype,
+		delegator_user=delegator_user,
+		project_name=project_name,
+		fields=fields,
+	)
 
 
 def auto_clear_old_mattermost_posts():

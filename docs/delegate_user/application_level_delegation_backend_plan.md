@@ -1,7 +1,15 @@
 # Application-Level Delegation — Backend Plan
 
-> **Status: Finalized, ready for implementation.** All open questions below
-> were resolved on 2026-08-17. Implementation may proceed against this spec.
+> **Status: Implemented and live**, updated 2026-08-17. All open questions
+> below were resolved and built. Current state, including the parts that
+> shipped beyond this original plan, is documented in
+> [delegation.md](delegation.md) (API reference) — treat that as the
+> up-to-date source of truth over this plan doc for anything that conflicts.
+> Also shipped but not originally scoped here:
+> [create_application_on_behalf](delegation.md) (see delegation.md §6) and
+> its UI guide, [create_on_behalf_ui_guide.md](create_on_behalf_ui_guide.md).
+> A related, pre-existing, **unfixed** authorization gap was found and logged
+> separately: [known_auth_gaps.md](../security/known_auth_gaps.md).
 
 ## Problem
 

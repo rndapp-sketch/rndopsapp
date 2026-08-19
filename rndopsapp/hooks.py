@@ -133,11 +133,24 @@ permission_query_conditions = {
 	"Indent General Form":           f"{_DU}.indent_general_form_permission_query",
 	"Indent Cum Sanction Sheet":     f"{_DU}.indent_cum_sanction_sheet_permission_query",
 	"Recruitment Adhoc Contractual": f"{_DU}.recruitment_adhoc_contractual_permission_query",
+	"User Delegation":               f"{_DU}.user_delegation_permission_query",
 }
 
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+has_permission = {
+	"Project Registration":          f"{_DU}.has_delegated_access",
+	"Travel":                        f"{_DU}.has_delegated_access",
+	"TA DA Settlement":              f"{_DU}.has_delegated_access",
+	"Temporary Advance":             f"{_DU}.has_delegated_access",
+	"Advance Settlement":            f"{_DU}.has_delegated_access",
+	"Reimbursement":                 f"{_DU}.has_delegated_access",
+	"Direct Purchase":               f"{_DU}.has_delegated_access",
+	"Disbursal of Consultancy":      f"{_DU}.has_delegated_access",
+	"Disbursal of Honorarium":       f"{_DU}.has_delegated_access",
+	"Loan Request":                  f"{_DU}.has_delegated_access",
+	"Indent General Form":           f"{_DU}.has_delegated_access",
+	"Indent Cum Sanction Sheet":     f"{_DU}.has_delegated_access",
+	"Recruitment Adhoc Contractual": f"{_DU}.has_delegated_access",
+}
 
 # DocType Class
 # ---------------

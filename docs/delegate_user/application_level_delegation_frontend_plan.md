@@ -1,10 +1,18 @@
 # Application-Level Delegation — Frontend Plan
 
-> **Status: Finalized, ready for implementation.** All open questions were
-> resolved on 2026-08-17 (see backend plan for the corresponding decisions).
-> Coordinate delivery with the backend plan per §1 and §5 below — the new
-> `applications` payload shape must not ship before the backend migration
-> lands.
+> **Status: Backend is implemented and live in the codebase.** All 6 sections
+> below can be built against the real API now — nothing here is speculative.
+> Exact request/response shapes as actually shipped are called out in each
+> section (search for **Actual API**). Run `bench migrate` before/with this
+> frontend deploy so existing `application`-scoped rows are converted to the
+> new `{doctype, name}` shape by `rndopsapp.patchs.fix_delegation_application_scope`
+> — until that patch runs, un-migrated rows will silently resolve to empty
+> scope under the new code. For the current, day-to-day reference (not just
+> this plan's rationale), use
+> [delegation_frontend_guide.md](delegation_frontend_guide.md). A new,
+> separate feature shipped alongside this — delegates creating new
+> applications on behalf of the project owner — is not covered by this plan
+> at all; see [create_on_behalf_ui_guide.md](create_on_behalf_ui_guide.md).
 
 ## Context
 
@@ -19,14 +27,14 @@ backend fix ships.
 
 ---
 
-## 0. Open access to all logged-in users (Permanent Employee, project staff, students, ...) [DECIDED: proceed]
+## 0. Open access to all logged-in users (Permanent Employee, project staff, students, ...) [SHIPPED]
 
-Backend plan §"Access control" drops role-based gating entirely — there's no
-"Student" role or Student→User sync in this codebase to allowlist against
-(unlike Project Staff, which does sync to a `User` with role `project staff`),
-so a role list can never actually cover "all users, students also." The
-backend now gates only on "is a real logged-in user"
-(`_require_authenticated_user()`). Frontend changes to match:
+Backend now gates only on "is a real logged-in user" —
+`_require_authenticated_user()` in `delegate_user.py` (throws only when
+`frappe.session.user == "Guest"`). This is live: `search_delegate_users`,
+`get_delegate_scope`, `get_active_delegations`, `delegate_user`, and
+`undelegate_user` all use this gate today, no role check remains. Frontend
+changes to match:
 
 - **Route guard:** `/delegate-user` currently checks for the `Permanent
   Employee` role before rendering (per `delegation_frontend_guide.md`, "Who
@@ -54,59 +62,89 @@ backend now gates only on "is a real logged-in user"
 
 ---
 
-## 1. Payload shape change for `applications`
+## 1. Payload shape change for `applications` [SHIPPED]
 
-**Current:** frontend sends a flat JSON-stringified array of doc names:
+**Old (no longer supported):** a flat JSON-stringified array of doc names.
+
+**Actual API — `rndopsapp.rndopsapp.api.delegate_user`:** send `{doctype,
+name}` pairs. `applications` accepts either a JSON string or a plain array —
+`delegate_user()` parses both (`isinstance(value, str)` check), so send
+whichever is more natural for your HTTP client:
+
 ```json
-"applications": "[\"TRV-2026-00001\", \"LOAN-2026-00002\"]"
+{
+  "delegate_user": "user@example.com",
+  "delegation_type": "View Only",
+  "scope_type": "application",
+  "applications": [
+    {"doctype": "Travel", "name": "TRV-2026-00001"},
+    {"doctype": "Loan Request", "name": "LOAN-2026-00002"}
+  ]
+}
 ```
 
-**New (backend Option B, decided):** send `{doctype, name}` pairs instead:
-```json
-"applications": "[{\"doctype\":\"Travel\",\"name\":\"TRV-2026-00001\"},{\"doctype\":\"Loan Request\",\"name\":\"LOAN-2026-00002\"}]"
-```
+`doctype` here is the exact backend doctype name (e.g. `"Travel"`, not a
+display label) — it's the same value `get_delegate_scope().applications[i].doctype`
+already returns per row, so no extra mapping is needed on submit.
 
-`get_delegate_scope().applications` already returns `doctype` per row today
-([delegation_frontend_guide.md](delegation_frontend_guide.md) §2), so the
-application multi-select already has both fields available — this is purely a
-change to what gets serialized on submit, not a new fetch.
-
-**Action:** gate this change behind the backend deploy — do not ship the new
-payload shape until the backend has migrated existing rows and switched
-`_scoped_doc_names_for_doctype` to expect it, or existing delegations will
-parse as empty scope.
+Malformed entries are silently dropped server-side (missing `doctype`/`name`,
+or `doctype` not one of the 12 registered application doctypes → `frappe.throw`
+with `"'{doctype}' is not a delegable application doctype."`). Surface that
+error message as-is if the create call fails.
 
 ---
 
-## 2. Scope transparency in the UI
+## 2. Scope transparency in the UI [SHIPPED]
 
-Because scope has had no visible effect until now, the existing UI (per
-`delegation_frontend_guide.md`'s checklist) only shows *counts*
-(`project_count`, `application_count`) on delegation cards. Once scope is
-enforced, users need to actually see and manage what's included:
+Because scope had no visible effect until now, the existing UI only showed
+*counts* (`project_count`, `application_count`) on delegation cards. Now that
+scope is enforced, users need to actually see and manage what's included.
 
-- Expand each delegation card to list the specific projects/applications
-  included (not just a count) — e.g. a chip list of `Travel: TRV-2026-00001`.
-- Surface this from `get_active_delegations()` — **backend plan §6 now covers
-  this**: the response will include resolved `project_names` / `applications`
-  lists (post-migration `{doctype, name}` shape) alongside the existing
-  counts. No follow-up detail call needed.
+**Actual API — `get_active_delegations()` response**, one object per row:
+```json
+{
+  "name": "DEL-2026-00001",
+  "delegate_user": "user@example.com",
+  "delegate_user_name": "Jane Doe",
+  "delegation_type": "View Only",
+  "scope_type": "application",
+  "project_names": ["PRJ-2026-00003"],
+  "applications": [{"doctype": "Travel", "name": "TRV-2026-00001"}],
+  "project_count": 1,
+  "application_count": 1,
+  "valid_from": null,
+  "valid_to": null,
+  "enabled": 1
+}
+```
+
+`project_names` / `applications` are the resolved lists (not JSON strings —
+already parsed arrays), added alongside the existing counts so no follow-up
+detail call is needed. Expand each delegation card to list the specific
+projects/applications (e.g. a chip list of `Travel: TRV-2026-00001`) instead
+of just the count.
 
 ---
 
-## 3. Add a "remove item from scope" affordance
+## 3. Add a "remove item from scope" affordance [SHIPPED]
 
-`delegate_user()` today only **merges/adds** to `project_names` and
-`applications` — there's no way to shrink an existing scoped delegation
-without revoking it entirely and starting over. Once scope actually matters,
-users will want to remove a single project/application without nuking the
-whole delegation.
+`delegate_user()` still **merges/adds** via `project_names` / `applications`
+as in §1, and now also accepts two additional, independent params to shrink
+an existing scope. Note these are **two separate params**, not one combined
+`remove` list — mirroring the add-side shape:
 
-**Decided:** backend plan §6 adds a `remove` list param to `delegate_user()`
-(same call, not a new endpoint) accepting `{doctype, name}` / project-name
-entries to remove. Build a per-chip "×" remove control on the delegation card
-against this once it ships. Don't build against the current merge-only API —
-it can't support it.
+- `remove_project_names` — plain array of Project Registration names, e.g. `["PRJ-2026-00002"]`
+- `remove_applications` — array of `{doctype, name}` pairs, same shape as `applications`
+
+Both accept a JSON string or a plain array, same as the add-side params. They
+can be sent alone (no `project_names`/`applications` in the same call) to
+just shrink an existing delegation — you don't need to resend the full add
+payload. If a name appears in both the add and remove list in the same call,
+removal wins (applied after the merge).
+
+Build a per-chip "×" remove control on the delegation card that calls
+`delegate_user(delegate_user=<row.delegate_user>, remove_project_names=[...])`
+or `remove_applications=[...]` for the specific item removed.
 
 ---
 
@@ -139,8 +177,8 @@ report.
 ## 6. QA checklist (re-run against real enforcement)
 
 The existing checklist in `delegation_frontend_guide.md` assumed scope was
-cosmetic. Re-verify each item against actual restricted behavior once the
-backend fix ships:
+cosmetic. The backend enforcement described above is already live — re-verify
+each item against actual restricted behavior as you build the frontend:
 
 - [ ] `scope_type=application` with 1 selected item → delegate sees exactly
       that 1 document in the relevant list view, not the delegator's full list
