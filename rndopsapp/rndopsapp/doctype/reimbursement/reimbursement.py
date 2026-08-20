@@ -224,10 +224,20 @@ def get_reimbursement_fields(doc_name=None):
 			fields=["name as value", "full_name as label"],
 			limit_page_length=200,
 		)
+		# Distinct accounts can share a full name (a personal login and a role
+		# account), so show the email too — otherwise the picker is ambiguous
+		# and the wrong person gets selected.
+		for _u in users:
+			_n = (_u.get("label") or "").strip()
+			_u["label"] = f"{_n} ({_u['value']})" if _n else _u["value"]
 		# applicant_webmail = any enabled user; reimbursement_for_id (Other PI)
 		# is restricted to Permanent Employees only.
 		link_options["applicant_webmail"] = users
 		link_options["reimbursement_for_id"] = _get_permanent_employee_options()
+		# Applying-for beneficiary can be anyone (project staff, student, …),
+		# unlike the Other PI which must be a Permanent Employee.
+		link_options["reimb_applying_for_mail"] = users
+		link_options["reimb_applying_for_name"] = users
 	except Exception:
 		pass
 
@@ -326,8 +336,18 @@ def _safe_populate_link_options(link_options):
 			fields=["name as value", "full_name as label"],
 			limit_page_length=200,
 		)
+		# Distinct accounts can share a full name (a personal login and a role
+		# account), so show the email too — otherwise the picker is ambiguous
+		# and the wrong person gets selected.
+		for _u in users:
+			_n = (_u.get("label") or "").strip()
+			_u["label"] = f"{_n} ({_u['value']})" if _n else _u["value"]
 		link_options["applicant_webmail"] = users
 		link_options["reimbursement_for_id"] = _get_permanent_employee_options()
+		# Applying-for beneficiary can be anyone (project staff, student, …),
+		# unlike the Other PI which must be a Permanent Employee.
+		link_options["reimb_applying_for_mail"] = users
+		link_options["reimb_applying_for_name"] = users
 	except Exception:
 		pass
 
