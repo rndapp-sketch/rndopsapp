@@ -1838,7 +1838,7 @@ def get_document_activity(doctype, docname):
 	comment_type_map = {
 		"Comment": ("comment", "commented"),
 		"Edit": ("edit", "edited this"),
-		"Info": ("edit", "edited this"),
+		"Info": ("info", "recorded"),
 		"Label": ("edit", "edited this"),
 		"Workflow": ("workflow", "updated the workflow"),
 		"Assigned": ("assignment", "was assigned"),
@@ -1874,8 +1874,32 @@ def get_document_activity(doctype, docname):
 	# --- 3. Document creation row ---
 	doc_row = frappe.db.get_value(doctype, docname, ["owner", "creation"], as_dict=True)
 
+	# --- 3b. Cancellation Request activity ---
+	# The cancellation workflow runs on a separate Cancellation Request
+	# document, so its approvals, rejections and comments would otherwise be
+	# invisible from the form being cancelled.
+	cancellation_comments = []
+	try:
+		for cr in frappe.get_all(
+			"Cancellation Request",
+			filters={"reference_doctype": doctype, "reference_name": docname},
+			fields=["name"],
+		):
+			for c in frappe.get_all(
+				"Comment",
+				filters={"reference_doctype": "Cancellation Request", "reference_name": cr.name},
+				fields=["owner", "creation", "content", "comment_type"],
+				order_by="creation desc",
+			):
+				c["cancellation_request"] = cr.name
+				cancellation_comments.append(c)
+	except Exception:
+		# Doctype may not exist on older sites — the rest of the timeline still works.
+		cancellation_comments = []
+
 	# --- 4. Collect all unique owners so we can batch-resolve full names ---
 	all_owners = {c.owner for c in raw_comments}
+	all_owners.update(c.owner for c in cancellation_comments)
 	all_owners.add(doc_row.owner)
 	if last_version:
 		all_owners.add(last_version.owner)
@@ -1907,7 +1931,7 @@ def get_document_activity(doctype, docname):
 			"user_email": c.owner,
 			"timestamp": str(c.creation),
 		}
-		if ctype in ("comment", "workflow", "assignment", "share", "attachment"):
+		if ctype in ("comment", "workflow", "assignment", "share", "attachment", "info"):
 			entry["content"] = frappe.utils.strip_html_tags(c.content or "").strip()
 		entries.append(entry)
 
@@ -1920,6 +1944,23 @@ def get_document_activity(doctype, docname):
 				"user": resolve(last_version.owner),
 				"user_email": last_version.owner,
 				"timestamp": str(last_version.creation),
+			}
+		)
+
+	for c in cancellation_comments:
+		_, clabel = comment_type_map.get(c.comment_type, ("info", (c.comment_type or "").lower()))
+		text = frappe.utils.strip_html_tags(c.content or "").strip()
+		if c.comment_type == "Workflow" and text:
+			text = f"Cancellation request moved to {text}"
+		entries.append(
+			{
+				"type": "cancellation",
+				"label": f"{clabel} on cancellation request {c.cancellation_request}",
+				"user": resolve(c.owner),
+				"user_email": c.owner,
+				"timestamp": str(c.creation),
+				"content": text,
+				"cancellation_request": c.cancellation_request,
 			}
 		)
 
