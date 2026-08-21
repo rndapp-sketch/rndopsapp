@@ -134,7 +134,6 @@ def save_indent_general_form_data(data, files=None, file=None):
         # --- Upload files to MinIO and write URLs back to Attach fields ---
         file_urls = []
         failed_files = []
-        file_service = get_rnd_file_service()
         attach_field_updates = {}
 
         # Ordered list of attach fields from meta (positional fallback)
@@ -142,6 +141,12 @@ def save_indent_general_form_data(data, files=None, file=None):
         print(f"[IGF] Attach fields in meta order: {ordered_attach_fields}")
 
         valid_files = [f for f in files if f and f.get("file_name") and f.get("file_data")]
+
+        # Only initialise the object-storage (MinIO) client when there is
+        # actually something to upload — otherwise a save with no attachments
+        # would needlessly connect (and crash if MinIO isn't configured, e.g.
+        # in local/dev environments where the endpoint is unset).
+        file_service = get_rnd_file_service() if valid_files else None
 
         for idx, f in enumerate(valid_files):
             # Use field_name from file object; fall back to positional attach field
