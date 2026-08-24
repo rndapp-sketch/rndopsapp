@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "format:{YYYY}{MM}{DD}MiSCoM{######}",
- "creation": "2026-07-08 15:53:18.858337",
+ "creation": "2026-08-21 11:24:51.167625",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -45,6 +45,7 @@
   {
    "fieldname": "project_number",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Project Number",
    "options": "Project Registration",
    "reqd": 1
@@ -88,18 +89,21 @@
   {
    "fieldname": "applicant_webmail",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Web-Mail Id",
    "reqd": 1
   },
   {
    "fieldname": "applicant_department",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Department",
    "reqd": 1
   },
   {
    "fieldname": "applicant_designation",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Designation",
    "reqd": 1
   },
@@ -113,7 +117,7 @@
    "fieldname": "module",
    "fieldtype": "Select",
    "label": "Module",
-   "options": "\nAdvance Settlement\nCancellation Request\nDirect Purchase\nDisbursal of Consultancy\nDisbursal of Honorarium\nFund Received\nFund Sanction\nICSS_PO\nIndent Cum Sanction Sheet\nIndent General Form\nLeave Module\nLoan Request\nP_11 Form\nProject Proposal\nProject Registration\nProject Staff Details\nProject Staff Extension\nRecruitment Adhoc Contractual\nReimbursement\nsanction_sheet\nSelection Committee Report\nTA DA Settlement\nTemporary Advance\nTop Up Fellowship\nTravel",
+   "options": "\nAdvance Settlement\nCancellation Request\nDirect Purchase\nDisbursal of Consultancy\nDisbursal of Honorarium\nFund Received\nFund Sanction\nICSS_PO\nIndent Cum Sanction Sheet\nIndent General Form\nLeave Module\nLoan Request\nP_11 Form\nProject Proposal\nProject Registration\nProject Staff Details\nProject Staff Extension\nRecruitment Adhoc Contractual\nReimbursement\nsanction_sheet\nSelection Committee Report\nTA DA Settlement\nTemporary Advance\nTop Up Fellowship\nTravel\nMiscellaneous Commit",
    "reqd": 1
   }
  ],
@@ -121,7 +125,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-13 11:50:34.145426",
+ "modified": "2026-08-24 15:51:44.153574",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Miscellaneous Commit",

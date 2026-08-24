@@ -42,6 +42,10 @@ def get_miscellaneous_commit_fields(doc_name=None):
 	except Exception:
 		module_names = []
 
+	# Always available as a catch-all, independent of what's registered.
+	if "Miscellaneous Commit" not in module_names:
+		module_names.append("Miscellaneous Commit")
+
 	fields = []
 	for f in meta.get("fields"):
 		field_options = f.options
