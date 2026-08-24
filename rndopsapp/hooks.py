@@ -168,11 +168,20 @@ doc_events = {
 	"*": {
 		"on_update": [
 			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.rndopsapp.activity_logger.log_workflow_transition",
 			"rndopsapp.external_auth.log_impersonated_action",
 		],
+		# Submitted documents (docstatus=1) fire on_update_after_submit instead of
+		# on_update, which is where most workflow transitions actually happen.
+		"on_update_after_submit": [
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
+		],
 		"after_insert": ["rndopsapp.external_auth.log_impersonated_action"],
-		"on_submit": ["rndopsapp.external_auth.log_impersonated_action"],
+		"on_submit": [
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
+			"rndopsapp.external_auth.log_impersonated_action",
+		],
 		"on_cancel": ["rndopsapp.external_auth.log_impersonated_action"],
 		"on_trash": ["rndopsapp.external_auth.log_impersonated_action"],
 	}

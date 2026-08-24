@@ -246,11 +246,9 @@ class WorkflowManager:
 
 		# Add audit comment
 		try:
-			self.doc.add_comment(
-				"Info",
-				f"Workflow action '{action}' performed by {self.user} ({', '.join(self.user_roles)}) "
-				f"on {now_datetime().strftime('%Y-%m-%d %H:%M:%S')}: {old_state} → {next_state}",
-			)
+			# The actor and timestamp are already shown by the activity timeline,
+			# and the full role list drowned out the part that matters.
+			self.doc.add_comment("Info", f"{action}: {old_state} → {next_state}")
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "WorkflowManager: failed to add workflow audit comment")
 

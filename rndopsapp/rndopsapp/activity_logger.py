@@ -56,6 +56,64 @@ TRACKED_DOCTYPES = {
 }
 
 
+# Keys the frontend uses for the note typed into the action dialog.
+_COMMENT_KEYS = ("comment", "remark", "remarks", "approval_comment")
+
+
+def _extract_action_comment():
+	"""
+	Read the approver's typed note off the current request.
+
+	The action dialogs post it as `comment` alongside the workflow action, but
+	most `perform_*_action` endpoints don't declare that parameter and Frappe
+	drops kwargs that aren't in a whitelisted method's signature — so the text
+	never reached the document. It is still on the request, so take it here.
+	"""
+	form = getattr(frappe.local, "form_dict", None) or {}
+	for key in _COMMENT_KEYS:
+		value = form.get(key)
+		if isinstance(value, str) and value.strip():
+			return value.strip()
+	return None
+
+
+def record_workflow_action_comment(doc, method=None):
+	"""
+	Record the note an approver typed when forwarding / approving / rejecting /
+	putting back, as a real comment on the document.
+	"""
+	if not getattr(doc, "workflow_state", None):
+		return
+
+	doc_before = doc.get_doc_before_save()
+	if not doc_before:
+		return
+
+	old_state = getattr(doc_before, "workflow_state", None)
+	if not old_state or old_state == doc.workflow_state:
+		return
+
+	text = _extract_action_comment()
+	if not text:
+		return
+
+	# A single action can save the document more than once; only comment once
+	# per document per request.
+	seen = getattr(frappe.local, "_rndops_action_comments", None)
+	if seen is None:
+		seen = set()
+		frappe.local._rndops_action_comments = seen
+	key = (doc.doctype, doc.name)
+	if key in seen:
+		return
+	seen.add(key)
+
+	try:
+		doc.add_comment("Comment", frappe.utils.escape_html(text))
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Failed to record workflow action comment")
+
+
 def log_workflow_transition(doc, method):
     if doc.doctype not in TRACKED_DOCTYPES:
         return
