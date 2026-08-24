@@ -19,6 +19,9 @@ def extract_eval_expression(expression):
 
 
 from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip as publish_consultancy_deposit_slip
+from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation import (
+	validate_overhead_gst_budget_heads_for_doc,
+)
 
 class ENonRoutineDepositSlip(Document):
 	def autoname(self):
@@ -30,6 +33,14 @@ class ENonRoutineDepositSlip(Document):
 		"""
 		if self.flags.get('skip_kafka_sync'):
 			return
+
+		def _validate_and_publish():
+			# Final-gate reconciliation backstop (implementation doc §3.4).
+			if self.fund_received_ref and frappe.db.exists("Fund Received", self.fund_received_ref):
+				fr_doc = frappe.get_doc("Fund Received", self.fund_received_ref)
+				validate_overhead_gst_budget_heads_for_doc(self, fr_doc)
+			publish_consultancy_deposit_slip(self)
+
 		try:
 			doc_before_save = self.get_doc_before_save()
 			old_state = doc_before_save.workflow_state if doc_before_save else None
@@ -38,10 +49,10 @@ class ENonRoutineDepositSlip(Document):
 
 			if (new_state in target_states and old_state != new_state):
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (E-Non) for state {new_state}")
-				publish_consultancy_deposit_slip(self)
+				_validate_and_publish()
 			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0):
 				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (E-Non) for Submit")
-				publish_consultancy_deposit_slip(self)
+				_validate_and_publish()
 		except Exception as e:
 			frappe.log_error(f"Error in E Non Deposit Slip on_update: {e}", "E Non Deposit Slip Error")
 			pass

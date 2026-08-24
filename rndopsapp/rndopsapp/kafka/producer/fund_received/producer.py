@@ -23,7 +23,7 @@ class FundReceivedProducer:
     SCHEMA_VERSION = SCHEMA_VERSION_FUND_RECEIVED
 
     @classmethod
-    def publish(cls, doc, validate: bool = True, log_errors: bool = True) -> bool:
+    def publish(cls, doc, validate: bool = True, log_errors: bool = True, fund_received_status=None) -> bool:
         """
         Main entry point for publishing Fund Received to Kafka.
 
@@ -31,6 +31,10 @@ class FundReceivedProducer:
             doc: Fund Received Frappe document
             validate: Whether to validate the DTO before publishing
             log_errors: Whether to log validation errors
+            fund_received_status: Optional override for the `fundReceivedStatus`
+                field on the outgoing payload — see FundReceivedMapper.map_to_dto.
+                Defaults to None, which preserves the historical hardcoded
+                "PENDING_APPROVAL" behavior.
 
         Returns:
             bool: True if successfully published, False otherwise
@@ -108,7 +112,7 @@ class FundReceivedProducer:
                 return False
 
             # Step 2: Map Frappe document to Event DTO
-            event = FundReceivedMapper.map_to_event(doc)
+            event = FundReceivedMapper.map_to_event(doc, fund_received_status=fund_received_status)
 
             # Step 3: Validate DTO
             if validate:
@@ -259,7 +263,7 @@ class FundReceivedProducer:
             }
 
 
-def publish_fund_received(doc, validate: bool = True, log_errors: bool = True) -> bool:
+def publish_fund_received(doc, validate: bool = True, log_errors: bool = True, fund_received_status=None) -> bool:
     """
     Convenience function to publish Fund Received.
 
@@ -267,8 +271,12 @@ def publish_fund_received(doc, validate: bool = True, log_errors: bool = True) -
         doc: Fund Received Frappe document
         validate: Whether to validate before publishing
         log_errors: Whether to log validation errors
+        fund_received_status: Optional override for the `fundReceivedStatus`
+            field — see FundReceivedProducer.publish / FundReceivedMapper.map_to_dto.
 
     Returns:
         bool: True if successful, False otherwise
     """
-    return FundReceivedProducer.publish(doc, validate=validate, log_errors=log_errors)
+    return FundReceivedProducer.publish(
+        doc, validate=validate, log_errors=log_errors, fund_received_status=fund_received_status
+    )

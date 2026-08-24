@@ -9,9 +9,16 @@ import frappe
 import requests
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, sanitize_html
+from frappe.utils import cint, flt, sanitize_html
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_received
+from rndopsapp.rndopsapp.kafka.utils import resolve_budget_head_name
 from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
+from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation import (
+	OVERHEAD_BUDGET_HEAD_LABEL,
+	GST_BUDGET_HEAD_LABEL,
+	validate_overhead_gst_budget_heads_for_doc,
+	validate_overhead_gst_budget_heads_for_payload,
+)
 
 
 class FundReceived(Document):
@@ -717,8 +724,184 @@ def get_fund_received_workflow_actions(docname):
 	return list(dict.fromkeys(allowed_actions))
 
 
+def _validate_amount_totals(doc_data):
+	"""
+	Fund Received Amount = Σ transaction amounts = Σ budget breakup amounts.
+
+	The same money is described three times on this form — the headline figure, how it
+	actually arrived (Transaction Details), and where it is allocated (Budget Breakup).
+	If any two disagree, one of them is wrong, and the receipt would go downstream
+	carrying a figure that its own detail lines don't support.
+
+	Scoped deliberately to submit_fund_received, which is only ever called by the
+	Add Fund Received form. Older records predate this rule (roughly a fifth of them
+	don't satisfy it), and the deposit-slip adjustment paths rebalance these tables on
+	purpose — so enforcing it in save_fund_received would break both.
+	"""
+	data = json.loads(doc_data) if isinstance(doc_data, str) else (doc_data or {})
+
+	received = flt(data.get("fund_received_amt"), 2)
+	if received <= 0:
+		frappe.throw(_("Enter a Fund Received Amount greater than zero."))
+
+	transactions = flt(
+		sum(flt(row.get("amount")) for row in (data.get("fund_transactions") or [])), 2
+	)
+	breakup = flt(
+		sum(flt(row.get("amount_received")) for row in (data.get("received_amt_breakup") or [])), 2
+	)
+
+	mismatches = []
+	if abs(transactions - received) >= 0.01:
+		mismatches.append(
+			_("Transaction Details total {0}, but the Fund Received Amount is {1}.").format(
+				transactions, received
+			)
+		)
+	if abs(breakup - received) >= 0.01:
+		mismatches.append(
+			_("Budget Breakup totals {0}, but the Fund Received Amount is {1}.").format(
+				breakup, received
+			)
+		)
+
+	if mismatches:
+		frappe.throw(
+			_("The totals on this receipt do not match.") + "\n" + "\n".join(mismatches)
+		)
+
+
+def _validate_against_loan_settlements(doc_data, loan_settlement_refs):
+	"""
+	Refuse a Fund Received that cannot actually fund the loan settlements raised from it.
+
+	A settlement is a promise to return money against specific budget heads, so the
+	receipt it is being paid out of has to carry at least that much, head by head — a
+	receipt smaller than the settlement, or one that credits the money to a different
+	head, would leave the settlement unfundable the moment it reaches Accounts.
+
+	Whether the figures are a floor or an exact target is decided by
+	get_settlement_requirements (Full -> floor, all-Partial -> exact); see its docstring.
+	"""
+	from rndopsapp.rndopsapp.doctype.loan_settlement.loan_settlement import (
+		get_settlement_requirements,
+	)
+
+	requirements = get_settlement_requirements(loan_settlement_refs)
+	required_total = flt(requirements.get("total"), 2)
+	if required_total <= 0:
+		return
+
+	data = json.loads(doc_data) if isinstance(doc_data, str) else (doc_data or {})
+	received_total = flt(data.get("fund_received_amt"), 2)
+	exact = requirements.get("exact")
+
+	if exact and abs(received_total - required_total) >= 0.01:
+		frappe.throw(
+			_("Fund Received Amount must be exactly {0} — the total of the partial loan settlements raised from this receipt. It is currently {1}.").format(
+				required_total, received_total
+			)
+		)
+	if not exact and received_total < required_total - 0.01:
+		frappe.throw(
+			_("Fund Received Amount must be at least {0} to settle the selected loan(s) in full. It is currently {1}.").format(
+				required_total, received_total
+			)
+		)
+
+	# account_head is a Link to Budget Head, but rows in the wild hold the docname, the
+	# numeric ledger id, or the raw label interchangeably (see resolve_budget_head_name).
+	# Compare canonical docnames on both sides or the same head fails to match itself.
+	received_heads = {}
+	for row in data.get("received_amt_breakup") or []:
+		head = resolve_budget_head_name(row.get("account_head"))
+		if head:
+			received_heads[head] = flt(flt(received_heads.get(head, 0)) + flt(row.get("amount_received")), 2)
+
+	head_labels = requirements.get("head_labels") or {}
+
+	for head, required in (requirements.get("heads") or {}).items():
+		required = flt(required, 2)
+		canonical = resolve_budget_head_name(head) or head
+		available = flt(received_heads.get(canonical, 0), 2)
+		label = head_labels.get(head) or canonical
+
+		if exact and abs(available - required) >= 0.01:
+			frappe.throw(
+				_("Budget Breakup must credit exactly {0} to {1} — that is what the partial settlement returns against it. It currently credits {2}.").format(
+					required, label, available
+				)
+			)
+		if not exact and available < required - 0.01:
+			frappe.throw(
+				_("Budget Breakup must credit at least {0} to {1} to settle the selected loan(s). It currently credits {2}.").format(
+					required, label, available
+				)
+			)
+
+
+def _process_linked_loan_settlements(docname, loan_settlements=None):
+	"""
+	Mark every Loan Settlement raised from this Fund Received as Processed and publish
+	it to the Accounts service.
+
+	Called when Fund Received is forwarded to PENDING_APPROVAL — the same moment Fund
+	Received publishes its own event.
+
+	`loan_settlements` carries the staff-entered settlement_mode/remarks captured on the
+	Fund Received page: [{"name": ..., "settlement_mode": ..., "remarks": ...}].
+
+	Each settlement is handled independently so one failure can't take down the others,
+	and the publish outcome is recorded on the doc (publish_status/publish_error) so a
+	failure is visible and retryable rather than silent.
+	"""
+	from rndopsapp.rndopsapp.doctype.loan_settlement.loan_settlement import (
+		STATE_PENDING_STAFF,
+		STATE_PROCESSED,
+		_publish_and_record,
+	)
+
+	if isinstance(loan_settlements, str):
+		try:
+			loan_settlements = json.loads(loan_settlements)
+		except Exception:
+			loan_settlements = []
+	staff_input = {
+		row.get("name"): row
+		for row in (loan_settlements or [])
+		if isinstance(row, dict) and row.get("name")
+	}
+
+	pending = frappe.get_all(
+		"Loan Settlement",
+		filters={"fund_received_reference": docname, "workflow_state": STATE_PENDING_STAFF},
+		pluck="name",
+	)
+
+	for settlement_name in pending:
+		try:
+			row = staff_input.get(settlement_name) or {}
+			updates = {"workflow_state": STATE_PROCESSED}
+			if row.get("settlement_mode"):
+				updates["settlement_mode"] = row["settlement_mode"]
+			if row.get("remarks") is not None:
+				updates["remarks"] = row["remarks"]
+
+			frappe.db.set_value("Loan Settlement", settlement_name, updates, update_modified=True)
+			frappe.db.commit()
+
+			settlement_doc = frappe.get_doc("Loan Settlement", settlement_name)
+			_publish_and_record(settlement_doc)
+			frappe.db.commit()
+		except Exception:
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"Loan Settlement Processing Error ({settlement_name})",
+			)
+
+
 @frappe.whitelist()
-def perform_fund_received_action(docname, action, deposit_slip_data=None, deposit_slip_type=None):
+def perform_fund_received_action(docname, action, deposit_slip_data=None, deposit_slip_type=None, loan_settlements=None):
 	"""
 	Executes the selected workflow action and updates the document state.
 
@@ -730,6 +913,13 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 		deposit_slip_type (str, optional): Explicit deposit slip type from frontend
 										   (e.g. 'e_non_routine', 'research', 'd_consultancy').
 										   Takes priority over project-type inference.
+		loan_settlements (json/list, optional): Per-settlement staff input collected on the
+										   Fund Received page — [{name, settlement_mode,
+										   remarks}]. Applied and published when this action
+										   moves the document to PENDING_APPROVAL (i.e. when
+										   staff Forwards it), alongside Fund Received's own
+										   Kafka publish. See
+										   docs/loan-settlement-implementation.md.
 	"""
 	try:
 		print("=========================================================================")
@@ -831,9 +1021,15 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 
 		# 1. Create Deposit Slip if transitioning to 'Pending HoS Approval'
 		# Relaxed check: Only care if we are moving TO HoS Approval
-		if next_state == "Pending HoS Approval": 
+		if next_state == "Pending HoS Approval":
 			print(f"DEBUG: Transitioning to HoS Approval. Data present: {bool(deposit_slip_data)}")
 			if deposit_slip_data:
+				# Immediate Overhead/GST <-> Budget Head reconciliation (see
+				# DEPOSIT_SLIP_OVERHEAD_GST_BUDGET_HEAD_IMPLEMENTATION.md §3.1/§5.2).
+				# Raises frappe.throw on failure, which the outer try/except below
+				# rolls back and reports through the existing error channel — the
+				# Deposit Slip is never created if this fails.
+				validate_overhead_gst_budget_heads_for_payload(deposit_slip_type, deposit_slip_data, doc)
 				create_deposit_slip_from_data(deposit_slip_data, doc, deposit_slip_type=deposit_slip_type)
 			else:
 				print(f"Warning: transitioning to {next_state} without deposit_slip_data")
@@ -949,6 +1145,21 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 					urgent=True,
 				)
 
+		# 2b. Loan Settlement(s) raised from this Fund Received — process + publish them
+		# at the same moment Fund Received itself is forwarded/published by staff, RnD.
+		# Staff supplies settlement_mode/remarks on the Fund Received page, so the
+		# Kafka payload is complete in a single message (the Accounts service treats
+		# loanSettlementNumber as an idempotency key, so a later "update" publish
+		# would be skipped, not applied). See docs/loan-settlement-implementation.md.
+		#
+		# Deliberately isolated in its own try/except: a settlement failure must never
+		# roll back the Fund Received transition or its own Kafka publish.
+		if next_state == "PENDING_APPROVAL":
+			try:
+				_process_linked_loan_settlements(docname, loan_settlements)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), "Loan Settlement Processing Error")
+
 		# 3. When Fund Received is Approved by HoS -> Auto-Approve Deposit Slip & Sync to Kafka
 		if next_state == "Approved":
 			try:
@@ -1010,6 +1221,15 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 				if ds_name and found_doctype:
 					print(f"DEBUG: Found linked Deposit Slip {ds_name} of type {found_doctype}. Auto-approving and Syncing...")
 					ds_doc = frappe.get_doc(found_doctype, ds_name)
+
+					# Final-gate reconciliation backstop (see implementation doc §3.4).
+					# The primary enforcement already happened immediately at submission
+					# time (§5.2 point 1, above); this catches Fund Received/Deposit Slip
+					# data hand-edited via Desk in between. On failure, this raises and
+					# skips the auto-approve/submit/Kafka-publish for the deposit slip
+					# below entirely — the outer except (ds_err) reports it, and Fund
+					# Received's own state (already committed above) is left as-is.
+					validate_overhead_gst_budget_heads_for_doc(ds_doc, doc)
 
 					current_ds_state = ds_doc.get("workflow_state") or ""
 					print(f"DEBUG: Current Deposit Slip state: '{current_ds_state}'")
@@ -1358,6 +1578,11 @@ def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_typ
 
 			# Research Consultancy Deposit Slip specific fields
 			"project_number": "project_number",
+
+			# Budget head reconciliation (set by the allocation modal — records
+			# which existing head the Overhead/GST money was transferred from)
+			"overhead_source_head": "overhead_source_head",
+			"gst_source_head": "gst_source_head",
 		}
 		
 		# Fields to skip (funding_agency is a Link field — validated separately below)
@@ -1390,7 +1615,22 @@ def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_typ
 
 		# Explicitly link to Fund Received
 		new_doc.fund_received_ref = fund_received_doc.name
-		
+
+		# Mirror the full Fund Received budget breakup onto the Deposit Slip
+		# (implementation doc §3.2) — unconditional: whatever budget heads
+		# exist on Fund Received must also appear on the Deposit Slip,
+		# independent of whether the overhead/GST check below fires.
+		if new_doc.meta.has_field("fund_budget_breakup"):
+			for row in fund_received_doc.received_amt_breakup:
+				new_doc.append(
+					"fund_budget_breakup",
+					{
+						"account_head": row.account_head,
+						"amount_received": row.amount_received,
+						"remarks": row.remarks,
+					},
+				)
+
 		# If project_title is missing in data but exists in FR, try to populate?
 		if not new_doc.get("project_title") and fund_received_doc.prjreg_title:
 			# Assuming prjreg_title in FR holds the project ID/Name that Deposit Slip expects
@@ -1509,6 +1749,31 @@ def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=No
 	Submit a Fund Received document using Workflow transitions.
 	If save is True, it first saves the document using the provided data.
 	"""
+	# Loan Settlement linkage rides along inside doc_data as an extra, non-schema key.
+	# Pop it off BEFORE save_fund_received sees it, so it is never mapped onto — or
+	# saved against — the Fund Received doctype itself. The Loan Settlement docs already
+	# exist (created from the Fund Received form's modal); this only records which Fund
+	# Received they came from. No Kafka happens here: settlements are published later,
+	# when staff, RnD processes them.
+	# See docs/loan-settlement-implementation.md.
+	loan_settlement_refs = []
+	if doc_data:
+		try:
+			parsed = json.loads(doc_data) if isinstance(doc_data, str) else doc_data
+			if isinstance(parsed, dict) and parsed.get("loan_settlement_refs"):
+				loan_settlement_refs = parsed.pop("loan_settlement_refs") or []
+				doc_data = json.dumps(parsed)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Fund Received - Loan Settlement Refs Parse")
+
+	# Both checks run before anything is written — a receipt that doesn't add up, or
+	# can't fund its settlements, should never come into existence in the first place.
+	if doc_data and save in [True, "true", "True", "1", 1]:
+		_validate_amount_totals(doc_data)
+
+	if loan_settlement_refs and doc_data:
+		_validate_against_loan_settlements(doc_data, loan_settlement_refs)
+
 	if save in [True, "true", "True", "1", 1]:
 		if not doc_data:
 			frappe.throw("doc_data is required when save=True")
@@ -1521,7 +1786,21 @@ def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=No
 	if not docname:
 		frappe.throw("Document name is required to submit.")
 
-	return perform_fund_received_action(docname, "Submit")
+	result = perform_fund_received_action(docname, "Submit")
+
+	# Link the settlements to this now-real Fund Received. Isolated in its own
+	# try/except so it can never affect the submission or its Kafka publish.
+	if loan_settlement_refs:
+		for settlement_name in loan_settlement_refs:
+			try:
+				frappe.db.set_value(
+					"Loan Settlement", settlement_name, "fund_received_reference", docname
+				)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), "Loan Settlement Link Error")
+		frappe.db.commit()
+
+	return result
 
 
 # ── OJS EDIT START ──────────────────────────────────────────────────────────
@@ -1764,3 +2043,259 @@ def update_fund_received(docname, doc_data, project_reg=None):
 		frappe.db.rollback()
 		frappe.throw(f"Failed to update Fund Received: {str(e)}")
 # ── OJS EDIT END ─────────────────────────────────────────────────────────────
+
+
+# ── Deposit Slip Overhead/GST Budget Head Allocation ────────────────────────
+# See DEPOSIT_SLIP_OVERHEAD_GST_BUDGET_HEAD_IMPLEMENTATION.md (repo root) for the full spec.
+
+_DEPOSIT_SLIP_DOCTYPES = [
+	"Research Deposit Slip",
+	"Research Consultancy Deposit Slip",
+	"D Consultancy Deposit Slip",
+	"E Non Routine Deposit Slip",
+	"Other Event Deposit Slip",
+	"T Testing Deposit Slip",
+]
+
+
+def _resolve_budget_head_name(head):
+	"""
+	Resolve a Budget Head docname / numeric id / label to its doc name.
+	Throws if unresolvable.
+	"""
+	if not head:
+		frappe.throw("Budget Head reference is required.")
+	resolved = resolve_budget_head_name(head)
+	if not resolved:
+		frappe.throw(f"Budget Head '{head}' not found.")
+	return resolved
+
+
+def _breakup_row_for_head(doc, head_name):
+	"""
+	Find the received_amt_breakup row pointing at `head_name` (a Budget Head
+	docname), tolerating rows that store the numeric id or raw label instead
+	(see resolve_budget_head_name for why all three forms exist).
+	"""
+	for row in doc.received_amt_breakup:
+		if resolve_budget_head_name(row.account_head) == head_name:
+			return row
+	return None
+
+
+def _get_linked_deposit_slip_doc(fund_received_name):
+	"""Find the Deposit Slip (of any of the 6 types) linked to this Fund Received."""
+	for dt in _DEPOSIT_SLIP_DOCTYPES:
+		name = frappe.db.get_value(
+			dt, {"fund_received_ref": fund_received_name}, "name", order_by="creation desc"
+		)
+		if name:
+			return frappe.get_doc(dt, name)
+	return None
+
+
+def sync_deposit_slip_budget_breakup(fr_doc):
+	"""
+	Re-copy fr_doc.received_amt_breakup onto the linked Deposit Slip's
+	fund_budget_breakup mirror table (full replace, not merge), if a Deposit
+	Slip is linked and the field exists on that doctype. No-op otherwise.
+	"""
+	ds_doc = _get_linked_deposit_slip_doc(fr_doc.name)
+	if not ds_doc or not ds_doc.meta.has_field("fund_budget_breakup"):
+		return
+
+	ds_doc.set("fund_budget_breakup", [])
+	for row in fr_doc.received_amt_breakup:
+		ds_doc.append(
+			"fund_budget_breakup",
+			{
+				"account_head": row.account_head,
+				"amount_received": row.amount_received,
+				"remarks": row.remarks,
+			},
+		)
+	ds_doc.flags.ignore_validate = True
+	ds_doc.flags.skip_kafka_sync = True
+	ds_doc.save(ignore_permissions=True)
+
+
+@frappe.whitelist()
+def allocate_deposit_slip_budget_heads(docname, transfers):
+	"""
+	Debit an existing Fund Received budget head, credit the fixed "Overhead"/
+	"GST" head, re-sync the linked Deposit Slip's fund_budget_breakup mirror,
+	then republish Fund Received to Kafka with fundReceivedStatus forced to
+	APPROVED (this only ever runs post-approval, during deposit slip filling).
+
+	This is a TRANSFER within the existing breakup, never new money: the
+	total across received_amt_breakup (and fund_received_amt) is asserted
+	unchanged before/after, and every row not named in `transfers` is left
+	completely untouched.
+
+	Args:
+		docname (str): Fund Received document name.
+		transfers (json/list): [{"source_head": "<Budget Head name or label>",
+		                          "amount": <float>,
+		                          "purpose": "OVERHEAD" | "GST"}, ...]
+
+	Returns:
+		{"status": "success", "docname": ..., "kafka_published": True}
+		or
+		{"status": "success", "docname": ..., "kafka_published": False, "error": "..."}
+		— the breakup/mirror update is committed either way; only the Kafka
+		republish is reported separately so the frontend can offer a Retry
+		without re-doing the transfer (a retry should just call this again;
+		see the idempotency note below).
+	"""
+	try:
+		if isinstance(transfers, str):
+			transfers = json.loads(transfers)
+
+		if not transfers:
+			frappe.throw("No transfers supplied.")
+
+		doc = frappe.get_doc("Fund Received", docname)
+
+		original_total = sum(flt(row.amount_received) for row in doc.received_amt_breakup)
+
+		purpose_label = {
+			"OVERHEAD": OVERHEAD_BUDGET_HEAD_LABEL,
+			"GST": GST_BUDGET_HEAD_LABEL,
+		}
+
+		for transfer in transfers:
+			source_head_input = transfer.get("source_head")
+			amount = flt(transfer.get("amount"))
+			purpose = (transfer.get("purpose") or "").upper()
+
+			if not source_head_input:
+				frappe.throw("source_head is required for every transfer.")
+			if amount <= 0:
+				frappe.throw("Transfer amount must be greater than zero.")
+			if purpose not in purpose_label:
+				frappe.throw(f"Invalid purpose '{purpose}' — must be OVERHEAD or GST.")
+
+			source_head_name = _resolve_budget_head_name(source_head_input)
+			# Human-readable label (e.g. "Others") for remarks and error text —
+			# never leak the internal docname (e.g. "uqh2ch40cr"), which also
+			# ends up in the Kafka fundBudgetBreakupList payload.
+			source_head_label = (
+				frappe.db.get_value("Budget Head", source_head_name, "budget_head")
+				or source_head_input
+			)
+
+			source_row = _breakup_row_for_head(doc, source_head_name)
+			if not source_row:
+				# Idempotency note: if a prior call already debited this exact
+				# source (e.g. a retry after a Kafka-only failure), the row
+				# still exists — this branch only fires if the head was never
+				# in the breakup to begin with, which is a genuine caller error.
+				frappe.throw(
+					f"Source budget head '{source_head_label}' has no existing allocation "
+					f"on Fund Received '{docname}' — this is a transfer, not new money."
+				)
+			if flt(source_row.amount_received) < amount:
+				frappe.throw(
+					f"Source budget head '{source_head_label}' only has "
+					f"{frappe.utils.fmt_money(source_row.amount_received)} available; "
+					f"{frappe.utils.fmt_money(amount)} is required."
+				)
+
+			# Debit source. Row is kept even if it reaches 0 (audit trail).
+			source_row.amount_received = flt(source_row.amount_received) - amount
+
+			# Credit destination (Overhead / GST) — increment existing row or append new one.
+			dest_label = purpose_label[purpose]
+			dest_head_name = frappe.db.get_value("Budget Head", {"budget_head": dest_label}, "name")
+			if not dest_head_name:
+				frappe.throw(
+					f"Budget Head '{dest_label}' not found — it must exist in the Budget "
+					f"Head master list before it can be allocated to."
+				)
+
+			dest_row = _breakup_row_for_head(doc, dest_head_name)
+			if dest_row:
+				dest_row.amount_received = flt(dest_row.amount_received) + amount
+			else:
+				doc.append(
+					"received_amt_breakup",
+					{
+						"account_head": dest_head_name,
+						"amount_received": amount,
+						"remarks": f"Allocated from {source_head_label} for {purpose} on Deposit Slip",
+					},
+				)
+
+		# Hard invariant: this is a transfer, the total must never move.
+		new_total = sum(flt(row.amount_received) for row in doc.received_amt_breakup)
+		if abs(new_total - original_total) > 0.01:
+			frappe.throw(
+				"Internal error: budget breakup total changed during transfer "
+				f"({original_total} -> {new_total}). Aborting."
+			)
+
+		current_workflow_state = doc.workflow_state
+		doc.flags.ignore_validate = True
+		doc.save(ignore_permissions=True)
+		if doc.workflow_state != current_workflow_state:
+			doc.db_set("workflow_state", current_workflow_state)
+
+		# Keep the linked Deposit Slip's full-breakup mirror in sync (§3.2).
+		sync_deposit_slip_budget_breakup(doc)
+
+		frappe.db.commit()
+
+		kafka_error = None
+		kafka_published = False
+		try:
+			kafka_published = publish_fund_received(doc, fund_received_status="APPROVED")
+		except Exception as kafka_exc:
+			kafka_error = str(kafka_exc)
+			frappe.log_error(
+				frappe.get_traceback(), "Fund Received Budget Head Allocation - Kafka Publish Error"
+			)
+
+		if kafka_published:
+			return {"status": "success", "docname": doc.name, "kafka_published": True}
+
+		return {
+			"status": "success",
+			"docname": doc.name,
+			"kafka_published": False,
+			"error": kafka_error or "publish_fund_received returned False (check Frappe Error Log)",
+		}
+
+	except frappe.ValidationError:
+		frappe.db.rollback()
+		raise
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Allocate Deposit Slip Budget Heads Error")
+		frappe.throw(f"Failed to allocate budget heads: {str(e)}")
+
+
+@frappe.whitelist()
+def republish_fund_received_after_allocation(docname):
+	"""
+	Retry-only helper for the Kafka-failure branch of
+	allocate_deposit_slip_budget_heads: re-publish an already-updated Fund
+	Received to Kafka with fundReceivedStatus=APPROVED, WITHOUT repeating the
+	budget head transfer (the breakup was already committed on the first
+	call). Calling allocate_deposit_slip_budget_heads again on retry would
+	debit the source head a second time — use this instead once the DB
+	update is known to have succeeded.
+	"""
+	try:
+		doc = frappe.get_doc("Fund Received", docname)
+		kafka_published = publish_fund_received(doc, fund_received_status="APPROVED")
+		if kafka_published:
+			return {"status": "success", "docname": doc.name, "kafka_published": True}
+		return {
+			"status": "success",
+			"docname": doc.name,
+			"kafka_published": False,
+			"error": "publish_fund_received returned False (check Frappe Error Log)",
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Republish Fund Received After Allocation Error")
+		frappe.throw(f"Failed to republish Fund Received: {str(e)}")

@@ -178,12 +178,19 @@ class FundReceivedMapper:
         return project_number
 
     @classmethod
-    def map_to_dto(cls, doc) -> FundReceivedDTO:
+    def map_to_dto(cls, doc, fund_received_status: Optional[str] = None) -> FundReceivedDTO:
         """
         Map Frappe Fund Received document to FundReceivedDTO.
 
         Args:
             doc: Fund Received Frappe document
+            fund_received_status: Optional explicit override for the
+                `fundReceivedStatus` field. Defaults to the historical
+                hardcoded "PENDING_APPROVAL" when not supplied, so the
+                existing PENDING_APPROVAL-transition call site is unaffected.
+                Pass "APPROVED" from call sites that republish after the
+                Fund Received has already been approved (see
+                allocate_deposit_slip_budget_heads / DEPOSIT_SLIP_OVERHEAD_GST_BUDGET_HEAD_IMPLEMENTATION.md §2.2).
 
         Returns:
             FundReceivedDTO: Mapped DTO ready for validation and publishing
@@ -214,7 +221,7 @@ class FundReceivedMapper:
             amountReceived=float(getattr(doc, 'fund_received_amt', 0) or 0),
             iitgAccountNumber=getattr(doc, 'bank_account', None) or "",
             depositSlipStatus=deposit_slip_status,
-            fundReceivedStatus="PENDING_APPROVAL",
+            fundReceivedStatus=fund_received_status or "PENDING_APPROVAL",
             depositeStatusUpdateTime=current_timestamp,
             fundReceivedStatusUpdateTime=current_timestamp,
             fundBudgetBreakupList=budget_breakups,
@@ -222,17 +229,18 @@ class FundReceivedMapper:
         )
 
     @classmethod
-    def map_to_event(cls, doc) -> FundReceivedEventDTO:
+    def map_to_event(cls, doc, fund_received_status: Optional[str] = None) -> FundReceivedEventDTO:
         """
         Map Frappe document to FundReceivedEventDTO (complete Kafka message).
 
         Args:
             doc: Fund Received Frappe document
+            fund_received_status: Optional override, see map_to_dto.
 
         Returns:
             FundReceivedEventDTO: Complete event DTO ready for Kafka
         """
-        fund_received_data = cls.map_to_dto(doc)
+        fund_received_data = cls.map_to_dto(doc, fund_received_status=fund_received_status)
 
         return FundReceivedEventDTO(
             schemaVersion=SCHEMA_VERSION_FUND_RECEIVED,
