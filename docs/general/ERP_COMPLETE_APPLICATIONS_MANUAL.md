@@ -856,16 +856,16 @@ Attach any approval documents and additional supporting files.
 
 ### The Approval Process
 
-**Draft** (Permanent Employee) → **staff, RnD** forwards → **Head of Section** forwards, routing automatically by total amount: **Associate Dean if ≤ ₹30,000**, or **Dean if > ₹30,000** → **Approved**.
+**Draft** (Permanent Employee) → **staff, RnD** forwards → **Head of Section** forwards → **Dean**, who either **Approves directly if total amount ≤ ₹2,00,000**, or **forwards to Director if > ₹2,00,000** → **Approved**.
 
-> **Important:** The Head of Section, Associate Dean, and Dean roles are missing baseline document access to this specific application in the system's permission configuration. Rather than fixing that gap, the system was built to route the record through each stage directly on the backend, bypassing the normal permission check. In practice, the workflow still functions for you as an applicant — but if an approver ever reports odd behavior trying to act on this form through the standard screens, this is a known, documented cause.
+> **Important:** The Head of Section, Dean, and Director roles are missing baseline document access to this specific application in the system's permission configuration. Rather than fixing that gap, the system was built to route the record through each stage directly on the backend, bypassing the normal permission check. In practice, the workflow still functions for you as an applicant — but if an approver ever reports odd behavior trying to act on this form through the standard screens, this is a known, documented cause.
 
 ---
 
 ### Frequently Asked Questions
 
 1. **How do I know which form to use — this one or Disbursal of Consultancy?** Use Disbursal of Honorarium for one-off payments like guest lectures or invigilation; use Disbursal of Consultancy specifically for PDF-fund-based consultancy payments (see next section).
-2. **Is there an amount limit?** No hard cap, but amounts above ₹30,000 route to the Dean instead of the Associate Dean.
+2. **Is there an amount limit?** No hard cap, but amounts above ₹2,00,000 require an additional Director approval after the Dean.
 3. **What if I accidentally use "Disbursement of Honorarium" instead?** It won't work — that doctype has no active submission process. Switch to "Disbursal of Honorarium."
 
 ---
@@ -875,7 +875,7 @@ Attach any approval documents and additional supporting files.
 | Problem | Likely Cause | What To Do |
 |---|---|---|
 | You picked the wrong "Disbursement/Disbursal" application by mistake | Two similarly-named doctypes exist | Confirm you're in "Disbursal of Honorarium," not "Disbursement of Honorarium" |
-| An approver at HoS/Associate Dean/Dean stage reports unusual access behavior | Known permission-configuration gap, worked around on the backend | This is expected/documented — escalate to System Manager only if the record genuinely fails to progress |
+| An approver at HoS/Dean/Director stage reports unusual access behavior | Known permission-configuration gap, worked around on the backend | This is expected/documented — escalate to System Manager only if the record genuinely fails to progress |
 
 ### Full Field Reference
 
@@ -901,9 +901,11 @@ Attach any approval documents and additional supporting files.
 
 **At staff, RnD:** They review the honorarium table against the stated Account Head and the competent-authority approval flag, then forward it on.
 
-**At Head of Section:** A further check before the amount-based routing decision sends it onward.
+**At Head of Section:** A further check before it's forwarded on to the Dean.
 
-**At Associate Dean or Dean (depending on your total amount):** The final decision — as noted above, this stage is reached via a backend workaround for a known permission gap, so if you're the approver here and something behaves unexpectedly, it's a documented quirk rather than something new to troubleshoot from scratch.
+**At Dean:** Decides based on total amount — Approves outright if ≤ ₹2,00,000, or forwards to Director if higher. As noted above, this stage is reached via a backend workaround for a known permission gap, so if you're the approver here and something behaves unexpectedly, it's a documented quirk rather than something new to troubleshoot from scratch.
+
+**At Director (only if total amount > ₹2,00,000):** Final sign-off for larger disbursals — same backend permission workaround applies.
 
 ### More Frequently Asked Questions
 
@@ -2797,10 +2799,11 @@ Not just printed guidance — these are real, code-verified numbers that actuall
 |---|---|---|
 | ₹1,000 (per item) | A quotation is expected as part of the settlement declaration | Advance Settlement |
 | ₹25,000 / student / month | Hard cap — cannot be exceeded | Top Up Fellowship |
-| ₹30,000 | Routes to Dean instead of Associate Dean | Temporary Advance, Disbursal of Honorarium, Disbursal of Consultancy, TA DA Settlement |
+| ₹30,000 | Routes to Dean instead of Associate Dean | Temporary Advance, Disbursal of Consultancy, TA DA Settlement |
 | ₹1,00,000 | Maximum claim size (printed guidance, not system-blocked) | Reimbursement |
 | ₹1,00,000 | Routes to Dean instead of Associate Dean | Indent Cum Sanction Sheet, Rate Contract |
 | ₹2,00,000 | Requires a Purchase Committee of ≥3 members | Direct Purchase |
+| ₹2,00,000 | Triggers automatic Director escalation after Dean approval | Disbursal of Honorarium |
 | ₹3,00,000 | Triggers automatic Director escalation (Consumable/Contingency/Other) | Direct Purchase, Indent General Form, Indent Cum Sanction Sheet |
 | ₹10,00,000 | Triggers automatic Director escalation (Equipment) | Indent General Form, Indent Cum Sanction Sheet |
 
@@ -2919,7 +2922,7 @@ This table consolidates the first and final approver for every active applicatio
 | Temporary Advance | PI / Mentor / staff, RnD (by category) | Associate Dean or Dean | Yes — ₹30,000 | ✅ Yes |
 | Advance Settlement | staff, RnD (or Mentor first) | staff, RnD | No | ❌ No |
 | Loan Request | staff, RnD | Dean, RnD, then staff (Deposit Loan) | No | ✅ Yes |
-| Disbursal of Honorarium | staff, RnD | Associate Dean or Dean | Yes — ₹30,000 | Partially (backend-routed) |
+| Disbursal of Honorarium | staff, RnD | Dean (+ Director if escalated) | Yes — ₹2,00,000 | Partially (backend-routed) |
 | Disbursal of Consultancy | staff, RnD | Associate Dean or Dean | Yes — ₹30,000 | Partially (backend-routed) |
 | Travel | Varies by category | Dean | No | ✅ Yes, extensively |
 | TA DA Settlement | Varies by category | Associate Dean or Dean | Yes — ₹30,000 | ✅ Yes |

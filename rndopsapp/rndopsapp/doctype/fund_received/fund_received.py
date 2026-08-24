@@ -923,9 +923,123 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 		except Exception as e:
 			print(f"DEBUG: Error fixing account heads: {e}")
 
+		# --- Gate: when this transition Approves a linked Deposit Slip, the Deposit
+		# Slip must be successfully published to Kafka BEFORE the Fund Received
+		# transition to 'Approved' is committed below. On publish failure, roll back
+		# and throw so the FR stays in its previous state ('{current_state}') and the
+		# frontend receives a real error instead of a silent "success".
+		if next_state == "Approved":
+			import datetime as _dsgate_dt
+
+			deposit_doctypes = [
+				"Research Deposit Slip",
+				"Research Consultancy Deposit Slip",
+				"D Consultancy Deposit Slip",
+				"E Non Routine Deposit Slip",
+				"Other Event Deposit Slip",
+				"T Testing Deposit Slip"
+			]
+
+			ds_name = None
+			found_doctype = None
+			for dt in deposit_doctypes:
+				# Some deposit slip doctypes have no workflow (no workflow_state column);
+				# skip them gracefully.
+				try:
+					name = frappe.db.get_value(
+						dt,
+						{"fund_received_ref": doc.name, "workflow_state": "Pending HoS Approval"},
+						"name",
+						order_by="creation desc",
+					)
+				except Exception:
+					name = None
+				if name:
+					ds_name = name
+					found_doctype = dt
+					break
+
+			if not ds_name:
+				for dt in deposit_doctypes:
+					name = frappe.db.get_value(dt, {"fund_received_ref": doc.name}, "name", order_by="creation desc")
+					if name:
+						ds_name = name
+						found_doctype = dt
+						break
+
+			if ds_name and found_doctype:
+				ds_doc = frappe.get_doc(found_doctype, ds_name)
+				current_ds_state = ds_doc.get("workflow_state") or ""
+
+				if current_ds_state != "Approved":
+					ds_doc.workflow_state = "Approved"
+					ds_doc.flags.ignore_validate = True
+					ds_doc.flags.skip_kafka_sync = True
+					ds_doc.save(ignore_permissions=True)
+
+				if ds_doc.docstatus == 0:
+					ds_doc.flags.ignore_validate = True
+					ds_doc.flags.skip_kafka_sync = True
+					ds_doc.submit()
+
+				kafka_result = False
+				kafka_error = None
+				try:
+					from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip
+					kafka_result = publish_deposit_slip(ds_doc)
+				except Exception as kafka_exc:
+					kafka_error = str(kafka_exc)
+					frappe.log_error(frappe.get_traceback(), "Deposit Slip Kafka Publish Error")
+
+				if kafka_result:
+					frappe.msgprint(_(f"Linked {found_doctype} Approved and published to Kafka."), indicator='green')
+					try:
+						notify_mattermost(
+							"```\n"
+							"┌──────────────────────────────────────────────┐\n"
+							"│  ✅ [Kafka Publish] Deposit Slip Approved      │\n"
+							"├──────────────────────────────────────────────┤\n"
+							f" Time        : {_dsgate_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+							f" Fund Rcvd   : {doc.name}\n"
+							f" Deposit Slip: {ds_name}\n"
+							f" Type        : {found_doctype}\n"
+							f" User        : {frappe.session.user}\n"
+							"└──────────────────────────────────────────────┘\n"
+							"```"
+						)
+					except Exception as mm_exc:
+						print(f"DEBUG: Mattermost notify failed (success path): {mm_exc}")
+				else:
+					err_detail = kafka_error or "publish_deposit_slip returned False (check validation errors in Frappe Error Log)"
+					frappe.db.rollback()
+					try:
+						notify_mattermost(
+							"```\n"
+							"┌──────────────────────────────────────────────┐\n"
+							"│  ⛔ [Kafka Publish] Deposit Slip BLOCKED       │\n"
+							"├──────────────────────────────────────────────┤\n"
+							f" Time        : {_dsgate_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
+							f" Fund Rcvd   : {doc.name}\n"
+							f" Deposit Slip: {ds_name}\n"
+							f" Type        : {found_doctype}\n"
+							f" User        : {frappe.session.user}\n"
+							f" Error       : {err_detail}\n"
+							f" Action      : Approval blocked, reverted to '{current_state}'\n"
+							"└──────────────────────────────────────────────┘\n"
+							"```",
+							urgent=True,
+						)
+					except Exception as mm_exc:
+						print(f"DEBUG: Mattermost notify failed (blocked path): {mm_exc}")
+					frappe.throw(
+						_(f"Cannot approve: Deposit Slip Kafka publish failed ({err_detail}). "
+						  f"The approval was not applied; Fund Received remains in '{current_state}'.")
+					)
+			# If no linked Deposit Slip was found, proceed with FR approval unchanged.
+
 		# Check if next state requires submission (docstatus=1)
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
-		
+
 		# Bypass validation to avoid "Account Head cannot be 5" error on legacy data
 		doc.flags.ignore_validate = True
 		
@@ -1017,178 +1131,6 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 					urgent=True,
 				)
 
-		# 3. When Fund Received is Approved by HoS -> Auto-Approve Deposit Slip & Sync to Kafka
-		if next_state == "Approved":
-			try:
-				import datetime
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||KAFKA|||||||||||||||||||||||||||||||||")
-				print("|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||")
-
-				# List of potential Deposit Slip doctypes
-				deposit_doctypes = [
-					"Research Deposit Slip",
-					"Research Consultancy Deposit Slip",
-					"D Consultancy Deposit Slip",
-					"E Non Routine Deposit Slip",
-					"Other Event Deposit Slip",
-					"T Testing Deposit Slip"
-				]
-
-				# Find linked Deposit Slip in any of the potential doctypes.
-				# Prefer the one currently waiting for HoS approval (the active DS);
-				# multiple deposit slips can exist when the misc staff regenerated
-				# after a HoS put-back.  Fall back to the most recently created DS if
-				# none is found in "Pending HoS Approval" state.
-				ds_name = None
-				found_doctype = None
-
-				for dt in deposit_doctypes:
-					# First pass: find the active DS waiting for HoS
-					# Some deposit slip doctypes have no workflow (no workflow_state column);
-					# skip them gracefully — they can never be in "Pending HoS Approval".
-					try:
-						name = frappe.db.get_value(
-							dt,
-							{"fund_received_ref": doc.name, "workflow_state": "Pending HoS Approval"},
-							"name",
-							order_by="creation desc",
-						)
-					except Exception:
-						name = None
-					if name:
-						ds_name = name
-						found_doctype = dt
-						break
-
-				if not ds_name:
-					# Second pass: fall back to most recently created DS for this FR
-					for dt in deposit_doctypes:
-						name = frappe.db.get_value(
-							dt,
-							{"fund_received_ref": doc.name},
-							"name",
-							order_by="creation desc",
-						)
-						if name:
-							ds_name = name
-							found_doctype = dt
-							break
-
-				if ds_name and found_doctype:
-					print(f"DEBUG: Found linked Deposit Slip {ds_name} of type {found_doctype}. Auto-approving and Syncing...")
-					ds_doc = frappe.get_doc(found_doctype, ds_name)
-
-					current_ds_state = ds_doc.get("workflow_state") or ""
-					print(f"DEBUG: Current Deposit Slip state: '{current_ds_state}'")
-
-					# Update State to Approved if not already
-					# skip_kafka_sync flag tells on_update to skip its own publish
-					# so we can publish explicitly below with proper error handling
-					if current_ds_state != "Approved":
-						ds_doc.workflow_state = "Approved"
-						ds_doc.flags.ignore_validate = True
-						ds_doc.flags.skip_kafka_sync = True
-						ds_doc.save(ignore_permissions=True)
-						print(f"DEBUG: Deposit Slip {ds_name} state updated to 'Approved'")
-
-					# Submit if not submitted
-					if ds_doc.docstatus == 0:
-						ds_doc.flags.ignore_validate = True
-						ds_doc.flags.skip_kafka_sync = True
-						ds_doc.submit()
-						print(f"DEBUG: Deposit Slip {ds_name} submitted")
-
-					# --- Explicit Kafka publish with proper success/failure handling ---
-					# Use the canonical publisher that handles all 6 deposit slip types
-					# with key-based partitioning and structured logging
-					kafka_result = False
-					kafka_error = None
-					try:
-						from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip
-						kafka_result = publish_deposit_slip(ds_doc)
-					except Exception as kafka_exc:
-						kafka_error = str(kafka_exc)
-						kafka_result = False
-						print(f"DEBUG: Kafka publish exception: {kafka_exc}")
-						print(frappe.get_traceback())
-						frappe.log_error(frappe.get_traceback(), "Deposit Slip Kafka Publish Error")
-
-					if kafka_result:
-						frappe.msgprint(_(f"Linked {found_doctype} Approved and published to Kafka."), indicator='green')
-						print(f"DEBUG: Kafka publish SUCCESS for {ds_name}")
-						try:
-							notify_mattermost(
-								"```\n"
-								"┌──────────────────────────────────────────────┐\n"
-								"│  ✅ [Kafka Publish] Deposit Slip Approved      │\n"
-								"├──────────────────────────────────────────────┤\n"
-								f" Time        : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-								f" Fund Rcvd   : {doc.name}\n"
-								f" Deposit Slip: {ds_name}\n"
-								f" Type        : {found_doctype}\n"
-								f" User        : {frappe.session.user}\n"
-								"└──────────────────────────────────────────────┘\n"
-								"```"
-							)
-						except Exception as mm_exc:
-							print(f"DEBUG: Mattermost notify failed (success path): {mm_exc}")
-					else:
-						err_detail = kafka_error or "publish_deposit_slip returned False (check validation errors in Frappe Error Log)"
-						frappe.msgprint(_(f"Deposit Slip approved but Kafka publish failed: {err_detail}"), indicator='orange')
-						print(f"DEBUG: Kafka publish FAILED for {ds_name}: {err_detail}")
-						try:
-							notify_mattermost(
-								"```\n"
-								"┌──────────────────────────────────────────────┐\n"
-								"│  ⚠️ [Kafka Publish] Deposit Slip FAILED        │\n"
-								"├──────────────────────────────────────────────┤\n"
-								f" Time        : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-								f" Fund Rcvd   : {doc.name}\n"
-								f" Deposit Slip: {ds_name}\n"
-								f" Type        : {found_doctype}\n"
-								f" User        : {frappe.session.user}\n"
-								f" Error       : {err_detail}\n"
-								"└──────────────────────────────────────────────┘\n"
-								"```",
-								urgent=True,
-							)
-						except Exception as mm_exc:
-							print(f"DEBUG: Mattermost notify failed (failure path): {mm_exc}")
-				else:
-					print("DEBUG: No linked Deposit Slip found.")
-
-				print("|||||||||||||||||||||||KAFKA end|||||||||||||||||||||||||||||||||")
-			except Exception as ds_err:
-				import datetime
-				print(f"DEBUG: Error auto-processing Deposit Slip: {ds_err}")
-				print(frappe.get_traceback())
-				frappe.log_error(frappe.get_traceback(), "Auto Deposit Slip Sync Error")
-				frappe.msgprint(_("Error processing Deposit Slip: {}").format(str(ds_err)), indicator='red')
-				# Ensure FR state is committed even if deposit slip processing failed
-				try:
-					doc.db_set("workflow_state", next_state)
-					frappe.db.commit()
-				except Exception:
-					pass
-				try:
-					notify_mattermost(
-						"```\n"
-						"┌──────────────────────────────────────────────┐\n"
-						"│  🔴 [ERROR] Deposit Slip Auto-Approve/Kafka    │\n"
-						"├──────────────────────────────────────────────┤\n"
-						f" Time     : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST\n"
-						f" Docname  : {docname}\n"
-						f" Action   : {action}\n"
-						f" User     : {frappe.session.user}\n"
-						f" Error    : {str(ds_err)}\n"
-						"└──────────────────────────────────────────────┘\n"
-						"```",
-						urgent=True,
-					)
-				except Exception as mm_exc:
-					print(f"DEBUG: Mattermost notify failed (error path): {mm_exc}")
-		
 		print("DEBUG: End of function success")
 		return {
 			"status": "success",

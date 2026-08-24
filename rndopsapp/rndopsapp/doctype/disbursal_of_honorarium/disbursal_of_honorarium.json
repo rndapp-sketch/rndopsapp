@@ -28,6 +28,8 @@
   "section_break_wgvl",
   "table_weoy",
   "total_amount",
+  "send_to_director",
+  "director_signed_pdf",
   "approval_comp_authority",
   "rules_and_conditions_section",
   "rules",
@@ -116,6 +118,18 @@
    "fieldtype": "Currency",
    "label": "Total Amount",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "send_to_director",
+   "fieldtype": "Check",
+   "label": "Send for Director Approval"
+  },
+  {
+   "fieldname": "director_signed_pdf",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Director Signed PDF"
   },
   {
    "fieldname": "rules_and_conditions_section",

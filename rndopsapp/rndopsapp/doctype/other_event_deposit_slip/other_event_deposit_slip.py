@@ -28,33 +28,33 @@ class OtherEventDepositSlip(Document):
 
 	def on_update(self):
 		"""
-		Trigger Kafka sync on workflow state change.
+		Trigger Kafka sync on workflow state change. Publish must succeed for the
+		transition to be allowed — on failure this raises, aborting and rolling
+		back the save/submit that triggered it, so the document reverts to its
+		previous state.
 		"""
 		if self.flags.get('skip_kafka_sync'):
 			return
-		try:
-			doc_before_save = self.get_doc_before_save()
-			old_state = doc_before_save.workflow_state if doc_before_save else None
-			new_state = self.workflow_state
-			target_states = ["Approved", "Verified", "Submitted"]
+		doc_before_save = self.get_doc_before_save()
+		old_state = doc_before_save.workflow_state if doc_before_save else None
+		new_state = self.workflow_state
+		target_states = ["Approved", "Verified", "Submitted"]
 
-			if (new_state in target_states and old_state != new_state):
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (Other) for state {new_state}")
-				record_publish_state(
-					self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
-					old_state, new_state,
-				)
-				publish_consultancy_deposit_slip(self)
-			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0):
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (Other) for Submit")
-				record_publish_state(
-					self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
-					old_state, new_state,
-				)
-				publish_consultancy_deposit_slip(self)
-		except Exception as e:
-			frappe.log_error(f"Error in Other Event Deposit Slip on_update: {e}", "Other Event Deposit Slip Error")
-			pass
+		is_state_transition = new_state in target_states and old_state != new_state
+		is_fresh_submit = self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0)
+
+		if is_state_transition or is_fresh_submit:
+			record_publish_state(
+				self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
+				old_state, new_state,
+			)
+			try:
+				success = publish_consultancy_deposit_slip(self)
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), "Other Event Deposit Slip Error")
+				frappe.throw(_("Cannot proceed: Kafka sync failed ({0}).").format(str(e)))
+			if not success:
+				frappe.throw(_("Cannot proceed: Kafka sync returned False (check validation errors in the Error Log)."))
 
 
 @frappe.whitelist()

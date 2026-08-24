@@ -582,7 +582,8 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None, endor
 
 	# Step 4: Apply transition
 	previous_state = doc.workflow_state  # Store current state for rollback
-	
+	previous_docstatus = doc.docstatus  # Store current docstatus for rollback
+
 	if action.lower() == "reject":
 		doc.cancel()
 		
@@ -617,16 +618,32 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None, endor
 				frappe.msgprint(_("Project data synced successfully to external system."), indicator="green")
 			else:
 				# Bypassing document validations for emergency DB rollback
-				frappe.db.set_value(doctype, docname, "workflow_state", previous_state, update_modified=False)
+				frappe.db.set_value(
+					doctype, docname,
+					{"workflow_state": previous_state, "docstatus": previous_docstatus},
+					update_modified=False,
+				)
 				frappe.db.commit()
-				frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
 				frappe.log_error(f"Kafka sync failed for {docname}, rolled back workflow state", "Kafka Rollback")
+				frappe.throw(
+					_("Cannot approve: Kafka sync returned False (check validation errors in the Error Log). "
+					  "The approval was not applied; workflow state reverted to '{0}'.").format(previous_state)
+				)
+		except frappe.ValidationError:
+			raise  # Re-raise the revert-and-throw above without re-triggering the rollback below
 		except Exception as e:
 			# Bypassing document validations for emergency DB rollback
-			frappe.db.set_value(doctype, docname, "workflow_state", previous_state, update_modified=False)
+			frappe.db.set_value(
+				doctype, docname,
+				{"workflow_state": previous_state, "docstatus": previous_docstatus},
+				update_modified=False,
+			)
 			frappe.db.commit()
 			frappe.log_error(frappe.get_traceback(), f"Project Registration Kafka Sync Failed: {docname}")
-			frappe.msgprint(_("Kafka sync failed. Workflow state reverted to: ") + previous_state, indicator="red")
+			frappe.throw(
+				_("Cannot approve: Kafka sync failed ({0}). The approval was not applied; "
+				  "workflow state reverted to '{1}'.").format(str(e), previous_state)
+			)
 	else:
 		frappe.msgprint(_(f"Workflow updated to: {doc.workflow_state}"), indicator="blue")
 

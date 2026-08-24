@@ -415,12 +415,32 @@ def save_po_commit_adjustment_data(data):
 		frappe.db.commit()
 
 		# ---- publish batch to Kafka (always, regardless of other_expenses) ----
+		# The doc was already saved+committed above (line 414-415), so a publish
+		# failure here can't be rolled back with frappe.db.rollback(). For a
+		# newly-created doc we delete it outright so nothing is left half-synced;
+		# for an update to a pre-existing doc, we surface a hard error (throw)
+		# instead of the endpoint silently reporting "success".
 		batch_result = None
+		batch_error = None
 		try:
 			batch_result = _publish_batch_to_kafka(doc, project_number, account_head_id, transactions)
-		except Exception:
+		except Exception as be:
+			batch_error = str(be)
 			frappe.log_error(frappe.get_traceback(), "Po Commit Adjustment: Kafka batch publish failed")
-			frappe.throw("Kafka batch publish failed — see error log.")
+
+		if not batch_result:
+			if is_new:
+				doc.delete(ignore_permissions=True)
+				frappe.db.commit()
+				frappe.throw(
+					_("Kafka batch publish failed ({0}). Po Commit Adjustment was not saved. Please try again.")
+					.format(batch_error or "see error log")
+				)
+			else:
+				frappe.throw(
+					_("Kafka batch publish failed ({0}). Changes were saved locally but not synced.")
+					.format(batch_error or "see error log")
+				)
 
 		return {
 			"status":  "success",
@@ -429,6 +449,8 @@ def save_po_commit_adjustment_data(data):
 			"batch":   batch_result,
 		}
 
+	except frappe.ValidationError:
+		raise  # Re-raise the Kafka-failure throw above without re-wrapping its message
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Po Commit Adjustment Save Error")

@@ -32,33 +32,36 @@ class ResearchDepositSlip(Document):
 	def on_update(self):
 		"""
 		Trigger Kafka sync on workflow state change to 'Approved' or 'Verified'.
+		Publish must succeed for the transition to be allowed — on failure this
+		raises, aborting and rolling back the save/submit that triggered it, so
+		the document reverts to its previous state.
 		"""
 		if self.flags.get('skip_kafka_sync'):
 			return
-		try:
-			doc_before_save = self.get_doc_before_save()
-			old_state = doc_before_save.workflow_state if doc_before_save else None
-			new_state = self.workflow_state
-			target_states = ["Approved", "Verified", "Submitted"]
+		doc_before_save = self.get_doc_before_save()
+		old_state = doc_before_save.workflow_state if doc_before_save else None
+		new_state = self.workflow_state
+		target_states = ["Approved", "Verified", "Submitted"]
 
-			if new_state in target_states and old_state != new_state:
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
-				record_publish_state(
-					self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
-					old_state, new_state,
-				)
-				publish_research_deposit_slip(self)
-			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0) and new_state not in target_states:
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for Submit")
-				record_publish_state(
-					self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
-					old_state, new_state,
-				)
-				publish_research_deposit_slip(self)
+		is_state_transition = new_state in target_states and old_state != new_state
+		is_fresh_submit = (
+			self.docstatus == 1
+			and (not doc_before_save or doc_before_save.docstatus == 0)
+			and new_state not in target_states
+		)
 
-		except Exception as e:
-			frappe.log_error(f"Error in Research Deposit Slip on_update: {e}", "Research Deposit Slip Error")
-			pass
+		if is_state_transition or is_fresh_submit:
+			record_publish_state(
+				self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
+				old_state, new_state,
+			)
+			try:
+				success = publish_research_deposit_slip(self)
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), "Research Deposit Slip Error")
+				frappe.throw(_("Cannot proceed: Kafka sync failed ({0}).").format(str(e)))
+			if not success:
+				frappe.throw(_("Cannot proceed: Kafka sync returned False (check validation errors in the Error Log)."))
 
 @frappe.whitelist()
 def get_research_deposit_slip_fields(doc_name=None):

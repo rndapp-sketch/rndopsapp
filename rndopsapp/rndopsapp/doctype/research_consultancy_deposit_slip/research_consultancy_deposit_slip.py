@@ -27,26 +27,29 @@ class ResearchConsultancyDepositSlip(Document):
 	def on_update(self):
 		"""
 		Trigger Kafka sync on workflow state change to 'Approved' or 'Verified'.
+		Publish must succeed for the transition to be allowed — on failure this
+		raises, aborting and rolling back the save/submit that triggered it, so
+		the document reverts to its previous state.
 		"""
 		if self.flags.get('skip_kafka_sync'):
 			return
-		try:
-			doc_before_save = self.get_doc_before_save()
-			old_state = doc_before_save.workflow_state if doc_before_save else None
-			new_state = self.workflow_state
-			target_states = ["Approved", "Verified", "Submitted"]
+		doc_before_save = self.get_doc_before_save()
+		old_state = doc_before_save.workflow_state if doc_before_save else None
+		new_state = self.workflow_state
+		target_states = ["Approved", "Verified", "Submitted"]
 
-			if new_state in target_states and old_state != new_state:
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
-				record_publish_state(
-					self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
-					old_state, new_state,
-				)
-				publish_research_consultancy_deposit_slip(self)
-
-		except Exception as e:
-			frappe.log_error(f"Error in Deposit Slip on_update: {e}", "Research Consultancy Deposit Slip Error")
-			pass
+		if new_state in target_states and old_state != new_state:
+			record_publish_state(
+				self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
+				old_state, new_state,
+			)
+			try:
+				success = publish_research_consultancy_deposit_slip(self)
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), "Research Consultancy Deposit Slip Error")
+				frappe.throw(_("Cannot move to '{0}': Kafka sync failed ({1}).").format(new_state, str(e)))
+			if not success:
+				frappe.throw(_("Cannot move to '{0}': Kafka sync returned False (check validation errors in the Error Log).").format(new_state))
 
 
 @frappe.whitelist()
@@ -349,7 +352,12 @@ def perform_research_consultancy_deposit_slip_workflow_action(docname, action):
 			
 		# Update State
 		doc.workflow_state = next_state
-		
+
+		# skip_kafka_sync: on_update would otherwise also publish for this same
+		# save/submit; the explicit publish below (with proper failure handling)
+		# is the single source of truth for this workflow-action path.
+		doc.flags.skip_kafka_sync = True
+
 		# Handle DocStatus updates based on state settings
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
 		if state_doc:
@@ -364,19 +372,29 @@ def perform_research_consultancy_deposit_slip_workflow_action(docname, action):
 
 		# Side Effects: Kafka Sync on HoS Approval/Verification
 		# User requirement: "hos approve or verify then send the deposit data to the kafka"
-		# Logic: If entering "Approved" state or specific Verified state?
-		# Assuming "Approved" is the final state.
+		# Gate: the state change is not committed until the publish succeeds — on
+		# failure we roll back (nothing has been committed yet) and throw, so the
+		# action is blocked and the document reverts to its previous state.
 		if next_state in ["Approved", "Verified", "Submitted"] and action in ["Approve", "Verify", "Submit"]:
 			try:
 				success = publish_research_consultancy_deposit_slip(doc)
-				if success:
-					frappe.msgprint(_("Deposit Slip data synced to Kafka successfully."), indicator='green')
-				else:
-					frappe.msgprint(_("Kafka sync returned False."), indicator='orange')
 			except Exception as k_err:
-				print(f"Kafka sync error: {k_err}")
 				frappe.log_error(frappe.get_traceback(), "Deposit Slip Workflow Kafka Sync Error")
-				frappe.msgprint(_("Failed to sync with Kafka: {}").format(str(k_err)), indicator='red')
+				frappe.db.rollback()
+				frappe.throw(
+					_("Cannot {}: Kafka sync failed ({}). No changes were applied; state remains '{}'.").format(
+						action, str(k_err), current_state
+					)
+				)
+
+			if not success:
+				frappe.db.rollback()
+				frappe.throw(
+					_("Cannot {}: Kafka sync returned False (check validation errors in the Error Log). "
+					  "No changes were applied; state remains '{}'.").format(action, current_state)
+				)
+
+			frappe.msgprint(_("Deposit Slip data synced to Kafka successfully."), indicator='green')
 
 		frappe.db.commit()
 		

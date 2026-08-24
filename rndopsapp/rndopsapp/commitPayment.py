@@ -88,18 +88,20 @@ def _fetch_account_head_commits_by_status(status):
     return []
 
 
-def _find_migrated_employee_commit(project_no, ps_emp_id):
+def _find_migrated_employee_commit(project_no, ps_emp_id, scr_id=None):
     """
     Fallback funding-source lookup for employees migrated from the legacy system,
     who have no Recruitment Adhoc Contractual / Selection Committee Report chain.
 
-    Looks for an Approved, project-level "Miscellaneous Commit" (module ==
-    "Recruitment Adhoc Contractual", commit_decommit == "Commit") for the same
-    project, then re-fetches the corresponding ledger row by
-    (frapAppId=<Miscellaneous Commit name>, projectNumber=project_no) so the
-    caller gets back a row shaped identically to a normal Recruitment-sourced
-    commit — including the ledger-assigned transactionCommitNumber the frontend
-    needs to build a payment.
+    Migrated employees have their Miscellaneous Commit name stored directly in
+    Project Staff Details.scr_id (it isn't a real Selection Committee Report),
+    so that's checked first. Failing that, looks for an Approved, project-level
+    "Miscellaneous Commit" (module == "Recruitment Adhoc Contractual",
+    commit_decommit == "Commit") for the same project, then re-fetches the
+    corresponding ledger row by (frapAppId=<Miscellaneous Commit name>,
+    projectNumber=project_no) so the caller gets back a row shaped identically
+    to a normal Recruitment-sourced commit — including the ledger-assigned
+    transactionCommitNumber the frontend needs to build a payment.
 
     Returns a single-element list (same shape salary_payment_data normally
     returns for a match) or None if nothing usable was found.
@@ -119,23 +121,47 @@ def _find_migrated_employee_commit(project_no, ps_emp_id):
         ignore_permissions=True,
         limit_page_length=0,
     )
-    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] project_no={project_no} project_ref={project_ref} candidates={[c.name for c in candidates]}")
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] project_no={project_no} project_ref={project_ref} scr_id={scr_id} candidates={[c.name for c in candidates]}")
 
     if not candidates:
+        _mm_notify_salary_json(
+            f":x: Migrated-Employee Fallback — No Miscellaneous Commit Candidates ({ps_emp_id})",
+            {
+                "ps_emp_id": ps_emp_id,
+                "project_no": project_no,
+                "project_ref": project_ref,
+                "scr_id": scr_id,
+                "reason": (
+                    "No Approved Miscellaneous Commit with module='Recruitment Adhoc Contractual' "
+                    "and commit_decommit='Commit' exists for this project."
+                ),
+            },
+        )
         return None
 
-    # Prefer a Miscellaneous Commit explicitly tagged to this employee via
-    # linked_application; otherwise use the most recently approved project-level entry.
+    # Prefer the Miscellaneous Commit named directly in scr_id (this is how migrated
+    # employees' funding source is actually recorded); then one explicitly tagged to
+    # this employee via linked_application; otherwise the most recently approved
+    # project-level entry as a last resort.
     chosen = None
-    if ps_emp_id:
+    pick_reason = None
+    if scr_id:
+        for c in candidates:
+            if c.name == scr_id:
+                chosen = c
+                pick_reason = "scr_id direct match"
+                break
+    if not chosen and ps_emp_id:
         for c in candidates:
             if str(c.get("linked_application") or "").strip() == str(ps_emp_id).strip():
                 chosen = c
+                pick_reason = "linked_application match"
                 break
     if not chosen:
         chosen = candidates[0]
+        pick_reason = "most-recently-modified guess (no scr_id/linked_application match)"
 
-    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] chosen Miscellaneous Commit={chosen.name}")
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] chosen Miscellaneous Commit={chosen.name} ({pick_reason})")
 
     merged_commit_records = []
     with ThreadPoolExecutor(max_workers=len(SALARY_COMMIT_STATUSES)) as executor:
@@ -171,6 +197,26 @@ def _find_migrated_employee_commit(project_no, ps_emp_id):
         return [matched]
 
     print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] Miscellaneous Commit {chosen.name} is Approved locally but not yet visible on ledger")
+    _mm_notify_salary_json(
+        f":x: Migrated-Employee Fallback — Chosen Commit Not On Ledger ({ps_emp_id})",
+        {
+            "ps_emp_id": ps_emp_id,
+            "project_no": project_no,
+            "project_ref": project_ref,
+            "scr_id": scr_id,
+            "all_candidates": [c.name for c in candidates],
+            "chosen_miscellaneous_commit": chosen.name,
+            "chosen_pick_reason": pick_reason,
+            "chosen_commit_details": {k: chosen.get(k) for k in ("budget_head", "project_number", "commit_amount", "linked_application", "modified")},
+            "ledger_records_fetched": len(merged_commit_records),
+            "reason": (
+                f"Chosen Miscellaneous Commit '{chosen.name}' (picked via: {pick_reason}) is Approved "
+                f"locally but no matching ledger row (frapAppId + projectNumber) was found among "
+                f"{len(merged_commit_records)} fetched Account Head Commit records with status in "
+                f"{SALARY_COMMIT_STATUSES}."
+            ),
+        },
+    )
     return None
 
 
@@ -359,7 +405,7 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                 f"(interview_id={interview_id}) — checking Miscellaneous Commit fallback (migrated employee)"
             )
 
-            fallback_result = _find_migrated_employee_commit(project_no, ps_emp_id)
+            fallback_result = _find_migrated_employee_commit(project_no, ps_emp_id, scr_id)
             if fallback_result:
                 print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Migrated-employee fallback matched — using Miscellaneous Commit funding source")
                 _mm_notify(
@@ -372,12 +418,22 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                 return fallback_result
 
             print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual and no approved Miscellaneous Commit — returning error")
-            _mm_notify(
-                f":x: **Salary Payment Data — No Funding Source**\n"
-                f"**Employee:** {ps_emp_id}\n"
-                f"**Project:** {project_no}\n"
-                f"**Error:** No Recruitment Adhoc Contractual (interview_id={interview_id}) and no approved Miscellaneous Commit found",
-                channel_id=_MM_SALARY_CHANNEL,
+            _mm_notify_salary_json(
+                f":x: Salary Payment Data — No Funding Source ({ps_emp_id})",
+                {
+                    "ps_emp_id": ps_emp_id,
+                    "project_no": project_no,
+                    "scr_id": scr_id,
+                    "interview_id": interview_id,
+                    "recruitment_adhoc_contractual_checked": interview_id,
+                    "recruitment_adhoc_contractual_exists": bool(interview_id and frappe.db.exists("Recruitment Adhoc Contractual", interview_id)),
+                    "reason": (
+                        f"scr_id '{scr_id}' did not resolve to a Selection Committee Report "
+                        f"(or its interview_id had no Recruitment Adhoc Contractual), and the "
+                        f"migrated-employee Miscellaneous Commit fallback also found nothing usable "
+                        f"— see the fallback diagnostics message above/below for the specific reason."
+                    ),
+                },
             )
             return [{
                 "status": "error",
