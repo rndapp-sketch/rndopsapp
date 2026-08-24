@@ -7,6 +7,15 @@ from typing import Optional
 from .dto import FundReceivedUpdateDTO
 from ...utils import resolve_budget_head_name
 
+# Dedicated system user (User doctype, enabled=0, login disabled) so
+# ledger-driven comments/notifications are attributed to "Account Portal"
+# rather than "Administrator" — the consumer runs in a background thread
+# under the Administrator session, but this content originates from the
+# external ledger, not an actual admin action. Same "Account Portal" label
+# already used for the external-portal comments merged into
+# api.py::get_project_activity (see DOCTYPE_TO_COMMENT_CATEGORIES there).
+ACCOUNT_PORTAL_USER = 'account.portal@rndopsapp.local'
+
 
 class FundReceivedConsumerMapper:
     """
@@ -41,10 +50,9 @@ class FundReceivedConsumerMapper:
         if dto.sanctionLetterNo and dto.projectNumber:
             prj_reg_name = cls.get_project_registration_name(dto.projectNumber)
             if prj_reg_name:
-                filters = {
-                    'sanctioned_letter_no': dto.sanctionLetterNo,
-                    'prjreg_title': prj_reg_name
-                }
+                filters = {'prjreg_title': prj_reg_name}
+                if frappe.db.has_column('Fund Received', 'sanctioned_letter_no'):
+                    filters['sanctioned_letter_no'] = dto.sanctionLetterNo
                 found_name = frappe.db.get_value('Fund Received', filters, 'name')
                 if found_name:
                     return found_name
@@ -82,40 +90,168 @@ class FundReceivedConsumerMapper:
     # Ordered workflow states — higher index = further along in the workflow.
     # Source of truth: fund_received_with_kafka workflow (verified from DB).
     # The Kafka consumer must NEVER move a document backward.
+    #
+    # Pending Rectification / Pending Reconciliation / Rejected sit at the
+    # same priority as PENDING_APPROVAL (2), not higher — they represent the
+    # ledger flagging a document sideways out of that stage, not genuine
+    # forward progress. That's also what lets a later ledger-sent APPROVED
+    # move a document forward past any of these 3 without requiring a manual
+    # step first — confirmed against real historical data, where REJECTED
+    # was followed by APPROVED directly.
     _STATE_PRIORITY = {
         'Draft':                                                 0,
         'Pending Misc. Staff Approval':                          1,
         'PENDING_APPROVAL':                                      2,
+        'Pending Rectification':                                 2,
+        'Pending Reconciliation':                                2,
+        'Rejected':                                               2,
         'Pending Misc. Staff Approval(Deposit Slip Pending)':    3,
         'Pending HoS Approval':                                  4,
         'Approved':                                              5,
         'Fund Received':                                         6,
     }
 
-    @staticmethod
-    def map_status(kafka_status: Optional[str]) -> Optional[str]:
+    # fundReceivedStatus values the external ledger sends, all mapped to real
+    # states in the fund_received_with_kafka Workflow. PENDING_RECONCILIATION /
+    # PENDING_RECTIFICATION / REJECTED were added as new workflow states
+    # (Pending Reconciliation / Pending Rectification / Rejected) specifically
+    # so they're visible in the workflow UI and actionable — Pending
+    # Rectification has a staff, RnD-only "Forward" transition back to
+    # PENDING_APPROVAL (which re-publishes to Kafka automatically, see
+    # perform_fund_received_action's `next_state == "PENDING_APPROVAL"`
+    # block). Pending Reconciliation / Rejected are intentionally passive —
+    # no new transition — matching how the ledger itself supersedes them.
+    _WORKFLOW_MAPPED_STATUSES = {
+        'PENDING_APPROVAL', 'PENDING_RECONCILIATION', 'PENDING_RECTIFICATION',
+        'APPROVED', 'REJECTED',
+    }
+
+    _LEDGER_STATUS_TO_WORKFLOW_STATE = {
+        'PENDING_APPROVAL': 'PENDING_APPROVAL',
+        'PENDING_RECONCILIATION': 'Pending Reconciliation',
+        'PENDING_RECTIFICATION': 'Pending Rectification',
+        'REJECTED': 'Rejected',
+        # APPROVED handled separately below — it maps to the *next* stage of
+        # the approval workflow, not a same-named state.
+    }
+
+    @classmethod
+    def map_status(cls, kafka_status: Optional[str]) -> Optional[str]:
         """
-        Map Kafka status to Frappe workflow state.
+        Map Kafka status to Frappe workflow state. Returns None for any
+        status with no corresponding workflow state (see
+        _WORKFLOW_MAPPED_STATUSES) — apply_updates leaves workflow_state
+        untouched in that case.
 
         Args:
             kafka_status: Status from Kafka message
 
         Returns:
-            str: Frappe workflow state
+            str or None: Frappe workflow state, or None if not workflow-mapped
         """
         if not kafka_status:
             return None
 
         status_upper = kafka_status.upper()
 
+        if status_upper not in cls._WORKFLOW_MAPPED_STATUSES:
+            return None
+
         if status_upper == 'APPROVED':
             # External APPROVED → awaiting deposit slip from Misc. Staff
             return 'Pending Misc. Staff Approval(Deposit Slip Pending)'
-        elif status_upper == 'PENDING_APPROVAL':
-            # Kafka intermediate state — matches the actual Frappe workflow state name
-            return 'PENDING_APPROVAL'
-        else:
-            return kafka_status.title()
+
+        return cls._LEDGER_STATUS_TO_WORKFLOW_STATE[status_upper]
+
+    @classmethod
+    def update_ledger_status(cls, doc_name: str, dto: FundReceivedUpdateDTO) -> None:
+        """
+        Records the raw fundReceivedStatus in the `ledger_status` field —
+        separate from workflow_state, see _WORKFLOW_MAPPED_STATUSES — and
+        notifies the document owner when it changes, so ledger-only statuses
+        like PENDING_RECTIFICATION / PENDING_RECONCILIATION / REJECTED are
+        visible to users even though they don't move the approval workflow.
+
+        Entirely additive and best-effort: no-ops if the `ledger_status`
+        column doesn't exist (same frappe.db.has_column guard used by every
+        other field in apply_updates), and never raises — a notification
+        failure must not fail the Kafka message.
+        """
+        if not dto.fundReceivedStatus or not frappe.db.has_column('Fund Received', 'ledger_status'):
+            return
+
+        try:
+            new_status = dto.fundReceivedStatus.upper()
+            previous_status = frappe.db.get_value('Fund Received', doc_name, 'ledger_status')
+
+            if previous_status == new_status:
+                return  # unchanged — don't re-notify on a replayed/duplicate message
+
+            frappe.db.set_value(
+                'Fund Received', doc_name, 'ledger_status', new_status, update_modified=False
+            )
+            cls._notify_ledger_status_change(doc_name, previous_status, new_status)
+        except Exception:
+            frappe.log_error(
+                f"Failed to record/notify ledger_status for Fund Received {doc_name}",
+                "Fund Received Ledger Status Error",
+            )
+
+    @staticmethod
+    def _notify_ledger_status_change(doc_name: str, previous_status: Optional[str], new_status: str) -> None:
+        """Comment (audit trail, same convention as the existing [Forward]/[Put
+        Back] comments on this doctype) + Notification Log (bell-icon alert
+        for the document owner). Both best-effort — logged, never raised."""
+        extra = {
+            'PENDING_APPROVAL': ' This Fund Received is now pending approval at the ledger.',
+            'PENDING_RECTIFICATION': ' The external ledger has flagged this Fund Received for correction.',
+            'PENDING_RECONCILIATION': ' The external ledger is reconciling this Fund Received against bank records.',
+            'REJECTED': ' The external ledger rejected this Fund Received.',
+            'APPROVED': ' The external ledger approved this Fund Received.',
+        }.get(new_status, '')
+        message = (
+            f"Ledger status changed to {new_status}"
+            + (f" (was {previous_status})" if previous_status else "")
+            + "."
+            + extra
+        )
+
+        try:
+            comment = frappe.get_doc({
+                'doctype': 'Comment',
+                'comment_type': 'Comment',
+                'reference_doctype': 'Fund Received',
+                'reference_name': doc_name,
+                'content': f"[Ledger Status] {message}",
+                'owner': ACCOUNT_PORTAL_USER,
+            })
+            comment.insert(ignore_permissions=True)
+            # insert() only pre-fills owner when unset — force it in case a
+            # future frappe version starts overwriting an explicitly-set one.
+            if comment.owner != ACCOUNT_PORTAL_USER:
+                frappe.db.set_value('Comment', comment.name, 'owner', ACCOUNT_PORTAL_USER)
+        except Exception:
+            frappe.log_error(
+                f"Failed to add ledger-status comment on Fund Received {doc_name}",
+                "Fund Received Ledger Status Notify Error",
+            )
+
+        try:
+            owner = frappe.db.get_value('Fund Received', doc_name, 'owner')
+            if owner and owner not in ('Administrator', 'Guest'):
+                from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
+                enqueue_create_notification([owner], {
+                    'type': 'Alert',
+                    'document_type': 'Fund Received',
+                    'document_name': doc_name,
+                    'subject': f"Fund Received {doc_name}: {message}",
+                    'from_user': ACCOUNT_PORTAL_USER,
+                })
+        except Exception:
+            frappe.log_error(
+                f"Failed to notify owner of ledger-status change on Fund Received {doc_name}",
+                "Fund Received Ledger Status Notify Error",
+            )
 
     @classmethod
     def apply_updates(cls, doc_name: str, dto: FundReceivedUpdateDTO) -> bool:
@@ -219,6 +355,11 @@ class FundReceivedConsumerMapper:
                                 f"{doc_name}: current='{current_status}' "
                                 f"→ '{new_status}' (priority {new_priority}) ignored."
                             )
+
+            # Record the raw ledger status (separate from workflow_state — see
+            # _WORKFLOW_MAPPED_STATUSES above) and notify on change. Best-effort:
+            # never allowed to fail this whole update.
+            cls.update_ledger_status(doc_name, dto)
 
             # Map and apply fund_received_ref_number
             if dto.fundReceivedRefNumber is not None and frappe.db.has_column('Fund Received', 'fund_received_ref_number'):

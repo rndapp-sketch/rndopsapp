@@ -49,6 +49,22 @@ class PaymentDlqErrorMapper:
         )
 
     @staticmethod
+    def revert_payment_status(reference_name: Optional[str]):
+        """
+        Reverts AccountHeadPayment.payment_status to REJECTED — an option
+        already defined on that Select field for exactly this scenario
+        (doctype/accountheadpayment/accountheadpayment.json) but previously
+        unused by any code path. Only touches PAID rows: if the doc is
+        already PENDING/REJECTED/RECTIFICATION there's nothing to revert.
+        """
+        if not reference_name:
+            return
+        current_status = frappe.db.get_value("AccountHeadPayment", reference_name, "payment_status")
+        if current_status == "PAID":
+            frappe.db.set_value("AccountHeadPayment", reference_name, "payment_status", "REJECTED")
+            frappe.db.commit()
+
+    @staticmethod
     def save_error(dto: PaymentDlqErrorDTO, reference_name: Optional[str]) -> str:
         """
         Persists the failure as a "Kafka Payment DLQ Log" record so the frontend

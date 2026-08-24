@@ -366,23 +366,43 @@ def perform_loan_request_action(docname, action, bmr=None, bmr_date=None):
 		else:
 			doc.db_set("workflow_state", next_state, update_modified=True)
 
-		# Publish to Kafka on Dean / Associate Dean approval
+		# Publish to Kafka on Dean / Associate Dean approval. Gate: the state change
+		# above is not committed until the publish succeeds — on failure we roll
+		# back (nothing has been committed yet) and throw, so the action is
+		# blocked and the document reverts to its previous state ('{current_state}').
 		if next_state == "Approved":
 			frappe.logger().info(f"[Loan Request Kafka] Approval triggered for {docname}. Publishing event.")
+			from rndopsapp.rndopsapp.kafka.producer.loan_request import publish_loan_request
+			from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+			from rndopsapp.rndopsapp.kafka.config import TOPIC_LOAN_REQUEST
+			# Reload doc to ensure all fields (including child table) are fresh
+			doc = frappe.get_doc("Loan Request", docname)
+			record_publish_state(
+				"Loan Request", docname, TOPIC_LOAN_REQUEST,
+				current_state, next_state,
+			)
 			try:
-				from rndopsapp.rndopsapp.kafka.producer.loan_request import publish_loan_request
-				# Reload doc to ensure all fields (including child table) are fresh
-				doc = frappe.get_doc("Loan Request", docname)
 				success = publish_loan_request(doc)
-				if success:
-					frappe.logger().info(f"[Loan Request Kafka] Successfully published for {docname}.")
-				else:
-					frappe.log_error(
-						f"[Loan Request Kafka] publish_loan_request returned False for {docname}.",
-						"Loan Request Kafka - Publish Failed"
-					)
 			except Exception as e:
 				frappe.log_error(frappe.get_traceback(), f"[Loan Request Kafka] Exception for {docname}")
+				frappe.db.rollback()
+				frappe.throw(
+					_("Cannot approve: Kafka sync failed ({0}). No changes were applied; state remains '{1}'.")
+					.format(str(e), current_state)
+				)
+
+			if not success:
+				frappe.log_error(
+					f"[Loan Request Kafka] publish_loan_request returned False for {docname}.",
+					"Loan Request Kafka - Publish Failed"
+				)
+				frappe.db.rollback()
+				frappe.throw(
+					_("Cannot approve: Kafka sync returned False (check validation errors in the Error Log). "
+					  "No changes were applied; state remains '{0}'.").format(current_state)
+				)
+
+			frappe.logger().info(f"[Loan Request Kafka] Successfully published for {docname}.")
 
 		frappe.db.commit()
 

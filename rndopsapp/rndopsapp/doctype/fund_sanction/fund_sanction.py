@@ -13,6 +13,8 @@ from rndopsapp.file_handler import get_file_category_for_doctype
 from rndopsapp.minio import get_rnd_file_service
 from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_sanction
+from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+from rndopsapp.rndopsapp.kafka.config import TOPIC_SANCTION
 
 # from frappe.workflow.doctype.workflow.workflow import get_workflow_name
 
@@ -543,9 +545,11 @@ def save_fund_sanction_data(files=None, **data):
 				)
 
 		# Create or fetch the main Fund Sanction document
+		previous_workflow_state_for_kafka = None
 		if data.get("name"):
 			# Logic for updating an existing document
 			doc = frappe.get_doc("Fund Sanction", data.get("name"))
+			previous_workflow_state_for_kafka = doc.workflow_state
 			doc.update(data)
 			doc.set("sanctioned_budget_breakup", [])
 			doc.set("sanction_related_files", [])
@@ -673,6 +677,10 @@ def save_fund_sanction_data(files=None, **data):
 		kafka_success = False
 		if doc.workflow_state == "Sanction Approved":
 			try:
+				record_publish_state(
+					"Fund Sanction", doc.name, TOPIC_SANCTION,
+					previous_workflow_state_for_kafka, doc.workflow_state,
+				)
 				kafka_success = publish_sanction(doc)
 				if kafka_success:
 					frappe.msgprint(_("Sanction data synced successfully to external system."), indicator="green")
@@ -709,7 +717,15 @@ def save_fund_sanction_data(files=None, **data):
 						frappe.db.rollback()
 						frappe.throw(_("Kafka sync failed. Fund Sanction was not saved. Please try again."))
 					else:
-						frappe.msgprint(_("Warning: Kafka sync failed. Data saved locally but not synced."), indicator="orange")
+						frappe.db.set_value(
+							"Fund Sanction", doc.name, "workflow_state",
+							previous_workflow_state_for_kafka, update_modified=False,
+						)
+						frappe.db.commit()
+						frappe.throw(
+							_("Kafka sync failed. Approval was not applied; workflow state reverted to '{0}'.")
+							.format(previous_workflow_state_for_kafka)
+						)
 			except frappe.ValidationError:
 				raise  # Re-raise validation errors from frappe.throw
 			except Exception as e:
@@ -735,7 +751,15 @@ def save_fund_sanction_data(files=None, **data):
 					frappe.db.rollback()
 					frappe.throw(_("Kafka sync failed. Fund Sanction was not saved. Please try again."))
 				else:
-					frappe.msgprint(_("Warning: Kafka sync failed. Check Error Log."), indicator="red")
+					frappe.db.set_value(
+						"Fund Sanction", doc.name, "workflow_state",
+						previous_workflow_state_for_kafka, update_modified=False,
+					)
+					frappe.db.commit()
+					frappe.throw(
+						_("Kafka sync failed. Approval was not applied; workflow state reverted to '{0}'.")
+						.format(previous_workflow_state_for_kafka)
+					)
 
 		frappe.db.commit()
 
@@ -929,6 +953,41 @@ def perform_fund_sanction_action(docname, action):
 		):
 			update_fields[state_doc.update_field] = state_doc.update_value
 
+		# Gate: when this transition reaches 'Sanction Approved', the Kafka publish
+		# must succeed BEFORE the state change below is committed. On failure we
+		# throw without writing anything, so the document stays in '{current_state}'
+		# and the frontend receives a real error instead of a silent "success".
+		kafka_status = None
+		if next_state == "Sanction Approved":
+			print(f"[FS_ACTION] State is 'Sanction Approved' — publishing to Kafka for {docname}")
+			try:
+				record_publish_state(
+					"Fund Sanction", docname, TOPIC_SANCTION,
+					current_state, next_state,
+				)
+				kafka_success = publish_sanction(doc)
+			except Exception as ke:
+				print(f"[FS_ACTION] Kafka publish EXCEPTION for {docname}: {ke}")
+				frappe.log_error(frappe.get_traceback(), f"Fund Sanction Kafka Exception for {docname}")
+				frappe.throw(
+					_("Cannot approve: Kafka sync failed ({0}). No changes were applied; state remains '{1}'.")
+					.format(str(ke), current_state)
+				)
+
+			if not kafka_success:
+				print(f"[FS_ACTION] Kafka publish FAILED for {docname}")
+				frappe.log_error(
+					f"Kafka publish failed after Sanction Approved for {docname}",
+					"Fund Sanction Kafka Error",
+				)
+				frappe.throw(
+					_("Cannot approve: Kafka sync returned False (check validation errors in the Error Log). "
+					  "No changes were applied; state remains '{0}'.").format(current_state)
+				)
+
+			kafka_status = "success"
+			print(f"[FS_ACTION] Kafka publish SUCCESS for {docname}")
+
 		frappe.db.set_value(
 			"Fund Sanction",
 			docname,
@@ -940,26 +999,6 @@ def perform_fund_sanction_action(docname, action):
 		doc.add_comment("Workflow", _(next_state))
 
 		frappe.db.commit()
-
-		# Publish to Kafka when the sanction reaches Approved state
-		kafka_status = None
-		if next_state == "Sanction Approved":
-			print(f"[FS_ACTION] State is 'Sanction Approved' — publishing to Kafka for {docname}")
-			try:
-				kafka_success = publish_sanction(doc)
-				kafka_status = "success" if kafka_success else "failed"
-				if kafka_success:
-					print(f"[FS_ACTION] Kafka publish SUCCESS for {docname}")
-				else:
-					print(f"[FS_ACTION] Kafka publish FAILED for {docname}")
-					frappe.log_error(
-						f"Kafka publish failed after Sanction Approved for {docname}",
-						"Fund Sanction Kafka Error",
-					)
-			except Exception as ke:
-				kafka_status = "error"
-				print(f"[FS_ACTION] Kafka publish EXCEPTION for {docname}: {ke}")
-				frappe.log_error(frappe.get_traceback(), f"Fund Sanction Kafka Exception for {docname}")
 
 		result = {
 			"status": "success",

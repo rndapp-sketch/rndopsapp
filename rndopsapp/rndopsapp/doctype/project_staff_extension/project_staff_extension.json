@@ -25,7 +25,8 @@
   "increment_by_pi",
   "increment_by_staff",
   "ex_current_basic",
-  "workflow_state"
+  "workflow_state",
+  "tenure_row_created"
  ],
  "fields": [
   {
@@ -77,16 +78,19 @@
    "label": "Department"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_doj",
    "fieldtype": "Date",
    "label": "Date of Joining"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_date_of_expiry",
    "fieldtype": "Date",
    "label": "Date of Expiry of Tenure"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_last_ex_date",
    "fieldtype": "Date",
    "label": "Date of Last Extension",
@@ -109,6 +113,7 @@
    "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "ex_current_basic",
    "fieldtype": "Data",
    "label": "Current Basic Pay"
@@ -136,10 +141,19 @@
    "label": "Increment by Staff"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "workflow_state",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Workflow Status"
+  },
+  {
+   "default": "0",
+   "fieldname": "tenure_row_created",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Tenure Row Created",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

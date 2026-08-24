@@ -5,7 +5,7 @@ import requests
 
 import frappe
 from frappe import _
-from frappe.utils import sanitize_html
+from frappe.utils import get_datetime, sanitize_html
 from frappe.utils.file_manager import save_file
 
 # Re-export so callers using rndopsapp.rndopsapp.api.* still resolve correctly
@@ -201,14 +201,59 @@ def unshare_document(doctype, name, user):
 
 # --- UTILITY FUNCTIONS (OPTIONAL BUT RECOMMENDED) --- jimmy
 
+# Base URL for the external account portal (172.16.134.81:18080), same host
+# already called from _sync_external_project_number, commitPayment.py, etc.
+ACCOUNT_PORTAL_BASE_URL = "http://172.16.134.81:18080"
+
+# Maps a Frappe doctype to the comment "category"(ies) the account portal's
+# GET /api/comments/{category}/{frappeApplicationNo} endpoint expects.
+# frappeApplicationNo is doc.name for all of these (matches the *RefNumFab /
+# *NumberFap / frapAppId values already sent to this same host by the Kafka
+# producers for these doctypes). Loan Request maps to both LOAN and
+# LOAN_SETTLEMENT since the same doc.name covers both the initial loan and
+# its later settlement phase on the account portal.
+DOCTYPE_TO_COMMENT_CATEGORIES = {
+	"Deposit slip": ["DEPOSIT_SLIP"],
+	"Research Deposit Slip": ["DEPOSIT_SLIP"],
+	"Research Consultancy Deposit Slip": ["DEPOSIT_SLIP"],
+	"D Consultancy Deposit Slip": ["DEPOSIT_SLIP"],
+	"E Non Routine Deposit Slip": ["DEPOSIT_SLIP"],
+	"Other Event Deposit Slip": ["DEPOSIT_SLIP"],
+	"T Testing Deposit Slip": ["DEPOSIT_SLIP"],
+	"Fund Received": ["FUND_RECEIVED"],
+	"Loan Request": ["LOAN", "LOAN_SETTLEMENT"],
+	"AccountHeadPayment": ["PAYMENT"],
+}
+
+
+def _get_account_portal_comments(category, frappe_application_no):
+	"""
+	Fetches comments logged against a document on the external account portal,
+	by category + frappeApplicationNo. Best-effort like the other calls to
+	this host: the portal being unreachable shouldn't break local activity
+	display, so failures are logged and an empty list is returned.
+	"""
+	url = f"{ACCOUNT_PORTAL_BASE_URL}/api/comments/{category}/{frappe_application_no}"
+	try:
+		response = requests.get(url, timeout=10)
+		if response.status_code == 404:
+			return []
+		response.raise_for_status()
+		return response.json() or []
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_account_portal_comments failed")
+		return []
+
 
 @frappe.whitelist()
-def get_project_activity(doctype, docname):
+def get_project_activity(doctype=None, docname=None):
 	"""
-	Fetches all comments and communications for a given document.
+	Fetches all comments and communications for a given document, chaining
+	local Frappe comments together with comments logged on the external
+	account portal (when this doctype maps to a known comment category).
 	"""
-	# Log the docname being fetched
-	frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: docname = {docname}")
+	if not doctype or not docname:
+		return []
 
 	try:
 		# Fetch comments for the given document
@@ -219,22 +264,50 @@ def get_project_activity(doctype, docname):
 			order_by="creation desc",
 		)
 
-		# Log the fetched comments
-		frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: comments = {comments}")
+		activity = [
+			{
+				"source": "frappe",
+				"content": c.content,
+				"owner": c.owner,
+				"creation": c.creation,
+				"comment_type": c.comment_type,
+			}
+			for c in comments
+		]
 
-		return comments
+		for category in DOCTYPE_TO_COMMENT_CATEGORIES.get(doctype, []):
+			for c in _get_account_portal_comments(category, docname):
+				activity.append(
+					{
+						"source": "account_portal",
+						"content": c.get("comment"),
+						"owner": None,
+						"creation": c.get("commentDateTime"),
+						"comment_type": c.get("category"),
+						"comment_id": c.get("commentId"),
+						"reference_parent_id": c.get("referenceParentId"),
+						"frappe_application_no": c.get("frappeApplicationNo"),
+					}
+				)
+
+		activity.sort(
+			key=lambda a: get_datetime(a["creation"]) if a.get("creation") else get_datetime("1970-01-01"),
+			reverse=True,
+		)
+
+		return activity
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "get_project_activity failed")
 		return []
 
 
 @frappe.whitelist(allow_guest=True)
-def get_activity_test(doctype, docname):
+def get_activity_test(doctype=None, docname=None):
 	"""
 	Fetches all comments and communications for a given document.
 	"""
-	# Log the docname being fetched
-	frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: docname = {docname}")
+	if not doctype or not docname:
+		return []
 
 	try:
 		# Fetch comments for the given document
@@ -244,9 +317,6 @@ def get_activity_test(doctype, docname):
 			fields=["content", "owner", "creation", "comment_type"],
 			order_by="creation desc",
 		)
-
-		# Log the fetched comments
-		frappe.logger().warning(f"Jimmy get_project_activity Logging Debug: comments = {comments}")
 
 		return comments
 	except Exception:
@@ -651,6 +721,149 @@ def delete_doctype_records(doctype, docnames, override_password=None):
 				errors.append(f"{docname}: frappe.delete_doc → {first_err} | raw SQL → {str(e2)}")
 
 	return {"deleted": deleted, "not_found": not_found, "errors": errors}
+
+
+def _require_system_manager_for_history(doctype, docname):
+	if "System Manager" not in frappe.get_roles(frappe.session.user):
+		frappe.throw("Only System Manager can view/delete comments/activity logs.", frappe.PermissionError)
+	if not doctype:
+		frappe.throw("doctype is required.")
+	if not docname:
+		frappe.throw("docname is required.")
+	if not frappe.db.exists("DocType", doctype):
+		frappe.throw(f"DocType '{doctype}' does not exist.")
+
+
+@frappe.whitelist()
+def get_document_comments_and_activity(doctype, docname):
+	"""
+	Read-only listing of Comment records (including Workflow-transition
+	comments — same table, distinguished by comment_type) and Activity Log
+	records for a single document, identified by reference_doctype +
+	reference_name. Used to populate a checklist before selective deletion via
+	delete_document_comments_and_activity(). Only accessible by System Manager.
+	"""
+	_require_system_manager_for_history(doctype, docname)
+
+	comments = frappe.db.get_all(
+		"Comment",
+		filters={"reference_doctype": doctype, "reference_name": docname},
+		fields=["name", "comment_type", "comment_email", "content", "owner", "creation"],
+		order_by="creation desc",
+	)
+	activity_logs = frappe.db.get_all(
+		"Activity Log",
+		filters={"reference_doctype": doctype, "reference_name": docname},
+		fields=["name", "subject", "content", "operation", "full_name", "owner", "creation"],
+		order_by="creation desc",
+	)
+
+	# The desk timeline UI ("X created this" / "X last edited this") synthesizes
+	# these two lines directly from the document's own owner/creation and
+	# modified_by/modified fields — they are not Comment or Activity Log rows,
+	# so they can never be selected/deleted here. Returned only as read-only
+	# context so the fetched count can be explained against what's visible on
+	# the desk page (13 real rows + these 2 synthetic lines = 15 shown there).
+	doc_meta = frappe.db.get_value(
+		doctype, docname, ["owner", "creation", "modified_by", "modified"], as_dict=True
+	)
+
+	return {
+		"document_existed": bool(doc_meta),
+		"comments": comments,
+		"activity_logs": activity_logs,
+		"document_meta": doc_meta,
+	}
+
+
+@frappe.whitelist()
+def delete_document_comments_and_activity(
+	doctype, docname, comment_names=None, activity_log_names=None, override_password=None
+):
+	"""
+	Delete a specific, caller-chosen set of Comment and/or Activity Log
+	records for a single document (identified by reference_doctype +
+	reference_name). Does NOT touch the document itself, and does not delete
+	anything not explicitly named — pair with get_document_comments_and_activity()
+	to fetch the candidates first and let the caller pick which ones to remove.
+
+	comment_names / activity_log_names: JSON list (or list) of record names to
+	delete. At least one of the two must contain something.
+
+	The document is not required to still exist — this is also the cleanup
+	tool for orphaned Comment/Activity Log rows left behind after a document
+	was removed via a raw-SQL delete fallback (which skips this cleanup).
+	Only accessible by System Manager.
+	"""
+	from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
+
+	if override_password != ADMIN_ACTION_PASSWORD:
+		return {"status": "error", "message": "Incorrect password. Nothing was deleted."}
+
+	_require_system_manager_for_history(doctype, docname)
+
+	def _parse_names(value):
+		if not value:
+			return []
+		if isinstance(value, str):
+			value = json.loads(value)
+		if not isinstance(value, list):
+			frappe.throw("comment_names/activity_log_names must be a list.")
+		return [str(v) for v in value if v]
+
+	comment_names = _parse_names(comment_names)
+	activity_log_names = _parse_names(activity_log_names)
+
+	if not comment_names and not activity_log_names:
+		return {"status": "error", "message": "No comments or activity logs were selected."}
+
+	document_exists = frappe.db.exists(doctype, docname)
+
+	# Scope the delete to rows that actually belong to this document — a
+	# caller can only pass names that came from get_document_comments_and_activity()
+	# for this same doctype/docname, but the filter is kept anyway as a guard
+	# against a stale/tampered selection deleting an unrelated record.
+	comments_deleted = 0
+	comment_type_counts = {}
+	if comment_names:
+		rows = frappe.db.get_all(
+			"Comment",
+			filters={
+				"name": ["in", comment_names],
+				"reference_doctype": doctype,
+				"reference_name": docname,
+			},
+			fields=["name", "comment_type"],
+		)
+		for row in rows:
+			comment_type_counts[row.comment_type] = comment_type_counts.get(row.comment_type, 0) + 1
+		if rows:
+			frappe.db.delete("Comment", {"name": ["in", [r.name for r in rows]]})
+			comments_deleted = len(rows)
+
+	activity_logs_deleted = 0
+	if activity_log_names:
+		rows = frappe.db.get_all(
+			"Activity Log",
+			filters={
+				"name": ["in", activity_log_names],
+				"reference_doctype": doctype,
+				"reference_name": docname,
+			},
+			fields=["name"],
+		)
+		if rows:
+			frappe.db.delete("Activity Log", {"name": ["in", [r.name for r in rows]]})
+			activity_logs_deleted = len(rows)
+
+	frappe.db.commit()
+
+	return {
+		"document_existed": bool(document_exists),
+		"comments_deleted": comments_deleted,
+		"comment_type_breakdown": comment_type_counts,
+		"activity_logs_deleted": activity_logs_deleted,
+	}
 
 
 # Bench log files that are known to grow unbounded and are safe to truncate:
@@ -2021,6 +2234,29 @@ def get_document_activity(doctype, docname):
 			}
 		)
 
+	# --- 6. Chain in comments from the external account portal, if this
+	# doctype maps to a known comment category (see get_project_activity) ---
+	for category in DOCTYPE_TO_COMMENT_CATEGORIES.get(doctype, []):
+		for c in _get_account_portal_comments(category, docname):
+			# commentDateTime is ISO "T"-separated; every other timestamp here
+			# is a plain str(datetime) with a space, and entries are sorted by
+			# plain string comparison below, so normalize to match.
+			timestamp = (c.get("commentDateTime") or "").replace("T", " ")
+			entries.append(
+				{
+					"type": "comment",
+					"label": "commented (Account Portal)",
+					"user": "Account Portal",
+					"user_email": None,
+					"timestamp": timestamp,
+					"content": c.get("comment"),
+					"source": "account_portal",
+					"comment_id": c.get("commentId"),
+					"reference_parent_id": c.get("referenceParentId"),
+					"frappe_application_no": c.get("frappeApplicationNo"),
+				}
+			)
+
 	# Creation entry always at the bottom
 	entries.append(
 		{
@@ -2073,6 +2309,8 @@ def delegate_user(
 	scope_type=None,
 	project_names=None,
 	applications=None,
+	remove_project_names=None,
+	remove_applications=None,
 	valid_from=None,
 	valid_to=None,
 ):
@@ -2084,6 +2322,8 @@ def delegate_user(
 		scope_type=scope_type,
 		project_names=project_names,
 		applications=applications,
+		remove_project_names=remove_project_names,
+		remove_applications=remove_applications,
 		valid_from=valid_from,
 		valid_to=valid_to,
 	)
@@ -2094,6 +2334,21 @@ def undelegate_user(delegation_name):
 	from rndopsapp.rndopsapp.delegate_user.delegate_user import undelegate_user as _impl
 
 	return _impl(delegation_name=delegation_name)
+
+
+@frappe.whitelist()
+def create_application_on_behalf(doctype, delegator_user, project_name=None, fields=None):
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import create_application_on_behalf as _impl
+
+	if isinstance(fields, str):
+		fields = frappe.parse_json(fields)
+
+	return _impl(
+		doctype=doctype,
+		delegator_user=delegator_user,
+		project_name=project_name,
+		fields=fields,
+	)
 
 
 def auto_clear_old_mattermost_posts():

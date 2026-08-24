@@ -28,6 +28,8 @@
   "section_break_wgvl",
   "table_weoy",
   "total_amount",
+  "send_to_director",
+  "director_signed_pdf",
   "approval_comp_authority",
   "rules_and_conditions_section",
   "rules",
@@ -118,6 +120,18 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "fieldname": "send_to_director",
+   "fieldtype": "Check",
+   "label": "Send for Director Approval"
+  },
+  {
+   "fieldname": "director_signed_pdf",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Director Signed PDF"
+  },
+  {
    "fieldname": "rules_and_conditions_section",
    "fieldtype": "Section Break",
    "label": "Rules and Conditions"
@@ -188,7 +202,7 @@
   },
   {
    "fieldname": "project_name",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "label": "Project Name"
   },
   {
@@ -202,7 +216,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-15 11:07:47.050993",
+ "modified": "2026-08-07 14:59:40.169136",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Honorarium",
@@ -218,6 +232,19 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
    "share": 1,
    "submit": 1,
    "write": 1

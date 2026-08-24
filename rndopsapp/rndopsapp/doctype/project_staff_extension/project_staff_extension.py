@@ -10,6 +10,14 @@ from frappe.model.document import Document
 from frappe.utils.html_utils import sanitize_html
 
 
+# ── Extension eligibility policy (IIT-G) ──────────────────────────────────────
+# 1. Apply only within the last APPLICATION_WINDOW_MONTHS of the term completion date.
+# 2. Total service may not exceed MAX_TOTAL_SERVICE_MONTHS.
+# 3. Max grantable extension = MAX_TOTAL_SERVICE_MONTHS - months already worked.
+MAX_TOTAL_SERVICE_MONTHS = 33
+APPLICATION_WINDOW_MONTHS = 1
+
+
 def extract_eval_expression(expression):
 	"""
 	Extracts the JavaScript expression from a Frappe 'eval:' string.
@@ -29,6 +37,99 @@ def extract_eval_expression(expression):
 class ProjectStaffExtension(Document):
 	def validate(self):
 		self.set_fields_from_project_staff_details()
+
+	def before_submit(self):
+		# Fires on the applicant's initial submission (docstatus 0 -> 1), which in
+		# this workflow is the Draft -> Pending PI Approval transition, as well as
+		# the direct-submit fallback. Enforce applicant eligibility here so no
+		# submission path (workflow action or raw submit) can bypass it.
+		self.validate_applicant_eligibility()
+
+	# ── Eligibility policy helpers ────────────────────────────────────────────
+	def get_service_context(self):
+		"""Return (total_months_worked, current_term_completion_date) from the
+		linked Project Staff Details tenure rows. Falls back to values stored on
+		this document when tenure history is unavailable."""
+		from frappe.utils import getdate
+
+		total_months = 0
+		term_completion = getdate(self.ex_date_of_expiry) if self.ex_date_of_expiry else None
+
+		ps_details_name = None
+		if self.ex_emp_id:
+			ps_details_name = frappe.db.get_value(
+				"Project Staff Details", {"ps_emp_id": self.ex_emp_id}, "name"
+			)
+		if ps_details_name:
+			parent_doc = frappe.get_doc("Project Staff Details", ps_details_name)
+			tenures = parent_doc.get("table_ymed") or []
+			valid_tenures = [t for t in tenures if t.pstd_joining_date and t.pstd_term_completion_date]
+			if valid_tenures:
+				sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
+				for t in sorted_tenures:
+					d1 = getdate(t.pstd_joining_date)
+					d2 = getdate(t.pstd_term_completion_date)
+					days = (d2 - d1).days + 1
+					total_months += round(days / 30.437)
+				term_completion = getdate(sorted_tenures[-1].pstd_term_completion_date)
+
+		# Fallback to the applicant-entered months when no tenure history exists.
+		if total_months == 0 and self.ex_no_of_mon_worked:
+			try:
+				total_months = int(float(self.ex_no_of_mon_worked))
+			except (ValueError, TypeError):
+				pass
+
+		return total_months, term_completion
+
+	def _validate_application_window(self, term_completion):
+		"""Rule 1: apply only within the last APPLICATION_WINDOW_MONTHS of the
+		(current/new) term completion date."""
+		from frappe.utils import getdate, add_months, today, formatdate
+
+		if not term_completion:
+			return  # Can't determine the term completion date — don't block.
+		window_open = add_months(getdate(term_completion), -APPLICATION_WINDOW_MONTHS)
+		if getdate(today()) < getdate(window_open):
+			frappe.throw(_(
+				"You can apply for an extension only within the last {0} month of your "
+				"term completion date ({1}). The application window opens on {2}."
+			).format(APPLICATION_WINDOW_MONTHS, formatdate(term_completion), formatdate(window_open)))
+
+	def _validate_service_cap(self, total_months):
+		"""Rule 2: total service may not exceed MAX_TOTAL_SERVICE_MONTHS."""
+		if total_months > MAX_TOTAL_SERVICE_MONTHS:
+			frappe.throw(_(
+				"You have already completed {0} months of service, which exceeds the "
+				"maximum permissible {1} months. No further extension can be applied for."
+			).format(total_months, MAX_TOTAL_SERVICE_MONTHS))
+		if total_months >= MAX_TOTAL_SERVICE_MONTHS:
+			frappe.throw(_(
+				"You have completed the maximum permissible service period of {0} months. "
+				"No further extension can be applied for."
+			).format(MAX_TOTAL_SERVICE_MONTHS))
+
+	def validate_period_cap(self, period, total_months, label):
+		"""Rule 3: months_worked + granted period may not exceed the cap."""
+		if period in (None, ""):
+			return
+		try:
+			period_int = int(float(period))
+		except (ValueError, TypeError):
+			frappe.throw(_("Invalid extension period: {0}").format(period))
+		max_allowed = max(0, MAX_TOTAL_SERVICE_MONTHS - total_months)
+		if period_int > max_allowed:
+			frappe.throw(_(
+				"The extension {0} ({1} months) cannot exceed the maximum of {2} month(s) "
+				"({3} - {4} already worked). Total service cannot exceed {3} months."
+			).format(label, period_int, max_allowed, MAX_TOTAL_SERVICE_MONTHS, total_months))
+
+	def validate_applicant_eligibility(self):
+		"""Applicant-stage gate: window + service cap + sought-period cap."""
+		total_months, term_completion = self.get_service_context()
+		self._validate_application_window(term_completion)
+		self._validate_service_cap(total_months)
+		self.validate_period_cap(self.ex_period, total_months, _("sought"))
 
 	def set_fields_from_project_staff_details(self):
 		if self.ex_emp_id:
@@ -94,6 +195,10 @@ class ProjectStaffExtension(Document):
 			extension_period = int(final_period)
 		except (ValueError, TypeError):
 			frappe.throw(_("Invalid Extension Period: {0}").format(final_period))
+
+		# Rule 3 (final guard): the staff-allowed period cannot push total service
+		# beyond the cap. total_months here is the prior service (new row not yet added).
+		self.validate_period_cap(extension_period, total_months, _("allowed by Staff"))
 
 		new_term_completion_date = add_days(add_months(new_joining_date, extension_period), -1)
 
@@ -319,7 +424,17 @@ def get_project_staff_extension_list():
 				"ex_proj_name",
 				"ex_designation",
 				"department",
+				"ex_doj",
+				"ex_date_of_expiry",
+				"ex_current_basic",
+				"ex_last_ex_date",
+				"ex_no_of_mon_worked",
+				"ex_no_of_days_worked",
 				"ex_period",
+				"ex_period_pi",
+				"ex_period_staff",
+				"increment_by_pi",
+				"increment_by_staff",
 				"workflow_state",
 				"docstatus",
 				"modified",
@@ -415,6 +530,21 @@ def perform_project_staff_extension_action(docname, action, comment=""):
 
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
+
+		# Per-stage policy gate on positive (forward/approve) transitions. Rejections
+		# and cancellations are never blocked by the caps.
+		if next_state not in ("Rejected", "Cancelled"):
+			if current_state == "Draft":
+				# Applicant submission: window + service cap + sought-period cap.
+				# Also enforced in before_submit; kept here so the rule holds even if
+				# the workflow keeps the doc at doc_status 0 past Draft.
+				doc.validate_applicant_eligibility()
+			else:
+				total_months, _term = doc.get_service_context()
+				if current_state == "Pending PI Approval":
+					doc.validate_period_cap(doc.ex_period_pi, total_months, _("suggested by PI"))
+				elif current_state == "Pending Staff Approval":
+					doc.validate_period_cap(doc.ex_period_staff, total_months, _("allowed by Staff"))
 
 		# Record comment
 		doc.add_comment(

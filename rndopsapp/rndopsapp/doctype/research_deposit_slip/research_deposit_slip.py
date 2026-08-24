@@ -10,6 +10,8 @@ from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip as publish_r
 from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation import (
 	validate_overhead_gst_budget_heads_for_doc,
 )
+from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+from rndopsapp.rndopsapp.kafka.config import TOPIC_DEPOSIT_SLIP
 
 def extract_eval_expression(expression):
 	"""
@@ -33,11 +35,26 @@ class ResearchDepositSlip(Document):
 	def on_update(self):
 		"""
 		Trigger Kafka sync on workflow state change to 'Approved' or 'Verified'.
+		Publish must succeed for the transition to be allowed — on failure this
+		raises, aborting and rolling back the save/submit that triggered it, so
+		the document reverts to its previous state.
 		"""
 		if self.flags.get('skip_kafka_sync'):
 			return
 
-		def _validate_and_publish():
+		doc_before_save = self.get_doc_before_save()
+		old_state = doc_before_save.workflow_state if doc_before_save else None
+		new_state = self.workflow_state
+		target_states = ["Approved", "Verified", "Submitted"]
+
+		is_state_transition = new_state in target_states and old_state != new_state
+		is_fresh_submit = (
+			self.docstatus == 1
+			and (not doc_before_save or doc_before_save.docstatus == 0)
+			and new_state not in target_states
+		)
+
+		if is_state_transition or is_fresh_submit:
 			# Final-gate reconciliation backstop (implementation doc §3.4) —
 			# raises before publishing if Overhead doesn't match Fund
 			# Received's budget head allocation. The primary enforcement
@@ -45,24 +62,18 @@ class ResearchDepositSlip(Document):
 			if self.fund_received_ref and frappe.db.exists("Fund Received", self.fund_received_ref):
 				fr_doc = frappe.get_doc("Fund Received", self.fund_received_ref)
 				validate_overhead_gst_budget_heads_for_doc(self, fr_doc)
-			publish_research_deposit_slip(self)
 
-		try:
-			doc_before_save = self.get_doc_before_save()
-			old_state = doc_before_save.workflow_state if doc_before_save else None
-			new_state = self.workflow_state
-			target_states = ["Approved", "Verified", "Submitted"]
-
-			if new_state in target_states and old_state != new_state:
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for state {new_state}")
-				_validate_and_publish()
-			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0) and new_state not in target_states:
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync for Submit")
-				_validate_and_publish()
-
-		except Exception as e:
-			frappe.log_error(f"Error in Research Deposit Slip on_update: {e}", "Research Deposit Slip Error")
-			pass
+			record_publish_state(
+				self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
+				old_state, new_state,
+			)
+			try:
+				success = publish_research_deposit_slip(self)
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), "Research Deposit Slip Error")
+				frappe.throw(_("Cannot proceed: Kafka sync failed ({0}).").format(str(e)))
+			if not success:
+				frappe.throw(_("Cannot proceed: Kafka sync returned False (check validation errors in the Error Log)."))
 
 @frappe.whitelist()
 def get_research_deposit_slip_fields(doc_name=None):
@@ -312,3 +323,23 @@ def submit_research_deposit_slip(docname):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Research Deposit Slip Submit Error")
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def update_research_deposit_slip_fields(docname, changes=None, child_table_changes=None):
+	"""
+	Update only the given fields (and optionally child table rows) on a
+	Research Deposit Slip document, including after its workflow_state has
+	reached a locked state. Restricted to `staff, RnD` / System Manager. See
+	rndopsapp.rndopsapp.deposit_slip_common.update_locked_deposit_slip.
+
+	changes: JSON dict {fieldname: new_value}.
+	child_table_changes: JSON list of
+	    {"fieldname": "ecs_dates" | "pdf_credit_distribution" | "dpf_credit_distributions",
+	     "updated": [{"name": <row name>, "changes": {field: value}}, ...],
+	     "inserted": [{field: value, ...}, ...],
+	     "deleted": [<row name>, ...]}
+	"""
+	from rndopsapp.rndopsapp.deposit_slip_common import update_locked_deposit_slip
+
+	return update_locked_deposit_slip("Research Deposit Slip", docname, changes, child_table_changes)

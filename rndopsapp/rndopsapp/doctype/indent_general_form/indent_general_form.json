@@ -17,6 +17,8 @@
   "igf_employee_code",
   "section_break_nvnk",
   "igf_project_details",
+  "igf_other_pi",
+  "igf_other_pi_id",
   "igf_project_title",
   "igf_project_code",
   "igf_account_head",
@@ -99,9 +101,26 @@
    "fetch_from": "igf_project_title.project_no",
    "fieldname": "igf_project_code",
    "fieldtype": "Data",
-   "label": "Project Code"
+   "label": "Project Code",
+   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code"
   },
   {
+   "default": "Self",
+   "fieldname": "igf_other_pi",
+   "fieldtype": "Select",
+   "label": "Is this charged to another PI's project?",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "depends_on": "eval:doc.igf_other_pi == \"Other\"",
+   "fieldname": "igf_other_pi_id",
+   "fieldtype": "Link",
+   "label": "Other PI Webmail Id",
+   "mandatory_depends_on": "eval:doc.igf_other_pi == \"Other\"",
+   "options": "User"
+  },
+  {
+   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code",
    "fieldname": "igf_project_title",
    "fieldtype": "Link",
    "label": "Project Title",

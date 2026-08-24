@@ -65,6 +65,14 @@ ICSS_PUT_BACK_RULES = {
         "roles": ["Permanent Employee", "head_approver_1", "HoD", "System Manager"],
         "targets": ["Requestor"],
     },
+    # The Other PI (whose project would fund the indent) can send it back
+    # instead of forwarding — to the requestor, or to the requestor's own PI
+    # when it arrived here via the PS → PI → Other PI path. Access is further
+    # scoped to the *assigned* Other PI inside put_back_icss().
+    "Pending Other PI": {
+        "roles": ["Other PI", "Permanent Employee", "System Manager"],
+        "targets": ["PI", "Requestor"],
+    },
     "Pending Staff Approval": {
         "roles": ["staff, RnD", "System Manager"],
         "targets": ["PI", "Requestor"],
@@ -805,6 +813,13 @@ def get_icss_fields(doc_name=None):
         link_options["icss_applicant_webmail_id"] = []
         link_options["icss_applying_for_mail"] = []
 
+    # Other-PI dropdown: restrict to Permanent Employees (all PIs are Permanent Employees)
+    try:
+        from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import _get_permanent_employee_options
+        link_options["icss_other_pi_id"] = _get_permanent_employee_options()
+    except Exception:
+        pass
+
     try:
         departments = frappe.get_all(
             "Department_prornd",
@@ -1410,12 +1425,27 @@ def get_icss_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_icss_action(docname, action):
+def get_icss_pi_projects(pi=None):
+    """Projects owned by the (session) PI — used by the Other-PI approval step."""
+    from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+    return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def get_icss_project_account_heads(project_name):
+    """Account heads for a given project — used by the Other-PI approval step."""
+    from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_project_account_heads
+    return get_project_account_heads(project_name)
+
+
+@frappe.whitelist()
+def perform_icss_action(docname, action, extra_data=None):
     """
     Execute a workflow action on an ICSS document.
 
     Special routing:
     - Initial submit (Draft → *): backend decides next state based on user roles.
+    - Other-PI submit: routes to 'Pending Other PI' for the chosen PI only.
     - HoS forward (Pending HoS Approval → *): backend decides next state based on amount.
     - Dean Approve: blocked if Director approval required but PDF not uploaded.
     - Put Back to <target>: delegated to ``put_back_icss``.
@@ -1431,6 +1461,14 @@ def perform_icss_action(docname, action):
         doc = frappe.get_doc(DOCTYPE, docname)
         current_state = doc.workflow_state or "Draft"
         user_roles = frappe.get_roles(frappe.session.user)
+
+        # The Other-PI step is scoped to the specifically-assigned PI — the
+        # 'Permanent Employee' role on the transition is not enough on its own.
+        if current_state == "Pending Other PI":
+            is_system_manager = "System Manager" in user_roles
+            assigned_pi = (doc.get("icss_other_pi_id") or "").lower()
+            if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+                frappe.throw(_("You are not authorised to act on this indent."))
 
         workflow_name = frappe.db.get_value(
             "Workflow", {"document_type": DOCTYPE, "is_active": 1}, "name"
@@ -1473,12 +1511,48 @@ def perform_icss_action(docname, action):
 
         # ── STEP 2: backend routing overrides ────────────────────────────
         if current_state == "Draft":
-            # Initial submit routing: permanent employees skip PI stage
-            next_state = _resolve_initial_submit_next_state(user_roles)
+            # Other-PI: charged to a different PI's project → route to that PI.
+            if (doc.get("icss_other_pi") or "") == "Other":
+                if not doc.get("icss_other_pi_id"):
+                    frappe.throw(_("Please select the Other PI before submitting."))
+                next_state = "Pending Other PI"
+            else:
+                # Initial submit routing: permanent employees skip PI stage
+                next_state = _resolve_initial_submit_next_state(user_roles)
 
         elif current_state == "Pending HoS Approval":
             # Amount-based routing
             next_state = _resolve_hos_next_state(doc)
+
+        # Other-PI approval: the PI charges one of THEIR OWN projects + head.
+        if current_state == "Pending Other PI" and action in ("Forward", "Approve"):
+            if isinstance(extra_data, str):
+                extra_data = json.loads(extra_data or "{}")
+            extra_data = extra_data or {}
+            project_name = (extra_data.get("project_name") or "").strip()
+            account_head = (extra_data.get("account_head") or "").strip()
+            if not project_name or not account_head:
+                frappe.throw(_("Please select a project and account head before approving."))
+            from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
+                get_pi_projects, get_project_account_heads,
+            )
+            owns = next((p for p in get_pi_projects() if p.get("value") == project_name), None)
+            if not owns:
+                frappe.throw(_("Selected project does not belong to you."))
+            valid_heads = {h["value"].lower() for h in get_project_account_heads(project_name)}
+            if account_head.lower() not in valid_heads:
+                frappe.throw(_("Selected account head is not valid for this project."))
+            if frappe.db.exists("Budget Head", account_head):
+                bh_name = account_head
+            else:
+                bh_name = frappe.db.get_value("Budget Head", {"budget_head": account_head}, "name")
+            frappe.db.set_value(DOCTYPE, docname, {
+                "project_ref": project_name,
+                "project_no": owns.get("project_no") or owns.get("project_number"),
+                "icss_account_head": bh_name,
+                "icss_other_account_head": None if bh_name else account_head,
+            }, update_modified=True)
+            next_state = "Pending Staff Approval"
 
         # ── STEP 3: Director approval gate ───────────────────────────────
         if action == "Approve" and current_state == "Pending Dean Approval":
@@ -1631,6 +1705,15 @@ def put_back_icss(docname, target, reason=None):
         doc = frappe.get_doc(DOCTYPE, docname)
         current_state = doc.workflow_state or "Draft"
         user_roles = frappe.get_roles(frappe.session.user)
+
+        # The Other-PI step is scoped to the specifically-assigned PI — the
+        # 'Permanent Employee' role in ICSS_PUT_BACK_RULES is not enough on its
+        # own (mirrors the guard in perform_icss_action for Forward/Approve).
+        if current_state == "Pending Other PI":
+            is_system_manager = "System Manager" in user_roles
+            assigned_pi = (doc.get("icss_other_pi_id") or "").lower()
+            if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+                frappe.throw(_("You are not authorised to act on this indent."))
 
         # Validate blocked states
         if current_state in PUT_BACK_BLOCKED_STATES:

@@ -1,11 +1,21 @@
 # Delegate User — Frontend Integration Guide
 
+> **Updated 2026-08-17.** This guide now reflects the live backend. For the
+> new "create on behalf" flow (not covered below — it's a distinct screen,
+> not part of the delegation-config page), see
+> [create_on_behalf_ui_guide.md](create_on_behalf_ui_guide.md). For the full
+> rationale behind the scope/access changes, see
+> [application_level_delegation_backend_plan.md](application_level_delegation_backend_plan.md)
+> and [..._frontend_plan.md](application_level_delegation_frontend_plan.md).
+
 ## What is Delegation?
 
-A **Permanent Employee** (User A) can delegate access to their projects and applications to another user (User B).
+Any authenticated user (User A) can delegate access to their projects and
+applications to another user (User B) — no role requirement to use the
+feature.
 
 Once delegated:
-- User B logs in and **automatically sees** User A's projects and applications in all list views
+- User B logs in and **automatically sees** User A's projects and applications in all list views, scoped per `scope_type`
 - The backend enforces this — no frontend query changes are needed for visibility
 - The frontend only needs to provide the UI to **create**, **view**, and **revoke** delegations
 
@@ -13,9 +23,9 @@ Once delegated:
 
 ## Who Can Use This?
 
-- Only users with the **`Permanent Employee`** role can call any of these APIs
-- The route `/delegate-user` should remain guarded for `Permanent Employee`
-- Backend enforces this independently — a 403 is thrown if the role is missing
+- **Any logged-in user** can call these APIs — the only requirement is not being a Guest (unauthenticated)
+- The route `/delegate-user` should be guarded with a plain "is logged in" check, **not** a role check
+- Backend enforces this independently — a 403 is thrown only for Guest/unauthenticated requests
 
 ---
 
@@ -198,6 +208,8 @@ No parameters needed. Always uses the logged-in user.
       "delegate_user_name": "Jane Smith",
       "delegation_type": "View Only",
       "scope_type": "project",
+      "project_names": ["PRJ-REG-2026-00001", "PRJ-REG-2026-00002"],
+      "applications": [],
       "project_count": 2,
       "application_count": 0,
       "valid_from": null,
@@ -212,13 +224,16 @@ No parameters needed. Always uses the logged-in user.
 
 | Field | Use for |
 |---|---|
-| `name` | Pass to `undelegate_user` to revoke |
+| `name` | Pass to `undelegate_user` to revoke, or as the delegation to shrink via `delegate_user(remove_project_names=...)` |
 | `delegate_user_name` | Display name in the delegation card |
 | `delegation_type` | Show as a badge: `View Only` / `View and Edit` / `Workflow Action` |
 | `scope_type` | Show scope: `all` / `project` / `application` |
-| `project_count` | Show "3 projects" label |
-| `application_count` | Show "5 applications" label |
+| `project_names` | Actual included project names — render as chips, not just a count |
+| `applications` | Actual included `{doctype, name}` pairs — render as chips, e.g. `Travel: TRV-2026-00001` |
+| `project_count` / `application_count` | Still returned for a compact summary label ("2 projects") if you don't want to render the full chip list everywhere |
 | `valid_from` / `valid_to` | Show validity dates; `null` means no restriction |
+
+`project_names`/`applications` are already-parsed arrays (not JSON strings) — no `JSON.parse()` needed on this response.
 
 ---
 
@@ -235,10 +250,23 @@ POST /api/method/rndopsapp.rndopsapp.api.delegate_user
 | `delegate_user` | string (email) | **yes** | — | The user to delegate to |
 | `delegation_type` | string | no | `View Only` *(create only)* | Omit to keep existing value on update |
 | `scope_type` | string | no | `all` *(create only)* | Omit to keep existing value on update |
-| `project_names` | JSON string | no | `[]` | Required if `scope_type=project`. **Merged** into existing list. |
-| `applications` | JSON string | no | `[]` | Required if `scope_type=application`. **Merged** into existing list. |
+| `project_names` | JSON string or array of names | no | `[]` | Required if `scope_type=project`. **Merged** into existing list. |
+| `applications` | JSON string or array of `{doctype, name}` | no | `[]` | Required if `scope_type=application`. **Merged** into existing list. See shape below. |
+| `remove_project_names` | JSON string or array of names | no | `[]` | Subtracted after the merge above. Can be sent alone. |
+| `remove_applications` | JSON string or array of `{doctype, name}` | no | `[]` | Subtracted after the merge above. Can be sent alone. |
 | `valid_from` | string (datetime) | no | null | Only updates existing value if provided |
 | `valid_to` | string (datetime) | no | null | Only updates existing value if provided |
+
+**`applications` / `remove_applications` shape:**
+```json
+[
+  {"doctype": "Travel", "name": "TRV-2026-00001"},
+  {"doctype": "Loan Request", "name": "LOAN-2026-00002"}
+]
+```
+`doctype` is the exact backend doctype name (as returned by
+`get_delegate_scope().applications[i].doctype`), not a display label. A flat
+array of bare names (the old format) is **no longer accepted**.
 
 **Allowed values:**
 
@@ -252,12 +280,13 @@ POST /api/method/rndopsapp.rndopsapp.api.delegate_user
 - `project` — only selected projects (must pass `project_names`)
 - `application` — only selected applications (must pass `applications`)
 
-#### Create vs Merge behaviour
+#### Create vs Merge vs Remove behaviour
 
 | Scenario | Backend behaviour |
 |---|---|
 | No active delegation exists | **Creates** new row with provided values; defaults `delegation_type="View Only"`, `scope_type="all"` |
 | Active delegation already exists | **Merges** — `project_names` and `applications` are appended (deduplicated); other fields only change if explicitly sent |
+| `remove_project_names` / `remove_applications` sent | Subtracted **after** the merge above — a name in both the add and remove list for the same call ends up removed |
 | Existing `scope_type=project`, caller omits `scope_type` | Keeps `project` — scope is **not** downgraded to `all` |
 | Caller explicitly sends `scope_type=all` | Overrides existing scope to `all` |
 | Caller omits `delegation_type` | Keeps existing delegation type unchanged |
@@ -269,7 +298,7 @@ POST /api/method/rndopsapp.rndopsapp.api.delegate_user
   "delegate_user": "jane@iitg.ac.in",
   "delegation_type": "View Only",
   "scope_type": "project",
-  "project_names": "[\"PRJ-REG-2026-00001\"]",
+  "project_names": ["PRJ-REG-2026-00001"],
   "valid_to": "2026-12-31 00:00:00"
 }
 ```
@@ -278,12 +307,21 @@ POST /api/method/rndopsapp.rndopsapp.api.delegate_user
 ```json
 {
   "delegate_user": "jane@iitg.ac.in",
-  "project_names": "[\"PRJ-REG-2026-00002\", \"PRJ-REG-2026-00003\"]"
+  "project_names": ["PRJ-REG-2026-00002", "PRJ-REG-2026-00003"]
 }
 ```
 > Only `delegate_user` and `project_names` needed. Existing projects, scope_type, delegation_type and validity are preserved.
 
-> `project_names` and `applications` must be sent as **JSON strings** (stringify the array before sending).
+**Example — remove one application from scope, via the per-chip "×" button:**
+```json
+{
+  "delegate_user": "jane@iitg.ac.in",
+  "remove_applications": [{"doctype": "Travel", "name": "TRV-2026-00001"}]
+}
+```
+> No need to resend `project_names`/`applications` — everything else on the delegation stays as-is.
+
+> `project_names`, `applications`, `remove_project_names`, `remove_applications` accept either a plain array or a JSON-stringified array — pick whichever your HTTP client makes more natural.
 
 **Success response:**
 ```json
@@ -306,7 +344,8 @@ POST /api/method/rndopsapp.rndopsapp.api.delegate_user
 | `scope_type=project` with no projects | `At least one project is required when scope_type is 'project'.` |
 | `scope_type=application` with no applications | `At least one application is required when scope_type is 'application'.` |
 | Project not owned by current user | `Project 'PRJ-...' does not belong to or is not assigned to you.` |
-| Not a Permanent Employee | `Only users with the Permanent Employee role can manage delegations.` |
+| Application entry's `doctype` not a registered application doctype | `'{doctype}' is not a delegable application doctype.` |
+| Not logged in | `You must be logged in to manage delegations.` |
 
 ---
 
@@ -356,18 +395,28 @@ scope_type = "all"
 
 scope_type = "project"
   → Show multi-select populated from get_delegate_scope().projects
-  → project_names = JSON.stringify(selectedProjectNames)
+  → project_names = selectedProjectNames   (array of names, or JSON.stringify — both accepted)
   → Label: "Selected Projects"
+  → Scope is genuinely enforced now (see "Scope enforcement" note below)
 
 scope_type = "application"
   → Show multi-select populated from get_delegate_scope().applications
-  → applications = JSON.stringify(selectedApplicationNames)
+  → applications = selectedItems.map(a => ({doctype: a.doctype, name: a.name}))
   → Label: "Selected Applications"
+  → Scope is genuinely enforced now (see "Scope enforcement" note below)
 ```
+
+**Scope enforcement (changed 2026-08-17):** `project`/`application` scope
+used to be cosmetic — a scoped delegate saw everything the delegator owned
+regardless of the picker selection. That's fixed for **list views**: a
+scoped delegate's Travel/Loan Request/etc. list now genuinely only contains
+their in-scope documents. If you built any UI copy or confirmation dialogs
+assuming scope was decorative, update it — narrowing an existing delegation's
+scope now immediately shrinks what the delegate can see in lists.
 
 ---
 
-## Delegation Type Behaviour (for display only)
+## Delegation Type Behaviour (for display only, with a caveat)
 
 | Type | What the delegate can do |
 |---|---|
@@ -375,13 +424,24 @@ scope_type = "application"
 | `View and Edit` | See and edit documents |
 | `Workflow Action` | Perform workflow transitions on documents |
 
-> The backend computes this. The frontend does **not** need to enforce it — just display the type on delegation cards.
+> The backend computes this **for list-view visibility and for
+> `create_application_on_behalf`**. It does **not** currently enforce
+> `delegation_type` when a delegate opens or saves an individual document
+> through this app's existing detail/edit screens (e.g. the Travel detail
+> page's save button) — those endpoints don't check delegation at all yet,
+> for any user, delegated or not. This is a pre-existing gap unrelated to
+> what shipped here; see
+> [known_auth_gaps.md](../security/known_auth_gaps.md). Don't build UI that
+> assumes a `View Only` delegate is blocked from editing a document they can
+> see — today, nothing stops them at the API level.
 
 ---
 
 ## Visibility — How It Works Automatically
 
-Once a delegation is active, **no frontend query changes are needed**. Frappe list views for the following doctypes automatically include delegated records for the logged-in user:
+Once a delegation is active, **no frontend query changes are needed for list
+views**. Frappe list views for the following doctypes automatically include
+delegated records for the logged-in user, scoped per `scope_type`:
 
 - Project Registration
 - Travel
@@ -398,8 +458,11 @@ Once a delegation is active, **no frontend query changes are needed**. Frappe li
 - Recruitment Adhoc Contractual
 
 **Example:** User B has an active delegation from User A →
-- B opens the Travel list → sees both B's and A's travel records automatically
+- B opens the Travel list → sees both B's and A's travel records automatically (or only the in-scope subset, if `scope_type` is `project`/`application`)
 - A revokes the delegation → B's next page load shows only B's records
+
+**What this does NOT cover:** opening a specific document directly (detail
+page, edit form) — see the caveat above.
 
 ---
 
@@ -419,13 +482,17 @@ Pass `null` or omit the field to leave it unrestricted.
 
 ## Suggested UI Checklist
 
+- [ ] Route guard — plain "is logged in" check, not a role check
 - [ ] Delegate User search — autocomplete using `search_delegate_users`
 - [ ] Delegation type selector — `View Only` / `View and Edit` / `Workflow Action`
 - [ ] Scope type selector — `all` / `project` / `application`
 - [ ] Project multi-select — shown only when `scope_type = project`, options from `get_delegate_scope().projects`
-- [ ] Application multi-select — shown only when `scope_type = application`, options from `get_delegate_scope().applications`
+- [ ] Application multi-select — shown only when `scope_type = application`, options from `get_delegate_scope().applications`, sending `{doctype, name}` pairs
 - [ ] Optional validity date pickers — `valid_from` / `valid_to`
-- [ ] Active delegations list — loaded from `get_active_delegations()`
+- [ ] Active delegations list — loaded from `get_active_delegations()`, showing actual `project_names`/`applications` chips, not just counts
+- [ ] Per-chip "×" remove control — calls `delegate_user(delegate_user, remove_project_names=[...])` or `remove_applications=[...]`
+- [ ] Confirmation dialog when narrowing an existing delegation's scope (scope is now genuinely enforced — see "Scope Type UI Logic" above)
 - [ ] Revoke button per delegation card — calls `undelegate_user(name)`
 - [ ] Error toast for all backend validation errors
-- [ ] Refresh delegation list after create or revoke
+- [ ] Refresh delegation list after create, remove, or revoke
+- [ ] Create-on-behalf flow — separate screen, see [create_on_behalf_ui_guide.md](create_on_behalf_ui_guide.md)

@@ -1,5 +1,16 @@
 # Application-Level Delegation — Backend Plan
 
+> **Status: Implemented and live**, updated 2026-08-17. All open questions
+> below were resolved and built. Current state, including the parts that
+> shipped beyond this original plan, is documented in
+> [delegation.md](delegation.md) (API reference) — treat that as the
+> up-to-date source of truth over this plan doc for anything that conflicts.
+> Also shipped but not originally scoped here:
+> [create_application_on_behalf](delegation.md) (see delegation.md §6) and
+> its UI guide, [create_on_behalf_ui_guide.md](create_on_behalf_ui_guide.md).
+> A related, pre-existing, **unfixed** authorization gap was found and logged
+> separately: [known_auth_gaps.md](../security/known_auth_gaps.md).
+
 ## Problem
 
 `User Delegation.scope_type` already supports `all | project | application`, and
@@ -38,7 +49,7 @@ usable by any legitimate project participant, not just permanent staff.
 
 ---
 
-## Access control — open to all authenticated users
+## Access control — open to all authenticated users [DECIDED: proceed]
 
 **Current state:** `_require_permanent_employee()` is the sole gate on every
 delegation function (`search_delegate_users`, `get_delegate_scope`,
@@ -46,7 +57,7 @@ delegation function (`search_delegate_users`, `get_delegate_scope`,
 `"Permanent Employee" in frappe.get_roles(frappe.session.user)`. Anyone
 without that exact role gets a 403.
 
-**Requested change:** allow all users — not just Permanent Employee —
+**Decided change:** allow all users — not just Permanent Employee —
 including approved Project Staff *and* students.
 
 **Why a role-allowlist doesn't work here:** Project Staff has a clean sync
@@ -92,41 +103,46 @@ user categories show up.
    Staff Details` for `ps_designation` labeling is still worth doing for
    picker UX, but is now a nice-to-have, not a requirement for coverage.
 
-4. **Flag before implementing:** this genuinely opens delegation to *every*
-   enabled login, including any bare/external/vendor accounts with no project
-   role at all. Since ownership-based scoping means an account with no
-   projects/applications simply has nothing to delegate, the practical blast
-   radius is low — but confirm this is the intended tradeoff before shipping,
-   since it's a deliberate move away from role-gating entirely.
+4. **Confirmed tradeoff:** this opens delegation to *every* enabled login,
+   including bare/external/vendor accounts with no project role at all — they
+   can appear as a selectable delegate target for others even with nothing of
+   their own to delegate. Accepted: ownership-based scoping keeps the
+   practical blast radius low (an account with no projects/applications has
+   nothing to expose), and no role allowlist can ever cover students, so this
+   is the only approach that actually achieves the goal.
 
-5. Update the DocType-level permission on `User Delegation`
-   (`user_delegation.json`) — currently grants read/write/create only to
-   `Permanent Employee`. Since the API gate no longer checks roles, either
-   grant these permissions to `All` (Frappe's built-in universal role) or rely
-   solely on the API-level checks (`ignore_permissions=True` is already used
-   in `delegate_user()`/`undelegate_user()` for writes) and lock the DocType
-   permissions down to read-only-via-API. Decide based on whether direct
-   desk/report access to the `User Delegation` list should also open up.
+5. **DocType-level permission on `User Delegation` [DECIDED]:** keep desk
+   mutation restricted, do not grant blanket `All`-role write access.
+   - `read`: grant to `All` (Frappe's built-in universal role) — any logged-in
+     user can see their own rows in list/report view, consistent with the new
+     API access model.
+   - `write` / `create` / `delete`: leave restricted to `System Manager` only
+     (`Permanent Employee` role removed from this table). Ordinary users never
+     need desk-level create/edit — `delegate_user()` / `undelegate_user()`
+     already write via `ignore_permissions=True`, so the API remains the only
+     mutation path for non-admins. This avoids opening bulk desk edits/reports
+     to arbitrary logins while still matching the API's open-read posture.
 
 ---
 
-## Open design question — `applications` storage format
+## `applications` storage format [DECIDED: Option B]
 
 Today `applications` is a flat JSON array of doc names with no doctype tag:
 `["TRV-2026-00001", "LOAN-2026-00002"]`. To scope a specific doctype's list
 query we need to know which names belong to it.
 
-| Option | Approach | Tradeoff |
-|---|---|---|
-| A | Infer doctype from name prefix at query time | No schema/migration, but fragile — breaks if a naming series changes, and does a stringy prefix match per row |
-| B (recommended) | Store `[{"doctype": "Travel", "name": "TRV-2026-00001"}, ...]` | Correct and explicit; requires a data migration for existing rows and a frontend payload change |
+**Decision: Option B** — store `[{"doctype": "Travel", "name": "TRV-2026-00001"}, ...]`.
+Correct and explicit; requires a data migration for existing rows and a
+frontend payload change (see frontend plan §1). Rejected Option A (infer
+doctype from name prefix at query time) as fragile — it breaks if a naming
+series ever changes and does a stringy prefix match per row.
 
 `get_delegate_scope()` already returns `doctype` alongside `name` for every
 application row, so the frontend picker already has what it needs to send
 Option B's shape — no new backend read endpoint required, only a change to
 what gets POSTed back in `delegate_user()`.
 
-**Decide before implementation starts.** The rest of this plan assumes Option B.
+The rest of this plan (implementation steps below) is written against Option B.
 
 ---
 
@@ -209,7 +225,24 @@ New behavior, per doctype call:
 - Regression: users with an unrestricted role still short-circuit without the
   extra scope queries running.
 
-### 6. Rollout
+### 6. Additional response/endpoint changes required by the frontend plan
+
+The frontend plan ([application_level_delegation_frontend_plan.md](application_level_delegation_frontend_plan.md))
+depends on two backend additions not otherwise covered above — include them in
+this delivery so frontend isn't blocked:
+
+- **`get_active_delegations()` must return resolved scope, not just counts.**
+  Currently returns `project_count` / `application_count` only. Add the
+  resolved `project_names` / `applications` lists (post-migration `{doctype,
+  name}` shape) to the response so the UI can render actual included items
+  instead of a bare number.
+- **A way to shrink an existing scope.** `delegate_user()` today only
+  merges/adds to `project_names` / `applications`. Add a `remove` list param
+  to `delegate_user()` (preferred over a separate endpoint, to keep one write
+  path) accepting the same `{doctype, name}` / project-name shapes, removing
+  matching entries instead of adding them.
+
+### 7. Rollout
 
 - This tightens security for any delegation currently configured as
   `project`/`application` scope — those delegates will lose access to records

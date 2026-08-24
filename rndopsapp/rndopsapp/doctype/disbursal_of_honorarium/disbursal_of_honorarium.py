@@ -243,7 +243,6 @@ def save_disbursal_of_honorarium_data(data, files=None):
 			"department_for",
 			"account_head",
 			"approval_comp_authority",
-			"total_amount"
 		]
 
 		for field in simple_fields:
@@ -337,7 +336,12 @@ def save_disbursal_of_honorarium_data(data, files=None):
 			doc.set("table_weoy", []) # Clear existing
 			for item in items_data:
 				doc.append("table_weoy", item)
-		
+
+		# total_amount is always derived server-side from the honorarium rows,
+		# never trusted from the client (previously a client-computed value could
+		# desync from the row amounts, e.g. comma-formatted "24,000" parsing as 24).
+		doc.total_amount = sum(frappe.utils.flt(row.amount) for row in doc.table_weoy)
+
 		# Save
 		doc.flags.ignore_permissions = True
 		doc.save()
@@ -425,6 +429,18 @@ def perform_disbursal_of_honorarium_action(docname, action):
 		doc = frappe.get_doc("Disbursal of Honorarium", docname)
 		current_state = doc.workflow_state or "Draft"
 
+		# Director-PDF gate: cannot Approve from Pending Director Approval
+		# until Staff has uploaded the Director-signed scan (mirrors Indent
+		# General Form's hardcopy flow — see attach_director_pdf_honorarium).
+		if (
+			action == "Approve"
+			and current_state == "Pending Director Approval"
+			and not (doc.get("director_signed_pdf") or "").strip()
+		):
+			frappe.throw(
+				"Cannot approve: the Director-signed PDF has not been uploaded by Staff yet."
+			)
+
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.get_value("Workflow", {"document_type": "Disbursal of Honorarium"}, "name")
 		
@@ -504,7 +520,7 @@ def perform_disbursal_of_honorarium_action(docname, action):
 		doc.add_comment("Workflow", _(next_state))
 
 		# --- Data Pipeline Integration ---
-		# When the document reaches "Approved" (by either Ado_RnD or Dean),
+		# When the document reaches "Approved" (by either Dean or Director),
 		# publish any pending staged commit payloads to Kafka.
 		# NOTE: Since perform_action uses frappe.db.set_value (bypasses ORM),
 		# the on_update hook (check_workflow_and_publish) does NOT fire.
@@ -683,3 +699,110 @@ def get_disbursal_of_honorarium_by_project(project_code: str = "", limit: int = 
 			continue
 
 	return {"message": results}
+
+
+# ============================================================
+# Director hardcopy / PDF flow (mirrors Indent General Form)
+# Dean ticks "Send for Director Approval" on a Disbursal of Honorarium.
+# Staff uploads the Director-signed scan via attach_director_pdf_honorarium.
+# Dean's Approve action from Pending Director Approval unlocks once
+# director_signed_pdf is set (see the gate in perform_disbursal_of_honorarium_action).
+# ============================================================
+
+@frappe.whitelist()
+def update_send_to_director_honorarium(docname, send_to_director):
+	"""
+	Dean opts the Disbursal of Honorarium into the Director-hardcopy flow.
+	One-way (cannot clear). Restricted to "Dean, RnD" / "System Manager".
+	Works only from "Pending Dean Approval" state.
+	"""
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "Dean, RnD" not in user_roles and "System Manager" not in user_roles:
+		frappe.throw("Not permitted", frappe.PermissionError)
+
+	if not frappe.db.exists("Disbursal of Honorarium", docname):
+		frappe.throw("Document not found")
+
+	doc = frappe.get_doc("Disbursal of Honorarium", docname)
+
+	if (doc.workflow_state or "") not in ("Pending Dean Approval", "Pending Director Approval"):
+		frappe.throw("Director Approval flag can only be set from 'Pending Dean Approval' state.")
+
+	if frappe.utils.cint(doc.get("send_to_director")):
+		return {"status": "success", "docname": docname, "send_to_director": 1}
+
+	if not frappe.utils.cint(send_to_director):
+		frappe.throw("send_to_director can only be set, not cleared.")
+
+	frappe.db.set_value(
+		"Disbursal of Honorarium", docname, {
+			"send_to_director": 1,
+			"workflow_state": "Pending Director Approval",
+		}
+	)
+	frappe.db.commit()
+	return {"status": "success", "docname": docname, "send_to_director": 1}
+
+
+@frappe.whitelist()
+def attach_director_pdf_honorarium(docname, file_url):
+	"""
+	Staff binds an already-uploaded file URL to director_signed_pdf.
+	Replacing an existing PDF is allowed.
+	Restricted to "staff, RnD" / "System Manager".
+	"""
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "staff, RnD" not in user_roles and "System Manager" not in user_roles:
+		frappe.throw("Not permitted", frappe.PermissionError)
+
+	if not file_url:
+		frappe.throw("file_url is required")
+
+	if not frappe.db.exists("Disbursal of Honorarium", docname):
+		frappe.throw("Document not found")
+
+	doc = frappe.get_doc("Disbursal of Honorarium", docname)
+
+	if (doc.workflow_state or "") != "Pending Director Approval":
+		frappe.throw("Director PDF can only be attached when document is in 'Pending Director Approval' state.")
+
+	frappe.db.set_value("Disbursal of Honorarium", docname, "director_signed_pdf", file_url)
+	frappe.db.commit()
+	return {
+		"status": "success",
+		"docname": docname,
+		"director_signed_pdf": file_url,
+	}
+
+
+@frappe.whitelist()
+def get_pending_director_uploads_honorarium():
+	"""
+	Returns Disbursal of Honorarium docs in Pending Director Approval state so
+	Staff can upload the signed PDF. Includes both pending uploads and
+	already-uploaded docs.
+	"""
+	docs = frappe.get_all(
+		"Disbursal of Honorarium",
+		filters={
+			"workflow_state": "Pending Director Approval",
+			"docstatus": 0,
+		},
+		fields=[
+			"name",
+			"project_name",
+			"project_no",
+			"account_head",
+			"total_amount",
+			"webmail_id",
+			"name_of_applicant",
+			"applicant_department",
+			"director_signed_pdf",
+			"send_to_director",
+			"modified",
+			"workflow_state",
+		],
+		order_by="modified desc",
+	)
+	return {"status": "success", "data": docs}
+# ============================================================

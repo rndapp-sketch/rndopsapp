@@ -13,6 +13,27 @@ class ModuleRegistry(Document):
 import frappe
 from frappe.model.document import Document
 
+# Roles allowed to see cross-user task/history views (get_task_registry,
+# get_document_touch_history). Kept in one place so the two endpoints can't
+# drift out of sync with each other.
+RNDOPS_HISTORY_ROLES = [
+	"staff, RnD",
+	"project staff",
+	"Hos, RnD (Head of Section, RnD)",
+	"Dean, RnD",
+	"Ado_RnD",
+	"HoD (Head of Department)",
+	"HoS (Head of School)",
+	"HoC (Head of Center)",
+	"head_department_center_school",
+	"Director",
+	"RnD Accounts",
+	"RnD Administration",
+	"RnD HR",
+	"RnD Purchase",
+	"System Manager",  # Always allow System Manager for admin access
+]
+
 
 @frappe.whitelist()
 def get_pending_task(page_name="pending-task"):
@@ -26,16 +47,36 @@ def get_pending_task(page_name="pending-task"):
 	user_roles = frappe.get_roles(current_user)
 	is_system_manager = "System Manager" in user_roles
 
-	# Find departments this user heads — used for Travel "Pending Head Approval" filtering
+	# Find departments this user heads — used for "Pending Head Approval" filtering.
+	# Both the link ID and the readable name are kept: some doctypes store the
+	# department as a Link (ID), others as plain Data (the department name).
 	_head_depts = frappe.db.sql(
-		"SELECT name FROM `tabDepartment_prornd` WHERE dept_head = %s",
+		"SELECT name, dept_name FROM `tabDepartment_prornd` WHERE dept_head = %s",
 		current_user,
 		as_dict=True,
 	)
 	dept_head_values = {d.name for d in _head_depts}
+	dept_head_names = {(d.dept_name or "").strip().lower() for d in _head_depts if d.dept_name}
 
-	print(f"\n--- DEBUG START: User '{current_user}' ---")
-	# print(f"Your Roles: {user_roles}") # Commented out to reduce noise
+	def _heads_this_department(value):
+		"""True when `value` (a Department_prornd ID *or* its name) is a
+		department the current user heads."""
+		v = (value or "").strip()
+		if not v:
+			return False
+		return v in dept_head_values or v.lower() in dept_head_names
+
+	# Reference doctypes that carry the applicant's department but no explicit
+	# head/approver field — their Cancellation Requests must still be scoped to
+	# the head of that department instead of being shown to every head.
+	dept_field_map = {
+		"Travel": "department_travel",
+		"Reimbursement": "applicant_department",
+		"Indent General Form": "igf_department_centre_section",
+		"Indent Cum Sanction Sheet": "icss_applicant_department__centre__section",
+		"Direct Purchase": "applicant_department",
+		"Temporary Advance": "applicant_department",
+	}
 
 	# 2. Get Parent Module Registry
 	parent = frappe.get_all(
@@ -48,7 +89,6 @@ def get_pending_task(page_name="pending-task"):
 	parent_doc = frappe.get_doc("Module Registry", parent[0].name)
 
 	child_rows = getattr(parent_doc, "doctype_name", []) or []
-	print("child_rows:", child_rows)
 	# Extract both doctype_name and mod_vis
 	doctype_data = [(row.doctype_name, row.mod_vis) for row in child_rows if row.doctype_name]
 
@@ -202,9 +242,32 @@ def get_pending_task(page_name="pending-task"):
 		if head_field and not meta.has_field(head_field):
 			head_field = None
 
+		# Some states must be scoped to a single specific user (not just a role)
+		# whose email is stored on the document, e.g. Reimbursement's Other-PI
+		# route parks the form at 'Pending PI Approval' for the chosen PI only.
+		specific_approver_map = {
+			"Reimbursement": ("Pending PI Approval", "reimbursement_for_id"),
+			"Travel": ("Pending Other PI", "travel_other_pi_id"),
+			"Indent General Form": ("Pending Other PI", "igf_other_pi_id"),
+			"Indent Cum Sanction Sheet": ("Pending Other PI", "icss_other_pi_id"),
+			"Rate Contract": ("Pending Other PI", "other_pi_email"),
+		}
+		sa_state = sa_field = None
+		sa = specific_approver_map.get(dt)
+		if sa and meta.has_field(sa[1]):
+			sa_state, sa_field = sa
+
 		extra_fields = [head_field] if head_field else []
+		if sa_field and sa_field not in extra_fields:
+			extra_fields.append(sa_field)
 		if dt == "Travel" and meta.has_field("department_travel") and "department_travel" not in extra_fields:
 			extra_fields.append("department_travel")
+		if dt == "Travel" and meta.has_field("travel_head_approver_id") and "travel_head_approver_id" not in extra_fields:
+			extra_fields.append("travel_head_approver_id")
+		if dt == "Cancellation Request":
+			for f in ["reference_doctype", "reference_name"]:
+				if f not in extra_fields:
+					extra_fields.append(f)
 
 		try:
 			records = frappe.get_list(
@@ -226,20 +289,105 @@ def get_pending_task(page_name="pending-task"):
 		mapped = []
 		for r in records:
 			# print("r:",r)
+			if dt == "Cancellation Request" and not is_system_manager:
+				ref_dt = r.get("reference_doctype")
+				ref_name = r.get("reference_name")
+				if ref_dt and ref_name and frappe.db.exists(ref_dt, ref_name):
+					ref_doc = frappe.db.get_value(ref_dt, ref_name, "*", as_dict=True)
+					if ref_doc:
+						curr_status = r.get(status_field)
+
+						# A) Head Approval filtering for the underlying reference document
+						if curr_status == "Pending Head Approval":
+							# Travel Other-PI: the head step is re-pointed to the
+							# funding PI's department head, so honour that first.
+							travel_head = (ref_doc.get("travel_head_approver_id") or "").strip().lower()
+							if ref_dt == "Travel" and travel_head:
+								if travel_head != current_user.lower():
+									continue
+							elif ref_dt in dept_field_map:
+								if not _heads_this_department(ref_doc.get(dept_field_map[ref_dt])):
+									continue
+							elif ref_dt in head_field_map:
+								h_field = head_field_map[ref_dt]
+								h_email = (ref_doc.get(h_field) or "").strip().lower()
+								if h_email and h_email != current_user.lower():
+									continue
+							else:
+								h_email = (
+									ref_doc.get("head")
+									or ref_doc.get("head_approver")
+									or ref_doc.get("department_head")
+									or ref_doc.get("dept_head")
+									or ""
+								).strip().lower()
+								if h_email:
+									if h_email != current_user.lower():
+										continue
+								else:
+									# No head field and no known department field:
+									# fall back to any department-looking value so
+									# the request is not exposed to every head.
+									dept_val = (
+										ref_doc.get("applicant_department")
+										or ref_doc.get("department")
+										or ""
+									)
+									if not _heads_this_department(dept_val):
+										continue
+
+						# B) Specific Approver / Other PI filtering for reference document
+						ref_sa = specific_approver_map.get(ref_dt)
+						if ref_sa:
+							ref_sa_state, ref_sa_field = ref_sa
+							if curr_status == ref_sa_state:
+								appr_email = (ref_doc.get(ref_sa_field) or "").strip().lower()
+								if appr_email and appr_email != current_user.lower():
+									continue
+
+						# C) Pending PI Approval filtering for reference document
+						if curr_status == "Pending PI Approval":
+							pi_email = (
+								ref_doc.get("reimbursement_for_id")
+								or ref_doc.get("pi_id")
+								or ref_doc.get("pi_webmail")
+								or ref_doc.get("pi")
+								or ref_doc.get("pi_email")
+								or ref_doc.get("pi_mentor_user")
+								or ""
+							).strip().lower()
+							if pi_email and pi_email != current_user.lower():
+								continue
+
 			if head_field and r.get(status_field) == "Pending Head Approval" and not is_system_manager:
 				head_email = (r.get(head_field) or "").strip().lower()
 				if head_email != current_user.lower():
 					continue
 
-			# Travel: filter "Pending Head Approval" to the dept head of the document's department
+			# Specific-approver states (e.g. Reimbursement "Pending PI Approval")
+			# are visible only to the exact user stored on the document.
+			if sa_field and r.get(status_field) == sa_state and not is_system_manager:
+				approver_email = (r.get(sa_field) or "").strip().lower()
+				if approver_email != current_user.lower():
+					continue
+
+			# Travel: filter "Pending Head Approval" to the correct dept head.
+			# For an Other-PI form the head is re-pointed to the FUNDING PI's
+			# department head (stored on travel_head_approver_id); otherwise it
+			# falls back to the head of the applicant's own department.
 			if (
 				dt == "Travel"
 				and r.get(status_field) == "Pending Head Approval"
 				and not is_system_manager
 			):
-				doc_dept = (r.get("department_travel") or "").strip()
-				if doc_dept not in dept_head_values:
-					continue
+				head_override = (r.get("travel_head_approver_id") or "").strip().lower()
+				if head_override:
+					if head_override != current_user.lower():
+						continue
+				else:
+					doc_dept = (r.get("department_travel") or "").strip()
+					if doc_dept not in dept_head_values:
+						continue
 
 			mapped.append(
 				{
@@ -269,13 +417,25 @@ def get_pending_task(page_name="pending-task"):
 @frappe.whitelist()
 def get_pending_application():
 	"""
-	Returns Leave Module applications pending the current user's approval as PI.
-	Filters Leave Module by pi == frappe.session.user and workflow_state == "Pending PI Approval".
+	Returns applications pending the current user's approval as PI, combining:
+	- Leave Module: filtered by pi == frappe.session.user, workflow_state == "Pending PI Approval".
+	- Project Staff Extension: has no "pi" field, so instead matched via whichever
+	  of these identifies the applicant as this PI's staff (ex_emp_id is free text
+	  and often left blank, so the owner-based check is the reliable path):
+	    a) ex_emp_id against Project Staff Details.pi_id / User.piheadmentor_user_id
+	    b) the document's owner being a User whose piheadmentor_user_id == current user
+	- Other-PI forms (Travel, Indent General Form, Indent Cum Sanction Sheet,
+	  Reimbursement): the applicant charged the form to a project owned by
+	  this user, so it is parked with them ("Pending Other PI", or "Pending PI
+	  Approval" for Reimbursement) until they pick the funding project/account
+	  head. Without this the designated PI has no inbox for them, since the
+	  Pending Task page is not shown to Permanent Employees.
+	Each record is tagged with "doctype" so callers can tell the sources apart.
 	"""
 
 	current_user = frappe.session.user
 
-	records = frappe.get_list(
+	leave_records = frappe.get_list(
 		"Leave Module",
 		filters={
 			"pi": current_user,
@@ -286,6 +446,82 @@ def get_pending_application():
 		order_by="modified desc",
 		limit_page_length=10000,
 	)
+	for r in leave_records:
+		r["doctype"] = "Leave Module"
+
+	pi_users = frappe.get_all(
+		"User",
+		filters={"piheadmentor_user_id": current_user},
+		fields=["name", "employee_id"],
+	)
+	pi_owner_emails = [u.name for u in pi_users]
+
+	pi_emp_ids_from_details = frappe.get_all(
+		"Project Staff Details",
+		filters={"pi_id": current_user},
+		pluck="ps_emp_id",
+	)
+	pi_emp_ids_from_user = [u.employee_id for u in pi_users]
+	pi_emp_ids = {e for e in (pi_emp_ids_from_details + pi_emp_ids_from_user) if e}
+
+	extension_records = []
+	if pi_emp_ids or pi_owner_emails:
+		or_filters = []
+		if pi_emp_ids:
+			or_filters.append(["ex_emp_id", "in", list(pi_emp_ids)])
+		if pi_owner_emails:
+			or_filters.append(["owner", "in", pi_owner_emails])
+
+		extension_records = frappe.get_list(
+			"Project Staff Extension",
+			filters={
+				"workflow_state": "Pending PI Approval",
+				"docstatus": 1,
+			},
+			or_filters=or_filters,
+			fields=["name", "ex_name", "ex_proj_name", "ex_proj_no", "ex_emp_id", "workflow_state", "modified", "owner", "docstatus", "creation"],
+			order_by="modified desc",
+			limit_page_length=10000,
+			ignore_permissions=True,
+		)
+		for r in extension_records:
+			r["doctype"] = "Project Staff Extension"
+
+	records = leave_records + extension_records
+
+	# doctype -> (other-PI field, state it waits in, applicant-name field)
+	other_pi_sources = {
+		"Travel": ("travel_other_pi_id", "Pending Other PI", "applicant_name_travel"),
+		"Indent General Form": ("igf_other_pi_id", "Pending Other PI", "igf_indenter"),
+		"Indent Cum Sanction Sheet": ("icss_other_pi_id", "Pending Other PI", "icss_applicant_name"),
+		"Reimbursement": ("reimbursement_for_id", "Pending PI Approval", "applicant_webmail"),
+	}
+
+	for dt, (pi_field, state, name_field) in other_pi_sources.items():
+		try:
+			meta = frappe.get_meta(dt)
+			if not meta.has_field(pi_field):
+				continue
+			fields = ["name", "workflow_state", "modified", "owner", "docstatus", "creation"]
+			if meta.has_field(name_field):
+				fields.append(name_field)
+			rows = frappe.get_list(
+				dt,
+				filters={pi_field: current_user, "workflow_state": state},
+				fields=fields,
+				order_by="modified desc",
+				limit_page_length=10000,
+				ignore_permissions=True,
+			)
+			for r in rows:
+				r["doctype"] = dt
+				r["pi"] = current_user
+				r["username"] = r.get(name_field) or r.get("owner")
+				records.append(r)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), f"get_pending_application: {dt} lookup failed")
+
+	records.sort(key=lambda r: r.get("modified") or "", reverse=True)
 
 	return {"user": current_user, "results": records}
 
@@ -311,27 +547,8 @@ def get_task_registry(debug=0):
 	current_user = frappe.session.user
 	user_roles = frappe.get_roles(current_user)
 
-	# Define allowed roles based on system roles
-	allowed_roles = [
-		"staff, RnD",
-		"project staff",
-		"Hos, RnD (Head of Section, RnD)",
-		"Dean, RnD",
-		"Ado_RnD",
-		"HoD (Head of Department)",
-		"HoS (Head of School)",
-		"HoC (Head of Center)",
-		"head_department_center_school",
-		"Director",
-		"RnD Accounts",
-		"RnD Administration",
-		"RnD HR",
-		"RnD Purchase",
-		"System Manager",  # Always allow System Manager for admin access
-	]
-
 	# Check if user has any of the allowed roles
-	has_allowed_role = any(role in allowed_roles for role in user_roles)
+	has_allowed_role = any(role in RNDOPS_HISTORY_ROLES for role in user_roles)
 
 	if not has_allowed_role:
 		return {
@@ -629,3 +846,235 @@ def get_task_registry(debug=0):
 		}
 
 	return response
+
+
+@frappe.whitelist()
+def get_rndopsapp_doctypes():
+	"""
+	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_rndopsapp_doctypes
+
+	Returns the sorted list of non-child doctype names in the Rndopsapp
+	module, for populating the DocType filter dropdown on doc_history.html.
+	"""
+
+	current_user = frappe.session.user
+	user_roles = frappe.get_roles(current_user)
+
+	if not any(role in RNDOPS_HISTORY_ROLES for role in user_roles):
+		return {"success": False, "message": "Access denied.", "doctypes": []}
+
+	doctype_names = frappe.get_all("DocType", filters=[["module", "like", "%rndopsapp%"]], pluck="name")
+
+	doctypes = []
+	for dt in sorted(doctype_names):
+		if not frappe.db.exists("DocType", dt):
+			continue
+		if frappe.get_meta(dt).istable:
+			continue
+		doctypes.append(dt)
+
+	return {"success": True, "doctypes": doctypes}
+
+
+@frappe.whitelist()
+def get_document_touch_history(docname, doctype=None):
+	"""
+	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_document_touch_history
+
+	Given a document id, return every user who ever touched it (edited a
+	field, completed a workflow action, or left a workflow/comment note),
+	merged into one chronological timeline, plus a per-user summary.
+
+	If `doctype` isn't given, every non-child doctype in the Rndopsapp
+	module is checked for a matching name — names are usually unique per
+	doctype (REC_..., SAN_..., project registration numbers, etc.) but if
+	more than one doctype has a document with this exact name, all of them
+	are returned so the caller can disambiguate.
+	"""
+
+	current_user = frappe.session.user
+	user_roles = frappe.get_roles(current_user)
+
+	if not any(role in RNDOPS_HISTORY_ROLES for role in user_roles):
+		return {
+			"success": False,
+			"message": "Access denied. Only authorized RnD roles can access this endpoint.",
+			"matches": [],
+		}
+
+	docname = (docname or "").strip()
+	if not docname:
+		return {"success": False, "message": "Document ID is required.", "matches": []}
+
+	if doctype:
+		if not frappe.db.exists("DocType", doctype):
+			return {"success": False, "message": f"DocType '{doctype}' not found.", "matches": []}
+		candidate_doctypes = [doctype]
+	else:
+		candidate_doctypes = frappe.get_all(
+			"DocType", filters=[["module", "like", "%rndopsapp%"]], pluck="name"
+		)
+
+	matches = []
+	for dt in candidate_doctypes:
+		if not frappe.db.exists("DocType", dt):
+			continue
+
+		meta = frappe.get_meta(dt)
+		if meta.istable:
+			continue
+
+		if not frappe.db.exists(dt, docname):
+			continue
+
+		if not frappe.has_permission(dt, "read"):
+			continue
+
+		matches.append(_build_document_touch_history(dt, docname, meta))
+
+	if not matches:
+		return {
+			"success": True,
+			"docname": docname,
+			"matches": [],
+			"message": f"No document named '{docname}' found in any Rndopsapp doctype you can read.",
+		}
+
+	return {"success": True, "docname": docname, "matches": matches}
+
+
+def _build_document_touch_history(dt, docname, meta):
+	status_field = None
+	for field_name in ["workflow_state", "status", "state"]:
+		if meta.has_field(field_name):
+			status_field = field_name
+			break
+
+	fields = ["name", "owner", "creation", "modified", "modified_by", "docstatus"]
+	if status_field:
+		fields.append(status_field)
+
+	doc = frappe.db.get_value(dt, docname, fields, as_dict=True)
+
+	title_field = meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name")
+	title = docname
+	if title_field != "name":
+		title = frappe.get_value(dt, docname, title_field) or docname
+
+	timeline = [
+		{
+			"user": doc.owner,
+			"timestamp": doc.creation,
+			"source": "Created",
+			"detail": f"Created this {dt}",
+		}
+	]
+
+	# Version log — every saved edit, with which fields changed
+	versions = frappe.get_all(
+		"Version",
+		filters={"ref_doctype": dt, "docname": docname},
+		fields=["owner", "creation", "data"],
+		order_by="creation asc",
+	)
+	for v in versions:
+		field_changes = []
+		if v.data:
+			try:
+				for c in frappe.parse_json(v.data).get("changed") or []:
+					if not c or not c[0]:
+						continue
+					field_changes.append(
+						{
+							"field": c[0],
+							"old": c[1] if len(c) > 1 else None,
+							"new": c[2] if len(c) > 2 else None,
+						}
+					)
+			except Exception:
+				pass
+		field_names = [c["field"] for c in field_changes]
+		detail = f"Edited: {', '.join(field_names)}" if field_names else "Edited document"
+		timeline.append(
+			{
+				"user": v.owner,
+				"timestamp": v.creation,
+				"source": "Version",
+				"detail": detail,
+				"changes": field_changes,
+			}
+		)
+
+	# Workflow Action — completed transitions
+	wf_actions = frappe.get_all(
+		"Workflow Action",
+		filters={"reference_doctype": dt, "reference_name": docname, "status": "Completed"},
+		fields=["completed_by", "completed_by_role", "workflow_state", "creation"],
+		order_by="creation asc",
+	)
+	for w in wf_actions:
+		if not w.completed_by:
+			continue
+		role_suffix = f" (as {w.completed_by_role})" if w.completed_by_role else ""
+		detail = f"Completed workflow action → {w.workflow_state}{role_suffix}"
+		timeline.append(
+			{"user": w.completed_by, "timestamp": w.creation, "source": "Workflow Action", "detail": detail}
+		)
+
+	# Comments — includes both Workflow-type transition notes and plain comments
+	comments = frappe.get_all(
+		"Comment",
+		filters={"reference_doctype": dt, "reference_name": docname},
+		fields=["comment_type", "owner", "creation", "content"],
+		order_by="creation asc",
+	)
+	for c in comments:
+		raw = (c.content or "").replace("<br>", "\n").replace("</strong>", "</strong> ").replace("</div>", "</div> ")
+		content = " ".join(frappe.utils.strip_html(raw).split())
+		source = "Workflow Note" if c.comment_type == "Workflow" else "Comment"
+		timeline.append(
+			{"user": c.owner, "timestamp": c.creation, "source": source, "detail": content or source}
+		)
+
+	timeline.sort(key=lambda e: e["timestamp"] or "")
+
+	users_summary = {}
+	for event in timeline:
+		u = event["user"]
+		if not u:
+			continue
+		entry = users_summary.setdefault(
+			u, {"user": u, "touches": 0, "first_touch": event["timestamp"], "last_touch": event["timestamp"], "sources": set()}
+		)
+		entry["touches"] += 1
+		entry["last_touch"] = event["timestamp"]
+		entry["sources"].add(event["source"])
+
+	users = sorted(
+		(
+			{
+				"user": info["user"],
+				"touches": info["touches"],
+				"first_touch": info["first_touch"],
+				"last_touch": info["last_touch"],
+				"sources": sorted(info["sources"]),
+			}
+			for info in users_summary.values()
+		),
+		key=lambda x: x["last_touch"] or "",
+		reverse=True,
+	)
+
+	return {
+		"doctype": dt,
+		"docname": docname,
+		"title": title,
+		"owner": doc.owner,
+		"current_status": doc.get(status_field) if status_field else None,
+		"creation": doc.creation,
+		"modified": doc.modified,
+		"modified_by": doc.modified_by,
+		"docstatus": doc.docstatus,
+		"timeline": timeline,
+		"users": users,
+	}

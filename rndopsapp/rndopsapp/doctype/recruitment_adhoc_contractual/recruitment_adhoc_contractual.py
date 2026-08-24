@@ -276,17 +276,52 @@ def get_recruitment_adhoc_contractual_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_recruitment_adhoc_contractual_action(docname, action):
+def perform_recruitment_adhoc_contractual_action(docname, action, updated_data=None):
     print("------=-==-=-=-=-=-=-=-=-=-=-=-RAC-=-=-=-=-=-=-=-=-=-=-=-")
     """
     Executes the selected workflow action and updates the document state.
+
+    updated_data (optional): JSON string or dict of field edits made in the
+    same UI action that triggered this transition (e.g. Staff filling in
+    account_head / upfa_justification / upfa_selection_committee / the
+    upfa_declaration_* checkboxes right before clicking Submit/Forward).
+    Applied and saved BEFORE the workflow transition is evaluated, so any
+    transition condition sees the fresh values, not stale ones. Without this,
+    the frontend was already building and sending this payload
+    (handleConfirmWorkflowAction -> performActionCall({..., updated_data}))
+    but this endpoint had no parameter to receive it, so Frappe's argument
+    filtering silently dropped it and the edits were lost on every
+    Submit/Forward that wasn't preceded by a separate explicit Save.
     """
     print(f"\n--- [START] perform_recruitment_adhoc_contractual_action ---")
     print(f"Docname: {docname} | Action requested: {action}")
 
     try:
         doc = frappe.get_doc("Recruitment Adhoc Contractual", docname)
-        current_state = doc.workflow_state or "Draft"
+
+        if updated_data:
+            if isinstance(updated_data, str):
+                updated_data = json.loads(updated_data)
+
+            meta = frappe.get_meta("Recruitment Adhoc Contractual")
+
+            for f in meta.fields:
+                if f.fieldtype != "Table" and f.fieldname in updated_data:
+                    doc.set(f.fieldname, updated_data[f.fieldname])
+
+            for f in meta.fields:
+                if f.fieldtype == "Table":
+                    items_data = updated_data.get(f.fieldname)
+                    if items_data and isinstance(items_data, list):
+                        doc.set(f.fieldname, [])  # Clear existing
+                        for item in items_data:
+                            doc.append(f.fieldname, item)
+
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            print(f"Applied updated_data fields before transition: {list(updated_data.keys())}")
+
+        current_state = doc.get("workflow_state") or "Draft"
         user_roles = frappe.get_roles(frappe.session.user)
 
         print(f"Current State: '{current_state}' | User: {frappe.session.user}")
@@ -310,7 +345,7 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
         transition = None
 
         print("Iterating over workflow transitions...")
-        for t in workflow.transitions:
+        for t in getattr(workflow, "transitions", []):
             print(f"  Checking Transition -> State: '{t.state}', Action: '{t.action}'")
 
             if t.state == current_state and t.action == action:
@@ -366,8 +401,8 @@ def perform_recruitment_adhoc_contractual_action(docname, action):
             print(f"[ERROR] {error_msg}")
             frappe.throw(error_msg)
 
-        doc.workflow_state = next_state
-        state_doc = next((s for s in workflow.states if s.state == next_state), None)
+        doc.set("workflow_state", next_state)
+        state_doc = next((s for s in getattr(workflow, "states", []) if getattr(s, "state", None) == next_state), None)
 
         if state_doc:
             print(f"Target state doc_status: {state_doc.doc_status} (Current docstatus: {doc.docstatus})")

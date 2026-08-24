@@ -371,13 +371,15 @@ Generated from system workflows.
 
 ## Workflow: Disbursal_Honorarium_Workflow_Through_Rest_API
 
+> **Updated 2026-08-20:** Policy change — Associate Dean stage removed; Dean now approves outright up to ₹2,00,000, and forwards to Director above that (mirroring `Direct_Purchase_Workflow`'s Dean→Director pattern). See [ERP_COMPLETE_APPLICATIONS_MANUAL.md §1.5](ERP_COMPLETE_APPLICATIONS_MANUAL.md#15-disbursal-of-honorarium-) for the user-facing description.
+
 ### Workflow Fields
 
 | Field | Value |
 |------|------|
 | name | Disbursal_Honorarium_Workflow_Through_Rest_API |
 | creation | 2026-02-11 18:39:06.833357 |
-| modified | 2026-02-11 18:39:14.655520 |
+| modified | 2026-08-20 15:02:21.554830 |
 | modified_by | Administrator |
 | owner | Administrator |
 | docstatus | 0 |
@@ -394,31 +396,31 @@ Generated from system workflows.
 
 | name | creation | modified | modified_by | owner | docstatus | idx | state | doc_status | update_field | update_value | is_optional_state | avoid_status_override | next_action_email_template | allow_edit | send_email | message | workflow_builder_id |
 |------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|
-| umann19ge5 | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 1 | Draft | 0 | workflow_state | None | 0 | 0 | None | All_ProRnd_User | 1 | None | None |
-| uma3if5ade | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 2 | Pending PI Approval | 0 | workflow_state | None | 0 | 0 | None | All_ProRnd_User | 1 | None | None |
-| uma87djskt | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 3 | Pending Staff Approval | 0 | workflow_state | None | 0 | 0 | None | staff, RnD | 1 | None | None |
-| umajg33gtq | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 4 | Pending HoS Approval | 0 | workflow_state | None | 0 | 0 | None | Hos, RnD (Head of Section, RnD) | 1 | None | None |
-| umai5gb52u | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 5 | Pending Associate Dean | 0 | workflow_state | None | 0 | 0 | None | Ado_RnD | 1 | None | None |
-| umal78cvnc | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 6 | Pending Dean Approval | 0 | workflow_state | None | 0 | 0 | None | Dean, RnD | 1 | None | None |
-| umal1rgm2f | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 7 | Approved | 1 | workflow_state | None | 0 | 0 | None | Administrator | 1 | None | None |
-| umacqhsrod | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 8 | Rejected | 1 | workflow_state | None | 0 | 0 | None | Administrator | 1 | None | None |
+| umann19ge5 | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 1 | Draft | 0 | workflow_state | None | 0 | 0 | None | Permanent Employee | 1 | None | None |
+| uma3if5ade | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 2 | Pending PI Approval | 0 | workflow_state | None | 0 | 0 | None | Permanent Employee | 1 | None | None |
+| uma87djskt | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 3 | Pending Staff Approval | 0 | workflow_state | None | 0 | 0 | None | staff, RnD | 1 | None | None |
+| umajg33gtq | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 4 | Pending HoS Approval | 0 | workflow_state | None | 0 | 0 | None | Hos, RnD (Head of Section, RnD) | 1 | None | None |
+| umal78cvnc | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 5 | Pending Dean Approval | 0 | workflow_state | None | 0 | 0 | None | Dean, RnD | 1 | None | None |
+| umal1rgm2f | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 6 | Approved | 1 | workflow_state | None | 0 | 0 | None | Administrator | 1 | None | None |
+| umacqhsrod | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 7 | Rejected | 1 | workflow_state | None | 0 | 0 | None | Administrator | 1 | None | None |
+| o3o94pboda | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 8 | Pending Director Approval | 0 | workflow_state | None | 0 | 0 | None | Director | 1 | None | None |
+
+`Pending PI Approval` has no transition leading into it (only `Pending Staff Approval` is reachable from `Draft`) — orphaned config, unrelated to this update, left as found.
 
 ### Workflow Transitions
 
 | name | creation | modified | modified_by | owner | docstatus | idx | state | action | next_state | allowed | allow_self_approval | send_email_to_creator | condition | workflow_builder_id |
 |------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|
-| umalqom7na | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 1 | Draft | Forward | Pending PI Approval | All_ProRnd_User | 1 | 0 |  | None |
-| umahjap3ls | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 2 | Draft | Forward | Pending Staff Approval | All_ProRnd_User | 1 | 0 |  | None |
-| umal0q314m | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 3 | Pending PI Approval | Reject | Rejected | All_ProRnd_User | 1 | 0 | None | None |
-| uma5elr5vb | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 4 | Pending Staff Approval | Forward | Pending HoS Approval | staff, RnD | 1 | 0 | None | None |
-| uma2193342 | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 5 | Pending Staff Approval | Reject | Rejected | staff, RnD | 1 | 0 | None | None |
-| uma2p2jvdh | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 6 | Pending HoS Approval | Forward | Pending Associate Dean | Hos, RnD (Head of Section, RnD) | 1 | 0 | doc.amount <= 30000 | None |
-| umari02rk1 | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 7 | Pending HoS Approval | Forward | Pending Dean Approval | Hos, RnD (Head of Section, RnD) | 1 | 0 | doc.amount > 30000 | None |
-| uma46t3u2l | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 8 | Pending HoS Approval | Reject | Rejected | Hos, RnD (Head of Section, RnD) | 1 | 0 | None | None |
-| uman7dun6m | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 9 | Pending Associate Dean | Approve | Approved | Ado_RnD | 1 | 0 | None | None |
-| umamjnfk34 | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 10 | Pending Associate Dean | Reject | Rejected | Ado_RnD | 1 | 0 | None | None |
-| umacrq5033 | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 11 | Pending Dean Approval | Approve | Approved | Dean, RnD | 1 | 0 | None | None |
-| umab7gtajd | 2026-02-11 18:39:06.833357 | 2026-02-11 18:39:14.655520 | Administrator | Administrator | 0 | 12 | Pending Dean Approval | Reject | Rejected | Dean, RnD | 1 | 0 | None | None |
+| umahjap3ls | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 1 | Draft | Submit | Pending Staff Approval | Permanent Employee | 1 | 0 |  | None |
+| uma5elr5vb | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 2 | Pending Staff Approval | Forward | Pending HoS Approval | staff, RnD | 1 | 0 | None | None |
+| uma2193342 | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 3 | Pending Staff Approval | Reject | Rejected | staff, RnD | 1 | 0 | None | None |
+| umari02rk1 | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 4 | Pending HoS Approval | Forward | Pending Dean Approval | Hos, RnD (Head of Section, RnD) | 1 | 0 |  | None |
+| uma46t3u2l | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 5 | Pending HoS Approval | Reject | Rejected | Hos, RnD (Head of Section, RnD) | 1 | 0 | None | None |
+| umacrq5033 | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 6 | Pending Dean Approval | Approve | Approved | Dean, RnD | 1 | 0 | doc.total_amount <= 200000 | None |
+| umab7gtajd | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 7 | Pending Dean Approval | Reject | Rejected | Dean, RnD | 1 | 0 | None | None |
+| o3o5ms5klr | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 8 | Pending Dean Approval | Forward | Pending Director Approval | Dean, RnD | 1 | 0 | doc.total_amount > 200000 | None |
+| o3ob6cn5lb | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 9 | Pending Director Approval | Approve | Approved | Director | 1 | 0 |  | None |
+| o3o0gl0saq | 2026-02-11 18:39:06.833357 | 2026-08-20 15:02:21.554830 | Administrator | Administrator | 0 | 10 | Pending Director Approval | Reject | Rejected | Director | 1 | 0 |  | None |
 
 ---
 

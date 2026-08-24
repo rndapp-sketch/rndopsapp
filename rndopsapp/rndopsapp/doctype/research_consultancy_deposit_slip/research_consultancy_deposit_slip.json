@@ -109,7 +109,8 @@
   {
    "fieldname": "cgst_9",
    "fieldtype": "Currency",
-   "label": "CGST @9% on Consultancy Fee"
+   "label": "CGST @9% on Consultancy Fee",
+   "precision": "2"
   },
   {
    "fieldname": "sgst_9",
@@ -125,7 +126,8 @@
   {
    "fieldname": "overhead_amount",
    "fieldtype": "Currency",
-   "label": "Overhead Amount 15% (inclusive)"
+   "label": "Overhead Amount 15% (inclusive)",
+   "precision": "2"
   },
   {
    "fieldname": "credit_distribution_section",
@@ -145,7 +147,8 @@
   {
    "fieldname": "total_gst",
    "fieldtype": "Currency",
-   "label": "Total GST"
+   "label": "Total GST",
+   "precision": "2"
   },
   {
    "fieldname": "total_budget",
@@ -262,7 +265,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-16 11:19:28.512532",
+ "modified": "2026-08-11 15:24:46.670723",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Research Consultancy Deposit Slip",
@@ -290,6 +293,18 @@
    "read": 1,
    "report": 1,
    "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
    "share": 1,
    "write": 1
   }

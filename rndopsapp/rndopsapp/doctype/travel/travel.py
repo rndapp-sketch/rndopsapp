@@ -211,6 +211,13 @@ def get_travel_fields(doc_name=None):
 				limit_page_length=500
 			)
 
+	# Other-PI dropdown: restrict to Permanent Employees (all PIs are Permanent Employees)
+	try:
+		from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import _get_permanent_employee_options
+		link_options["travel_other_pi_id"] = _get_permanent_employee_options()
+	except Exception:
+		pass
+
 	# Department options (explicit)
 	try:
 		departments = frappe.get_all(
@@ -503,6 +510,108 @@ def save_travel(doc_data):
 		frappe.throw(f"Failed to save Travel: {str(e)}")
 
 
+def _assign_travel_to_other_pi(doc):
+	"""Assign the Travel doc to the selected Other PI so it appears in their
+	Pending Tasks and they get notified while it sits in 'Pending Other PI'."""
+	other_pi = (doc.get("travel_other_pi_id") or "").strip()
+	if not other_pi:
+		return
+	try:
+		from frappe.desk.form.assign_to import add as assign_add
+
+		existing = frappe.get_all(
+			"ToDo",
+			filters={
+				"reference_type": "Travel",
+				"reference_name": doc.name,
+				"allocated_to": other_pi,
+				"status": "Open",
+			},
+			limit=1,
+		)
+		if not existing:
+			assign_add(
+				{
+					"assign_to": [other_pi],
+					"doctype": "Travel",
+					"name": doc.name,
+					"description": _(
+						"Travel application awaiting your approval "
+						"(charged to your project)."
+					),
+					"notify": 1,
+				}
+			)
+	except Exception:
+		# Assignment is a convenience — never let it block the submission.
+		frappe.log_error(frappe.get_traceback(), "Travel Other-PI assignment failed")
+
+
+def _clear_other_pi_assignment(doc):
+	"""Close the Other-PI's assignment once they've acted on the travel."""
+	other_pi = (doc.get("travel_other_pi_id") or "").strip()
+	if not other_pi:
+		return
+	try:
+		from frappe.desk.form.assign_to import remove as assign_remove
+
+		assign_remove("Travel", doc.name, other_pi)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel Other-PI unassign failed")
+
+
+def _resolve_dept_head(user_id):
+	"""Return the department head (HoD user) for a given user's department.
+
+	user -> User.department_name (a Department_prornd link) -> dept_head.
+	Returns None if anything is missing so callers can fall back gracefully.
+	"""
+	user_id = (user_id or "").strip()
+	if not user_id:
+		return None
+	try:
+		dept = frappe.db.get_value("User", user_id, "department_name")
+		if not dept:
+			return None
+		return frappe.db.get_value("Department_prornd", dept, "dept_head") or None
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel dept-head resolution failed")
+		return None
+
+
+def _assign_travel_to_user(doc, user, description):
+	"""Assign the Travel doc to a specific user (idempotent) so it lands in
+	their Pending Tasks and they get notified. Best-effort — never blocks."""
+	user = (user or "").strip()
+	if not user:
+		return
+	try:
+		from frappe.desk.form.assign_to import add as assign_add
+
+		existing = frappe.get_all(
+			"ToDo",
+			filters={
+				"reference_type": "Travel",
+				"reference_name": doc.name,
+				"allocated_to": user,
+				"status": "Open",
+			},
+			limit=1,
+		)
+		if not existing:
+			assign_add(
+				{
+					"assign_to": [user],
+					"doctype": "Travel",
+					"name": doc.name,
+					"description": description,
+					"notify": 1,
+				}
+			)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel assignment failed")
+
+
 @frappe.whitelist()
 def submit_travel(docname):
 	"""
@@ -531,7 +640,25 @@ def submit_travel(docname):
 
 		workflow = get_workflow("Travel")
 		transitions = get_transitions(doc, workflow)
-		transition = next((t for t in transitions if t["action"] == "Submit"), None)
+
+		# Other-PI flow: the travel is charged to a project owned by a different
+		# PI, so route it to that PI (Pending Other PI) instead of the normal chain.
+		is_other_pi = (doc.get("travel_other_pi") or "").strip() == "Other"
+		if is_other_pi and not doc.get("travel_other_pi_id"):
+			frappe.throw(_("Please select the Other PI before submitting."))
+
+		if is_other_pi:
+			transition = next(
+				(t for t in transitions
+				 if t["action"] == "Submit" and t["next_state"] == "Pending Other PI"),
+				None,
+			)
+		else:
+			transition = next(
+				(t for t in transitions
+				 if t["action"] == "Submit" and t["next_state"] != "Pending Other PI"),
+				None,
+			)
 
 		if not transition:
 			frappe.throw(_("Submit action is not available for your role on this document."))
@@ -544,6 +671,11 @@ def submit_travel(docname):
 		doc.add_comment("Workflow", _(next_state.state))
 
 		frappe.db.commit()
+
+		# Charged to another PI's project — hand the form to that PI.
+		if next_state.state == "Pending Other PI":
+			_assign_travel_to_other_pi(doc)
+
 		return {
 			"status": "success",
 			"message": f"Travel '{docname}' submitted successfully.",
@@ -657,16 +789,54 @@ def get_travel_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_travel_action(docname, action):
+def get_travel_pi_projects(pi=None):
+	"""Projects owned by the (session) PI — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+	return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def get_travel_project_account_heads(project_name):
+	"""Account heads for a given project — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_project_account_heads
+	return get_project_account_heads(project_name)
+
+
+@frappe.whitelist()
+def perform_travel_action(docname, action, extra_data=None):
 	"""
 	Executes the selected workflow action and updates the document state.
 	On 'Approved' state, publishes staged commit data to Kafka (two-phase commit pattern).
+
+	extra_data (optional JSON/dict): when the Other PI acts from the
+	'Pending Other PI' state they choose which of their own projects to charge
+	and the account head — passed here and persisted onto the document.
 	"""
 	from frappe.model.workflow import is_transition_condition_satisfied
 
 	try:
 		doc = frappe.get_doc("Travel", docname)
 		current_state = doc.workflow_state or "Draft"
+
+		# Only the specifically-assigned Other PI (or a System Manager) may act on a
+		# travel parked in 'Pending Other PI' — the 'Permanent Employee' role on the
+		# transition is not enough on its own.
+		if current_state == "Pending Other PI":
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			assigned_pi = (doc.get("travel_other_pi_id") or "").lower()
+			if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this travel application."))
+
+		# When the travel was charged to another PI's project, the Head-approval
+		# step is re-pointed to that FUNDING PI's department head (set at the
+		# Other-PI forward). Only they (or a System Manager) may act — the
+		# applicant's HoD does not approve a charge on someone else's project.
+		# For the normal flow this field is empty, so the guard is a no-op.
+		if current_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			designated_head = (doc.get("travel_head_approver_id") or "").lower()
+			if not is_system_manager and designated_head != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this travel application — it is with the funding PI's department head."))
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.db.get_value(
@@ -713,6 +883,51 @@ def perform_travel_action(docname, action):
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
 
+		# Other-PI approval: the PI charges the travel to one of THEIR OWN projects
+		# and picks that project's account head. Validate ownership + head, then persist.
+		if current_state == "Pending Other PI" and action in ("Forward", "Approve"):
+			from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
+				get_pi_projects,
+				get_project_account_heads,
+			)
+			if isinstance(extra_data, str):
+				extra_data = json.loads(extra_data or "{}")
+			extra_data = extra_data or {}
+
+			project_name = (extra_data.get("project_name") or "").strip()
+			account_head = (extra_data.get("account_head") or "").strip()
+			if not project_name or not account_head:
+				frappe.throw(_("Please select a project and account head before approving."))
+
+			# project must belong to the acting PI
+			owns = next((p for p in get_pi_projects() if p.get("value") == project_name), None)
+			if not owns:
+				frappe.throw(_("Selected project does not belong to you."))
+
+			# head must be one of that project's account heads
+			valid_heads = {h["value"].lower() for h in get_project_account_heads(project_name)}
+			if account_head.lower() not in valid_heads:
+				frappe.throw(_("Selected account head is not valid for this project."))
+
+			# resolve the head label to a Budget Head master record if one exists,
+			# otherwise fall back to the free-text account head note.
+			if frappe.db.exists("Budget Head", account_head):
+				bh_name = account_head
+			else:
+				bh_name = frappe.db.get_value("Budget Head", {"budget_head": account_head}, "name")
+			if bh_name:
+				doc.account_head = bh_name
+			else:
+				doc.account_head = frappe.db.get_value("Budget Head", {"budget_head": "Other"}, "name") or None
+
+			doc.travel_project_title = project_name
+			doc.travel_project_number = owns.get("project_no") or owns.get("project_number")
+
+			# Re-point the HoD step to the FUNDING PI's department head — the
+			# charge now sits on the Other PI's project, so their dept HoD (not
+			# the applicant's) approves. Falls back gracefully if unresolved.
+			doc.travel_head_approver_id = _resolve_dept_head(doc.get("travel_other_pi_id"))
+
 		# Update workflow state
 		doc.workflow_state = next_state
 
@@ -725,6 +940,26 @@ def perform_travel_action(docname, action):
 			doc.cancel()
 		else:
 			doc.save(ignore_permissions=True)
+
+		# The Other PI has acted (Forward/Put Back) — release their assignment
+		# and hand the form to the funding PI's department head.
+		if current_state == "Pending Other PI":
+			_clear_other_pi_assignment(doc)
+			if next_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+				_assign_travel_to_user(
+					doc,
+					doc.travel_head_approver_id,
+					_("Travel application awaiting your approval "
+					  "(charged to a project in your department)."),
+				)
+
+		# The funding-PI's HoD has acted — release their assignment.
+		if current_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+			try:
+				from frappe.desk.form.assign_to import remove as assign_remove
+				assign_remove("Travel", doc.name, doc.travel_head_approver_id)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), "Travel head unassign failed")
 
 		# --- Special Casual Leave deduction on Approval ---
 		if next_state == "Approved" and doc.travel_special_casual_leave == "Required":

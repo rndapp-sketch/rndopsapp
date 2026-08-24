@@ -19,7 +19,7 @@
   },
   {
    "fieldname": "description",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "label": "Description"
   }
  ],
@@ -27,7 +27,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-28 16:01:11.347632",
+ "modified": "2026-08-05 12:21:50.574746",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Sanction File",

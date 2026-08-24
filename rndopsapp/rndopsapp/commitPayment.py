@@ -84,6 +84,138 @@ def _fetch_account_head_commits_by_status(status):
     return []
 
 
+def _find_migrated_employee_commit(project_no, ps_emp_id, scr_id=None):
+    """
+    Fallback funding-source lookup for employees migrated from the legacy system,
+    who have no Recruitment Adhoc Contractual / Selection Committee Report chain.
+
+    Migrated employees have their Miscellaneous Commit name stored directly in
+    Project Staff Details.scr_id (it isn't a real Selection Committee Report),
+    so that's checked first. Failing that, looks for an Approved, project-level
+    "Miscellaneous Commit" (module == "Recruitment Adhoc Contractual",
+    commit_decommit == "Commit") for the same project, then re-fetches the
+    corresponding ledger row by (frapAppId=<Miscellaneous Commit name>,
+    projectNumber=project_no) so the caller gets back a row shaped identically
+    to a normal Recruitment-sourced commit — including the ledger-assigned
+    transactionCommitNumber the frontend needs to build a payment.
+
+    Returns a single-element list (same shape salary_payment_data normally
+    returns for a match) or None if nothing usable was found.
+    """
+    project_ref = frappe.db.get_value("Project Registration", {"project_no": project_no}, "name") or project_no
+
+    candidates = frappe.get_all(
+        "Miscellaneous Commit",
+        filters={
+            "project_number": project_ref,
+            "module": "Recruitment Adhoc Contractual",
+            "commit_decommit": "Commit",
+            "workflow_state": "Approved",
+        },
+        fields=["name", "budget_head", "project_number", "commit_amount", "linked_application", "modified"],
+        order_by="modified desc",
+        ignore_permissions=True,
+        limit_page_length=0,
+    )
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] project_no={project_no} project_ref={project_ref} scr_id={scr_id} candidates={[c.name for c in candidates]}")
+
+    if not candidates:
+        _mm_notify_salary_json(
+            f":x: Migrated-Employee Fallback — No Miscellaneous Commit Candidates ({ps_emp_id})",
+            {
+                "ps_emp_id": ps_emp_id,
+                "project_no": project_no,
+                "project_ref": project_ref,
+                "scr_id": scr_id,
+                "reason": (
+                    "No Approved Miscellaneous Commit with module='Recruitment Adhoc Contractual' "
+                    "and commit_decommit='Commit' exists for this project."
+                ),
+            },
+        )
+        return None
+
+    # Prefer the Miscellaneous Commit named directly in scr_id (this is how migrated
+    # employees' funding source is actually recorded); then one explicitly tagged to
+    # this employee via linked_application; otherwise the most recently approved
+    # project-level entry as a last resort.
+    chosen = None
+    pick_reason = None
+    if scr_id:
+        for c in candidates:
+            if c.name == scr_id:
+                chosen = c
+                pick_reason = "scr_id direct match"
+                break
+    if not chosen and ps_emp_id:
+        for c in candidates:
+            if str(c.get("linked_application") or "").strip() == str(ps_emp_id).strip():
+                chosen = c
+                pick_reason = "linked_application match"
+                break
+    if not chosen:
+        chosen = candidates[0]
+        pick_reason = "most-recently-modified guess (no scr_id/linked_application match)"
+
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] chosen Miscellaneous Commit={chosen.name} ({pick_reason})")
+
+    merged_commit_records = []
+    with ThreadPoolExecutor(max_workers=len(SALARY_COMMIT_STATUSES)) as executor:
+        future_to_status = {
+            executor.submit(_fetch_account_head_commits_by_status, status): status
+            for status in SALARY_COMMIT_STATUSES
+        }
+        for future in as_completed(future_to_status):
+            status = future_to_status[future]
+            try:
+                merged_commit_records.extend(future.result())
+            except Exception:
+                print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] ERROR fetching Account Head Commits for status={status}")
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"Migrated Employee Fallback Commit API Error: {status}"
+                )
+
+    for record in merged_commit_records:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("frapAppId")) != chosen.name or str(record.get("projectNumber") or "").strip() != str(project_no or "").strip():
+            continue
+
+        matched = dict(record)
+        matched["projectTitle"] = _get_project_title_by_number(matched.get("projectNumber"))
+        matched["source"] = "miscellaneous_commit"
+        matched["linked_miscellaneous_commit"] = chosen.name
+        print(
+            f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] Matched ledger commit for Miscellaneous Commit "
+            f"{chosen.name}: transactionCommitNumber={matched.get('transactionCommitNumber')}"
+        )
+        return [matched]
+
+    print(f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] Miscellaneous Commit {chosen.name} is Approved locally but not yet visible on ledger")
+    _mm_notify_salary_json(
+        f":x: Migrated-Employee Fallback — Chosen Commit Not On Ledger ({ps_emp_id})",
+        {
+            "ps_emp_id": ps_emp_id,
+            "project_no": project_no,
+            "project_ref": project_ref,
+            "scr_id": scr_id,
+            "all_candidates": [c.name for c in candidates],
+            "chosen_miscellaneous_commit": chosen.name,
+            "chosen_pick_reason": pick_reason,
+            "chosen_commit_details": {k: chosen.get(k) for k in ("budget_head", "project_number", "commit_amount", "linked_application", "modified")},
+            "ledger_records_fetched": len(merged_commit_records),
+            "reason": (
+                f"Chosen Miscellaneous Commit '{chosen.name}' (picked via: {pick_reason}) is Approved "
+                f"locally but no matching ledger row (frapAppId + projectNumber) was found among "
+                f"{len(merged_commit_records)} fetched Account Head Commit records with status in "
+                f"{SALARY_COMMIT_STATUSES}."
+            ),
+        },
+    )
+    return None
+
+
 def _json_contains_ps_emp_id(value, ps_emp_id):
     if isinstance(value, dict):
         if str(value.get("ps_emp_id")) == str(ps_emp_id):
@@ -264,12 +396,40 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
         print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] scr_id={scr_id} project_no={project_no} recruitment_doc_name={recruitment_doc_name}")
 
         if not recruitment_doc_name or not frappe.db.exists("Recruitment Adhoc Contractual", recruitment_doc_name):
-            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual — returning empty list")
-            _mm_notify(
-                f":warning: **Salary Payment Data**\n"
-                f"**Employee:** {ps_emp_id}\n"
-                f"**Info:** No matching Recruitment Adhoc Contractual found (interview_id={interview_id}) — returning empty list",
-                channel_id=_MM_SALARY_CHANNEL,
+            print(
+                f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual "
+                f"(interview_id={interview_id}) — checking Miscellaneous Commit fallback (migrated employee)"
+            )
+
+            fallback_result = _find_migrated_employee_commit(project_no, ps_emp_id, scr_id)
+            if fallback_result:
+                print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Migrated-employee fallback matched — using Miscellaneous Commit funding source")
+                _mm_notify(
+                    f":information_source: **Salary Payment Data — Migrated Employee Fallback**\n"
+                    f"**Employee:** {ps_emp_id}\n"
+                    f"**Project:** {project_no}\n"
+                    f"**Miscellaneous Commit:** {fallback_result[0].get('linked_miscellaneous_commit')}",
+                    channel_id=_MM_SALARY_CHANNEL,
+                )
+                return fallback_result
+
+            print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual and no approved Miscellaneous Commit — returning error")
+            _mm_notify_salary_json(
+                f":x: Salary Payment Data — No Funding Source ({ps_emp_id})",
+                {
+                    "ps_emp_id": ps_emp_id,
+                    "project_no": project_no,
+                    "scr_id": scr_id,
+                    "interview_id": interview_id,
+                    "recruitment_adhoc_contractual_checked": interview_id,
+                    "recruitment_adhoc_contractual_exists": bool(interview_id and frappe.db.exists("Recruitment Adhoc Contractual", interview_id)),
+                    "reason": (
+                        f"scr_id '{scr_id}' did not resolve to a Selection Committee Report "
+                        f"(or its interview_id had no Recruitment Adhoc Contractual), and the "
+                        f"migrated-employee Miscellaneous Commit fallback also found nothing usable "
+                        f"— see the fallback diagnostics message above/below for the specific reason."
+                    ),
+                },
             )
             return []
 
@@ -363,6 +523,44 @@ def get_project_available_amounts(project_number):
     if not project_number:
         return {"status": "error", "message": "Project number is required"}
 
+    def _dev_fallback():
+        """
+        DEV-ONLY fallback. The balance is normally served by an external ledger
+        service that is often unreachable in local setups (IP-restricted 403),
+        which makes every project read zero and locks all application modules.
+        When developer_mode is on we fall back to the locally recorded Fund
+        Received total so the flow can be tested. Never runs in production
+        (developer_mode is 0) and only when the ledger call itself fails.
+        """
+        if not frappe.conf.get("developer_mode"):
+            return None
+        try:
+            pr_name = frappe.db.get_value(
+                "Project Registration", {"project_no": project_number}, "name"
+            ) or project_number
+            received = flt(frappe.db.sql(
+                "SELECT IFNULL(SUM(fund_received_amt), 0) FROM `tabFund Received` WHERE prjreg_title = %s",
+                (pr_name,),
+            )[0][0])
+            if received <= 0:
+                return None
+            return {
+                "status": "success",
+                "source": "local_dev_fallback",
+                "data": {
+                    "projectNumber": project_number,
+                    "totalFundReceived": received,
+                    "totalCommitted": 0,
+                    "totalPaid": 0,
+                    "availableCommitAmount": received,
+                    "availablePaymentAmount": received,
+                    "actualBalance": received,
+                    "committable": received,
+                },
+            }
+        except Exception:
+            return None
+
     try:
         api_url = f"{LEDGER_API_BASE_URL}/total-available-amounts?projectNumber={project_number}"
 
@@ -389,7 +587,7 @@ def get_project_available_amounts(project_number):
                 f"Ledger API Error - Status: {response.status_code}, Response: {response.text}",
                 "Get Project Available Amounts API Error"
             )
-            return {
+            return _dev_fallback() or {
                 "status": "error",
                 "message": f"API returned status {response.status_code}",
                 "details": response.text
@@ -397,15 +595,15 @@ def get_project_available_amounts(project_number):
 
     except requests.exceptions.Timeout:
         frappe.log_error("Ledger API timeout", "Get Project Available Amounts Timeout")
-        return {"status": "error", "message": "API request timed out"}
+        return _dev_fallback() or {"status": "error", "message": "API request timed out"}
 
     except requests.exceptions.ConnectionError as e:
         frappe.log_error(str(e), "Get Project Available Amounts Connection Error")
-        return {"status": "error", "message": "Could not connect to the ledger API"}
+        return _dev_fallback() or {"status": "error", "message": "Could not connect to the ledger API"}
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Project Available Amounts Error")
-        return {"status": "error", "message": str(e)}
+        return _dev_fallback() or {"status": "error", "message": str(e)}
 
 
 @frappe.whitelist(allow_guest=True)

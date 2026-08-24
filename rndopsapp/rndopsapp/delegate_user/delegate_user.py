@@ -5,12 +5,24 @@ Public surface (called from api.py whitelisted wrappers):
   search_delegate_users(query="")
   get_delegate_scope(user=None)
   get_active_delegations(user=None)
-  delegate_user(delegate_user, delegation_type, scope_type, project_names, applications, valid_from, valid_to)
+  delegate_user(delegate_user, delegation_type, scope_type, project_names, applications,
+                 remove_project_names, remove_applications, valid_from, valid_to)
   undelegate_user(delegation_name)
+  create_application_on_behalf(doctype, delegator_user, project_name=None, fields=None)
 
 Helpers available to the rest of the app:
   get_visible_as_users(user=None)
   is_active_delegation(delegator_user, delegate_user, doctype=None, docname=None, action_type="read")
+  require_document_access(doc, action_type="read")
+    — call at the top of any single-document read/write API function in this
+      app (these bypass Frappe's native permission system, see
+      has_delegated_access()'s docstring below for why that hook alone isn't
+      enough).
+
+Registered in hooks.py:
+  permission_query_conditions — list-view scope, via *_permission_query() below
+  has_permission              — matters only for generic Frappe desk/report
+                                 access to these doctypes, via has_delegated_access()
 """
 
 import json
@@ -35,11 +47,11 @@ def _safe_json_list(value):
         return []
 
 
-def _require_permanent_employee():
-    """Raise PermissionError if the session user lacks the Permanent Employee role."""
-    if "Permanent Employee" not in frappe.get_roles(frappe.session.user):
+def _require_authenticated_user():
+    """Raise PermissionError if the session user is not logged in (Guest)."""
+    if frappe.session.user == "Guest":
         frappe.throw(
-            "Only users with the Permanent Employee role can manage delegations.",
+            "You must be logged in to manage delegations.",
             frappe.PermissionError,
         )
 
@@ -134,11 +146,12 @@ def is_active_delegation(
         if row.scope_type == "all":
             return True
 
-        if docname:
-            if row.scope_type == "project" and docname in _safe_json_list(row.project_names):
-                return True
-            if row.scope_type == "application" and docname in _safe_json_list(row.applications):
-                return True
+        if not doctype or not docname:
+            continue
+
+        row_names = _row_scope_names(row, doctype)
+        if row_names and docname in row_names:
+            return True
 
     return False
 
@@ -155,7 +168,7 @@ _APPLICATION_DOCTYPES = [
     ("Temporary Advance",             "Temporary Advance",             "applicant_webmail",         "project_name"),
     ("Advance Settlement",            "Advance Settlement",            None,                        "project_name"),
     ("Reimbursement",                 "Reimbursement",                 "applicant_webmail",         "project_number"),
-    ("Direct Purchase",               "Direct Purchase",               None,                        None),
+    ("Direct Purchase",               "Direct Purchase",               None,                        "project_no"),
     ("Disbursal of Consultancy",      "Disbursal of Consultancy",      "webmail_id",                None),
     ("Disbursal of Honorarium",       "Disbursal of Honorarium",       "webmail_id",                None),
     ("Loan Request",                  "Loan Request",                  "loan_for_webmail_id",       None),
@@ -163,6 +176,138 @@ _APPLICATION_DOCTYPES = [
     ("Indent Cum Sanction Sheet",     "Indent Cum Sanction Sheet",     "icss_applicant_webmail_id", None),
     ("Recruitment Adhoc Contractual", "Recruitment Adhoc Contractual", "webmail_id",                None),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Owner-field / project-field registries derived from _APPLICATION_DOCTYPES.
+# Single source of truth for both permission_query and has_permission hooks,
+# plus scope resolution (_row_scope_names / _scoped_doc_names_for_doctype).
+# ---------------------------------------------------------------------------
+
+_PROJECT_FIELD_BY_DOCTYPE = {
+    doctype: project_field
+    for _, doctype, _, project_field in _APPLICATION_DOCTYPES
+    if project_field
+}
+
+_DOCTYPE_OWNER_FIELDS = {
+    "Project Registration": ["pi_webmail", "pi_userid", "owner", "head_approver"],
+    **{
+        doctype: ([webmail_field, "owner"] if webmail_field else ["owner"])
+        for _, doctype, webmail_field, _ in _APPLICATION_DOCTYPES
+    },
+}
+
+# Doctypes whose project_field stores Project Registration's human-readable
+# `project_no` (e.g. "2627C-0217-CLEG0985SENT") rather than its internal
+# `name` (e.g. "2026063001001441") — confirmed against live data 2026-08-18.
+# `User Delegation.project_names` always stores `name` values (see
+# delegate_user()'s ownership check, which plucks "name"), so matching these
+# doctypes' project_field requires resolving name -> project_no first.
+# Advance Settlement is NOT here — its project_name field is a proper Link to
+# Project Registration and correctly stores `name` already. Temporary
+# Advance is deliberately NOT here either: its project_name field is free
+# text in practice (mixes `name` values and full project titles across rows,
+# confirmed via live data) and cannot be reliably resolved to either
+# identifier space by code — treat project-scoped matching against Temporary
+# Advance as best-effort/unreliable until that field's data is cleaned up.
+_PROJECT_FIELD_USES_PROJECT_NO = {"Travel", "TA DA Settlement", "Reimbursement", "Direct Purchase"}
+
+
+def _resolve_project_no_values(project_names):
+    """Map Project Registration `name` values to their `project_no` values."""
+    if not project_names:
+        return []
+    return frappe.get_all(
+        "Project Registration",
+        filters={"name": ["in", project_names]},
+        pluck="project_no",
+    )
+
+
+def _row_scope_names(row, doctype):
+    """
+    Resolve a single User Delegation row's scope to the set of *doctype*
+    document names it covers.  Returns None for scope_type == "all"
+    (everything), otherwise a (possibly empty) set of covered names.
+    """
+    if row.scope_type == "all":
+        return None
+
+    if row.scope_type == "application":
+        return {
+            entry["name"]
+            for entry in _safe_json_list(row.applications)
+            if isinstance(entry, dict) and entry.get("doctype") == doctype and entry.get("name")
+        }
+
+    if row.scope_type == "project":
+        project_names = _safe_json_list(row.project_names)
+        if not project_names:
+            return set()
+        if doctype == "Project Registration":
+            return set(project_names)
+        project_field = _PROJECT_FIELD_BY_DOCTYPE.get(doctype)
+        if not project_field:
+            return set()
+        match_values = (
+            _resolve_project_no_values(project_names)
+            if doctype in _PROJECT_FIELD_USES_PROJECT_NO
+            else project_names
+        )
+        if not match_values:
+            return set()
+        return set(frappe.get_all(
+            doctype,
+            filters={project_field: ["in", match_values]},
+            pluck="name",
+            limit=0,
+        ))
+
+    return set()
+
+
+def _scoped_doc_names_for_doctype(delegator_user, delegate_user, doctype):
+    """
+    Return None if the delegate has unrestricted ("all") access to *doctype*
+    from delegator_user, otherwise the union of document names covered by
+    their restricted (project/application) delegation rows.
+
+    Cached per-request on frappe.local since this is called once per
+    row-owning delegator per list query.
+    """
+    cache = getattr(frappe.local, "_delegation_scope_cache", None)
+    if cache is None:
+        cache = {}
+        frappe.local._delegation_scope_cache = cache
+    cache_key = (delegator_user, delegate_user, doctype)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    now = now_datetime()
+    rows = frappe.get_all(
+        "User Delegation",
+        filters={
+            "delegator_user": delegator_user,
+            "delegate_user": delegate_user,
+            **_ACTIVE_FILTERS,
+        },
+        fields=["scope_type", "project_names", "applications", "valid_from", "valid_to"],
+        limit=0,
+    )
+
+    names = set()
+    for row in rows:
+        if not _row_is_time_valid(row, now):
+            continue
+        row_names = _row_scope_names(row, doctype)
+        if row_names is None:
+            cache[cache_key] = None
+            return None
+        names |= row_names
+
+    cache[cache_key] = names
+    return names
 
 
 def _query_applications(user):
@@ -233,9 +378,9 @@ _VALID_SCOPE_TYPES = {"all", "project", "application"}
 def search_delegate_users(query=""):
     """
     Return up to 20 active, non-self Users matching *query* (email / full_name).
-    Caller must have Permanent Employee role.
+    Caller must be logged in (any authenticated user).
     """
-    _require_permanent_employee()
+    _require_authenticated_user()
 
     current_user = frappe.session.user
     query = (query or "").strip()
@@ -281,7 +426,7 @@ def get_delegate_scope(user=None):
     Return projects and applications that belong to / are assigned to *user*,
     plus the list of users already delegated by *user*.
     """
-    _require_permanent_employee()
+    _require_authenticated_user()
     target = _resolve_target_user(user)
 
     # ── Current delegates for this user ──────────────────────────────────────
@@ -346,7 +491,7 @@ def get_active_delegations(user=None):
     """
     Return all active (enabled, non-revoked) delegations created by *user*.
     """
-    _require_permanent_employee()
+    _require_authenticated_user()
     target = _resolve_target_user(user)
 
     rows = frappe.get_all(
@@ -378,6 +523,8 @@ def get_active_delegations(user=None):
             "delegate_user_name": name_map.get(r.delegate_user, r.delegate_user),
             "delegation_type":    r.delegation_type,
             "scope_type":         r.scope_type,
+            "project_names":      _safe_json_list(r.project_names),
+            "applications":       _safe_json_list(r.applications),
             "project_count":      len(_safe_json_list(r.project_names)),
             "application_count":  len(_safe_json_list(r.applications)),
             "valid_from":         r.valid_from,
@@ -388,12 +535,33 @@ def get_active_delegations(user=None):
     ]
 
 
+def _dedupe_applications(entries):
+    """Deduplicate {doctype, name} dicts by (doctype, name), order preserved.
+    Silently drops malformed entries (not a dict, or missing either key)."""
+    seen = set()
+    result = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        doctype, name = entry.get("doctype"), entry.get("name")
+        if not doctype or not name:
+            continue
+        key = (doctype, name)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append({"doctype": doctype, "name": name})
+    return result
+
+
 def delegate_user(
     delegate_user,
     delegation_type=None,
     scope_type=None,
     project_names=None,
     applications=None,
+    remove_project_names=None,
+    remove_applications=None,
     valid_from=None,
     valid_to=None,
 ):
@@ -403,13 +571,19 @@ def delegate_user(
     On CREATE  — defaults: delegation_type="View Only", scope_type="all".
     On UPDATE  — only fields explicitly provided are changed:
                  project_names and applications are MERGED (deduplicated),
+                 remove_project_names / remove_applications SUBTRACT matching
+                 entries (applied after the merge, so a name in both lists
+                 ends up removed),
                  scope_type is NOT downgraded (e.g. "project" → "all") unless
                  the caller explicitly passes scope_type="all",
                  delegation_type and validity window are kept unless passed.
 
+    applications entries use the shape {"doctype": ..., "name": ...} — see
+    docs/delegate_user/application_level_delegation_backend_plan.md.
+
     delegator_user is always frappe.session.user — never trusted from the frontend.
     """
-    _require_permanent_employee()
+    _require_authenticated_user()
 
     current_user = frappe.session.user
 
@@ -437,11 +611,30 @@ def delegate_user(
         if isinstance(project_names, str)
         else list(project_names or [])
     )
-    incoming_apps = (
+    incoming_apps = _dedupe_applications(
         _safe_json_list(applications)
         if isinstance(applications, str)
         else list(applications or [])
     )
+    removed_projects = set(
+        _safe_json_list(remove_project_names)
+        if isinstance(remove_project_names, str)
+        else list(remove_project_names or [])
+    )
+    removed_apps = {
+        (e["doctype"], e["name"])
+        for e in _dedupe_applications(
+            _safe_json_list(remove_applications)
+            if isinstance(remove_applications, str)
+            else list(remove_applications or [])
+        )
+    }
+
+    # ── Validate application doctypes against the registry ───────────────────
+    valid_app_doctypes = {doctype for _, doctype, _, _ in _APPLICATION_DOCTYPES}
+    for entry in incoming_apps:
+        if entry["doctype"] not in valid_app_doctypes:
+            frappe.throw(f"'{entry['doctype']}' is not a delegable application doctype.")
 
     # Scope list requirements only enforced when scope_type is explicitly set
     if scope_type == "project" and not incoming_projects:
@@ -491,11 +684,13 @@ def delegate_user(
         merged_projects = list(
             dict.fromkeys(_safe_json_list(doc.project_names) + incoming_projects)
         )
+        merged_projects = [p for p in merged_projects if p not in removed_projects]
 
-        # Merge applications — deduplicated, order preserved
-        merged_apps = list(
-            dict.fromkeys(_safe_json_list(doc.applications) + incoming_apps)
-        )
+        # Merge applications — deduplicated by (doctype, name), order preserved
+        merged_apps = _dedupe_applications(_safe_json_list(doc.applications) + incoming_apps)
+        merged_apps = [
+            e for e in merged_apps if (e["doctype"], e["name"]) not in removed_apps
+        ]
 
         # scope_type: only change when caller explicitly passes it
         if scope_type is not None:
@@ -570,8 +765,10 @@ def _build_permission_query(user, table, fields):
        the delegator's, so no expansion is needed.
 
     3. Active delegations exist, user's read access is entirely if_owner-gated
-       → return the delegation-aware filter that replaces Frappe's implicit
-       "owner = me" with "owner/webmail IN (me + delegators)".
+       → split delegators into unrestricted ("all"-scope) and restricted
+       (project/application-scope).  Unrestricted delegators expand the
+       implicit "owner = me" field match; restricted delegators contribute an
+       explicit "name IN (...)" branch limited to their resolved scope.
 
     Delegation never reduces access; it only adds records.
     """
@@ -592,109 +789,276 @@ def _build_permission_query(user, table, fields):
     if _user_has_unrestricted_read(user_roles, doctype):
         return ""
 
-    # User's access is if_owner-gated only.  Expand the implicit "owner = me"
-    # to include every delegator so their records become visible too.
-    quoted = ", ".join(frappe.db.escape(u) for u in visible)
-    parts = [f"`{table}`.`{field}` in ({quoted})" for field in fields]
-    return "(" + " OR ".join(parts) + ")"
+    delegators = visible[1:]
+    unrestricted = [user]
+    restricted_name_sets = []
+    for delegator in delegators:
+        scoped = _scoped_doc_names_for_doctype(delegator, user, doctype)
+        if scoped is None:
+            unrestricted.append(delegator)
+        elif scoped:
+            restricted_name_sets.append(scoped)
+
+    quoted = ", ".join(frappe.db.escape(u) for u in unrestricted)
+    field_parts = [f"`{table}`.`{field}` in ({quoted})" for field in fields]
+    branches = ["(" + " OR ".join(field_parts) + ")"]
+
+    for scoped in restricted_name_sets:
+        quoted_names = ", ".join(frappe.db.escape(n) for n in scoped)
+        branches.append(f"`{table}`.`name` in ({quoted_names})")
+
+    return "(" + " OR ".join(branches) + ")"
 
 
-def project_registration_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabProject Registration",
-        ["pi_webmail", "pi_userid", "owner", "head_approver"],
+def _permission_query_for(doctype):
+    """Build a permission_query_conditions callable for *doctype* using the
+    shared owner-field registry."""
+    table = f"tab{doctype}"
+    fields = _DOCTYPE_OWNER_FIELDS[doctype]
+
+    def _query(user=None):
+        return _build_permission_query(user, table, fields)
+
+    return _query
+
+
+project_registration_permission_query      = _permission_query_for("Project Registration")
+travel_permission_query                    = _permission_query_for("Travel")
+ta_da_settlement_permission_query          = _permission_query_for("TA DA Settlement")
+temporary_advance_permission_query         = _permission_query_for("Temporary Advance")
+advance_settlement_permission_query        = _permission_query_for("Advance Settlement")
+reimbursement_permission_query             = _permission_query_for("Reimbursement")
+direct_purchase_permission_query           = _permission_query_for("Direct Purchase")
+disbursal_of_consultancy_permission_query  = _permission_query_for("Disbursal of Consultancy")
+disbursal_of_honorarium_permission_query   = _permission_query_for("Disbursal of Honorarium")
+loan_request_permission_query              = _permission_query_for("Loan Request")
+indent_general_form_permission_query       = _permission_query_for("Indent General Form")
+indent_cum_sanction_sheet_permission_query = _permission_query_for("Indent Cum Sanction Sheet")
+recruitment_adhoc_contractual_permission_query = _permission_query_for("Recruitment Adhoc Contractual")
+
+
+def user_delegation_permission_query(user=None):
+    """
+    Restrict desk/report visibility of User Delegation rows to the ones a
+    user is party to (as delegator or delegate).  Needed because the DocType
+    grants `read` to the built-in `All` role — without this, any logged-in
+    account could list every delegation in the system via desk/report view.
+    """
+    if not user:
+        user = frappe.session.user
+    if "System Manager" in frappe.get_roles(user):
+        return ""
+    escaped = frappe.db.escape(user)
+    return (
+        f"(`tabUser Delegation`.`delegator_user` = {escaped} "
+        f"OR `tabUser Delegation`.`delegate_user` = {escaped})"
     )
 
 
-def travel_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabTravel",
-        ["webmail_id_travel", "owner"],
+# ---------------------------------------------------------------------------
+# has_permission hooks — registered in hooks.py
+# ---------------------------------------------------------------------------
+
+_WRITE_PERMISSION_TYPES = {"write", "create", "delete", "submit", "cancel", "amend"}
+
+
+def has_delegated_access(doc, ptype=None, user=None):
+    """
+    has_permission hook for Project Registration and the application doctypes
+    in _DOCTYPE_OWNER_FIELDS.  Returns True to explicitly grant access, or
+    None to defer to Frappe's normal permission system.
+
+    NOTE ON EFFECTIVENESS: Frappe's has_permission hook is a deny-only gate —
+    returning True/None here never grants access beyond what the caller's
+    role + Frappe's own `owner` field + DocShare already allow; it can only
+    additionally *deny* (by returning False, which this never does). This
+    module's own whitelisted API functions (save_travel, submit_travel,
+    get_travel_commit_details, etc.) don't go through Frappe's permission
+    system at all — they call frappe.get_doc()/doc.save(ignore_permissions=True)
+    directly. For those, use require_document_access() below instead; this
+    hook only matters for generic Frappe access paths (desk, report view)
+    that this app's own frontend doesn't use for these doctypes.
+    """
+    if not user:
+        user = frappe.session.user
+    if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+        return None
+
+    owner_fields = _DOCTYPE_OWNER_FIELDS.get(doc.doctype)
+    if not owner_fields:
+        return None
+
+    delegators = {doc.get(f) for f in owner_fields if doc.get(f)}
+    delegators.discard(user)
+    if not delegators:
+        return None
+
+    if ptype == "workflow_action":
+        action_type = "workflow"
+    elif ptype in _WRITE_PERMISSION_TYPES:
+        action_type = "write"
+    else:
+        action_type = "read"
+
+    for delegator in delegators:
+        if is_active_delegation(
+            delegator, user, doctype=doc.doctype, docname=doc.name, action_type=action_type
+        ):
+            return True
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Explicit authorization helper for this app's own whitelisted API functions.
+# These bypass Frappe's native permission system (ignore_permissions=True,
+# plain frappe.get_doc() with no check_permission() call), so has_permission
+# hooks above never run for them. This is the real enforcement point.
+# ---------------------------------------------------------------------------
+
+def require_document_access(doc, action_type="read"):
+    """
+    Raise frappe.PermissionError unless the session user owns *doc* (via any
+    of its owner-identifying fields — see _DOCTYPE_OWNER_FIELDS) or holds an
+    active delegation from an owner that covers this action/document, or is
+    System Manager / Administrator.
+
+    Call this at the top of any whitelisted function that reads or writes a
+    single document by name, in doctypes covered by _DOCTYPE_OWNER_FIELDS.
+
+    action_type: "read" | "write" | "workflow"
+    """
+    user = frappe.session.user
+    if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+        return
+
+    owner_fields = _DOCTYPE_OWNER_FIELDS.get(doc.doctype, ["owner"])
+    owners = {doc.get(f) for f in owner_fields if doc.get(f)}
+
+    if user in owners:
+        return
+
+    for owner in owners:
+        if is_active_delegation(owner, user, doctype=doc.doctype, docname=doc.name, action_type=action_type):
+            return
+
+    frappe.throw(
+        f"You do not have permission to access this {doc.doctype}.",
+        frappe.PermissionError,
     )
 
 
-def ta_da_settlement_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabTA DA Settlement",
-        ["webmail_id", "owner"],
+# ---------------------------------------------------------------------------
+# Create on behalf — a delegate with View and Edit / Workflow Action
+# delegation scoped to a project (or "all") may create a new application
+# document for that project, attributed to the project owner.
+# ---------------------------------------------------------------------------
+
+_BLOCKED_CREATE_FIELDS = {"name", "owner", "docstatus", "workflow_state", "creation", "modified", "modified_by", "idx"}
+
+
+def _project_scope_allows_create(delegator_user, delegate_user, target_project):
+    """
+    Return True if delegate_user may create a new application document on
+    behalf of delegator_user for *target_project* (a Project Registration
+    name), under an active View and Edit / Workflow Action delegation.
+
+    scope_type='all'         -> always allowed.
+    scope_type='project'     -> allowed only if target_project is in
+                                 project_names.
+    scope_type='application' -> never allowed (no forward-looking scope; it
+                                 only lists specific existing documents).
+    """
+    now = now_datetime()
+    rows = frappe.get_all(
+        "User Delegation",
+        filters={"delegator_user": delegator_user, "delegate_user": delegate_user, **_ACTIVE_FILTERS},
+        fields=["delegation_type", "scope_type", "project_names", "valid_from", "valid_to"],
+        limit=0,
     )
+    for row in rows:
+        if not _row_is_time_valid(row, now):
+            continue
+        if row.delegation_type not in ("View and Edit", "Workflow Action"):
+            continue
+        if row.scope_type == "all":
+            return True
+        if row.scope_type == "project" and target_project and target_project in _safe_json_list(row.project_names):
+            return True
+    return False
 
 
-def temporary_advance_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabTemporary Advance",
-        ["applicant_webmail", "owner"],
-    )
+def create_application_on_behalf(doctype, delegator_user, project_name=None, fields=None):
+    """
+    Create a new application document (one of _APPLICATION_DOCTYPES) on
+    behalf of delegator_user.  Requires an active View and Edit / Workflow
+    Action delegation from delegator_user to the session user, covering
+    project_name (scope_type='all', or scope_type='project' with project_name
+    in project_names).
 
+    The new document's owner-identifying field (webmail_id_travel /
+    applicant_webmail / etc.) is force-set to delegator_user regardless of
+    what *fields* contains — the caller cannot spoof this. Frappe's own
+    `owner` field is left to default to the session user (the delegate),
+    preserving an audit trail of who actually created the record.
+    """
+    _require_authenticated_user()
+    session_user = frappe.session.user
 
-def advance_settlement_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabAdvance Settlement",
-        ["owner"],
-    )
+    valid_app_doctypes = {dt for _, dt, _, _ in _APPLICATION_DOCTYPES}
+    if doctype not in valid_app_doctypes:
+        frappe.throw(f"'{doctype}' is not a delegable application doctype.")
 
+    if delegator_user == session_user:
+        frappe.throw("Use the normal create flow for your own applications.")
 
-def reimbursement_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabReimbursement",
-        ["applicant_webmail", "owner"],
-    )
+    if not frappe.db.exists("User", {"name": delegator_user, "enabled": 1}):
+        frappe.throw(f"User '{delegator_user}' does not exist or is disabled.")
 
+    owner_field = next((wf for _, dt, wf, _ in _APPLICATION_DOCTYPES if dt == doctype), None)
+    project_field = _PROJECT_FIELD_BY_DOCTYPE.get(doctype)
 
-def direct_purchase_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabDirect Purchase",
-        ["owner"],
-    )
+    if project_field and not project_name:
+        frappe.throw(f"'{doctype}' requires project_name to create on behalf of another user.")
 
+    if not _project_scope_allows_create(delegator_user, session_user, project_name):
+        detail = f" for project '{project_name}'" if project_name else ""
+        frappe.throw(
+            f"You are not authorised to create a {doctype} on behalf of {delegator_user}{detail}.",
+            frappe.PermissionError,
+        )
 
-def disbursal_of_consultancy_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabDisbursal of Consultancy",
-        ["webmail_id", "owner"],
-    )
+    doc = frappe.new_doc(doctype)
+    safe_fields = {
+        k: v for k, v in (fields or {}).items()
+        if k not in _BLOCKED_CREATE_FIELDS and k not in (owner_field, project_field)
+    }
+    doc.update(safe_fields)
+    if owner_field:
+        doc.set(owner_field, delegator_user)
+    if project_field and project_name:
+        # project_name is always a Project Registration `name`; some doctypes'
+        # project_field stores the human-readable `project_no` instead — see
+        # _PROJECT_FIELD_USES_PROJECT_NO for why and which.
+        if doctype in _PROJECT_FIELD_USES_PROJECT_NO:
+            project_no_values = _resolve_project_no_values([project_name])
+            if not project_no_values:
+                frappe.throw(f"Project '{project_name}' could not be resolved.")
+            doc.set(project_field, project_no_values[0])
+        else:
+            doc.set(project_field, project_name)
 
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
 
-def disbursal_of_honorarium_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabDisbursal of Honorarium",
-        ["webmail_id", "owner"],
-    )
-
-
-def loan_request_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabLoan Request",
-        ["loan_for_webmail_id", "owner"],
-    )
-
-
-def indent_general_form_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabIndent General Form",
-        ["igf_webmail_id", "owner"],
-    )
-
-
-def indent_cum_sanction_sheet_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabIndent Cum Sanction Sheet",
-        ["icss_applicant_webmail_id", "owner"],
-    )
-
-
-def recruitment_adhoc_contractual_permission_query(user=None):
-    return _build_permission_query(
-        user, "tabRecruitment Adhoc Contractual",
-        ["webmail_id", "owner"],
-    )
+    return {"status": "success", "name": doc.name}
 
 
 def undelegate_user(delegation_name):
     """
     Revoke a delegation.  Only the original delegator or a System Manager may do this.
     """
-    _require_permanent_employee()
+    _require_authenticated_user()
 
     if not frappe.db.exists("User Delegation", delegation_name):
         frappe.throw(f"Delegation '{delegation_name}' not found.")
