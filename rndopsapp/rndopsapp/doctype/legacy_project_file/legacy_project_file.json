@@ -1,0 +1,55 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-25 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "file_name",
+  "rel_path",
+  "file_ext"
+ ],
+ "fields": [
+  {
+   "columns": 4,
+   "fieldname": "file_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "File Name",
+   "read_only": 1
+  },
+  {
+   "columns": 6,
+   "description": "Path relative to the source system's PROJECT root, forward-slashed.",
+   "fieldname": "rel_path",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Relative Path",
+   "length": 255,
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_ext",
+   "fieldtype": "Data",
+   "label": "Extension",
+   "length": 10,
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-25 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Legacy Project File",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
