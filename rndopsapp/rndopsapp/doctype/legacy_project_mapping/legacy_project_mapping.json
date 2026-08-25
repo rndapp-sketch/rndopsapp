@@ -1,0 +1,170 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:project_registration",
+ "creation": "2026-08-25 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "project_registration",
+  "pragati_project_no",
+  "column_break_link",
+  "source_system",
+  "old_project_number",
+  "section_old_details",
+  "old_project_title",
+  "old_pi_name",
+  "column_break_old",
+  "old_status",
+  "match_method",
+  "title_similarity",
+  "section_files",
+  "files",
+  "section_import",
+  "import_batch",
+  "column_break_import",
+  "last_imported_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_registration",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project Registration",
+   "options": "Project Registration",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Denormalised copy of the linked project's project_no. Not unique -- a few project numbers are shared by more than one Project Registration.",
+   "fieldname": "pragati_project_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Pragati Project No",
+   "length": 60,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_link",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source_system",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Source System",
+   "options": "\nProman\nR&D OPS",
+   "reqd": 1
+  },
+  {
+   "fieldname": "old_project_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Old Project Number",
+   "length": 60,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_old_details",
+   "fieldtype": "Section Break",
+   "label": "Legacy Record"
+  },
+  {
+   "fieldname": "old_project_title",
+   "fieldtype": "Small Text",
+   "label": "Old Project Title"
+  },
+  {
+   "fieldname": "old_pi_name",
+   "fieldtype": "Data",
+   "label": "Old PI Name"
+  },
+  {
+   "fieldname": "column_break_old",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "old_status",
+   "fieldtype": "Data",
+   "label": "Old Status",
+   "length": 60
+  },
+  {
+   "fieldname": "match_method",
+   "fieldtype": "Data",
+   "label": "Match Method",
+   "length": 60
+  },
+  {
+   "description": "Fuzzy title similarity the mapping was accepted at. Anything below ~95 is worth a manual sanity check.",
+   "fieldname": "title_similarity",
+   "fieldtype": "Float",
+   "label": "Title Similarity %",
+   "precision": "1"
+  },
+  {
+   "fieldname": "section_files",
+   "fieldtype": "Section Break",
+   "label": "Legacy Excel Files"
+  },
+  {
+   "fieldname": "files",
+   "fieldtype": "Table",
+   "label": "Files",
+   "options": "Legacy Project File"
+  },
+  {
+   "fieldname": "section_import",
+   "fieldtype": "Section Break",
+   "label": "Import"
+  },
+  {
+   "fieldname": "import_batch",
+   "fieldtype": "Data",
+   "label": "Import Batch",
+   "length": 60,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_import",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_imported_on",
+   "fieldtype": "Datetime",
+   "label": "Last Imported On",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-25 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Legacy Project Mapping",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
