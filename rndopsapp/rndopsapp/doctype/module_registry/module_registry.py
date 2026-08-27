@@ -34,6 +34,41 @@ RNDOPS_HISTORY_ROLES = [
 	"System Manager",  # Always allow System Manager for admin access
 ]
 
+# Reference doctypes that carry the applicant's department but no explicit
+# head/approver field — their Cancellation Requests must still be scoped to
+# the head of that department instead of being shown to every head.
+DEPT_FIELD_MAP = {
+	"Travel": "department_travel",
+	"Reimbursement": "applicant_department",
+	"Indent General Form": "igf_department_centre_section",
+	"Indent Cum Sanction Sheet": "icss_applicant_department__centre__section",
+	"Direct Purchase": "applicant_department",
+	"Temporary Advance": "applicant_department",
+}
+
+# "Pending Head Approval" must be visible only to the specific head whose email
+# is stored on the document. Field name varies per doctype.
+HEAD_FIELD_MAP = {
+	"Recruitment Adhoc Contractual": "head",
+	"Project Registration": "head_approver",
+	"Rate Contract": "current_approver",
+}
+
+# Some states must be scoped to a single specific user (not just a role) whose
+# email is stored on the document, e.g. Reimbursement's Other-PI route parks
+# the form at 'Pending PI Approval' for the chosen PI only.
+SPECIFIC_APPROVER_MAP = {
+	"Reimbursement": ("Pending PI Approval", "reimbursement_for_id"),
+	"Travel": ("Pending Other PI", "travel_other_pi_id"),
+	"Indent General Form": ("Pending Other PI", "igf_other_pi_id"),
+	"Indent Cum Sanction Sheet": ("Pending Other PI", "icss_other_pi_id"),
+	"Rate Contract": ("Pending Other PI", "other_pi_email"),
+}
+
+# Kept in one place, referenced by name in get_pending_task and reused by
+# rndopsapp.dashboard.track_application so the two endpoints can't drift apart
+# on "which field names the actual approver on each doctype".
+
 
 @frappe.whitelist()
 def get_pending_task(page_name="pending-task"):
@@ -66,17 +101,7 @@ def get_pending_task(page_name="pending-task"):
 			return False
 		return v in dept_head_values or v.lower() in dept_head_names
 
-	# Reference doctypes that carry the applicant's department but no explicit
-	# head/approver field — their Cancellation Requests must still be scoped to
-	# the head of that department instead of being shown to every head.
-	dept_field_map = {
-		"Travel": "department_travel",
-		"Reimbursement": "applicant_department",
-		"Indent General Form": "igf_department_centre_section",
-		"Indent Cum Sanction Sheet": "icss_applicant_department__centre__section",
-		"Direct Purchase": "applicant_department",
-		"Temporary Advance": "applicant_department",
-	}
+	dept_field_map = DEPT_FIELD_MAP
 
 	# 2. Get Parent Module Registry
 	parent = frappe.get_all(
@@ -231,27 +256,12 @@ def get_pending_task(page_name="pending-task"):
 			meta.title_field if meta.title_field else ("title" if meta.has_field("title") else "name")
 		)
 
-		# "Pending Head Approval" must be visible only to the specific head
-		# whose email is stored on the document. Field name varies per doctype.
-		head_field_map = {
-			"Recruitment Adhoc Contractual": "head",
-			"Project Registration": "head_approver",
-			"Rate Contract": "current_approver",
-		}
+		head_field_map = HEAD_FIELD_MAP
 		head_field = head_field_map.get(dt)
 		if head_field and not meta.has_field(head_field):
 			head_field = None
 
-		# Some states must be scoped to a single specific user (not just a role)
-		# whose email is stored on the document, e.g. Reimbursement's Other-PI
-		# route parks the form at 'Pending PI Approval' for the chosen PI only.
-		specific_approver_map = {
-			"Reimbursement": ("Pending PI Approval", "reimbursement_for_id"),
-			"Travel": ("Pending Other PI", "travel_other_pi_id"),
-			"Indent General Form": ("Pending Other PI", "igf_other_pi_id"),
-			"Indent Cum Sanction Sheet": ("Pending Other PI", "icss_other_pi_id"),
-			"Rate Contract": ("Pending Other PI", "other_pi_email"),
-		}
+		specific_approver_map = SPECIFIC_APPROVER_MAP
 		sa_state = sa_field = None
 		sa = specific_approver_map.get(dt)
 		if sa and meta.has_field(sa[1]):
@@ -943,6 +953,62 @@ def get_document_touch_history(docname, doctype=None):
 	return {"success": True, "docname": docname, "matches": matches}
 
 
+_DOCSTATUS_TRANSITIONS = {
+	(0, 1): "Submitted the application",
+	(1, 2): "Cancelled the application",
+	(0, 2): "Discarded the draft",
+}
+
+
+def _humanize_field_label(meta, fieldname):
+	label = meta.get_label(fieldname)
+	if not label or label == "No Label":
+		label = frappe.unscrub(fieldname)
+	return label
+
+
+def _humanize_field_changes(meta, status_field, field_changes):
+	"""
+	Turns a raw Version diff into one sentence a non-technical user can read,
+	instead of a fieldname dump like "Edited: workflow_state, workflow_state".
+	Also de-dupes repeat entries for the same field within one Version row
+	(Frappe's own diff can list the same field twice in one save).
+	"""
+	deduped = {}
+	order = []
+	for c in field_changes:
+		fn = c["field"]
+		if fn not in deduped:
+			order.append(fn)
+		deduped[fn] = c
+	field_changes = [deduped[fn] for fn in order]
+
+	if not field_changes:
+		return "Edited document", field_changes
+
+	if len(field_changes) == 1:
+		c = field_changes[0]
+		fn = c["field"]
+
+		if fn == "docstatus":
+			verb = _DOCSTATUS_TRANSITIONS.get((c["old"], c["new"]))
+			if verb:
+				return verb, field_changes
+
+		if status_field and fn == status_field:
+			if c["old"]:
+				return f'Status changed from "{c["old"]}" to "{c["new"]}"', field_changes
+			return f'Status set to "{c["new"]}"', field_changes
+
+		label = _humanize_field_label(meta, fn)
+		if not c["old"] and c["new"]:
+			return f'Set "{label}" to "{c["new"]}"', field_changes
+		return f'Updated "{label}"', field_changes
+
+	labels = [_humanize_field_label(meta, c["field"]) for c in field_changes]
+	return f"Updated {', '.join(labels)}", field_changes
+
+
 def _build_document_touch_history(dt, docname, meta):
 	status_field = None
 	for field_name in ["workflow_state", "status", "state"]:
@@ -993,8 +1059,7 @@ def _build_document_touch_history(dt, docname, meta):
 					)
 			except Exception:
 				pass
-		field_names = [c["field"] for c in field_changes]
-		detail = f"Edited: {', '.join(field_names)}" if field_names else "Edited document"
+		detail, field_changes = _humanize_field_changes(meta, status_field, field_changes)
 		timeline.append(
 			{
 				"user": v.owner,
@@ -1015,8 +1080,12 @@ def _build_document_touch_history(dt, docname, meta):
 	for w in wf_actions:
 		if not w.completed_by:
 			continue
+		# NOTE: `workflow_state` on a completed Workflow Action is the state the
+		# document was sitting in WHILE this action was open — i.e. the step this
+		# user just acted on, not the state it moved to. Phrase it that way so it
+		# doesn't read as "moved to Pending Head Approval" when it's the opposite.
 		role_suffix = f" (as {w.completed_by_role})" if w.completed_by_role else ""
-		detail = f"Completed workflow action → {w.workflow_state}{role_suffix}"
+		detail = f'Actioned the "{w.workflow_state}" step{role_suffix}'
 		timeline.append(
 			{"user": w.completed_by, "timestamp": w.creation, "source": "Workflow Action", "detail": detail}
 		)

@@ -13,10 +13,6 @@ from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
     publish_commit as kafka_publish_commit,
     publish_payment as kafka_publish_payment
 )
-from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import (
-    get_project_number,
-    resolve_budget_head_id,
-)
 
 _MM_URL = "http://172.16.135.118:8065/api/v4/posts"
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
@@ -45,9 +41,9 @@ def _mm_notify_salary_json(title: str, data: dict):
     _mm_notify(f"**{title}**\n```json\n{body}\n```", channel_id=_MM_SALARY_CHANNEL)
 
 # External API endpoints
-LEDGER_API_BASE_URL = "http://172.16.134.81:18080/api/commit-payment-transactions"
-ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.134.81:18080/api/account-head-payments"
-ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.134.81:18080/api/account-head-commit"
+LEDGER_API_BASE_URL = "http://172.16.135.27:18083/api/commit-payment-transactions"
+ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.135.27:18083/api/account-head-payments"
+ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.135.27:18083/api/account-head-commit"
 
 # Valid commit statuses
 VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]
@@ -435,14 +431,7 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                     ),
                 },
             )
-            return [{
-                "status": "error",
-                "message": (
-                    f"No Recruitment/Selection Committee record found for employee '{ps_emp_id}', "
-                    f"and no approved Miscellaneous Commit exists for project '{project_no}'. "
-                    f"Salary payment cannot proceed."
-                ),
-            }]
+            return []
 
         merged_commit_records = []
         with ThreadPoolExecutor(max_workers=len(SALARY_COMMIT_STATUSES)) as executor:
@@ -901,56 +890,6 @@ def get_commit_staging_status(reference_name, statuses=None, required_payload_ke
             if all(payload.get(k) not in (None, "") for k in payload_keys):
                 filtered.append(row)
         records = filtered
-
-    return {"status": "success", "data": records}
-
-
-@frappe.whitelist()
-def get_account_head_payment_dlq_errors(project_ref_number=None, budget_head=None, limit=5):
-    """
-    Read-only lookup for the payment submission widget to check whether the
-    external ledger microservice rejected an AccountHeadPayment event after it
-    was published (e.g. "Advance settlement payment requires parent commit
-    amount and bill amount"). That failure happens asynchronously downstream
-    of submit_payment_data/submit_advance_settlement_payment returning
-    "success", so it can only be surfaced by polling this endpoint.
-
-    project_ref_number / budget_head are the same values the frontend already
-    holds for the document (Project Registration name, Budget Head name/id) —
-    they are resolved here the same way AccountHeadPaymentMapper.map_to_dto
-    resolves them before publishing, so the lookup lines up with whatever
-    projectNumber/accountHeadId the external consumer echoed back on failure.
-
-    "Kafka Payment DLQ Log" is System Manager-only, so this bypasses that
-    DocType-level restriction for one safe, filtered, read-only lookup.
-    """
-    if not project_ref_number and not budget_head:
-        return {"status": "error", "message": "project_ref_number or budget_head is required"}
-
-    filters = {}
-    if project_ref_number:
-        filters["project_number"] = get_project_number(project_ref_number)
-    if budget_head:
-        account_head_id = resolve_budget_head_id(budget_head)
-        if account_head_id is not None:
-            filters["account_head_id"] = account_head_id
-
-    try:
-        limit = int(limit)
-    except (TypeError, ValueError):
-        limit = 5
-
-    records = frappe.get_all(
-        "Kafka Payment DLQ Log",
-        filters=filters,
-        fields=[
-            "name", "error_type", "error_message", "project_number",
-            "account_head_id", "reference_name", "failed_at", "creation",
-        ],
-        order_by="creation desc",
-        limit_page_length=limit,
-        ignore_permissions=True,
-    )
 
     return {"status": "success", "data": records}
 
@@ -2135,12 +2074,8 @@ def search_salary_records(query=None, year=None, month=None, status=None, page=1
             "page": <int>,
             "page_size": <int>,
             "results": [ {year_month, year, month, employee_id, employee_name,
-                          email, department, designation, joining_date,
-                          term_completion_date, basic_salary, hra, working_days,
-                          pro_rata_basic, pro_rata_hra, pro_rata_medical, arrear,
-                          gross_pay, hra_deduction, medical_deduction, p_tax, ta,
-                          id_card_charge, electricity_bill, other_deduction,
-                          total_deduction, net_pay, comment, remarks,
+                          email, department, designation, basic_salary, hra,
+                          working_days, gross_pay, total_deduction, net_pay,
                           status, project_number, commit_date}, ... ],
             "available_year_months": [<all Salary Staging doc names>],
             "available_statuses": [<distinct status values found>],
@@ -2207,27 +2142,12 @@ def search_salary_records(query=None, year=None, month=None, status=None, page=1
                     "email": ud.get("email_id"),
                     "department": resolve_dept(ud.get("department")),
                     "designation": ud.get("designation"),
-                    "joining_date": ud.get("joining_date"),
-                    "term_completion_date": ud.get("term_completion_date"),
                     "basic_salary": ud.get("basic_salary"),
                     "hra": ud.get("hra"),
                     "working_days": ud.get("working_days"),
-                    "pro_rata_basic": ud.get("pro_rata_basic"),
-                    "pro_rata_hra": ud.get("pro_rata_hra"),
-                    "pro_rata_medical": ud.get("pro_rata_medical"),
-                    "arrear": ud.get("arrear"),
                     "gross_pay": ud.get("gross_pay"),
-                    "hra_deduction": ud.get("hra_deduction"),
-                    "medical_deduction": ud.get("medical_deduction"),
-                    "p_tax": ud.get("p_tax"),
-                    "ta": ud.get("ta"),
-                    "id_card_charge": ud.get("id_card_charge"),
-                    "electricity_bill": ud.get("electricity_bill"),
-                    "other_deduction": ud.get("other_deduction"),
                     "total_deduction": ud.get("total_deduction"),
                     "net_pay": ud.get("net_pay"),
-                    "comment": ud.get("comment"),
-                    "remarks": ud.get("remarks"),
                     "status": rec_status,
                     "project_number": r.get("projectNumber") or bd.get("project_no"),
                     "commit_date": r.get("commitDate"),

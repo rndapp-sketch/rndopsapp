@@ -207,7 +207,8 @@ class AccountHeadPaymentProducer:
         log_errors: bool = True,
         ref_details: Optional[str] = None,
         frap_app_id: Optional[str] = None,
-        module_name: Optional[str] = None
+        module_name: Optional[str] = None,
+        bill_amount: Optional[float] = None
     ) -> bool:
         """
         Publish Account Head Payment to Kafka.
@@ -223,6 +224,7 @@ class AccountHeadPaymentProducer:
             ref_details: Optional string for reference details
             frap_app_id: Optional override for Frap App ID
             module_name: Optional override for Module Name
+            bill_amount: Optional bill amount (defaults to payment_amount in the mapper)
 
         Returns:
             bool: True if successful, False otherwise
@@ -255,7 +257,7 @@ class AccountHeadPaymentProducer:
 
             # Map to event DTO
             event = AccountHeadPaymentMapper.map_to_event(
-                doc, project_name, payment_amount, budget_head, bmr, ref_details, frap_app_id, module_name
+                doc, project_name, payment_amount, budget_head, bmr, ref_details, frap_app_id, module_name, bill_amount
             )
 
             # Validate
@@ -399,7 +401,8 @@ def publish_payment(
     log_errors: bool = True,
     ref_details: Optional[str] = None,
     frap_app_id: Optional[str] = None,
-    module_name: Optional[str] = None
+    module_name: Optional[str] = None,
+    bill_amount: Optional[float] = None
 ) -> bool:
     """
     Convenience function to publish Account Head Payment.
@@ -414,10 +417,11 @@ def publish_payment(
         log_errors: Whether to log validation errors
         frap_app_id: Frap App ID (optional, defaults to project_name in mapper)
         module_name: Module name (optional)
+        bill_amount: Optional bill amount (defaults to payment_amount in the mapper)
 
     Returns:
         bool: True if successful, False otherwise
     """
     return AccountHeadPaymentProducer.publish(
-        doc, project_name, payment_amount, budget_head, bmr, validate, log_errors, ref_details, frap_app_id, module_name
+        doc, project_name, payment_amount, budget_head, bmr, validate, log_errors, ref_details, frap_app_id, module_name, bill_amount
     )

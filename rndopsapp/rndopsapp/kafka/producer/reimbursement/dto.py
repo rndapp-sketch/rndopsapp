@@ -79,6 +79,7 @@ class AccountHeadPaymentDTO:
     bmr: Optional[str] = None
     bankTransactionNumber: Optional[str] = None
     bankTransactionDate: Optional[str] = None
+    billAmount: Optional[float] = None
 
     def to_dict(self) -> dict:
         """Convert DTO to dictionary for JSON serialization."""
@@ -96,5 +97,6 @@ class AccountHeadPaymentDTO:
             "bankTransactionNumber": self.bankTransactionNumber,
             "bankTransactionDate": self.bankTransactionDate,
             "frapAppId":self.frapAppId,
-            "moduleId": self.moduleId
+            "moduleId": self.moduleId,
+            "billAmount": self.billAmount
         }

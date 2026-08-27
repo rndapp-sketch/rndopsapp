@@ -64,7 +64,7 @@ def execute():
     # Add the new state
     wf.append("states", {
         "state": STATE_NAME,
-        "doc_status": "1",
+        "doc_status": "0",
         "allow_edit": ALLOW_EDIT_ROLE,
         "update_field": "workflow_state",
         "update_value": STATE_NAME,

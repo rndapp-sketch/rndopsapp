@@ -338,12 +338,61 @@ def get_funding_agency_id(funding_agency_link: Optional[str]) -> Optional[str]:
         return None
 
 
+def resolve_budget_head_name(value) -> Optional[str]:
+    """
+    Resolve any of the three forms `account_head` is found in across the data
+    set to a canonical Budget Head document name.
+
+    `Project Received Budget.account_head` is declared as a Link to Budget Head,
+    but real rows hold one of:
+      1. the Budget Head docname       (e.g. "h1lhg99vfq") — set via the UI
+      2. the numeric Budget Head `id`  (e.g. "1")          — historically written
+         by the Kafka consumer's update_budget_breakup, which stored the
+         incoming `accountHeadId` verbatim into this Link field
+      3. the raw label                 (e.g. "Overhead")   — legacy/manual rows
+
+    Anything that resolves is returned as the docname; unresolvable input
+    returns None so callers can decide whether to skip or throw.
+
+    Args:
+        value: docname, numeric id, or budget_head label
+
+    Returns:
+        str or None: Budget Head document name if resolvable
+    """
+    if value in (None, ""):
+        return None
+
+    value_str = str(value).strip()
+
+    try:
+        # 1. Already a docname
+        if frappe.db.exists("Budget Head", value_str):
+            return value_str
+
+        # 2. Numeric Budget Head id
+        if value_str.isdigit():
+            by_id = frappe.db.get_value("Budget Head", {"id": int(value_str)}, "name")
+            if by_id:
+                return by_id
+
+        # 3. budget_head label
+        by_label = frappe.db.get_value("Budget Head", {"budget_head": value_str}, "name")
+        if by_label:
+            return by_label
+
+        return None
+    except Exception:
+        return None
+
+
 def get_budget_head_id(account_head: Optional[str]) -> Optional[int]:
     """
     Get budget head ID from Budget Head doctype.
 
     Args:
-        account_head: Budget Head document name or budget_head field value
+        account_head: Budget Head document name, numeric id, or budget_head
+            field value
 
     Returns:
         int or None: Budget Head ID if found
@@ -352,6 +401,15 @@ def get_budget_head_id(account_head: Optional[str]) -> Optional[int]:
         return None
 
     try:
+        # Fast path: the value is already the numeric id (as written into
+        # account_head by the Kafka consumer). Confirm it maps to a real
+        # Budget Head before trusting it.
+        account_head_str = str(account_head).strip()
+        if account_head_str.isdigit():
+            confirmed = frappe.db.get_value("Budget Head", {"id": int(account_head_str)}, "id")
+            if confirmed:
+                return confirmed
+
         # Try direct lookup by name
         account_head_id = frappe.db.get_value("Budget Head", account_head, "id")
 

@@ -337,7 +337,8 @@ class AccountHeadPaymentMapper:
         bmr: Optional[str] = None,
         ref_details: Optional[str] = None,
         frap_app_id: Optional[str] = None,
-        module_name: Optional[str] = None
+        module_name: Optional[str] = None,
+        bill_amount: Optional[float] = None
     ) -> AccountHeadPaymentDTO:
         """
         Map Frappe AccountHeadPayment document to AccountHeadPaymentDTO.
@@ -351,6 +352,10 @@ class AccountHeadPaymentMapper:
             ref_details: Optional override for reference details
             frap_app_id: Optional override for Frap App ID
             module_name: Optional override for Module Name
+            bill_amount: Optional bill amount (e.g. required by the downstream
+                ledger for TA/DA Settlement payments). Defaults to the resolved
+                payment_amount when not supplied, since for a settlement-style
+                payment the amount paid out is the bill amount.
 
         Returns:
             AccountHeadPaymentDTO: Mapped DTO ready for validation and publishing
@@ -363,6 +368,7 @@ class AccountHeadPaymentMapper:
         payment_particular = getattr(doc, "payment_particular", None) or f"Payment for {getattr(doc, 'name', 'NEW')}"
         payment_ref_details = ref_details or getattr(doc, "payment_reference_details", None) or getattr(doc, "name", "")
         payment_amt = payment_amount or getattr(doc, "payment_amount", 0.0)
+        resolved_bill_amount = flt(bill_amount) if bill_amount is not None else (flt(payment_amt) if payment_amt else None)
         payment_bmr = bmr or getattr(doc, "payment_bmr", None)
         payment_status = getattr(doc, "payment_status", "PENDING")
         bank_txn_num = getattr(doc, "bank_transaction_number", None)
@@ -407,7 +413,8 @@ class AccountHeadPaymentMapper:
             bankTransactionNumber=bank_txn_num,
             bankTransactionDate=bank_txn_date,
             frapAppId=resolved_frap_app_id,
-            moduleId=resolved_module_id
+            moduleId=resolved_module_id,
+            billAmount=resolved_bill_amount
         )
 
         return dto
@@ -422,7 +429,8 @@ class AccountHeadPaymentMapper:
         bmr: Optional[str] = None,
         ref_details: Optional[str] = None,
         frap_app_id: Optional[str] = None,
-        module_name: Optional[str] = None
+        module_name: Optional[str] = None,
+        bill_amount: Optional[float] = None
     ) -> AccountHeadPaymentEvent:
         """
         Map Frappe AccountHeadPayment document to AccountHeadPaymentEvent.
@@ -437,9 +445,10 @@ class AccountHeadPaymentMapper:
             ref_details: Optional override for reference details
             frap_app_id: Optional override for Frap App ID
             module_name: Optional override for Module Name
+            bill_amount: Optional bill amount override (defaults to payment_amount)
 
         Returns:
             AccountHeadPaymentEvent: Event wrapper ready for Kafka publishing
         """
-        dto = cls.map_to_dto(doc, project_name, payment_amount, budget_head, bmr, ref_details, frap_app_id, module_name)
+        dto = cls.map_to_dto(doc, project_name, payment_amount, budget_head, bmr, ref_details, frap_app_id, module_name, bill_amount)
         return AccountHeadPaymentEvent(dto)

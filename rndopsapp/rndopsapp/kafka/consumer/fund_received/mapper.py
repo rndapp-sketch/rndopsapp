@@ -5,6 +5,7 @@ import frappe
 from typing import Optional
 
 from .dto import FundReceivedUpdateDTO
+from ...utils import resolve_budget_head_name
 
 # Dedicated system user (User doctype, enabled=0, login disabled) so
 # ledger-driven comments/notifications are attributed to "Account Portal"
@@ -411,7 +412,20 @@ class FundReceivedConsumerMapper:
                 child_doc.parenttype = 'Fund Received'
                 child_doc.parentfield = parent_field
                 child_doc.idx = idx
-                child_doc.account_head = item.accountHeadId or item.accountHead
+                # account_head is a Link to Budget Head — it must hold the
+                # Budget Head DOCNAME, never the raw incoming accountHeadId.
+                # Writing the numeric id here corrupts the link the same way
+                # the prjreg_title bug did (see get_project_registration_name
+                # above): get_budget_head_id() then can't resolve it, and the
+                # next outbound publish emits accountHeadId: null for the row.
+                raw_head = item.accountHeadId or item.accountHead
+                resolved_head = resolve_budget_head_name(raw_head)
+                if not resolved_head:
+                    frappe.logger().warning(
+                        f"[FundReceivedConsumerMapper] Could not resolve Budget Head "
+                        f"'{raw_head}' for {doc_name} — storing raw value."
+                    )
+                child_doc.account_head = resolved_head or raw_head
                 child_doc.amount_received = item.amount
                 child_doc.remarks = item.remarks
                 child_doc.db_insert()

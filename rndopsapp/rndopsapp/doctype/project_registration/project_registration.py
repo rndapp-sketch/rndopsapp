@@ -1054,15 +1054,14 @@ def get_user_details_for_pi(user_email):
 		# IMPORTANT: Replace these with your actual custom field names in the User doctype
 		# user_dict = user_doc.as_dict()
 		user_dept = user_doc.get("department_name")
-		dept_doc = frappe.get_doc("Department_prornd", {"name": user_dept})
+		# applicant_department is a Link to Department_prornd, so it must hold the
+		# record's name (id), not its display text — user_dept already IS that id.
+		applicant_department = user_dept if user_dept and frappe.db.exists("Department_prornd", user_dept) else None
 
-		dept_dict = dept_doc.as_dict()
-
-		frappe.logger().warning(f"Jimmy Logging Debug Department_prornd (dept_id=1):{dept_dict['dept_name']}")
 		data = {
 			"principal_investigator_name": user_doc.full_name,
 			"designation": user_doc.get("designation_name"),
-			"applicant_department": dept_dict["dept_name"],
+			"applicant_department": applicant_department,
 			"copi_address": user_doc.get("inst_name_address"),
 			"copi_contact": user_doc.get("mobile_no")
 		}
@@ -1091,10 +1090,18 @@ def get_user_details_for_pi(user_email):
 			if ur_result.get("status") == "success" and ur_result.get("data"):
 				profile = ur_result["data"][0]
 				institution = (profile.get("institution_details_u_r") or [{}])[0]
+				# department_u_r is free-text from the external registry, not a
+				# Department_prornd id — resolve it to one, or leave blank if there's
+				# no matching internal department (e.g. an external institution).
+				department_text = institution.get("department_u_r")
+				applicant_department = (
+					frappe.db.get_value("Department_prornd", {"dept_name": department_text}, "name")
+					if department_text else None
+				)
 				return {
 					"principal_investigator_name": profile.get("full_name_u_r"),
 					"designation":                 institution.get("designation_u_r"),
-					"applicant_department":        institution.get("department_u_r"),
+					"applicant_department":        applicant_department,
 					"copi_address":                institution.get("address_institution_u_r"),
 					"copi_contact":                profile.get("mobile_number_u_r")
 				}

@@ -174,31 +174,18 @@ def get_my_applications():
 
 			# Check for pending cancellation requests for each record
 			pending_cancel_names = set()
-			cancel_info = {}
 			try:
 				cancellations = frappe.get_all(
 					"Cancellation Request",
 					filters={
 						"reference_doctype": dt_name,
 						"reference_name": ["in", [r.name for r in pending_records]],
+						"status": "Pending",
 						"docstatus": ["<", 2],
 					},
-					fields=["name", "reference_name", "status", "workflow_state", "creation"],
-					order_by="creation desc",
+					fields=["reference_name"],
 				)
-				for c in cancellations:
-					# Newest first, so the first one seen per document wins.
-					cancel_info.setdefault(
-						c.reference_name,
-						{
-							"name": c.name,
-							"status": c.status,
-							"workflow_state": c.workflow_state,
-							"creation": str(c.creation),
-						},
-					)
-					if (c.status or "").strip().lower() == "pending":
-						pending_cancel_names.add(c.reference_name)
+				pending_cancel_names = {c.reference_name for c in cancellations}
 			except Exception:
 				# Cancellation Request doctype might not exist yet
 				pass
@@ -217,7 +204,6 @@ def get_my_applications():
 						"owner": r.owner,
 						"docstatus": r.docstatus,
 						"has_pending_cancellation": r.name in pending_cancel_names,
-						"cancellation": cancel_info.get(r.name),
 					}
 				)
 
@@ -252,59 +238,6 @@ def get_my_applications():
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. CREATE CANCELLATION REQUEST
 # ──────────────────────────────────────────────────────────────────────────────
-
-
-@frappe.whitelist()
-def get_my_cancellation_requests():
-	"""
-	Every cancellation request raised by the current user, newest first —
-	whatever state it is in. Backs the "Cancellation Requests" tab, so a
-	requester can see what they asked to cancel and how far it has got.
-	"""
-	current_user = frappe.session.user
-
-	rows = frappe.get_all(
-		"Cancellation Request",
-		filters={"requested_by": current_user},
-		fields=[
-			"name",
-			"reference_doctype",
-			"reference_name",
-			"cancellation_reason",
-			"status",
-			"workflow_state",
-			"request_date",
-			"creation",
-			"modified",
-			"docstatus",
-		],
-		order_by="creation desc",
-	)
-
-	# Resolve the current state of each referenced document in one query per
-	# doctype rather than one per row.
-	by_doctype = {}
-	for r in rows:
-		by_doctype.setdefault(r.reference_doctype, []).append(r.reference_name)
-
-	ref_states = {}
-	for dt, names in by_doctype.items():
-		try:
-			meta = frappe.get_meta(dt)
-			field = "workflow_state" if meta.has_field("workflow_state") else None
-			if not field:
-				continue
-			for d in frappe.get_all(
-				dt, filters={"name": ["in", names]}, fields=["name", field]
-			):
-				ref_states[(dt, d.name)] = d.get(field)
-		except Exception:
-			continue
-
-	for r in rows:
-		r["reference_state"] = ref_states.get((r.reference_doctype, r.reference_name))
-
-	return {"success": True, "user": current_user, "count": len(rows), "requests": rows}
 
 
 @frappe.whitelist()
@@ -470,10 +403,6 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 					cancel_doc.flags.ignore_permissions = True
 					apply_workflow(cancel_doc, action)
 					cancel_doc.reload()
-
-				# The first state may be "Pending Head Approval"; skip it when the
-				# head cannot act on it (is the requester / is not configured).
-				_maybe_bypass_head_approval(cancel_doc, ref_doc, current_user, wf_doc)
 			except Exception as e:
 				frappe.log_error(
 					frappe.get_traceback(),
@@ -610,104 +539,6 @@ def _get_first_submitted_state(workflow_doc):
 
 	# Final fallback
 	return workflow_doc.states[0].state if workflow_doc.states else None
-
-
-# ---------------------------------------------------------------------------
-# "Pending Head Approval" bypass
-# ---------------------------------------------------------------------------
-# Cancellation requests for permanent employees are routed Draft -> Pending Head
-# Approval -> Pending Staff Approval. That deadlocks when the head is the person
-# asking for the cancellation (nobody else can move it) or when the document's
-# department has no dept_head set at all.
-#
-# Mode "deadlock" (default) skips the head stage only in those two cases.
-# Mode "always"   skips the head stage for every cancellation request.
-CANCELLATION_HEAD_BYPASS_MODE = "deadlock"
-
-HEAD_STATE = "Pending Head Approval"
-
-# Department field varies by source doctype.
-_DEPT_FIELDS = (
-	"department_travel",
-	"applicant_department",
-	"department",
-	"dept",
-	"department_name",
-)
-
-
-def _resolve_document_head(ref_doc):
-	"""Return (department, dept_head_user) for the document being cancelled."""
-	doc_dept = None
-	for f in _DEPT_FIELDS:
-		val = getattr(ref_doc, f, None)
-		if val and str(val).strip():
-			doc_dept = str(val).strip()
-			break
-
-	if not doc_dept:
-		return None, None
-
-	head = frappe.db.get_value("Department_prornd", doc_dept, "dept_head")
-	return doc_dept, (head or None)
-
-
-def _next_state_after_head(wf_doc):
-	"""
-	The state the head would forward to. Resolved from the workflow rather than
-	hardcoded, because each cancel_* workflow mirrors a different source flow.
-	"""
-	rejecting = ("reject", "return", "send back", "put back", "cancel")
-	fallback = None
-	for t in wf_doc.transitions:
-		if not t.state or t.state.strip().lower() != HEAD_STATE.lower():
-			continue
-		action = (t.action or "").strip().lower()
-		if any(word in action for word in rejecting):
-			continue
-		if action in ("forward", "approve"):
-			return t.next_state
-		fallback = fallback or t.next_state
-	return fallback
-
-
-def _maybe_bypass_head_approval(cancel_doc, ref_doc, requester, wf_doc):
-	"""
-	Skip the head stage when it cannot meaningfully act. Returns the reason the
-	bypass was applied, or None if the request was left at the head.
-	"""
-	if (cancel_doc.workflow_state or "").strip().lower() != HEAD_STATE.lower():
-		return None
-
-	doc_dept, head = _resolve_document_head(ref_doc)
-
-	if CANCELLATION_HEAD_BYPASS_MODE == "always":
-		reason = _("head approval is not required for cancellation requests")
-	elif not head:
-		reason = _("no department head is configured for {0}").format(doc_dept or _("this document"))
-	elif head.strip().lower() == (requester or "").strip().lower():
-		reason = _("the requester {0} is the head of {1}").format(requester, doc_dept)
-	else:
-		return None
-
-	next_state = _next_state_after_head(wf_doc)
-	if not next_state:
-		return None
-
-	cancel_doc.db_set("workflow_state", next_state, update_modified=False)
-	cancel_doc.reload()
-
-	try:
-		cancel_doc.add_comment(
-			"Info",
-			_("Head approval skipped automatically because {0}. Moved to {1}.").format(
-				reason, next_state
-			),
-		)
-	except Exception:
-		pass
-
-	return reason
 
 
 def _get_first_transition_action(workflow_doc):

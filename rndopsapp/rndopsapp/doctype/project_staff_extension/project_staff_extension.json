@@ -24,6 +24,10 @@
   "ex_period_staff",
   "increment_by_pi",
   "increment_by_staff",
+  "ex_computed_new_joining_date",
+  "ex_computed_new_completion_date",
+  "ex_final_new_joining_date",
+  "ex_final_new_completion_date",
   "ex_current_basic",
   "workflow_state",
   "tenure_row_created"
@@ -139,6 +143,32 @@
    "fieldname": "increment_by_staff",
    "fieldtype": "Data",
    "label": "Increment by Staff"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_computed_new_joining_date",
+   "fieldtype": "Date",
+   "label": "System Suggested New Term Start Date",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_computed_new_completion_date",
+   "fieldtype": "Date",
+   "label": "System Suggested New Term Completion Date",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_final_new_joining_date",
+   "fieldtype": "Date",
+   "label": "Final New Term Start Date"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_final_new_completion_date",
+   "fieldtype": "Date",
+   "label": "Final New Term Completion Date"
   },
   {
    "allow_on_submit": 1,

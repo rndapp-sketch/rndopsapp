@@ -2,6 +2,8 @@
 # Payment DLQ Consumer Handler - records account-head-payment-events-dlq failures
 # so they can be surfaced to the frontend instead of only living in logs/Mattermost.
 
+import time
+
 import frappe
 
 from .dto import PaymentDlqErrorDTO
@@ -38,7 +40,20 @@ class PaymentDlqConsumerHandler:
                 f"errorType={dto.error_type} | error={dto.error_message}"
             )
 
+            # The AccountHeadPayment insert that triggered this event may have been
+            # committed on another connection only moments ago (DLQ arrivals have been
+            # observed ~100ms after the "Published" log line) — this consumer's own
+            # connection can still be on an older transaction snapshot that predates
+            # it. Commit here to start a fresh snapshot, and retry briefly if the
+            # first lookup still misses, before falling back to the raw identifier.
+            frappe.db.commit()
             reference_name = PaymentDlqErrorMapper.resolve_reference(dto)
+            retries = 0
+            while not reference_name and retries < 3:
+                time.sleep(0.5)
+                frappe.db.commit()
+                reference_name = PaymentDlqErrorMapper.resolve_reference(dto)
+                retries += 1
 
             PaymentDlqErrorMapper.save_error(dto, reference_name)
             PaymentDlqErrorMapper.revert_payment_status(reference_name)

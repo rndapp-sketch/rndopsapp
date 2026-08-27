@@ -4,6 +4,7 @@
 import json
 
 from rndopsapp.rndopsapp.form_fields import get_dynamic_form_data
+from rndopsapp.rndopsapp.working_days import add_working_days
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -37,6 +38,7 @@ def extract_eval_expression(expression):
 class ProjectStaffExtension(Document):
 	def validate(self):
 		self.set_fields_from_project_staff_details()
+		self.refresh_new_tenure_preview()
 
 	def before_submit(self):
 		# Fires on the applicant's initial submission (docstatus 0 -> 1), which in
@@ -150,86 +152,72 @@ class ProjectStaffExtension(Document):
 					self.ex_date_of_expiry = latest_tenure.pstd_term_completion_date
 					self.ex_current_basic = latest_tenure.pstd_basic_salary
 
+	def refresh_new_tenure_preview(self):
+		"""Recompute the system-suggested new term dates whenever the
+		staff-allowed period changes, and default the editable "final" dates to
+		that suggestion the first time — once the staff (or HR) has edited the
+		final dates, later re-saves no longer overwrite their edit."""
+		if not self.ex_period_staff or not self.ex_emp_id:
+			return
+		try:
+			preview = self.compute_new_tenure_preview()
+		except frappe.ValidationError:
+			return  # e.g. no tenure history yet — nothing to preview.
+
+		self.ex_computed_new_joining_date = preview["new_joining_date"]
+		self.ex_computed_new_completion_date = preview["new_completion_date"]
+
+		if not self.ex_final_new_joining_date:
+			self.ex_final_new_joining_date = preview["new_joining_date"]
+		if not self.ex_final_new_completion_date:
+			self.ex_final_new_completion_date = preview["new_completion_date"]
+
+	def compute_new_tenure_preview(self, period=None, increment=None):
+		"""Dry-run computation (no DB writes) of the new tenure start/end dates
+		and basic salary that granting `period` months of extension would
+		produce, based on this employee's current tenure history. Falls back to
+		the staff-approval fields on this doc when period/increment are not
+		passed explicitly. Used both to populate the read-only "system
+		suggested" fields and by the standalone preview API."""
+		if not self.ex_emp_id:
+			frappe.throw(_("Employee Id is required to compute the new tenure preview."))
+		period = period if period not in (None, "") else self.ex_period_staff
+		increment = increment if increment not in (None, "") else self.increment_by_staff
+		return compute_new_tenure(self.ex_emp_id, period, increment)
+
 	def auto_create_tenure_record(self):
 		if not self.ex_emp_id:
 			return
 
-		ps_details_name = frappe.db.get_value("Project Staff Details", {"ps_emp_id": self.ex_emp_id}, "name")
-		if not ps_details_name:
-			frappe.throw(_("Project Staff Details not found for Employee ID {0}").format(self.ex_emp_id))
-
-		parent_doc = frappe.get_doc("Project Staff Details", ps_details_name)
-
-		tenures = parent_doc.get("table_ymed") or []
-		valid_tenures = [t for t in tenures if t.pstd_joining_date and t.pstd_term_completion_date]
-
-		if not valid_tenures:
-			frappe.throw(_("No existing tenure records found in Project Staff Details."))
-
-		from frappe.utils import getdate, add_days, add_months
-		sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
-
-		# Step 1: Calculate Total Months Worked
-		total_months = 0
-		for t in sorted_tenures:
-			d1 = getdate(t.pstd_joining_date)
-			d2 = getdate(t.pstd_term_completion_date)
-			days = (d2 - d1).days + 1
-			total_months += round(days / 30.437)
-
-		# Step 2: Determine New Joining Date
-		latest_tenure = sorted_tenures[-1]
-		latest_term_completion = getdate(latest_tenure.pstd_term_completion_date)
-
-		if total_months > 0 and total_months % 11 == 0:
-			new_joining_date = add_days(latest_term_completion, 3)
-		else:
-			new_joining_date = add_days(latest_term_completion, 1)
-
-		# Step 3: Calculate New Term Completion Date based on ex_period_staff (Period Of Re-Engagement/Extension Allowed by Staff (Month))
-		final_period = self.ex_period_staff
-		if not final_period:
+		if not self.ex_period_staff:
 			frappe.throw(_("Period Of Re-Engagement/Extension Allowed by Staff (ex_period_staff) is required to calculate Term Completion Date."))
 
-		try:
-			extension_period = int(final_period)
-		except (ValueError, TypeError):
-			frappe.throw(_("Invalid Extension Period: {0}").format(final_period))
+		preview = self.compute_new_tenure_preview()
 
 		# Rule 3 (final guard): the staff-allowed period cannot push total service
 		# beyond the cap. total_months here is the prior service (new row not yet added).
-		self.validate_period_cap(extension_period, total_months, _("allowed by Staff"))
+		self.validate_period_cap(self.ex_period_staff, preview["total_months_worked"], _("allowed by Staff"))
 
-		new_term_completion_date = add_days(add_months(new_joining_date, extension_period), -1)
+		# The staff-facing dashboard shows these system-suggested dates and lets
+		# the applicant/HR edit them before approval; the edited value (if any)
+		# takes precedence over the computed one.
+		self.db_set("ex_computed_new_joining_date", preview["new_joining_date"])
+		self.db_set("ex_computed_new_completion_date", preview["new_completion_date"])
 
-		# Step 4: Calculate New Basic Salary: (Basic in previous tenure row) + (increment_by_staff)
-		def _safe_float(val):
-			if val is None or val == "":
-				return 0.0
-			try:
-				return float(str(val).replace(",", "").strip())
-			except (ValueError, TypeError):
-				return 0.0
+		new_joining_date = self.ex_final_new_joining_date or preview["new_joining_date"]
+		new_term_completion_date = self.ex_final_new_completion_date or preview["new_completion_date"]
+		new_basic_salary = preview["new_basic_salary"]
 
-		prev_basic_val = _safe_float(
-			latest_tenure.pstd_basic_salary
-			or getattr(self, "ex_current_basic", None)
-			or getattr(parent_doc, "ps_basic_salary", None)
-		)
+		ps_details_name = frappe.db.get_value("Project Staff Details", {"ps_emp_id": self.ex_emp_id}, "name")
+		parent_doc = frappe.get_doc("Project Staff Details", ps_details_name)
 
-		staff_inc = getattr(self, "increment_by_staff", None)
-		increment_val = _safe_float(staff_inc)
-
-		calc_basic = prev_basic_val + increment_val
-		new_basic_salary = int(calc_basic) if calc_basic.is_integer() else round(calc_basic, 2)
-
-		# Step 5: Update parent current basic salary & append new tenure row to child table (table_ymed)
+		# Update parent current basic salary & append new tenure row to child table (table_ymed)
 		parent_doc.ps_basic_salary = new_basic_salary
 		parent_doc.append("table_ymed", {
 			"pstd_joining_date": new_joining_date,
 			"pstd_term_completion_date": new_term_completion_date,
 			"pstd_basic_salary": new_basic_salary,
-			"pstd_increment": staff_inc or None,
+			"pstd_increment": self.increment_by_staff or None,
 			"pstd_extension_sought": self.ex_period_staff or self.ex_period,
 			"pstd_pi_extension_sought": self.ex_period_pi,
 			"pstd_staff_extension_sought": self.ex_period_staff,
@@ -238,8 +226,95 @@ class ProjectStaffExtension(Document):
 		parent_doc.flags.ignore_permissions = True
 		parent_doc.save()
 
-		# Step 6: Save the new basic pay back to this extension's ex_current_basic field
+		# Save the new basic pay & the final dates used back onto this extension doc
 		self.db_set("ex_current_basic", new_basic_salary)
+		self.db_set("ex_final_new_joining_date", new_joining_date)
+		self.db_set("ex_final_new_completion_date", new_term_completion_date)
+
+
+def _safe_float(val):
+	if val is None or val == "":
+		return 0.0
+	try:
+		return float(str(val).replace(",", "").strip())
+	except (ValueError, TypeError):
+		return 0.0
+
+
+def compute_new_tenure(ex_emp_id, period, increment=None):
+	"""Pure computation (no DB writes): returns the new tenure start date, end
+	date, and basic salary that would result from granting `period` months of
+	extension to the employee `ex_emp_id`, based on their current Project
+	Staff Details tenure history. Shared by the doc's own approval-time logic
+	and by the standalone preview API used for the staff dashboard."""
+	from frappe.utils import getdate, add_days, add_months
+
+	if not ex_emp_id:
+		frappe.throw(_("Employee Id is required."))
+	if period in (None, ""):
+		frappe.throw(_("Extension period (in months) is required."))
+
+	try:
+		extension_period = int(float(period))
+	except (ValueError, TypeError):
+		frappe.throw(_("Invalid Extension Period: {0}").format(period))
+
+	ps_details_name = frappe.db.get_value("Project Staff Details", {"ps_emp_id": ex_emp_id}, "name")
+	if not ps_details_name:
+		frappe.throw(_("Project Staff Details not found for Employee ID {0}").format(ex_emp_id))
+
+	parent_doc = frappe.get_doc("Project Staff Details", ps_details_name)
+	tenures = parent_doc.get("table_ymed") or []
+	valid_tenures = [t for t in tenures if t.pstd_joining_date and t.pstd_term_completion_date]
+	if not valid_tenures:
+		frappe.throw(_("No existing tenure records found in Project Staff Details."))
+
+	sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
+
+	# Step 1: Calculate Total Months Worked
+	total_months = 0
+	for t in sorted_tenures:
+		d1 = getdate(t.pstd_joining_date)
+		d2 = getdate(t.pstd_term_completion_date)
+		days = (d2 - d1).days + 1
+		total_months += round(days / 30.437)
+
+	# Step 2: Determine New Joining Date. Term gap is 3 working days when total
+	# months worked so far is a multiple of 11, otherwise 1 working day —
+	# working days skip weekends and institute holidays (see working_days.py).
+	latest_tenure = sorted_tenures[-1]
+	latest_term_completion = getdate(latest_tenure.pstd_term_completion_date)
+	gap_days = 3 if (total_months > 0 and total_months % 11 == 0) else 1
+	new_joining_date = add_working_days(latest_term_completion, gap_days)
+
+	# Step 3: Calculate New Term Completion Date based on the granted period
+	new_term_completion_date = add_days(add_months(new_joining_date, extension_period), -1)
+
+	# Step 4: Calculate New Basic Salary: (Basic in previous tenure row) + increment
+	prev_basic_val = _safe_float(
+		latest_tenure.pstd_basic_salary or getattr(parent_doc, "ps_basic_salary", None)
+	)
+	increment_val = _safe_float(increment)
+	calc_basic = prev_basic_val + increment_val
+	new_basic_salary = int(calc_basic) if calc_basic.is_integer() else round(calc_basic, 2)
+
+	return {
+		"total_months_worked": total_months,
+		"gap_days": gap_days,
+		"new_joining_date": new_joining_date,
+		"new_completion_date": new_term_completion_date,
+		"prev_basic_salary": prev_basic_val,
+		"new_basic_salary": new_basic_salary,
+	}
+
+
+@frappe.whitelist()
+def preview_new_tenure(ex_emp_id, period, increment=None):
+	"""Dry-run preview (no DB writes) for the staff dashboard: as the staff
+	member types in a number of months (and optional increment), this returns
+	the probable new tenure start date, end date, and basic salary so it can
+	be displayed before the extension is submitted/approved."""
+	return compute_new_tenure(ex_emp_id, period, increment)
 
 
 @frappe.whitelist()
@@ -260,7 +335,8 @@ def get_project_staff_extension_fields(doc_name=None):
 		if fn in [
 			"ex_proj_name", "ex_proj_no", "ex_name", "ex_emp_id",
 			"ex_designation", "department", "ex_doj", "ex_date_of_expiry",
-			"ex_current_basic", "ex_last_ex_date"
+			"ex_current_basic", "ex_last_ex_date",
+			"ex_computed_new_joining_date", "ex_computed_new_completion_date"
 		]:
 			field["read_only"] = True
 			field["read_only_depends_on"] = None
@@ -279,7 +355,10 @@ def get_project_staff_extension_fields(doc_name=None):
 			field["read_only_depends_on_eval"] = "doc.workflow_state != 'Pending PI Approval' || !doc._isPI"
 
 		# 4. Staff evaluation fields (editable only in Pending Staff Approval for Staff role)
-		elif fn in ["ex_period_staff", "increment_by_staff"]:
+		elif fn in [
+			"ex_period_staff", "increment_by_staff",
+			"ex_final_new_joining_date", "ex_final_new_completion_date"
+		]:
 			field["depends_on"] = "eval:doc.workflow_state && doc.workflow_state != 'Draft' && doc.workflow_state != 'Pending PI Approval'"
 			field["depends_on_eval"] = "doc.workflow_state && doc.workflow_state != 'Draft' && doc.workflow_state != 'Pending PI Approval'"
 			field["read_only_depends_on"] = "eval:doc.workflow_state != 'Pending Staff Approval' || !doc._isRnDStaff"
@@ -319,7 +398,8 @@ def save_project_staff_extension(doc_data):
 			elif doc.docstatus == 1:
 				allowed_fields = [
 					"ex_period_pi", "increment_by_pi",
-					"ex_period_staff", "increment_by_staff"
+					"ex_period_staff", "increment_by_staff",
+					"ex_final_new_joining_date", "ex_final_new_completion_date"
 				]
 				for form_field in allowed_fields:
 					if form_field in data:
@@ -347,6 +427,8 @@ def save_project_staff_extension(doc_data):
 			"ex_period_staff": "ex_period_staff",
 			"increment_by_pi": "increment_by_pi",
 			"increment_by_staff": "increment_by_staff",
+			"ex_final_new_joining_date": "ex_final_new_joining_date",
+			"ex_final_new_completion_date": "ex_final_new_completion_date",
 		}
 
 		for form_field, doctype_field in field_mapping.items():
@@ -435,6 +517,10 @@ def get_project_staff_extension_list():
 				"ex_period_staff",
 				"increment_by_pi",
 				"increment_by_staff",
+				"ex_computed_new_joining_date",
+				"ex_computed_new_completion_date",
+				"ex_final_new_joining_date",
+				"ex_final_new_completion_date",
 				"workflow_state",
 				"docstatus",
 				"modified",

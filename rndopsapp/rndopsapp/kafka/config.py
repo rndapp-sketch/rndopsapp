@@ -4,8 +4,12 @@
 # --- KAFKA CLUSTER CONFIGURATION ---
 # 2-Node Fault-Tolerant Cluster
 KAFKA_BOOTSTRAP_SERVERS = [
-    '172.16.134.81:9095',
-    '172.16.134.81:9096'
+    #'172.16.134.81:9095',
+    #'172.16.134.81:9096'
+    #'172.16.135.118:9095',
+    #'172.16.135.118:9096'
+    '172.16.135.81:9095',
+    '172.16.135.81:9096'
 ]
 
 # --- TOPIC CONFIGURATION ---
@@ -18,6 +22,8 @@ TOPIC_SANCTION = 'fund-sanction-events'
 TOPIC_FUND_RECEIVED = 'fund-received-events'
 TOPIC_DEPOSIT_SLIP = 'deposit-slip-events'
 TOPIC_LOAN_REQUEST = 'loan-request-event'
+TOPIC_LOAN_SETTLEMENT = 'loan-settlement-events'
+TOPIC_LOAN_SETTLEMENT_BATCH = 'loan-settlement-events-batch'
 
 # account-head-commit-events is published from commitPayment.py (not this
 # kafka/producer/ package tree) via commitPayment.kafka_publish_commit, but
@@ -31,6 +37,8 @@ TOPIC_SANCTION_DLQ = 'fund-sanction-events-dlq'
 TOPIC_FUND_RECEIVED_DLQ = 'fund-received-events-dlq'
 TOPIC_DEPOSIT_SLIP_DLQ = 'deposit-slip-events-dlq'
 TOPIC_LOAN_REQUEST_DLQ = 'loan-request-event-dlq'
+TOPIC_LOAN_SETTLEMENT_DLQ = 'loan-settlement-events-dlq'
+TOPIC_LOAN_SETTLEMENT_BATCH_DLQ = 'loan-settlement-events-batch-dlq'
 
 # DLQ published by the external ledger microservice's AccountHeadCommit
 # Consumer when it can't process an account-head-commit-events message.
@@ -55,6 +63,8 @@ ALL_PRODUCER_TOPICS = [
     TOPIC_FUND_RECEIVED, TOPIC_FUND_RECEIVED_DLQ,
     TOPIC_DEPOSIT_SLIP, TOPIC_DEPOSIT_SLIP_DLQ,
     TOPIC_LOAN_REQUEST, TOPIC_LOAN_REQUEST_DLQ,
+    TOPIC_LOAN_SETTLEMENT, TOPIC_LOAN_SETTLEMENT_DLQ,
+    TOPIC_LOAN_SETTLEMENT_BATCH, TOPIC_LOAN_SETTLEMENT_BATCH_DLQ,
 ]
 
 # DLQ topics whose consumer must start from the *current end* of the topic
@@ -84,6 +94,7 @@ SCHEMA_VERSION_SANCTION = '1.0'
 SCHEMA_VERSION_FUND_RECEIVED = '1.0'
 SCHEMA_VERSION_DEPOSIT_SLIP = '1.0'
 SCHEMA_VERSION_LOAN_REQUEST = '1.0'
+SCHEMA_VERSION_LOAN_SETTLEMENT = '1.0'
 
 # --- PRODUCER RETRY CONFIGURATION ---
 PRODUCER_MAX_RETRIES = 3

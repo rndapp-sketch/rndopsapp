@@ -19,6 +19,9 @@ def extract_eval_expression(expression):
 
 
 from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip as publish_consultancy_deposit_slip
+from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation import (
+	validate_overhead_gst_budget_heads_for_doc,
+)
 from rndopsapp.rndopsapp.kafka.utils import record_publish_state
 from rndopsapp.rndopsapp.kafka.config import TOPIC_DEPOSIT_SLIP
 
@@ -35,6 +38,7 @@ class OtherEventDepositSlip(Document):
 		"""
 		if self.flags.get('skip_kafka_sync'):
 			return
+
 		doc_before_save = self.get_doc_before_save()
 		old_state = doc_before_save.workflow_state if doc_before_save else None
 		new_state = self.workflow_state
@@ -44,6 +48,11 @@ class OtherEventDepositSlip(Document):
 		is_fresh_submit = self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0)
 
 		if is_state_transition or is_fresh_submit:
+			# Final-gate reconciliation backstop (implementation doc §3.4).
+			if self.fund_received_ref and frappe.db.exists("Fund Received", self.fund_received_ref):
+				fr_doc = frappe.get_doc("Fund Received", self.fund_received_ref)
+				validate_overhead_gst_budget_heads_for_doc(self, fr_doc)
+
 			record_publish_state(
 				self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
 				old_state, new_state,
