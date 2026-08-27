@@ -8,6 +8,8 @@
  "field_order": [
   "section_break_vtw2",
   "register_for",
+  "dp_other_pi",
+  "dp_other_pi_id",
   "project_no",
   "applicant_details_section",
   "applicant_name",
@@ -174,7 +176,8 @@
    "allow_on_submit": 1,
    "fieldname": "project_no",
    "fieldtype": "Data",
-   "label": "Project Number"
+   "label": "Project Number",
+   "depends_on": "eval:doc.dp_other_pi != \"Other\" || doc.project_no"
   },
   {
    "fieldname": "workflow_state",
@@ -190,6 +193,21 @@
    "label": "Is it Foreign Purchase?",
    "options": "\nYes\nNo",
    "reqd": 1
+  },
+  {
+   "fieldname": "dp_other_pi",
+   "fieldtype": "Select",
+   "label": "Is this purchase charged to another PI's project?",
+   "options": "\nSelf\nOther",
+   "default": "Self"
+  },
+  {
+   "fieldname": "dp_other_pi_id",
+   "fieldtype": "Link",
+   "label": "Other PI Webmail Id",
+   "options": "User",
+   "depends_on": "eval:doc.dp_other_pi == \"Other\"",
+   "mandatory_depends_on": "eval:doc.dp_other_pi == \"Other\""
   }
  ],
  "grid_page_length": 50,

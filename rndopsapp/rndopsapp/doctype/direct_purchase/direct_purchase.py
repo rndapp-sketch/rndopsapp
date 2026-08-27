@@ -196,6 +196,18 @@ def get_direct_purchase_fields(doc_name=None):
 	except Exception:
 		link_options["webmail_id"] = []
 
+	# ---- Other-PI picker ----
+	# Same source the other Other-PI modules use, so the type-to-search list is
+	# identical across Travel / IGF / ICSS / Reimbursement / Direct Purchase.
+	try:
+		from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
+			_get_permanent_employee_options,
+		)
+
+		link_options["dp_other_pi_id"] = _get_permanent_employee_options()
+	except Exception:
+		link_options["dp_other_pi_id"] = []
+
 	# ---- Client Scripts ----
 	client_scripts = []
 	try:
@@ -366,7 +378,17 @@ def save_direct_purchase_data(data):
 		_file_docname = _project_docname if _project_docname else doc.name
 		_folder = f"directpurchase/{doc.name}"
 
-		file_service = get_rnd_file_service()
+		# Only connect to object storage (MinIO) once we actually have a file to
+		# upload. Building the client eagerly made every save fail — including
+		# saves with no attachments at all — wherever the MinIO endpoint is not
+		# configured, e.g. local/dev environments. Same fix as
+		# indent_general_form.save_indent_general_form_data.
+		_file_service_cache = {}
+
+		def file_service_lazy():
+			if "client" not in _file_service_cache:
+				_file_service_cache["client"] = get_rnd_file_service()
+			return _file_service_cache["client"]
 
 		for fieldname, value in file_fields:
 			df = meta.get_field(fieldname)
@@ -400,7 +422,7 @@ def save_direct_purchase_data(data):
 								if isinstance(f_val, dict) and f_val.get("file_data"):
 									try:
 										content = base64.b64decode(f_val["file_data"])
-										result = file_service.save_file(
+										result = file_service_lazy().save_file(
 											filename=f_val.get("file_name", "attachment"),
 											content=content,
 											is_private=True,
@@ -419,7 +441,7 @@ def save_direct_purchase_data(data):
 				if isinstance(value, dict) and value.get("file_data"):
 					try:
 						content = base64.b64decode(value["file_data"])
-						result = file_service.save_file(
+						result = file_service_lazy().save_file(
 							filename=value.get("file_name", "attachment"),
 							content=content,
 							is_private=True,
@@ -468,6 +490,17 @@ def get_direct_purchase_workflow_actions(docname):
 
 	if not workflow_name:
 		return []
+
+	# Only the specifically-assigned Other PI (or a System Manager) may act on a
+	# purchase parked in 'Pending Other PI'. The transition is role-gated on
+	# "Permanent Employee", which the applicant usually is too — so without this
+	# the applicant was offered a Forward button they could not actually use
+	# (perform_direct_purchase_action throws on click).
+	if current_state == "Pending Other PI":
+		is_system_manager = "System Manager" in user_roles
+		assigned_pi = (doc.get("dp_other_pi_id") or "").lower()
+		if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+			return []
 
 	workflow = frappe.get_doc("Workflow", workflow_name)
 	allowed_actions = []
@@ -601,7 +634,23 @@ def get_direct_purchase_workflow_actions(docname):
 # 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def perform_direct_purchase_action(docname, action):
+def get_direct_purchase_pi_projects(pi=None):
+	"""Projects owned by the (session) PI — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+
+	return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def get_direct_purchase_project_account_heads(project_name):
+	"""Account heads for a given project — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_project_account_heads
+
+	return get_project_account_heads(project_name)
+
+
+@frappe.whitelist()
+def perform_direct_purchase_action(docname, action, extra_data=None):
 	print("------=-==-=-=-=-=-=-=-=-=-=-=-DP-=-=-=-=-=-=-=-=-=-=-=-")
 	"""
 	Executes the selected workflow action and updates the document state.
@@ -630,6 +679,84 @@ def perform_direct_purchase_action(docname, action):
 			frappe.throw("No active workflow found for Direct Purchase.")
 
 		workflow = frappe.get_doc("Workflow", workflow_name)
+
+		# --- Other-PI routing -------------------------------------------------
+		# On Submit, a purchase charged to another PI's project goes to that
+		# specific PI first (Pending Other PI) rather than straight down the
+		# normal chain. Mirrors perform_indent_general_form_action.
+		if (
+			action == "Submit"
+			and current_state == "Draft"
+			and (doc.get("dp_other_pi") or "").strip() == "Other"
+		):
+			if not doc.get("dp_other_pi_id"):
+				frappe.throw("Please select the Other PI before submitting.")
+			doc.workflow_state = "Pending Other PI"
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+			return {"status": "success", "next_state": "Pending Other PI"}
+
+		# At the Other-PI step only the assigned PI (or a System Manager) may
+		# act, and approving means charging one of THEIR OWN projects.
+		if current_state == "Pending Other PI":
+			is_system_manager = "System Manager" in user_roles
+			assigned_pi = (doc.get("dp_other_pi_id") or "").lower()
+			if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+				frappe.throw("You are not authorised to act on this purchase.")
+
+			if action in ("Forward", "Approve"):
+				from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+
+				data = extra_data
+				if isinstance(data, str):
+					data = json.loads(data or "{}")
+				data = data or {}
+
+				project_name = (data.get("project_name") or "").strip()
+				if not project_name:
+					frappe.throw("Please select a project before approving.")
+
+				owns = next(
+					(p for p in get_pi_projects() if p.get("value") == project_name), None
+				)
+				if not owns:
+					frappe.throw("Selected project does not belong to you.")
+
+				doc.project_no = (
+					owns.get("project_no") or owns.get("project_number") or project_name
+				)
+				# The Other-PI picker lists a project's account heads by LABEL
+				# ("Overhead"), but Direct Purchase.account_head is a Link to
+				# Budget Head, whose docnames are hashes ("h1lhg99vfq").
+				# Assigning the label directly fails link validation with
+				# "Could not find Account Head: Overhead", so resolve it.
+				account_head = (data.get("account_head") or "").strip()
+				if account_head:
+					resolved = None
+					if frappe.db.exists("Budget Head", account_head):
+						resolved = account_head
+					else:
+						resolved = frappe.db.get_value(
+							"Budget Head", {"budget_head": account_head}, "name"
+						)
+					if resolved:
+						doc.account_head = resolved
+					else:
+						# Leave whatever the applicant chose rather than blanking
+						# the field, but make the mismatch visible.
+						frappe.msgprint(
+							_("Account head {0} has no matching Budget Head; left unchanged.").format(
+								account_head
+							),
+							indicator="orange",
+							alert=True,
+						)
+
+				doc.workflow_state = "Pending Staff Approval"
+				doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				return {"status": "success", "next_state": "Pending Staff Approval"}
+			# Reject / Put Back fall through to the normal transition resolver.
 
 		next_state = None
 		transition = None

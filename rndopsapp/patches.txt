@@ -9,3 +9,4 @@ rndopsapp.patchs.add_igf_director_approval_state
 rndopsapp.patchs.add_travel_director_approval_workflow
 rndopsapp.patchs.create_verification_staff_role
 rndopsapp.patchs.add_travel_other_pi_workflow
+rndopsapp.patchs.add_direct_purchase_other_pi_workflow

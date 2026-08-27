@@ -230,6 +230,7 @@ def get_pending_task(page_name="pending-task"):
 			"Indent General Form": ("Pending Other PI", "igf_other_pi_id"),
 			"Indent Cum Sanction Sheet": ("Pending Other PI", "icss_other_pi_id"),
 			"Rate Contract": ("Pending Other PI", "other_pi_email"),
+			"Direct Purchase": ("Pending Other PI", "dp_other_pi_id"),
 		}
 		sa_state = sa_field = None
 		sa = specific_approver_map.get(dt)
@@ -429,6 +430,7 @@ def get_pending_application():
 		"Indent General Form": ("igf_other_pi_id", "Pending Other PI", "igf_indenter"),
 		"Indent Cum Sanction Sheet": ("icss_other_pi_id", "Pending Other PI", "icss_applicant_name"),
 		"Reimbursement": ("reimbursement_for_id", "Pending PI Approval", "applicant_webmail"),
+		"Direct Purchase": ("dp_other_pi_id", "Pending Other PI", "applicant_name"),
 	}
 
 	for dt, (pi_field, state, name_field) in other_pi_sources.items():
