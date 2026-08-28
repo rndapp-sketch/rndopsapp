@@ -1,12 +1,13 @@
 import requests
 import frappe
 from frappe import _
+from rndopsapp.config import EXTERNAL_AUTH_URL
 
 EXTERNAL_AUTH_TIMEOUT = 10  # seconds
 
 
 def get_external_auth_url():
-	return frappe.conf.get("external_auth_url", "http://172.16.135.27:3001/auth/login")
+	return frappe.conf.get("external_auth_url", EXTERNAL_AUTH_URL)
 
 
 def get_client_ip():

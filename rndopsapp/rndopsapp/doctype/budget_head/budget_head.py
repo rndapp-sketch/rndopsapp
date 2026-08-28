@@ -3,6 +3,7 @@
 import frappe
 import requests
 from frappe.model.document import Document
+from rndopsapp.config import ACCOUNT_PORTAL_ACCOUNT_HEADS
 
 
 class BudgetHead(Document):
@@ -45,7 +46,7 @@ def add_budget_head(budget_head_name):
 	frappe.db.commit()
 
 	# Send the head name to the external accounting API
-	external_url = "http://172.16.134.81:18080/api/account-heads/createAccountHead"
+	external_url = ACCOUNT_PORTAL_ACCOUNT_HEADS
 	try:
 		ext_response = requests.post(
 			external_url,

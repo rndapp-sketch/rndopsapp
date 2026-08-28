@@ -20,6 +20,7 @@ from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation im
 	validate_overhead_gst_budget_heads_for_doc,
 	validate_overhead_gst_budget_heads_for_payload,
 )
+from rndopsapp.config import ACCOUNT_PORTAL_FUND_RECEIVED
 
 
 class FundReceived(Document):
@@ -500,7 +501,7 @@ def send_fund_received_to_api(fund_doc):
 	"""
 	print("\n=== SEND FUND RECEIVED TO API START ===")
 	try:
-		url = "http://172.16.134.81:18080/api/fund-received/addFundReceived"
+		url = ACCOUNT_PORTAL_FUND_RECEIVED
 		print(f"[URL] {url}")
 
 		print("[STEP] Building payload...")

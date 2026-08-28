@@ -7,6 +7,12 @@ from frappe.utils import today, flt, getdate
 from datetime import datetime
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
 from rndopsapp.rndopsapp.kafka_sync import publish_message, KAFKA_AVAILABLE
+from rndopsapp.config import (
+	MATTERMOST_POSTS_URL,
+	ACCOUNT_PORTAL_COMMIT_PAYMENT,
+	ACCOUNT_PORTAL_ACCOUNT_HEAD_PAYMENTS,
+	ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT,
+)
 
 # New Kafka producer imports - sumit
 from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
@@ -14,7 +20,7 @@ from rndopsapp.rndopsapp.kafka.producer.reimbursement import (
     publish_payment as kafka_publish_payment
 )
 
-_MM_URL = "http://172.16.135.118:8065/api/v4/posts"
+_MM_URL = MATTERMOST_POSTS_URL
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
 _MM_KAFKA_CHANNEL = "yh7piky97iycjrdytia1hqy99a"  # "kafka logs" channel
 _MM_SALARY_CHANNEL = "knetjx859tfu8g3tecr1tu8mne"  # "Salary Module" channel
@@ -40,10 +46,10 @@ def _mm_notify_salary_json(title: str, data: dict):
     body = json.dumps(data, default=str, indent=2)
     _mm_notify(f"**{title}**\n```json\n{body}\n```", channel_id=_MM_SALARY_CHANNEL)
 
-# External API endpoints
-LEDGER_API_BASE_URL = "http://172.16.135.27:18083/api/commit-payment-transactions"
-ACCOUNT_HEAD_PAYMENTS_API_URL = "http://172.16.135.27:18083/api/account-head-payments"
-ACCOUNT_HEAD_COMMIT_API_URL = "http://172.16.135.27:18083/api/account-head-commit"
+# External API endpoints (imported from centralized config)
+LEDGER_API_BASE_URL = ACCOUNT_PORTAL_COMMIT_PAYMENT
+ACCOUNT_HEAD_PAYMENTS_API_URL = ACCOUNT_PORTAL_ACCOUNT_HEAD_PAYMENTS
+ACCOUNT_HEAD_COMMIT_API_URL = ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT
 
 # Valid commit statuses
 VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]

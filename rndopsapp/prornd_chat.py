@@ -8,8 +8,8 @@ import time
 import requests
 import frappe
 from frappe import _
+from rndopsapp.config import CHATWOOT_BASE_URL
 
-CHATWOOT_BASE_URL = "http://172.16.135.118:8066"
 ACCOUNT_ID = 2
 INBOX_ID = 1
 

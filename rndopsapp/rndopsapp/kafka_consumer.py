@@ -964,11 +964,8 @@ if not kafka_logger.handlers:
 
 
 # --- CONFIGURATION ---
-# Kafka Cluster-A ONLY (topic exists here)
-KAFKA_BOOTSTRAP_SERVERS = [
-    '172.16.134.81:9095',
-    '172.16.134.81:9096'
-]
+# Import Kafka configuration from centralized config
+from rndopsapp.config import KAFKA_BOOTSTRAP_SERVERS
 
 # Consumer Group ID
 CONSUMER_GROUP_ID = 'rndopsapp-consumer-group-v2'

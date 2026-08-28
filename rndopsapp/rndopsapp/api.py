@@ -7,6 +7,14 @@ import frappe
 from frappe import _
 from frappe.utils import get_datetime, sanitize_html
 from frappe.utils.file_manager import save_file
+from rndopsapp.config import (
+	ACCOUNT_PORTAL_BASE_URL,
+	ACCOUNT_PORTAL_API,
+	MATTERMOST_API_URL,
+	MATTERMOST_BASE_URL,
+	MATTERMOST_POSTS_URL,
+	ACCOUNT_PORTAL_PROJECTS_CHANGE_NUMBER,
+)
 
 # Re-export so callers using rndopsapp.rndopsapp.api.* still resolve correctly
 from rndopsapp.rndopsapp.doctype.fund_received.fund_received import (
@@ -200,10 +208,6 @@ def unshare_document(doctype, name, user):
 
 
 # --- UTILITY FUNCTIONS (OPTIONAL BUT RECOMMENDED) --- jimmy
-
-# Base URL for the external account portal (172.16.134.81:18080), same host
-# already called from _sync_external_project_number, commitPayment.py, etc.
-ACCOUNT_PORTAL_BASE_URL = "http://172.16.134.81:18080"
 
 # Maps a Frappe doctype to the comment "category"(ies) the account portal's
 # GET /api/comments/{category}/{frappeApplicationNo} endpoint expects.
@@ -1777,8 +1781,8 @@ def update_document_fields(doctype, docname, changes=None, child_table_changes=N
 
 # -------------------- MATTERMOST NOTIFICATION API (MKY) --------------------
 
-_MM_BASE = "http://172.16.135.118:8065/api/v4"
-_MM_URL = f"{_MM_BASE}/posts"
+_MM_BASE = MATTERMOST_API_URL
+_MM_URL = MATTERMOST_POSTS_URL
 _MM_FILES_URL = f"{_MM_BASE}/files"
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
 _MM_DEFAULT_CHANNEL = "ihmkbbfq9ibzugfpy9rncq5yke"
@@ -2843,7 +2847,7 @@ def _sync_external_project_number(
             "message": "No prior project_no on this Project Registration — external portal not called.",
         }
 
-    url = f"http://172.16.134.81:18080/api/projects/{old_project_no}/change-project-number"
+    url = f"{ACCOUNT_PORTAL_PROJECTS_CHANGE_NUMBER}/{old_project_no}/change-project-number"
     payload = {
         "newProjectNumber": new_project_no,
         "reason": reason or "",

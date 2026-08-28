@@ -7,12 +7,13 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, today
+from rndopsapp.config import ACCOUNT_PORTAL_COMMIT_PAYMENT
 
 from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit_batch
 from rndopsapp.rndopsapp.kafka.producer.reimbursement.batch_dto import AccountHeadCommitBatchItemDTO
 from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import get_project_number, get_module_id
 
-COMMIT_PAYMENT_API = "http://172.16.134.81:18080/api/commit-payment-transactions"
+COMMIT_PAYMENT_API = ACCOUNT_PORTAL_COMMIT_PAYMENT
 
 
 class PoCommitAdjustment(Document):

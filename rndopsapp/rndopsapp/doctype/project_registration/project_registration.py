@@ -13,6 +13,7 @@ from frappe.utils import sanitize_html
 from frappe.utils import flt, nowdate
 from frappe.utils import flt
 from frappe.utils.file_manager import save_file
+from rndopsapp.config import MATTERMOST_POSTS_URL, ACCOUNT_PORTAL_PROJECTS
 import base64
 import requests
 from rndopsapp.rndopsapp.kafka.producer import publish_project_registration as publish_project
@@ -191,7 +192,7 @@ def notify_mattermost(message: str, urgent: bool = False, channel_id: str = "ihm
 	affect the main application flow under any circumstances.
 	"""
 	try:
-		_url = "http://172.16.135.118:8065/api/v4/posts"
+		_url = MATTERMOST_POSTS_URL
 
 		_headers = {
 			"Authorization": "Bearer fmjih41b4iymicttnuhinsqime",
@@ -721,7 +722,7 @@ def send_project_registration_data_api(doc):
 		}
 		# print("payload: ", payload)
 		# --- 3. Send Request ---
-		url = "http://172.16.134.81:18080/api/projects"
+		url = ACCOUNT_PORTAL_PROJECTS
 		headers = {"Content-Type": "application/json"}
 		
 		# Log the attempt
@@ -3677,7 +3678,7 @@ def _delete_external_project(project_no):
 	if not project_no:
 		return {"attempted": False, "message": "No project_no on this Project Registration — external API not called."}
 
-	url = f"http://172.16.134.81:18080/api/projects/{project_no}"
+	url = f"{ACCOUNT_PORTAL_PROJECTS}/{project_no}"
 	try:
 		frappe.logger().info(f"Deleting project {project_no} from {url}")
 		response = requests.delete(url, timeout=10)

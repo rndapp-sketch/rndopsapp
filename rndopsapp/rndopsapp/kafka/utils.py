@@ -8,9 +8,10 @@ import frappe
 import requests
 from datetime import datetime, date
 from typing import Optional, Any
+from rndopsapp.config import MATTERMOST_POSTS_URL
 
 # --- MATTERMOST CONFIG ---
-_MM_URL = "http://172.16.135.118:8065/api/v4/posts"
+_MM_URL = MATTERMOST_POSTS_URL
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
 _MM_KAFKA_CHANNEL = "yh7piky97iycjrdytia1hqy99a"  # "kafka logs" channel
 

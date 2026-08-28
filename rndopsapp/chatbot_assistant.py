@@ -27,19 +27,20 @@ import time
 import frappe
 from frappe import _
 import requests
+from rndopsapp.config import OLLAMA_BASE_URL, MATTERMOST_POSTS_URL
 
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_OLLAMA_URL = "http://172.16.117.154:11434"
+DEFAULT_OLLAMA_URL = OLLAMA_BASE_URL
 DEFAULT_OLLAMA_MODEL = "gemma4:e2b"
 
 # Same Mattermost server/token already used elsewhere in this app
 # (see rndopsapp/kafka/utils.py) — reused here to log every question asked
 # to Pragati into the "Issues_ProRnd UI" channel for visibility/debugging.
-_MM_URL = "http://172.16.135.118:8065/api/v4/posts"
+_MM_URL = MATTERMOST_POSTS_URL
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
 _MM_PRAGATI_CHANNEL = "3xn7xtobgjg4zk3fbdtsbip6we"  # "Issues_ProRnd UI"
 

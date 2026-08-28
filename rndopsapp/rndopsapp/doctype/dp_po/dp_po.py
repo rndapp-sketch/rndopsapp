@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, money_in_words
+from rndopsapp.config import ACCOUNT_PORTAL_ACCOUNT_HEAD_REF_DETAILS
 
 
 class dp_po(Document):
@@ -385,7 +386,7 @@ def ref_details_id(commitAmount=None, budgetHead=None, projectName=None, frapApp
     if budgetHead:
         params["budgetHead"] = budgetHead
 
-    url = "http://172.16.134.81:18080/api/account-head-commit/ref-details"
+    url = ACCOUNT_PORTAL_ACCOUNT_HEAD_REF_DETAILS
 
     try:
         response = requests.get(url, params=params, timeout=30)

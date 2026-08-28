@@ -3,6 +3,7 @@ import json
 import time
 from datetime import datetime, date
 from frappe import _
+from rndopsapp.config import KAFKA_BOOTSTRAP_SERVERS
 
 try:
 	from rndopsapp.rndopsapp.project_event_dto import ProjectEventDTO, ProjectDataDTO
@@ -19,11 +20,7 @@ except ImportError:
 	KAFKA_AVAILABLE = False
 
 # --- CONFIGURATION ---
-# 3-Node Fault-Tolerant Cluster
-KAFKA_BOOTSTRAP_SERVERS = [
-	'172.16.134.81:9095',
-	'172.16.134.81:9096'
-]
+# Kafka Bootstrap Servers (imported from centralized config)
 
 # Topic Configuration
 NUM_PARTITIONS = 2

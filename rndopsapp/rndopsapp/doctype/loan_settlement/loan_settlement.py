@@ -26,9 +26,10 @@ import requests
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, nowdate
+from rndopsapp.config import ACCOUNT_PORTAL_API
 
 # Accounts service (ledger) base — same host as commitPayment.LEDGER_API_BASE_URL
-ACCOUNTS_API_BASE_URL = "http://172.16.135.27:18083/api"
+ACCOUNTS_API_BASE_URL = ACCOUNT_PORTAL_API
 
 LOAN_DETAILS_BY_PROJECT_URL = ACCOUNTS_API_BASE_URL + "/loan-details/project/{project_number}"
 LOAN_SETTLEMENT_SUMMARY_URL = ACCOUNTS_API_BASE_URL + "/loan-settlement/loan/{loan_number}/summary"

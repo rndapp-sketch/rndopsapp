@@ -4,6 +4,7 @@
 import time
 import frappe
 from .log_reader import get_kafka_logs
+from rndopsapp.config import MATTERMOST_POSTS_URL
 
 # Per-process guards — each Gunicorn worker has its own copy of these
 _restart_notified = False       # send at most one Mattermost ping per worker lifetime
@@ -79,7 +80,7 @@ def _notify_restart():
 		import datetime
 		ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 		_req.post(
-			"http://172.16.135.118:8065/api/v4/posts",
+			MATTERMOST_POSTS_URL,
 			json={
 				"channel_id": "ihmkbbfq9ibzugfpy9rncq5yke",
 				"message": f":arrows_counterclockwise: **[{ts}] rndopsapp server restarted** — Kafka consumer auto-started.",

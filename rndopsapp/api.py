@@ -99,8 +99,9 @@ import json
 import frappe
 import requests
 from frappe.utils import flt
+from rndopsapp.config import ACCOUNT_PORTAL_SANCTION_DETAILS
 
-API_URL = "http://172.16.134.81:18080/api/sanction-details/addSanctionDetails"
+API_URL = ACCOUNT_PORTAL_SANCTION_DETAILS
 
 
 def send_sanction_details_to_api(doc):
