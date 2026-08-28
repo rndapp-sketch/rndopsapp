@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from rndopsapp.config import ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS
+from rndopsapp.static_config import ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS
 
 
 class CancellationRequest(Document):

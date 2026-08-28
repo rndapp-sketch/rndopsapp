@@ -15,7 +15,7 @@ from rndopsapp.rndopsapp.doctype.project_registration.project_registration impor
 from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_sanction
 from rndopsapp.rndopsapp.kafka.utils import record_publish_state
 from rndopsapp.rndopsapp.kafka.config import TOPIC_SANCTION
-from rndopsapp.config import ACCOUNT_PORTAL_SANCTION_DETAILS
+from rndopsapp.static_config import ACCOUNT_PORTAL_SANCTION_DETAILS
 
 # from frappe.workflow.doctype.workflow.workflow import get_workflow_name
 

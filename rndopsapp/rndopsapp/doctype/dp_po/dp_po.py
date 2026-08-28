@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, money_in_words
-from rndopsapp.config import ACCOUNT_PORTAL_ACCOUNT_HEAD_REF_DETAILS
+from rndopsapp.static_config import ACCOUNT_PORTAL_ACCOUNT_HEAD_REF_DETAILS
 
 
 class dp_po(Document):

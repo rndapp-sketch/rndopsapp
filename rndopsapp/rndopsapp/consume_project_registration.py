@@ -1,6 +1,6 @@
 import json
 from kafka import KafkaConsumer
-from rndopsapp.config import KAFKA_BOOTSTRAP_SERVERS
+from rndopsapp.static_config import KAFKA_BOOTSTRAP_SERVERS
 
 # Configuration (imported from centralized config)
 

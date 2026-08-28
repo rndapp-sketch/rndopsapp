@@ -4,7 +4,7 @@
 import time
 import frappe
 from .log_reader import get_kafka_logs
-from rndopsapp.config import MATTERMOST_POSTS_URL
+from rndopsapp.static_config import MATTERMOST_POSTS_URL
 
 # Per-process guards — each Gunicorn worker has its own copy of these
 _restart_notified = False       # send at most one Mattermost ping per worker lifetime

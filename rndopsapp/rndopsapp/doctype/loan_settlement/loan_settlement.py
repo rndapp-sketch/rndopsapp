@@ -26,7 +26,7 @@ import requests
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, nowdate
-from rndopsapp.config import ACCOUNT_PORTAL_API
+from rndopsapp.static_config import ACCOUNT_PORTAL_API
 
 # Accounts service (ledger) base — same host as commitPayment.LEDGER_API_BASE_URL
 ACCOUNTS_API_BASE_URL = ACCOUNT_PORTAL_API

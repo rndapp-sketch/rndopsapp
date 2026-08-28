@@ -965,7 +965,7 @@ if not kafka_logger.handlers:
 
 # --- CONFIGURATION ---
 # Import Kafka configuration from centralized config
-from rndopsapp.config import KAFKA_BOOTSTRAP_SERVERS
+from rndopsapp.static_config import KAFKA_BOOTSTRAP_SERVERS
 
 # Consumer Group ID
 CONSUMER_GROUP_ID = 'rndopsapp-consumer-group-v2'

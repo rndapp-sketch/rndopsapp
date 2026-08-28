@@ -13,7 +13,7 @@ from frappe.utils import sanitize_html
 from frappe.utils import flt, nowdate
 from frappe.utils import flt
 from frappe.utils.file_manager import save_file
-from rndopsapp.config import MATTERMOST_POSTS_URL, ACCOUNT_PORTAL_PROJECTS
+from rndopsapp.static_config import MATTERMOST_POSTS_URL, ACCOUNT_PORTAL_PROJECTS
 import base64
 import requests
 from rndopsapp.rndopsapp.kafka.producer import publish_project_registration as publish_project

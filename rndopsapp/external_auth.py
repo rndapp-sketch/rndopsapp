@@ -1,7 +1,7 @@
 import requests
 import frappe
 from frappe import _
-from rndopsapp.config import EXTERNAL_AUTH_URL
+from rndopsapp.static_config import EXTERNAL_AUTH_URL
 
 EXTERNAL_AUTH_TIMEOUT = 10  # seconds
 

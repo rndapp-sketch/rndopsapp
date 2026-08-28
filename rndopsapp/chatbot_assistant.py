@@ -27,7 +27,7 @@ import time
 import frappe
 from frappe import _
 import requests
-from rndopsapp.config import OLLAMA_BASE_URL, MATTERMOST_POSTS_URL
+from rndopsapp.static_config import OLLAMA_BASE_URL, MATTERMOST_POSTS_URL
 
 
 # ---------------------------------------------------------------------------

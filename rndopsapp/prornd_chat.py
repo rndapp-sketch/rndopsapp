@@ -8,7 +8,7 @@ import time
 import requests
 import frappe
 from frappe import _
-from rndopsapp.config import CHATWOOT_BASE_URL
+from rndopsapp.static_config import CHATWOOT_BASE_URL
 
 ACCOUNT_ID = 2
 INBOX_ID = 1

@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime, date
 from frappe import _
-from rndopsapp.config import KAFKA_BOOTSTRAP_SERVERS
+from rndopsapp.static_config import KAFKA_BOOTSTRAP_SERVERS
 
 try:
 	from rndopsapp.rndopsapp.project_event_dto import ProjectEventDTO, ProjectDataDTO

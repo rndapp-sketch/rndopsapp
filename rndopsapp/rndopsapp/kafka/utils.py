@@ -8,7 +8,7 @@ import frappe
 import requests
 from datetime import datetime, date
 from typing import Optional, Any
-from rndopsapp.config import MATTERMOST_POSTS_URL
+from rndopsapp.static_config import MATTERMOST_POSTS_URL
 
 # --- MATTERMOST CONFIG ---
 _MM_URL = MATTERMOST_POSTS_URL

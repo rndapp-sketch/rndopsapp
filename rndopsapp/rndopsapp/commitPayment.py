@@ -7,7 +7,7 @@ from frappe.utils import today, flt, getdate
 from datetime import datetime
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
 from rndopsapp.rndopsapp.kafka_sync import publish_message, KAFKA_AVAILABLE
-from rndopsapp.config import (
+from rndopsapp.static_config import (
 	MATTERMOST_POSTS_URL,
 	ACCOUNT_PORTAL_COMMIT_PAYMENT,
 	ACCOUNT_PORTAL_ACCOUNT_HEAD_PAYMENTS,

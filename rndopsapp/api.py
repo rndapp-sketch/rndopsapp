@@ -99,7 +99,7 @@ import json
 import frappe
 import requests
 from frappe.utils import flt
-from rndopsapp.config import ACCOUNT_PORTAL_SANCTION_DETAILS
+from rndopsapp.static_config import ACCOUNT_PORTAL_SANCTION_DETAILS
 
 API_URL = ACCOUNT_PORTAL_SANCTION_DETAILS
 

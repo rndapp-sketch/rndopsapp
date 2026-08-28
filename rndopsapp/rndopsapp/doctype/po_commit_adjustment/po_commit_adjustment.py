@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, today
-from rndopsapp.config import ACCOUNT_PORTAL_COMMIT_PAYMENT
+from rndopsapp.static_config import ACCOUNT_PORTAL_COMMIT_PAYMENT
 
 from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit_batch
 from rndopsapp.rndopsapp.kafka.producer.reimbursement.batch_dto import AccountHeadCommitBatchItemDTO

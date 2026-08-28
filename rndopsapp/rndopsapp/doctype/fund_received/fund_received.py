@@ -20,7 +20,7 @@ from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation im
 	validate_overhead_gst_budget_heads_for_doc,
 	validate_overhead_gst_budget_heads_for_payload,
 )
-from rndopsapp.config import ACCOUNT_PORTAL_FUND_RECEIVED
+from rndopsapp.static_config import ACCOUNT_PORTAL_FUND_RECEIVED
 
 
 class FundReceived(Document):

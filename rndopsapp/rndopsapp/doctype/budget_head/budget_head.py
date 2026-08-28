@@ -3,7 +3,7 @@
 import frappe
 import requests
 from frappe.model.document import Document
-from rndopsapp.config import ACCOUNT_PORTAL_ACCOUNT_HEADS
+from rndopsapp.static_config import ACCOUNT_PORTAL_ACCOUNT_HEADS
 
 
 class BudgetHead(Document):

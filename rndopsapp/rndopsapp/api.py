@@ -7,7 +7,7 @@ import frappe
 from frappe import _
 from frappe.utils import get_datetime, sanitize_html
 from frappe.utils.file_manager import save_file
-from rndopsapp.config import (
+from rndopsapp.static_config import (
 	ACCOUNT_PORTAL_BASE_URL,
 	ACCOUNT_PORTAL_API,
 	MATTERMOST_API_URL,
