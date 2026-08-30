@@ -620,9 +620,14 @@ def _get_first_submitted_state(workflow_doc):
 # asking for the cancellation (nobody else can move it) or when the document's
 # department has no dept_head set at all.
 #
-# Mode "deadlock" (default) skips the head stage only in those two cases.
 # Mode "always"   skips the head stage for every cancellation request.
-CANCELLATION_HEAD_BYPASS_MODE = "deadlock"
+# Mode "deadlock" skips it only in the two cases above.
+#
+# Set to "always": a cancellation never waits on a department head. The head
+# already approved the original document; requiring them again only to undo it
+# was pure delay, and it deadlocked outright whenever the head was the
+# requester or no dept_head was configured.
+CANCELLATION_HEAD_BYPASS_MODE = "always"
 
 HEAD_STATE = "Pending Head Approval"
 
