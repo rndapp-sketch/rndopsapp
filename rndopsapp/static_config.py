@@ -7,7 +7,6 @@ This file consolidates all hardcoded IP addresses used throughout the applicatio
 KAFKA_BOOTSTRAP_SERVERS = [
     '172.16.134.81:9095',
     '172.16.134.81:9096',
-    '172.16.135.118:9097'
 ]
 
 # Mattermost Configuration

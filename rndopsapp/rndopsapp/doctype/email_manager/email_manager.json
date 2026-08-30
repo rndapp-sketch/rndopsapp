@@ -1,0 +1,87 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "field:module",
+    "creation": "2026-08-28 15:23:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "module",
+        "enabled",
+        "column_break_status",
+        "template",
+        "doc_status_section",
+        "doc_status"
+    ],
+    "fields": [
+        {
+            "description": "The DocType (within the Rndopsapp app) to monitor for workflow_state changes.",
+            "fieldname": "module",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Module (DocType)",
+            "options": "DocType",
+            "reqd": 1,
+            "unique": 1
+        },
+        {
+            "default": "1",
+            "fieldname": "enabled",
+            "fieldtype": "Check",
+            "in_list_view": 1,
+            "label": "Enabled"
+        },
+        {
+            "fieldname": "column_break_status",
+            "fieldtype": "Column Break"
+        },
+        {
+            "description": "Default email template used when a Doc Status row below doesn't specify its own. Any template can be picked for any DocType — not restricted to a name match.",
+            "fieldname": "template",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Default Email Template",
+            "options": "Email Notification Template"
+        },
+        {
+            "fieldname": "doc_status_section",
+            "fieldtype": "Section Break",
+            "label": "Workflow Statuses to Notify On"
+        },
+        {
+            "description": "Email notifications are sent only when a document's workflow_state changes to one of these values. Each row can pick its own Email Template and an optional Role to additionally notify.",
+            "fieldname": "doc_status",
+            "fieldtype": "Table",
+            "label": "Doc Status",
+            "options": "Email Manager Status"
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "links": [],
+    "modified": "2026-08-29 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "Email Manager",
+    "naming_rule": "By fieldname",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "row_format": "Dynamic",
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 1
+}

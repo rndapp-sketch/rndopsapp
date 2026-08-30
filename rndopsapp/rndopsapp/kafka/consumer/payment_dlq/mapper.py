@@ -54,13 +54,16 @@ class PaymentDlqErrorMapper:
         Reverts AccountHeadPayment.payment_status to REJECTED — an option
         already defined on that Select field for exactly this scenario
         (doctype/accountheadpayment/accountheadpayment.json) but previously
-        unused by any code path. Only touches PAID rows: if the doc is
-        already PENDING/REJECTED/RECTIFICATION there's nothing to revert.
+        unused by any code path. In practice every payment observed reaching
+        the DLQ was still sitting at PENDING (the doc is never flipped to
+        PAID by anything before the ledger confirms it), so PENDING is
+        reverted too — only an already-REJECTED or already-RECTIFICATION row
+        is left alone, since those are terminal/manually-handled states.
         """
         if not reference_name:
             return
         current_status = frappe.db.get_value("AccountHeadPayment", reference_name, "payment_status")
-        if current_status == "PAID":
+        if current_status in ("PAID", "PENDING"):
             frappe.db.set_value("AccountHeadPayment", reference_name, "payment_status", "REJECTED")
             frappe.db.commit()
 

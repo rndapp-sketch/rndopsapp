@@ -1,0 +1,63 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "creation": "2026-08-28 15:23:00.000000",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "status",
+        "column_break_ems_1",
+        "template",
+        "column_break_ems_2",
+        "role"
+    ],
+    "fields": [
+        {
+            "description": "Options are populated from the parent's selected Module (DocType)'s actual Workflow states — see Email Manager's client script.",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "label": "Workflow Status",
+            "reqd": 1
+        },
+        {
+            "fieldname": "column_break_ems_1",
+            "fieldtype": "Column Break"
+        },
+        {
+            "description": "Email template to render when the workflow status changes to this value. Leave blank to fall back to the parent Email Manager's default Email Template.",
+            "fieldname": "template",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Email Template",
+            "options": "Email Notification Template"
+        },
+        {
+            "fieldname": "column_break_ems_2",
+            "fieldtype": "Column Break"
+        },
+        {
+            "description": "Optional — also email every User holding this Role when the status changes to this value, in addition to the document owner (per Email Manager's normal owner rule).",
+            "fieldname": "role",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Notify Role",
+            "options": "Role"
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-08-29 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "Email Manager Status",
+    "owner": "Administrator",
+    "permissions": [],
+    "row_format": "Dynamic",
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

@@ -364,7 +364,7 @@ class AccountHeadPaymentMapper:
         project_ref = project_name or getattr(doc, "project_ref_number", None)
         project_number = get_project_number(project_ref)
         commit_id = getattr(doc, "commit_id", None)
-        payment_date_val = getattr(doc, "payment_date", today())
+        payment_date_val = str(getattr(doc, "payment_date", None) or today())
         payment_particular = getattr(doc, "payment_particular", None) or f"Payment for {getattr(doc, 'name', 'NEW')}"
         payment_ref_details = ref_details or getattr(doc, "payment_reference_details", None) or getattr(doc, "name", "")
         payment_amt = payment_amount or getattr(doc, "payment_amount", 0.0)
@@ -372,7 +372,7 @@ class AccountHeadPaymentMapper:
         payment_bmr = bmr or getattr(doc, "payment_bmr", None)
         payment_status = getattr(doc, "payment_status", "PENDING")
         bank_txn_num = getattr(doc, "bank_transaction_number", None)
-        bank_txn_date = getattr(doc, "bank_transaction_date", today())
+        bank_txn_date = str(getattr(doc, "bank_transaction_date", None) or today())
 
         # Resolve Budget Head ID
         budget_head_value = budget_head or getattr(doc, "budget_head", None)

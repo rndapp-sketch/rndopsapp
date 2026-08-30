@@ -1462,6 +1462,38 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
                 _mm_notify(f":x: **Salary Payment Error**\n**frapAppId:** {frapAppId}\n**Error:** budget_head is required")
                 return {"status": "error", "message": "budget_head is required for salary payment"}
 
+            # A commit being COMMITTED on the ledger doesn't mean the project has
+            # actually received the money yet — paying out against an unfunded
+            # commit is exactly what caused the "not yet covered by received
+            # funds" DLQ rejections (2026-08-29, projects 2627C-0031/0042-
+            # CIEN0793LABO). Block here, before the doc even exists, instead of
+            # finding out days later from a Kafka DLQ message. Fails open if the
+            # ledger check itself errors — same posture as
+            # get_active_loan_for_project elsewhere, so a ledger outage doesn't
+            # block every salary payment in the system.
+            _sal_requested_amount = flt(payment_amount or _get_form_value("payment_amount") or 0)
+            _sal_project_no = frappe.db.get_value("Project Registration", _sal_project, "project_no") or _sal_project
+            _sal_funds = get_project_available_amounts(_sal_project_no)
+            if _sal_funds.get("status") == "success":
+                _sal_available = flt(_sal_funds["data"].get("availablePaymentAmount"))
+                if _sal_available < _sal_requested_amount:
+                    print(f"[PAYMENT_DEBUG] [{salary_year_month}] [{_entry_identity}] BLOCKED: available={_sal_available} < requested={_sal_requested_amount}")
+                    _mm_notify(
+                        f":no_entry: **Salary Payment Blocked — Insufficient Funds**\n"
+                        f"**frapAppId:** {frapAppId}\n"
+                        f"**Project:** {_sal_project_no}\n"
+                        f"**Requested:** {_sal_requested_amount}\n"
+                        f"**Available:** {_sal_available}"
+                    )
+                    return {
+                        "status": "error",
+                        "message": (
+                            f"Cannot pay {_sal_requested_amount}: project {_sal_project_no} only has "
+                            f"{_sal_available} available for payment (funds received vs. already "
+                            f"committed). Record the missing Fund Received before retrying."
+                        ),
+                    }
+
             _sal_doc = frappe.new_doc("AccountHeadPayment")
             _sal_doc.project_ref_number = _sal_project
             _sal_doc.budget_head        = _sal_bh
@@ -1705,6 +1737,57 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             f"**Error:** {str(e)}"
         )
         return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_account_head_payment_dlq_errors(project_number=None, budget_head=None, reference_name=None):
+    """
+    Widget-facing counterpart to kafka/dlq_control_api.list_payment_dlq_logs
+    (the admin-only, unfiltered view) — this is what the frontend that
+    actually submitted a payment polls, scoped to just that payment/project,
+    so a submitter sees "why did my payment fail" without needing access to
+    the admin DLQ control page.
+
+    Referenced by name in kafka/consumer/payment_dlq/consumer.py and mapper.py
+    since that DLQ handler was built, but never implemented until now.
+
+    Pass reference_name for a single payment, or project_number (+ optionally
+    budget_head, resolved the same way submit_payment_data resolves it) to see
+    every DLQ rejection recorded against that project/account head.
+    """
+    filters = {}
+    if reference_name:
+        filters["reference_name"] = reference_name
+    if project_number:
+        filters["project_number"] = project_number
+    if budget_head:
+        account_head_id = (
+            frappe.db.get_value("Budget Head", budget_head, "id")
+            or frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "id")
+        )
+        if account_head_id is not None:
+            filters["account_head_id"] = account_head_id
+
+    if not filters:
+        return {"status": "error", "message": "reference_name or project_number is required"}
+
+    rows = frappe.get_all(
+        "Kafka Payment DLQ Log",
+        filters=filters,
+        fields=[
+            "name", "error_type", "error_message", "project_number", "account_head_id",
+            "reference_doctype", "reference_name", "failed_at", "creation",
+        ],
+        order_by="creation desc",
+        ignore_permissions=True,
+    )
+    for row in rows:
+        row["why"] = row.get("error_message") or (
+            "Ledger service rejected this payment but sent no error message with it "
+            f"(error_type={row.get('error_type') or 'unknown'})."
+        )
+    return {"status": "success", "data": rows}
+
 
 @frappe.whitelist()
 def publish_salary_staging(salary_year_month):

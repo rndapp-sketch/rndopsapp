@@ -11,3 +11,4 @@ rndopsapp.patchs.create_verification_staff_role
 rndopsapp.patchs.fix_delegation_application_scope
 rndopsapp.patchs.add_travel_other_pi_workflow
 rndopsapp.patchs.create_loan_settlement_workflow
+rndopsapp.patchs.migrate_email_templates_to_db

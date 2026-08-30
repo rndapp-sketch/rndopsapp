@@ -21,7 +21,10 @@
   "amc_model_no",
   "amc_date_of_installation",
   "amc_duration",
+  "amc_value_type",
+  "amc_value_percentage",
   "amc_value",
+  "amc_computed_value",
   "amc_other_charges",
   "amc_gst",
   "amc_grand_total",
@@ -105,7 +108,7 @@
   },
   {
    "fieldname": "basic_value_bv_of_the_po",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
    "label": "Basic Value (BV) of the PO"
   },
   {
@@ -129,7 +132,7 @@
   },
   {
    "fieldname": "amc_date_of_installation",
-   "fieldtype": "Data",
+   "fieldtype": "Date",
    "label": "Date of Installation"
   },
   {
@@ -138,26 +141,50 @@
    "label": "Duration of AMC (in No. of Years)"
   },
   {
-   "description": "@___________ % of BV",
+   "default": "Value",
+   "fieldname": "amc_value_type",
+   "fieldtype": "Select",
+   "label": "Value of the AMC is in",
+   "options": "Value\nPercentage",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.amc_value_type==\"Percentage\"",
+   "description": "% of Basic Value (BV) of the PO",
+   "fieldname": "amc_value_percentage",
+   "fieldtype": "Percent",
+   "label": "AMC Value (%)",
+   "mandatory_depends_on": "eval:doc.amc_value_type==\"Percentage\""
+  },
+  {
+   "depends_on": "eval:doc.amc_value_type==\"Value\"",
    "fieldname": "amc_value",
-   "fieldtype": "Data",
-   "label": "Value of the AMC"
+   "fieldtype": "Currency",
+   "label": "Value of the AMC (Rs)",
+   "mandatory_depends_on": "eval:doc.amc_value_type==\"Value\""
+  },
+  {
+   "fieldname": "amc_computed_value",
+   "fieldtype": "Currency",
+   "label": "Value of the AMC (Computed)",
+   "read_only": 1
   },
   {
    "fieldname": "amc_other_charges",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
    "label": "Add: Other Charges (Rs)"
   },
   {
    "description": "@ _______ %",
    "fieldname": "amc_gst",
-   "fieldtype": "Data",
+   "fieldtype": "Currency",
    "label": "Add: GST"
   },
   {
    "fieldname": "amc_grand_total",
-   "fieldtype": "Data",
-   "label": "Grand Total"
+   "fieldtype": "Currency",
+   "label": "Grand Total",
+   "read_only": 1
   },
   {
    "fieldname": "grand_total_in_words",
@@ -264,7 +291,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-02 00:00:00.000000",
+ "modified": "2026-08-28 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "AMC",

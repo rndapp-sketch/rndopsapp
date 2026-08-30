@@ -12,11 +12,16 @@ class AMC(Document):
 			self._compute_totals()
 
 	def _compute_totals(self):
-		# amc_value, amc_other_charges, amc_gst are Data fields (user-entered amounts).
-		# amc_grand_total = value + other charges + gst amount.
-		total = (
-			flt(self.get("amc_value"))
+		# AMC value is entered either as a percentage of the PO's Basic Value (BV)
+		# or as a direct amount, depending on amc_value_type.
+		if self.get("amc_value_type") == "Percentage":
+			computed_value = flt(self.get("basic_value_bv_of_the_po")) * flt(self.get("amc_value_percentage")) / 100
+		else:
+			computed_value = flt(self.get("amc_value"))
+		self.amc_computed_value = computed_value
+
+		self.amc_grand_total = (
+			computed_value
 			+ flt(self.get("amc_other_charges"))
 			+ flt(self.get("amc_gst"))
 		)
-		self.amc_grand_total = total
