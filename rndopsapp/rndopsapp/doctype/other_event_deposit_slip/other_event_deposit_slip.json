@@ -1,0 +1,193 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:EVENT-DS-.YYYY.-.#####",
+ "creation": "2025-12-12 08:32:19.792271",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "event_title",
+  "principal_organizer",
+  "client",
+  "funding_agency",
+  "gstin_no",
+  "ecs_ac_no",
+  "ecs_dates",
+  "bank",
+  "fee_calculations_section",
+  "amount_inclusive_of_gst",
+  "gst_multiplier",
+  "gst_on_total_fees_label",
+  "gst_amount",
+  "training_fee",
+  "overhead_amount",
+  "credit_distribution_section",
+  "credit_distribution",
+  "additional_project_credits",
+  "totals_section",
+  "gst_final",
+  "total",
+  "fund_received_ref"
+ ],
+ "fields": [
+  {
+   "fieldname": "event_title",
+   "fieldtype": "Data",
+   "label": "Event Title"
+  },
+  {
+   "fieldname": "principal_organizer",
+   "fieldtype": "Link",
+   "label": "Principal Organizer",
+   "options": "User"
+  },
+  {
+   "fieldname": "client",
+   "fieldtype": "Data",
+   "label": "Client"
+  },
+  {
+   "fieldname": "funding_agency",
+   "fieldtype": "Data",
+   "label": "Funding Agency"
+  },
+  {
+   "fieldname": "gstin_no",
+   "fieldtype": "Data",
+   "label": "GSTIN No."
+  },
+  {
+   "fieldname": "ecs_ac_no",
+   "fieldtype": "Data",
+   "label": "ECS A/C No."
+  },
+  {
+   "fieldname": "ecs_dates",
+   "fieldtype": "Table",
+   "label": "ECS Dates",
+   "options": "Deposit Slip ECS Date"
+  },
+  {
+   "fieldname": "bank",
+   "fieldtype": "Data",
+   "label": "Bank"
+  },
+  {
+   "fieldname": "fee_calculations_section",
+   "fieldtype": "Section Break",
+   "label": "Fee Calculations"
+  },
+  {
+   "fieldname": "amount_inclusive_of_gst",
+   "fieldtype": "Currency",
+   "label": "Amount Inclusive of GST"
+  },
+  {
+   "default": "0.18",
+   "fieldname": "gst_multiplier",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "GST Multiplier",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gst_on_total_fees_label",
+   "fieldtype": "HTML",
+   "label": "GST on Total Fees Label"
+  },
+  {
+   "fieldname": "gst_amount",
+   "fieldtype": "Currency",
+   "label": "GST Amount"
+  },
+  {
+   "fieldname": "training_fee",
+   "fieldtype": "Currency",
+   "label": "License Fee"
+  },
+  {
+   "fieldname": "overhead_amount",
+   "fieldtype": "Currency",
+   "label": "Overhead Amount"
+  },
+  {
+   "fieldname": "credit_distribution_section",
+   "fieldtype": "Section Break",
+   "label": "Credit Distribution"
+  },
+  {
+   "fieldname": "credit_distribution",
+   "fieldtype": "Table",
+   "label": "Credit as follows",
+   "options": "Deposit Slip Credit Distribution"
+  },
+  {
+   "fieldname": "additional_project_credits",
+   "fieldtype": "Table",
+   "label": "Additional Project Credits",
+   "options": "Deposit Slip Project Credit"
+  },
+  {
+   "fieldname": "totals_section",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "gst_final",
+   "fieldtype": "Currency",
+   "label": "GST (Final)"
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Currency",
+   "label": "Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-17 15:25:40.614491",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Other Event Deposit Slip",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

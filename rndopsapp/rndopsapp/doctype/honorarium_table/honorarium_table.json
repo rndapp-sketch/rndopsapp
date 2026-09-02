@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-11 17:50:42.170826",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_sxny",
+  "web_mail_id",
+  "name1",
+  "emp_id",
+  "designation",
+  "department_section",
+  "nature_of_work",
+  "from",
+  "to",
+  "bank_account_number",
+  "ifsc_code",
+  "amount"
+ ],
+ "fields": [
+  {
+   "fetch_from": "web_mail_id.full_name",
+   "fieldname": "name1",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Name"
+  },
+  {
+   "fetch_from": "web_mail_id.designation_name",
+   "fieldname": "designation",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Designation"
+  },
+  {
+   "fetch_from": "web_mail_id.department_name",
+   "fieldname": "department_section",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Department/ Section"
+  },
+  {
+   "fetch_from": "web_mail_id.employee_id",
+   "fieldname": "emp_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Employee Id"
+  },
+  {
+   "fieldname": "nature_of_work",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Nature of Work"
+  },
+  {
+   "fieldname": "from",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From"
+  },
+  {
+   "fieldname": "to",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "To"
+  },
+  {
+   "fieldname": "bank_account_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Bank account Number"
+  },
+  {
+   "fieldname": "ifsc_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "IFSC Code"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount (In Rs.)"
+  },
+  {
+   "columns": 15,
+   "fieldname": "section_break_sxny",
+   "fieldtype": "Section Break"
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "fieldname": "web_mail_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Webmail Id",
+   "options": "User"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-03-18 11:53:57.795128",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "honorarium_table",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,313 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}12{######}",
+ "creation": "2025-12-26 12:34:09.267229",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_bu6z",
+  "amended_from",
+  "igf_purchase_general_form",
+  "igf_indenter_details",
+  "igf_webmail_id",
+  "igf_indenter",
+  "igf_indenter_designation",
+  "igf_webmail_user_id",
+  "igf_employee_code",
+  "section_break_nvnk",
+  "igf_project_details",
+  "igf_other_pi",
+  "igf_other_pi_id",
+  "igf_project_title",
+  "igf_project_code",
+  "igf_account_head",
+  "igf_department_centre_section",
+  "details_of_items_to_be_purchased_section",
+  "igf_items",
+  "igf_total_estimate",
+  "igf_sanctioned_by_agency",
+  "column_break_ybui",
+  "igf_purchase_committee",
+  "igf_committee_members",
+  "igf_committee_note",
+  "igf_tender_details",
+  "igf_tender_type",
+  "igf_number_of_bids",
+  "igf_file_upload_section",
+  "igf_upload_detailed_specification",
+  "igf_upload_vendor_list",
+  "igf_declaration_section",
+  "igf_declaration_text",
+  "igf_decl_inr_confirmation",
+  "send_to_director",
+  "director_signed_pdf"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_bu6z",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Indent General Form",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "igf_purchase_general_form",
+   "fieldtype": "Section Break",
+   "label": "Purchase General Form"
+  },
+  {
+   "fieldname": "igf_webmail_id",
+   "fieldtype": "Link",
+   "label": "webmail_Id",
+   "options": "User"
+  },
+  {
+   "fetch_from": "igf_webmail_id.full_name",
+   "fieldname": "igf_indenter",
+   "fieldtype": "Data",
+   "label": "Indenter"
+  },
+  {
+   "fetch_from": "igf_webmail_id.designation_name",
+   "fieldname": "igf_indenter_designation",
+   "fieldtype": "Data",
+   "label": "Indenter Designation"
+  },
+  {
+   "fetch_from": "igf_webmail_id.username",
+   "fieldname": "igf_webmail_user_id",
+   "fieldtype": "Data",
+   "label": "Webmail User ID"
+  },
+  {
+   "fieldname": "igf_indenter_details",
+   "fieldtype": "Column Break",
+   "label": "Indenter Details"
+  },
+  {
+   "fieldname": "section_break_nvnk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "igf_project_title.project_no",
+   "fieldname": "igf_project_code",
+   "fieldtype": "Data",
+   "label": "Project Code",
+   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code"
+  },
+  {
+   "default": "Self",
+   "fieldname": "igf_other_pi",
+   "fieldtype": "Select",
+   "label": "Is this charged to another PI's project?",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "depends_on": "eval:doc.igf_other_pi == \"Other\"",
+   "fieldname": "igf_other_pi_id",
+   "fieldtype": "Link",
+   "label": "Other PI Webmail Id",
+   "mandatory_depends_on": "eval:doc.igf_other_pi == \"Other\"",
+   "options": "User"
+  },
+  {
+   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code",
+   "fieldname": "igf_project_title",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "igf_account_head",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Account Head",
+   "options": "\nConsumable\nContingency\nEquipments\nOther",
+   "placeholder": "Select the Account Head",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "igf_webmail_id.employee_id",
+   "fieldname": "igf_employee_code",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Employee Code"
+  },
+  {
+   "fieldname": "igf_department_centre_section",
+   "fieldtype": "Link",
+   "label": "Department / Centre / Section",
+   "options": "Department_prornd"
+  },
+  {
+   "fieldname": "igf_project_details",
+   "fieldtype": "Column Break",
+   "label": "Project Details"
+  },
+  {
+   "fieldname": "details_of_items_to_be_purchased_section",
+   "fieldtype": "Section Break",
+   "label": "DETAILS OF ITEMS TO BE PURCHASED"
+  },
+  {
+   "fieldname": "igf_items",
+   "fieldtype": "Table",
+   "label": "Details of Items to be Purchased",
+   "options": "IGF Purchase Item Detail"
+  },
+  {
+   "fieldname": "igf_total_estimate",
+   "fieldtype": "Currency",
+   "label": "Total Estimate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "igf_sanctioned_by_agency",
+   "fieldtype": "Select",
+   "label": "Were the above items sanctioned by the Funding Agency?",
+   "options": "Yes\nNo"
+  },
+  {
+   "fieldname": "igf_purchase_committee",
+   "fieldtype": "Section Break",
+   "label": "PURCHASE COMMITTEE (Minimum 3 members)"
+  },
+  {
+   "fieldname": "igf_committee_members",
+   "fieldtype": "Table",
+   "label": "Purchase Committee",
+   "options": "IGF Purchase Committee Detail"
+  },
+  {
+   "fieldname": "igf_committee_note",
+   "fieldtype": "HTML",
+   "options": "<p style=\"font-size: 12px; color: #555; margin-top: 6px;\">\n  <b>*Note:</b>\n  If the member is from outside, his/her email id should be provided.\n  Otherwise, the webmail ID excluding the part\n  <code>@iitg.ac.in</code> should be provided.\n</p>\n",
+   "read_only": 1
+  },
+  {
+   "fieldname": "igf_tender_details",
+   "fieldtype": "Section Break",
+   "label": "Tender Details"
+  },
+  {
+   "fieldname": "igf_tender_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Tender Type",
+   "options": "\nLimited Tender\nOpen Tender",
+   "placeholder": "Select the Tender Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "igf_number_of_bids",
+   "fieldtype": "Select",
+   "label": "Number of Bids",
+   "options": "\nSingle Bid (combined technical and price bids)\nDouble Bid (separate technical and price bids)",
+   "placeholder": "Select Number of Bids"
+  },
+  {
+   "fieldname": "igf_file_upload_section",
+   "fieldtype": "Section Break",
+   "label": "FILE UPLOAD SECTION"
+  },
+  {
+   "fieldname": "igf_upload_detailed_specification",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Upload Detailed Specification"
+  },
+  {
+   "fieldname": "igf_upload_vendor_list",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "Upload Vendor List"
+  },
+  {
+   "fieldname": "igf_declaration_section",
+   "fieldtype": "Section Break",
+   "label": "DECLARATION"
+  },
+  {
+   "default": "0",
+   "fieldname": "igf_declaration_text",
+   "fieldtype": "Check",
+   "label": "For non sanctioned item, the PI will be responsible for any financial obligations that may arise.",
+   "options": "\n\n<p style=\"font-size: 13px;\">\n  All prices / amounts mentioned in the form are in Indian Rupee (INR).\n</p>\n"
+  },
+  {
+   "default": "0",
+   "fieldname": "igf_decl_inr_confirmation",
+   "fieldtype": "Check",
+   "label": "All prices / amounts mentioned in the form are in Indian Rupee (INR)."
+  },
+  {
+   "default": "0",
+   "fieldname": "send_to_director",
+   "fieldtype": "Check",
+   "label": "Send for Director Approval"
+  },
+  {
+   "fieldname": "director_signed_pdf",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Director Signed PDF"
+  },
+  {
+   "fieldname": "column_break_ybui",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-13 17:13:45.840867",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Indent General Form",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

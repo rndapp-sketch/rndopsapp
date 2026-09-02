@@ -1,0 +1,242 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}1C{######}",
+ "creation": "2025-12-22 09:57:55.727081",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_tvd4",
+  "amended_from",
+  "section_break_mtlg",
+  "webmail_id",
+  "pi_name",
+  "employee_id",
+  "section_break_garo",
+  "disbursal_project_number",
+  "project_title",
+  "date_of_registration",
+  "date_of_completion",
+  "section_break_hfic",
+  "total_amount_received",
+  "current_balance",
+  "section_break_vaha",
+  "details_of_disbursal",
+  "section_break_lcud",
+  "total_disbursal_amount",
+  "total_personal_share",
+  "total_institute_share",
+  "institute_share_breakdown",
+  "idf",
+  "dpf",
+  "staff_welfare_fund",
+  "student_welfare_fund",
+  "section_break_xhma",
+  "disbursal_note",
+  "please_attach_a_copy_of_completion_report",
+  "section_break_vjlz",
+  "disbursal_additional_documents",
+  "workflow_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_tvd4",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Disbursal of Consultancy",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_mtlg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fetch_from": "webmail_id.full_name",
+   "fieldname": "pi_name",
+   "fieldtype": "Data",
+   "label": "PI Name"
+  },
+  {
+   "fieldname": "webmail_id",
+   "fieldtype": "Link",
+   "label": "Webmail ID",
+   "options": "User"
+  },
+  {
+   "fetch_from": "webmail_id.employee_id",
+   "fieldname": "employee_id",
+   "fieldtype": "Data",
+   "label": "Employee ID"
+  },
+  {
+   "fieldname": "section_break_garo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Long Text",
+   "label": "Project Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "date_of_registration",
+   "fieldtype": "Date",
+   "label": "Date of Registration"
+  },
+  {
+   "fieldname": "date_of_completion",
+   "fieldtype": "Date",
+   "label": "Date of Completion"
+  },
+  {
+   "fieldname": "section_break_hfic",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_amount_received",
+   "fieldtype": "Currency",
+   "label": "Total Amount Received"
+  },
+  {
+   "fieldname": "current_balance",
+   "fieldtype": "Currency",
+   "label": "Current Balance"
+  },
+  {
+   "default": "PDF",
+   "fieldname": "disbursal_project_number",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "options": "Select\nPDF",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_vaha",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "details_of_disbursal",
+   "fieldtype": "Table",
+   "label": "Details of Disbursal",
+   "options": "Disbursal Detail"
+  },
+  {
+   "fieldname": "section_break_xhma",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "please_attach_a_copy_of_completion_report",
+   "fieldtype": "Attach",
+   "label": "Please Attach a Copy of Completion Report"
+  },
+  {
+   "fieldname": "disbursal_note",
+   "fieldtype": "HTML",
+   "options": "<span style=\"color: #006600;\">\n                                (PDF No.: Professional Development Fund No. of the Consultant/Employee to which the amount is to be credited)\n                                <br><br><b>Note</b>: Tax to be deducted at source if disbursed to employee/consultant, but not if to student or to PDF.\n                                </span>"
+  },
+  {
+   "fieldname": "section_break_vjlz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "disbursal_additional_documents",
+   "fieldtype": "Attach",
+   "label": "Additional Documents (Max 5 file can be uploaded)"
+  },
+  {
+   "fieldname": "institute_share_breakdown",
+   "fieldtype": "Section Break",
+   "label": "Institute Share Breakdown (Calculated Fields)"
+  },
+  {
+   "fieldname": "total_disbursal_amount",
+   "fieldtype": "Currency",
+   "label": "Total Disbursal Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_institute_share",
+   "fieldtype": "Currency",
+   "label": "Total Institute Share",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idf",
+   "fieldtype": "Currency",
+   "label": "IDF (40% of Inst. Share)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dpf",
+   "fieldtype": "Currency",
+   "label": "DPF (50% of Inst. Share)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "staff_welfare_fund",
+   "fieldtype": "Currency",
+   "label": "Staff Welfare Fund (5%)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_personal_share",
+   "fieldtype": "Currency",
+   "label": "Total Personal Share",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_lcud",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "student_welfare_fund",
+   "fieldtype": "Currency",
+   "label": "Student Welfare Fund (5%)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-08-11 15:21:49.288176",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Disbursal of Consultancy",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

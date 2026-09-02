@@ -1,0 +1,140 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{DD}{MM}{YYYY}{project_ref_number}",
+ "creation": "2026-01-28 15:36:29.195002",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_s2bj",
+  "amended_from",
+  "payments_details_section",
+  "project_ref_number",
+  "commit_id",
+  "budget_head",
+  "payment_date",
+  "payment_particular",
+  "payment_reference_details",
+  "payment_amount",
+  "payment_bmr",
+  "payment_status",
+  "bank_transaction_number",
+  "bank_transaction_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_s2bj",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Payments"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "AccountHeadPayment",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "payments_details_section",
+   "fieldtype": "Section Break",
+   "label": "Payments Details"
+  },
+  {
+   "fieldname": "project_ref_number",
+   "fieldtype": "Link",
+   "label": "Project Ref Number",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "budget_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head"
+  },
+  {
+   "fieldname": "payment_date",
+   "fieldtype": "Date",
+   "label": "Payment Date"
+  },
+  {
+   "fieldname": "payment_particular",
+   "fieldtype": "Data",
+   "label": "Payment Particular"
+  },
+  {
+   "fieldname": "payment_reference_details",
+   "fieldtype": "Data",
+   "label": "Payment Reference Details"
+  },
+  {
+   "fieldname": "payment_amount",
+   "fieldtype": "Currency",
+   "label": "Payment Amount"
+  },
+  {
+   "fieldname": "payment_bmr",
+   "fieldtype": "Data",
+   "label": "BMR"
+  },
+  {
+   "default": "PENDING",
+   "fieldname": "payment_status",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Payment Status",
+   "options": "PENDING\nPAID\nREJECTED\nRECTIFICATION"
+  },
+  {
+   "fieldname": "bank_transaction_number",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Bank Transaction Number"
+  },
+  {
+   "fieldname": "bank_transaction_date",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Bank Transaction Date"
+  },
+  {
+   "fieldname": "commit_id",
+   "fieldtype": "Data",
+   "label": "Commit Id"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-02-26 14:56:11.666999",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "AccountHeadPayment",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

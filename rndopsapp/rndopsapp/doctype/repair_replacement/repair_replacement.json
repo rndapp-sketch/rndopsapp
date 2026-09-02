@@ -1,0 +1,230 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-06 18:04:09.259726",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_5hhb",
+  "amended_from",
+  "indent_cum_sanction_sheet_id",
+  "project_no",
+  "project_ref",
+  "indent_type",
+  "section_rr",
+  "rr_item_name",
+  "rr_po_number",
+  "rr_justification",
+  "rr_dimmension_and_weight",
+  "rr_is_warranty",
+  "rr_vendor_address",
+  "rr_vendor_email",
+  "rr_indentor_contact",
+  "rr_proposed_carrier",
+  "rr_repair_expenditure",
+  "rr_other_charges",
+  "rr_grand_total",
+  "rr_mode_of_payment",
+  "file_upload_section",
+  "rr_original_purchase_order",
+  "rr_upload_estimate",
+  "rr_upload_service_report",
+  "declaration_section",
+  "rr_dec_1",
+  "workflow_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_5hhb",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "repair_replacement",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "indent_cum_sanction_sheet_id",
+   "fieldtype": "Link",
+   "label": "Indent Cum Sanction Sheet ID",
+   "options": "Indent Cum Sanction Sheet",
+   "read_only": 1,
+   "reqd": 0
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_ref",
+   "fieldtype": "Link",
+   "label": "Project Reference",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "indent_type",
+   "fieldtype": "Data",
+   "label": "Indent Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_rr",
+   "fieldtype": "Section Break",
+   "label": "PURCHASE INDENT-CUM-SANCTION SHEET REPAIR"
+  },
+  {
+   "fieldname": "rr_item_name",
+   "fieldtype": "Data",
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "rr_po_number",
+   "fieldtype": "Data",
+   "label": "P.O. No. under which the item was purchased"
+  },
+  {
+   "fieldname": "rr_justification",
+   "fieldtype": "Data",
+   "label": "Justification/ Purpose (Please attach separate sheet if needed):"
+  },
+  {
+   "fieldname": "rr_dimmension_and_weight",
+   "fieldtype": "Data",
+   "label": "Dimention & Weight of the item/s after packing"
+  },
+  {
+   "fieldname": "rr_vendor_email",
+   "fieldtype": "Data",
+   "label": "Vendor Email Id"
+  },
+  {
+   "fieldname": "rr_is_warranty",
+   "fieldtype": "Select",
+   "label": "Is Item currently under warranty period:",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "rr_vendor_address",
+   "fieldtype": "Small Text",
+   "label": "Detail Address of Vendor to whom item is proposed to be sent:"
+  },
+  {
+   "fieldname": "rr_indentor_contact",
+   "fieldtype": "Data",
+   "label": "Indentor Contact Number"
+  },
+  {
+   "fieldname": "rr_proposed_carrier",
+   "fieldtype": "Data",
+   "label": "Proposed Carrier"
+  },
+  {
+   "fieldname": "rr_repair_expenditure",
+   "fieldtype": "Currency",
+   "label": "Repair Expenditure (Rs)"
+  },
+  {
+   "fieldname": "rr_other_charges",
+   "fieldtype": "Currency",
+   "label": "Add: Other Charges (Freight, Custom Duty, etc.)"
+  },
+  {
+   "fieldname": "rr_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total (Rs)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rr_mode_of_payment",
+   "fieldtype": "Data",
+   "label": "Mode of Payment"
+  },
+  {
+   "fieldname": "file_upload_section",
+   "fieldtype": "Section Break",
+   "label": "File Upload Section"
+  },
+  {
+   "fieldname": "rr_original_purchase_order",
+   "fieldtype": "Attach",
+   "label": "Upload Original Purchase Order"
+  },
+  {
+   "fieldname": "rr_upload_estimate",
+   "fieldtype": "Attach",
+   "label": "Upload Estimate"
+  },
+  {
+   "fieldname": "rr_upload_service_report",
+   "fieldtype": "Attach",
+   "label": "Upload Service Report"
+  },
+  {
+   "fieldname": "declaration_section",
+   "fieldtype": "Section Break",
+   "label": "Declaration"
+  },
+  {
+   "default": "0",
+   "fieldname": "rr_dec_1",
+   "fieldtype": "Check",
+   "label": " All prices/ amounts mentioned in the form are in India Rupee (INR)."
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Workflow State",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-06-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "repair_replacement",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

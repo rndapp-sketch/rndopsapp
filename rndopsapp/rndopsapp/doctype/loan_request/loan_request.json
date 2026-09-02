@@ -1,0 +1,313 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}LOAN{#####}",
+ "creation": "2026-04-02 12:26:43.111022",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_gclt",
+  "column_break_qnoi",
+  "amended_from",
+  "section_break_aadt",
+  "self_other",
+  "applying_for_section",
+  "loan_for_webmail_id",
+  "loan_for_name",
+  "loan_for_department",
+  "loan_for_designation",
+  "applicant_details_section",
+  "applicant_webmail",
+  "applicant_department",
+  "applicant_designation",
+  "project_details_section",
+  "project_name",
+  "project_number",
+  "loan_details_section",
+  "loan_account_type",
+  "section_break_hzoo",
+  "account_head_fund_breakup",
+  "section_break_voiw",
+  "loan_amount",
+  "section_break_mjkn",
+  "comments_if_any",
+  "loan_agreements_section",
+  "agreement_no_1",
+  "agreement_no_2",
+  "section_break_fqlm",
+  "witness_attachment",
+  "project_copi",
+  "additional_attachment",
+  "section_break_hucf",
+  "bmr",
+  "bmr_date",
+  "workflow_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_gclt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Loan Request",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_aadt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "Self",
+   "fieldname": "self_other",
+   "fieldtype": "Select",
+   "label": "Applying for self or other?",
+   "options": "\nSelf\nOther"
+  },
+  {
+   "depends_on": "eval:doc.self_other==\"Other\"",
+   "fieldname": "applying_for_section",
+   "fieldtype": "Section Break",
+   "label": "Applying For"
+  },
+  {
+   "fieldname": "loan_for_webmail_id",
+   "fieldtype": "Link",
+   "label": "PI Webmail Id",
+   "options": "User"
+  },
+  {
+   "fetch_from": "loan_for_webmail_id.department_name",
+   "fieldname": "loan_for_department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fetch_from": "loan_for_webmail_id.designation_name",
+   "fieldname": "loan_for_designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fetch_from": "loan_for_webmail_id.full_name",
+   "fieldname": "loan_for_name",
+   "fieldtype": "Data",
+   "label": "Name"
+  },
+  {
+   "fieldname": "applicant_details_section",
+   "fieldtype": "Section Break",
+   "label": "Applicant Details"
+  },
+  {
+   "fieldname": "applicant_webmail",
+   "fieldtype": "Link",
+   "label": "Webmail Id",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "applicant_webmail.department_name",
+   "fieldname": "applicant_department",
+   "fieldtype": "Data",
+   "label": "Department",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "applicant_webmail.designation_name",
+   "fieldname": "applicant_designation",
+   "fieldtype": "Data",
+   "label": "Designation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_details_section",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
+  },
+  {
+   "fetch_from": "project_name.project_no",
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "project_name",
+   "fieldtype": "Link",
+   "label": "Project Title",
+   "options": "Project Registration"
+  },
+  {
+   "fieldname": "loan_details_section",
+   "fieldtype": "Section Break",
+   "label": "Loan Details"
+  },
+  {
+   "fieldname": "loan_account_type",
+   "fieldtype": "Select",
+   "label": "Loan From account Type",
+   "options": "\nIDF (Institute Development Fund)\nPDF (Personal Development Fund)\nDPF (Department Provisional Fund)\nSWF (Staff Welfare Fund)"
+  },
+  {
+   "fieldname": "loan_amount",
+   "fieldtype": "Currency",
+   "label": "Total Loan Amount"
+  },
+  {
+   "fieldname": "account_head_fund_breakup",
+   "fieldtype": "Table",
+   "label": "Fund Breakup",
+   "options": "Loan Amount Accounthead Breakup"
+  },
+  {
+   "fieldname": "loan_agreements_section",
+   "fieldtype": "Section Break",
+   "label": "Loan Agreements"
+  },
+  {
+   "default": "0",
+   "fieldname": "agreement_no_1",
+   "fieldtype": "Check",
+   "label": "I Agree to repay the loan upon receipt and realization of the said project funds in the R&D Section."
+  },
+  {
+   "default": "0",
+   "fieldname": "agreement_no_2",
+   "fieldtype": "Check",
+   "label": "In case of non-receipt of funds by the end of the current financial year, I authorize recovery from any dues payable to me by the institute."
+  },
+  {
+   "fieldname": "witness_attachment",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "If the Project Has CO-PI then Upload Co-PI's Witnesses (Witnesses  can be email attachment or Form No RD-M14 hardcopy signed attachment)  ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_fqlm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_qnoi",
+   "fieldtype": "Column Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "section_break_hzoo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_voiw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "section_break_hucf",
+   "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval:doc.workflow_state == 'Pending @ Staff (Deposit Loan)'",
+   "fieldname": "bmr",
+   "fieldtype": "Data",
+   "label": "BMR",
+   "mandatory_depends_on": "eval:doc.workflow_state == 'Pending @ Staff (Deposit Loan)'"
+  },
+  {
+   "depends_on": "eval:doc.workflow_state == 'Pending @ Staff (Deposit Loan)'",
+   "fieldname": "bmr_date",
+   "fieldtype": "Date",
+   "label": "BMR Date",
+   "mandatory_depends_on": "eval:doc.workflow_state == 'Pending @ Staff (Deposit Loan)'"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_mjkn",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "comments_if_any",
+   "fieldtype": "Long Text",
+   "label": "Comments, If Any"
+  },
+  {
+   "fieldname": "additional_attachment",
+   "fieldtype": "Attach",
+   "label": "Add Attachment , if Any"
+  },
+  {
+   "fieldname": "project_copi",
+   "fieldtype": "Select",
+   "label": "Does this Project Has Co-PI?",
+   "options": "\nYes\nNo"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-04-16 21:31:31.013303",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Loan Request",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

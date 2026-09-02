@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-12-22 15:00:13.006683",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "username",
+  "fullname",
+  "designation",
+  "department",
+  "employee_roll_number",
+  "nature_of_work",
+  "from_date",
+  "to_date",
+  "bank_acc_number",
+  "ifsc_code",
+  "amount",
+  "authority_approval_consent"
+ ],
+ "fields": [
+  {
+   "fieldname": "username",
+   "fieldtype": "Link",
+   "label": "Username",
+   "options": "User"
+  },
+  {
+   "fetch_from": "username.full_name",
+   "fieldname": "fullname",
+   "fieldtype": "Data",
+   "label": "Full Name"
+  },
+  {
+   "fetch_from": "username.designation_name",
+   "fieldname": "designation",
+   "fieldtype": "Data",
+   "label": "Designation"
+  },
+  {
+   "fetch_from": "username.department_name",
+   "fieldname": "department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fetch_from": "username.employee_id",
+   "fieldname": "employee_roll_number",
+   "fieldtype": "Data",
+   "label": "Employment ID / Roll No"
+  },
+  {
+   "fieldname": "nature_of_work",
+   "fieldtype": "Data",
+   "label": "Nature Of Work"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "label": "From Date"
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "To Date"
+  },
+  {
+   "fieldname": "bank_acc_number",
+   "fieldtype": "Data",
+   "label": "Bank Account Number"
+  },
+  {
+   "fieldname": "ifsc_code",
+   "fieldtype": "Data",
+   "label": "IFSC Code"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount ( In Rupees )"
+  },
+  {
+   "fieldname": "authority_approval_consent",
+   "fieldtype": "Select",
+   "label": "Approval of the Competent Authority attached Yes/No",
+   "options": "\nYes\nNo"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-16 11:19:41.090373",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Details Of Honorarium",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

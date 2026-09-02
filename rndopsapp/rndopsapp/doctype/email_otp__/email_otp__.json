@@ -1,0 +1,159 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-02-09 13:04:27.469632",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "otp_core_information_section_u_r",
+  "email_u_r",
+  "universal_user_u_r",
+  "otp_u_r",
+  "otp_hash_u_r",
+  "purpose_u_r",
+  "expiry_time_u_r",
+  "last_sent_at_u_r",
+  "is_verified_u_r",
+  "verified_at_u_r",
+  "is_expired_u_r",
+  "security_and_control_section_u_r",
+  "otp_attempts_u_r",
+  "resent_count_u_r",
+  "naming_series"
+ ],
+ "fields": [
+  {
+   "fieldname": "otp_core_information_section_u_r",
+   "fieldtype": "Section Break",
+   "label": "OTP Core Information"
+  },
+  {
+   "description": "Used for OTP delivery",
+   "fieldname": "email_u_r",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email Address",
+   "reqd": 1
+  },
+  {
+   "fieldname": "universal_user_u_r",
+   "fieldtype": "Link",
+   "label": "Universal User",
+   "options": "Universal User__"
+  },
+  {
+   "description": "Plain-text OTP for verification (cleared after use)",
+   "fieldname": "otp_u_r",
+   "fieldtype": "Data",
+   "label": "OTP"
+  },
+  {
+   "description": "6-digit numeric OTP - HASHED for security",
+   "fieldname": "otp_hash_u_r",
+   "fieldtype": "Data",
+   "label": "OTP Hash"
+  },
+  {
+   "fieldname": "purpose_u_r",
+   "fieldtype": "Select",
+   "label": "Purpose",
+   "options": "\nRegistration\nLogin\nPassword Reset"
+  },
+  {
+   "description": "Now + 10 mins",
+   "fieldname": "expiry_time_u_r",
+   "fieldtype": "Datetime",
+   "label": "OTP Expiry Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "last_sent_at_u_r",
+   "fieldtype": "Datetime",
+   "label": "Last Sent At"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_verified_u_r",
+   "fieldtype": "Check",
+   "label": "Is Verified"
+  },
+  {
+   "fieldname": "verified_at_u_r",
+   "fieldtype": "Datetime",
+   "label": "Verified At"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_expired_u_r",
+   "fieldtype": "Check",
+   "label": "Is Expired"
+  },
+  {
+   "fieldname": "security_and_control_section_u_r",
+   "fieldtype": "Section Break",
+   "label": "Security and Control"
+  },
+  {
+   "default": "0",
+   "description": "Increment on failure",
+   "fieldname": "otp_attempts_u_r",
+   "fieldtype": "Int",
+   "label": "OTP Attempts"
+  },
+  {
+   "default": "0",
+   "description": "Track resend abuse",
+   "fieldname": "resent_count_u_r",
+   "fieldtype": "Int",
+   "label": "Resent Count"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Naming Series",
+   "options": "U_R_E_OTP.#####",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-02-23 12:00:00",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Email OTP__",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,11 @@
+{
+  "venvPath": "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd",
+  "venv": "env",
+  "extraPaths": [
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/frappe",
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/erpnext",
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/hrms",
+    "/home/iitg_oc_2025/Frappe_202607/frappe_dev/prornd/apps/rndopsapp"
+  ],
+  "reportMissingImports": "none"
+}

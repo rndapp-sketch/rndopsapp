@@ -1,0 +1,220 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:SAN_{DD}{MM}{YY}-{##}-{refnum_prj_num}",
+ "creation": "2025-10-22 11:44:00.692109",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_c67m",
+  "amended_from",
+  "project_proposal",
+  "refnum_prj_num",
+  "sanction_workflow_status",
+  "workflow_status",
+  "section_break_edqq",
+  "total_sanctioned_amount",
+  "sanctioned_letter_no",
+  "sanctioned_letter_date",
+  "sanctioned_budget_breakup",
+  "section_break_wzqv",
+  "sanction_related_files",
+  "have_fund_details",
+  "section_break_gmpc",
+  "project_type_linked",
+  "is_gst_invoice_issued",
+  "invoice_details",
+  "amount_received",
+  "fund_transactions",
+  "iitg_bank_account_number",
+  "received_amount_breakup"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_c67m",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Fund Sanction",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_edqq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_sanctioned_amount",
+   "fieldtype": "Currency",
+   "label": "Total sanctioned Amount (\u20b9)",
+   "non_negative": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "sanctioned_letter_no",
+   "fieldtype": "Data",
+   "label": "Sanctioned Letter No.",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sanctioned_letter_date",
+   "fieldtype": "Date",
+   "label": "Date of Sanctioned Letter"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "sanctioned_budget_breakup",
+   "fieldtype": "Table",
+   "label": "Total Budget Break-up",
+   "options": "Project Sanctioned Budget"
+  },
+  {
+   "fieldname": "section_break_wzqv",
+   "fieldtype": "Section Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "sanction_related_files",
+   "fieldtype": "Table",
+   "label": "Upload Sanction Related Files",
+   "options": "Project Sanction File"
+  },
+  {
+   "default": "No",
+   "fieldname": "have_fund_details",
+   "fieldtype": "Select",
+   "label": "Have You Received Fund? ",
+   "options": "Yes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.have_fund_details == 'Yes'",
+   "fieldname": "section_break_gmpc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "No",
+   "depends_on": "eval:doc.project_type_linked == 'Consultancy'\r\n",
+   "fieldname": "is_gst_invoice_issued",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "is GST Invoice Issued?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "depends_on": "eval:doc.is_gst_invoice_issued == 'Yes'\r\n",
+   "fieldname": "invoice_details",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Invoice No :"
+  },
+  {
+   "fieldname": "amount_received",
+   "fieldtype": "Currency",
+   "label": "Amount Received (\u20b9) :"
+  },
+  {
+   "fieldname": "fund_transactions",
+   "fieldtype": "Table",
+   "label": "Transactions Detail",
+   "options": "Project Fund Transaction"
+  },
+  {
+   "fieldname": "iitg_bank_account_number",
+   "fieldtype": "Data",
+   "label": "IITG Bank Account Number where amount has been transfered :"
+  },
+  {
+   "fieldname": "received_amount_breakup",
+   "fieldtype": "Table",
+   "hidden": 1,
+   "label": "Budget Breakup of the Received Amount ",
+   "options": "Project Received Budget"
+  },
+  {
+   "description": "Link to the associated Project Proposal.",
+   "fieldname": "project_proposal",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Project Registered",
+   "non_negative": 1,
+   "options": "Project Registration",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "project_proposal.project_type",
+   "fieldname": "project_type_linked",
+   "fieldtype": "Select",
+   "label": "Project Type",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "refnum_prj_num",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Ref Number (Project Registration)"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "sanction_workflow_status",
+   "fieldtype": "Data",
+   "label": "Workflow Status"
+  },
+  {
+   "fieldname": "workflow_status",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "workflow state"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-23 10:42:57.189013",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Fund Sanction",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

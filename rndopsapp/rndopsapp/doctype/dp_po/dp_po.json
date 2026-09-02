@@ -1,0 +1,196 @@
+{
+  "actions": [],
+  "allow_rename": 1,
+  "creation": "2026-06-18 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "direct_purchase_ref",
+    "sanction_sheet_ref",
+    "section_po_details",
+    "vendor_name_address",
+    "po_number",
+    "po_date",
+    "quotation_ref_no",
+    "section_applicant_details",
+    "applicant",
+    "department",
+    "account_head",
+    "funding_agency",
+    "firm_name_address",
+    "project_no",
+    "file_no",
+    "grand_total",
+    "section_items",
+    "items",
+    "amount_in_words",
+    "section_terms",
+    "terms_and_conditions",
+    "section_signatory",
+    "signee_name",
+    "signee_designation"
+  ],
+  "fields": [
+    {
+      "fieldname": "direct_purchase_ref",
+      "fieldtype": "Link",
+      "label": "Direct Purchase",
+      "options": "Direct Purchase"
+    },
+    {
+      "fieldname": "sanction_sheet_ref",
+      "fieldtype": "Link",
+      "label": "Sanction Sheet",
+      "options": "sanction_sheet"
+    },
+    {
+      "fieldname": "section_po_details",
+      "fieldtype": "Section Break",
+      "label": "PO Details"
+    },
+    {
+      "fieldname": "vendor_name_address",
+      "fieldtype": "Small Text",
+      "label": "Vendor Name / Address (TO:)"
+    },
+    {
+      "fieldname": "po_number",
+      "fieldtype": "Data",
+      "label": "P.O. Number"
+    },
+    {
+      "fieldname": "po_date",
+      "fieldtype": "Date",
+      "label": "P.O. Date"
+    },
+    {
+      "fieldname": "quotation_ref_no",
+      "fieldtype": "Data",
+      "label": "Quotation Reference No."
+    },
+    {
+      "fieldname": "section_applicant_details",
+      "fieldtype": "Section Break",
+      "label": "Applicant Details"
+    },
+    {
+      "fieldname": "applicant",
+      "fieldtype": "Data",
+      "label": "Applicant"
+    },
+    {
+      "fieldname": "department",
+      "fieldtype": "Data",
+      "label": "Department"
+    },
+    {
+      "fieldname": "account_head",
+      "fieldtype": "Data",
+      "label": "Account Head"
+    },
+    {
+      "fieldname": "funding_agency",
+      "fieldtype": "Data",
+      "label": "Funding Agency"
+    },
+    {
+      "fieldname": "firm_name_address",
+      "fieldtype": "Small Text",
+      "label": "Firm(s)"
+    },
+    {
+      "fieldname": "project_no",
+      "fieldtype": "Data",
+      "label": "Project No."
+    },
+    {
+      "fieldname": "file_no",
+      "fieldtype": "Data",
+      "label": "File No."
+    },
+    {
+      "fieldname": "grand_total",
+      "fieldtype": "Currency",
+      "label": "Grand Total"
+    },
+    {
+      "fieldname": "section_items",
+      "fieldtype": "Section Break",
+      "label": "Items"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Items",
+      "options": "dp_po_item"
+    },
+    {
+      "fieldname": "amount_in_words",
+      "fieldtype": "Data",
+      "label": "Grand Total Amount in Words"
+    },
+    {
+      "fieldname": "section_terms",
+      "fieldtype": "Section Break",
+      "label": "Terms & Conditions"
+    },
+    {
+      "fieldname": "terms_and_conditions",
+      "fieldtype": "HTML Editor",
+      "label": "Terms & Conditions"
+    },
+    {
+      "fieldname": "section_signatory",
+      "fieldtype": "Section Break",
+      "label": "Signatory Details"
+    },
+    {
+      "fieldname": "signee_name",
+      "fieldtype": "Data",
+      "label": "Signee Name"
+    },
+    {
+      "fieldname": "signee_designation",
+      "fieldtype": "Data",
+      "label": "Signee Designation"
+    }
+  ],
+  "grid_page_length": 50,
+  "index_web_pages_for_search": 1,
+  "links": [],
+  "modified": "2026-06-18 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Rndopsapp",
+  "name": "dp_po",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "create": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "All_ProRnd_User",
+      "share": 1,
+      "write": 1
+    }
+  ],
+  "row_format": "Dynamic",
+  "rows_threshold_for_grid_search": 20,
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}
