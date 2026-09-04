@@ -169,6 +169,61 @@ def _get_leave_days(doc):
 	return 0
 
 
+def _resolve_leave_data_name(username, email=None):
+	"""
+	Pick the ONE Leave Data record that represents this person.
+
+	Staff who moved to Pragati hold both an old rnd/II&SI employee number and a
+	new Pragati one, and a Leave Data row exists for each — 43 usernames on this
+	site have more than one. A bare
+	frappe.db.get_value("Leave Data", {"emp_username": username}) returns
+	whichever row the database happens to hand back first, with no ordering, so
+	the balance shown and the balance deducted could be different records.
+
+	Resolve deterministically instead: prefer the row matching the person's
+	CURRENT employee id from Project Staff Details, and fall back to the most
+	recently modified row so reader and writer at least always agree.
+	"""
+	if not username:
+		return None
+
+	rows = frappe.get_all(
+		"Leave Data",
+		filters={"emp_username": username},
+		fields=["name", "emp_id", "modified"],
+		order_by="modified desc",
+	)
+	if not rows:
+		return None
+	if len(rows) == 1:
+		return rows[0].name
+
+	current_emp_id = None
+	if email:
+		current_emp_id = frappe.db.get_value(
+			"Project Staff Details",
+			{"erp_mail": email, "workflow_state": "Approved"},
+			"ps_emp_id",
+			order_by="modified desc",
+		)
+	if not current_emp_id:
+		current_emp_id = frappe.db.get_value(
+			"Project Staff Details",
+			{"erp_mail": ["like", f"{username}@%"], "workflow_state": "Approved"},
+			"ps_emp_id",
+			order_by="modified desc",
+		)
+
+	if current_emp_id:
+		for r in rows:
+			if r.emp_id == current_emp_id:
+				return r.name
+
+	# No current employee id resolvable — most recently modified wins, which is
+	# at least stable and the same choice on both read and write.
+	return rows[0].name
+
+
 def _update_leave_balance(email, leave_type, days, deduct=True):
 	if leave_type not in ("EL", "CL") or days <= 0:
 		return
@@ -181,7 +236,7 @@ def _update_leave_balance(email, leave_type, days, deduct=True):
 		)
 		return
 
-	leave_data_name = frappe.db.get_value("Leave Data", {"emp_username": username}, "name")
+	leave_data_name = _resolve_leave_data_name(username, email)
 	if not leave_data_name:
 		frappe.log_error(
 			f"No Leave Data record found for username '{username}' (email: {email})",
@@ -707,11 +762,15 @@ def get_leave_balance():
 	if not username:
 		return None
 
-	leave_data = frappe.db.get_value(
+	# Same resolver the deduction uses — otherwise the balance shown and the
+	# balance written could be two different Leave Data records.
+	leave_data_name = _resolve_leave_data_name(username, user)
+	if not leave_data_name:
+		return None
+
+	return frappe.db.get_value(
 		"Leave Data",
-		{"emp_username": username},
+		leave_data_name,
 		["el", "cl", "emp_id", "emp_class"],
 		as_dict=True,
 	)
-
-	return leave_data
