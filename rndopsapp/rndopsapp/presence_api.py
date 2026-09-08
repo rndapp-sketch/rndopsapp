@@ -12,7 +12,7 @@
 #   /api/method/rndopsapp.rndopsapp.presence_api.<function>
 
 import frappe
-from frappe.utils import getdate
+from frappe.utils import getdate, nowdate
 from datetime import timedelta
 
 PROJECT_STAFF_DOCTYPE = "Project Staff Details"
@@ -188,14 +188,48 @@ def _latest_tenure_by_parent(parents):
         # Child table missing or renamed — callers fall back to the parent dates.
         return {}
 
-    latest = {}
+    by_parent = {}
     for r in rows:
-        # Rows arrive in idx order, so the last one seen per parent wins.
         # Skip wholly blank rows, which the form allows to be added.
         if not (r.get("pstd_joining_date") or r.get("pstd_term_completion_date")):
             continue
-        latest[r.get("parent")] = r
-    return latest
+        by_parent.setdefault(r.get("parent"), []).append(r)
+
+    today = getdate(nowdate())
+    return {p: _pick_current_tenure(rs, today) for p, rs in by_parent.items()}
+
+
+def _pick_current_tenure(rows, today):
+    """
+    Choose the tenure row that is in force TODAY, from rows in idx order.
+
+    Not simply the last row: an extension is often recorded before the current
+    term has finished, so the bottom row can be a future tenure that has not
+    started yet. Taking it early would report a joining date in the future and
+    move the attendance window onto a term the person is not yet serving.
+
+      1. the row whose joining..term window contains today
+      2. otherwise the most recent row that has already started
+      3. otherwise the earliest row (every tenure is still in the future)
+    """
+    dated = [r for r in rows if r.get("pstd_joining_date")]
+    if not dated:
+        return rows[-1] if rows else None
+
+    for r in dated:
+        start = getdate(r.get("pstd_joining_date"))
+        end = r.get("pstd_term_completion_date")
+        if end:
+            if start <= today <= getdate(end):
+                return r
+        elif start <= today:
+            return r
+
+    started = [r for r in dated if getdate(r.get("pstd_joining_date")) <= today]
+    if started:
+        return started[-1]
+
+    return dated[0]
 
 
 def _resolve_emp_id(email, username):
