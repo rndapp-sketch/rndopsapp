@@ -322,7 +322,12 @@ def get_pending_task(page_name="pending-task"):
 							ref_sa_state, ref_sa_field = ref_sa
 							if curr_status == ref_sa_state:
 								appr_email = (ref_doc.get(ref_sa_field) or "").strip().lower()
-								if appr_email and appr_email != current_user.lower():
+								# An EMPTY approver field must mean "nobody", not
+								# "everybody". A cancellation can land in a mirrored
+								# Other-PI state even when the underlying form has no
+								# Other PI, and treating blank as unfiltered exposed
+								# those requests to every user's Pending Task.
+								if appr_email != current_user.lower():
 									continue
 
 						# C) Pending PI Approval filtering for reference document
@@ -456,6 +461,60 @@ def get_pending_application():
 				records.append(r)
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"get_pending_application: {dt} lookup failed")
+
+	# Cancellation Requests awaiting THIS PI.
+	#
+	# A cancellation mirrors the workflow of the form it cancels, so it can stop
+	# at a PI step. Permanent Employees are not shown the Pending Task page, and
+	# Cancellation Request was not one of the sources above — so a cancellation
+	# resting on a PI appeared in neither place and could never be actioned.
+	# The approver is named on the REFERENCED document, not on the request.
+	try:
+		pending_states = {s for _, s, _ in other_pi_sources.values()}
+		pending_states.add("Pending PI Approval")
+
+		for cr in frappe.get_list(
+			"Cancellation Request",
+			filters={"workflow_state": ["in", list(pending_states)], "docstatus": ["<", 2]},
+			fields=[
+				"name", "workflow_state", "modified", "owner", "docstatus", "creation",
+				"reference_doctype", "reference_name", "requested_by",
+			],
+			order_by="modified desc",
+			limit_page_length=10000,
+			ignore_permissions=True,
+		):
+			ref_dt, ref_name = cr.get("reference_doctype"), cr.get("reference_name")
+			if not ref_dt or not ref_name or not frappe.db.exists(ref_dt, ref_name):
+				continue
+			ref_doc = frappe.db.get_value(ref_dt, ref_name, "*", as_dict=True) or {}
+
+			approver = ""
+			sa = other_pi_sources.get(ref_dt)
+			if sa and cr.get("workflow_state") == sa[1]:
+				approver = (ref_doc.get(sa[0]) or "").strip().lower()
+			if not approver and cr.get("workflow_state") == "Pending PI Approval":
+				approver = (
+					ref_doc.get("pi_id")
+					or ref_doc.get("pi")
+					or ref_doc.get("pi_webmail")
+					or ref_doc.get("reimbursement_for_id")
+					or ""
+				).strip().lower()
+
+			# Blank approver => nobody, same rule as get_pending_task. And a PI is
+			# never asked to approve a cancellation they raised themselves.
+			if not approver or approver != current_user.lower():
+				continue
+			if (cr.get("requested_by") or "").strip().lower() == current_user.lower():
+				continue
+
+			cr["doctype"] = "Cancellation Request"
+			cr["pi"] = current_user
+			cr["username"] = cr.get("requested_by") or cr.get("owner")
+			records.append(cr)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_pending_application: Cancellation Request lookup failed")
 
 	records.sort(key=lambda r: r.get("modified") or "", reverse=True)
 

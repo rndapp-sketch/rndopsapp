@@ -95,11 +95,13 @@ class CancellationRequest(Document):
 		"""Apply the head-approval bypass if this document is sitting at that state."""
 		from rndopsapp.rndopsapp.cancellation_api import (
 			HEAD_STATE,
+			OTHER_PI_STATE,
 			_maybe_bypass_head_approval,
+			_maybe_bypass_other_pi,
 		)
 
 		state = (getattr(self, "workflow_state", None) or "").strip().lower()
-		if state != HEAD_STATE.lower():
+		if state not in (HEAD_STATE.lower(), OTHER_PI_STATE.lower()):
 			return
 		if not self.source_workflow:
 			return
@@ -109,9 +111,9 @@ class CancellationRequest(Document):
 			if not frappe.db.exists("Workflow", wf_name):
 				return
 			ref_doc = frappe.get_doc(self.reference_doctype, self.reference_name)
-			_maybe_bypass_head_approval(
-				self, ref_doc, self.requested_by, frappe.get_doc("Workflow", wf_name)
-			)
+			wf_doc = frappe.get_doc("Workflow", wf_name)
+			_maybe_bypass_other_pi(self, ref_doc, wf_doc)
+			_maybe_bypass_head_approval(self, ref_doc, self.requested_by, wf_doc)
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Cancellation head bypass failed")
 

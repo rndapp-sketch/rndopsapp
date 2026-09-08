@@ -473,6 +473,10 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 
 				# The first state may be "Pending Head Approval"; skip it when the
 				# head cannot act on it (is the requester / is not configured).
+				# Skip stages that belong to the original application and have
+				# nobody to act on them here: the Other-PI step when the form is
+				# not charged to another PI, and the head step per the bypass mode.
+				_maybe_bypass_other_pi(cancel_doc, ref_doc, wf_doc)
 				_maybe_bypass_head_approval(cancel_doc, ref_doc, current_user, wf_doc)
 			except Exception as e:
 				frappe.log_error(
@@ -631,6 +635,43 @@ CANCELLATION_HEAD_BYPASS_MODE = "always"
 
 HEAD_STATE = "Pending Head Approval"
 
+# The Other-PI step belongs to the ORIGINAL application: it exists so the PI
+# whose budget is being spent can accept the charge. A cancellation is not a
+# charge, and a form marked "Self" has no Other PI at all — yet the mirrored
+# workflow still carries that state, so cancellations were stopping there with
+# no approver, which left them invisible to their owner and visible to everyone
+# else in Pending Task. Skip it whenever no Other PI is actually assigned.
+OTHER_PI_STATE = "Pending Other PI"
+
+# Per-doctype "is this charged to another PI" toggle and the PI it names.
+OTHER_PI_FIELDS = {
+	"Travel": ("travel_other_pi", "travel_other_pi_id"),
+	"Reimbursement": ("self_other", "reimbursement_for_id"),
+	"Indent General Form": ("igf_other_pi", "igf_other_pi_id"),
+	"Indent Cum Sanction Sheet": ("icss_other_pi", "icss_other_pi_id"),
+	"Rate Contract": ("rc_other_pi", "other_pi_email"),
+	"Direct Purchase": ("dp_other_pi", "dp_other_pi_id"),
+}
+
+
+def _assigned_other_pi(ref_doc):
+	"""
+	The Other PI actually assigned on a document, or None.
+
+	None covers both "the toggle says Self" and "the toggle says Other but no PI
+	was named" — in either case there is nobody for a cancellation to wait on.
+	"""
+	fields = OTHER_PI_FIELDS.get(getattr(ref_doc, "doctype", None))
+	if not fields:
+		return None
+
+	toggle_field, pi_field = fields
+	toggle = (ref_doc.get(toggle_field) or "").strip().lower()
+	if toggle and toggle != "other":
+		return None
+
+	return (ref_doc.get(pi_field) or "").strip() or None
+
 # Department field varies by source doctype.
 _DEPT_FIELDS = (
 	"department_travel",
@@ -657,15 +698,16 @@ def _resolve_document_head(ref_doc):
 	return doc_dept, (head or None)
 
 
-def _next_state_after_head(wf_doc):
+def _next_state_after(wf_doc, state_name):
 	"""
-	The state the head would forward to. Resolved from the workflow rather than
-	hardcoded, because each cancel_* workflow mirrors a different source flow.
+	The state a given step would forward to. Resolved from the workflow rather
+	than hardcoded, because each cancel_* workflow mirrors a different source
+	flow and the forward action is named differently in each.
 	"""
 	rejecting = ("reject", "return", "send back", "put back", "cancel")
 	fallback = None
 	for t in wf_doc.transitions:
-		if not t.state or t.state.strip().lower() != HEAD_STATE.lower():
+		if not t.state or t.state.strip().lower() != (state_name or "").lower():
 			continue
 		action = (t.action or "").strip().lower()
 		if any(word in action for word in rejecting):
@@ -674,6 +716,45 @@ def _next_state_after_head(wf_doc):
 			return t.next_state
 		fallback = fallback or t.next_state
 	return fallback
+
+
+def _next_state_after_head(wf_doc):
+	"""Kept for callers that only care about the head stage."""
+	return _next_state_after(wf_doc, HEAD_STATE)
+
+
+def _maybe_bypass_other_pi(cancel_doc, ref_doc, wf_doc):
+	"""
+	Skip the Other-PI stage when the form has no Other PI to wait on.
+
+	The Other-PI step exists so the PI funding the ORIGINAL application can
+	accept the charge. A form marked "Self" has no such PI, but the cancellation
+	workflow mirrors the source workflow and still carries that state — leaving
+	the request parked with nobody able to act, and (because a blank approver
+	read as "unfiltered") visible in every user's Pending Task.
+	"""
+	if (cancel_doc.workflow_state or "").strip().lower() != OTHER_PI_STATE.lower():
+		return None
+
+	if _assigned_other_pi(ref_doc):
+		return None  # a real Other PI is assigned — they must still act
+
+	next_state = _next_state_after(wf_doc, OTHER_PI_STATE)
+	if not next_state:
+		return None
+
+	cancel_doc.db_set("workflow_state", next_state, update_modified=False)
+	cancel_doc.reload()
+
+	try:
+		cancel_doc.add_comment(
+			"Info",
+			_("Other-PI approval skipped automatically because this form is not charged to another PI. Moved to {0}.").format(next_state),
+		)
+	except Exception:
+		pass
+
+	return "no other PI assigned"
 
 
 def _maybe_bypass_head_approval(cancel_doc, ref_doc, requester, wf_doc):
