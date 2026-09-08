@@ -13,9 +13,24 @@ from frappe.utils import date_diff
 class LeaveModule(Document):
 	def validate(self):
 		self._set_user_info()
+		self._set_project_no()
 		self._validate_dates()
 		self._validate_leave_type_fields()
 		self._validate_leave_balance()
+
+	def _set_project_no(self):
+		"""
+		Stamp the applicant's project number onto the leave application.
+
+		Pending Task groups work by project type (Research / Consultancy /
+		Others), resolved by following a document's project number through to
+		Project Registration. Leave applications carried no project number, so
+		every one of them landed in "Others" regardless of the project the
+		applicant is actually on.
+		"""
+		if self.project_no:
+			return
+		self.project_no = _resolve_staff_project_no(self.username, self.email)
 
 	def on_trash(self):
 		"""Return leave balance when a leave application is deleted."""
@@ -167,6 +182,45 @@ def _get_leave_days(doc):
 				total += 1
 		return total
 	return 0
+
+
+def _resolve_staff_project_no(username, email=None):
+	"""
+	Find a staff member's project number from their Project Staff Details.
+
+	erp_mail is stored inconsistently on that doctype — a bare username on some
+	records ("amit_kumar1026") and a full address on others
+	("abanik44@rnd.iitg.ac.in") — so match on the local part either way, and
+	fall back to ps_email_id. Approved records win; the most recent otherwise,
+	since a staff member can have several across extensions.
+	"""
+	local = (username or "").strip()
+	if not local and email:
+		local = str(email).split("@")[0].strip()
+	if not local:
+		return None
+
+	full = email or f"{local}@rnd.iitg.ac.in"
+
+	for filters in (
+		{"erp_mail": local, "workflow_state": "Approved"},
+		{"erp_mail": ["like", f"{local}@%"], "workflow_state": "Approved"},
+		{"ps_email_id": full, "workflow_state": "Approved"},
+		{"erp_mail": local},
+		{"erp_mail": ["like", f"{local}@%"]},
+		{"ps_email_id": full},
+	):
+		rows = frappe.get_all(
+			"Project Staff Details",
+			filters=filters,
+			fields=["project_no"],
+			order_by="modified desc",
+			limit=1,
+		)
+		if rows and rows[0].get("project_no"):
+			return rows[0]["project_no"]
+
+	return None
 
 
 def _resolve_leave_data_name(username, email=None):
@@ -750,6 +804,57 @@ def get_leave_detail(docname):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Leave Module - Get Detail Error")
 		return {"error": str(e)}
+
+
+@frappe.whitelist()
+def get_applicant_leave_balance(username=None, docname=None):
+	"""
+	Leave balance of the person a leave application belongs to.
+
+	get_leave_balance() only ever reports the session user's own balance, so an
+	approver had no way to see how much leave the applicant actually has left
+	while deciding. Pass either the applicant's username or the leave
+	application's name.
+	"""
+	if not username and docname:
+		username = frappe.db.get_value("Leave Module", docname, "username")
+		if not username:
+			email = frappe.db.get_value("Leave Module", docname, "email")
+			username = str(email or "").split("@")[0] or None
+	if not username:
+		return None
+
+	leave_data_name = _resolve_leave_data_name(username)
+	if not leave_data_name:
+		return None
+
+	balance = frappe.db.get_value(
+		"Leave Data",
+		leave_data_name,
+		["el", "cl", "emp_id", "emp_class"],
+		as_dict=True,
+	)
+	if not balance:
+		return None
+
+	balance["username"] = username
+
+	# Show the approver the effect of THIS application, not just the balance.
+	# The deduction happens when the applicant submits, so the stored figure is
+	# already the post-application balance — the pre-application one is that
+	# plus whatever this request consumes.
+	if docname:
+		doc = frappe.get_doc("Leave Module", docname)
+		used = _get_leave_days(doc) or 0
+		field = "el" if doc.leave_type == "EL" else "cl"
+		after = balance.get(field) or 0
+
+		balance["leave_type"] = doc.leave_type
+		balance["days_applied"] = used
+		balance["balance_after"] = after
+		balance["balance_before"] = after + used if used else after
+
+	return balance
 
 
 @frappe.whitelist()
