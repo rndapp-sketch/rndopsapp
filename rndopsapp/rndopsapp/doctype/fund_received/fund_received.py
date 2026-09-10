@@ -948,7 +948,16 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 		print("=========================================================================")
 		print("DEBUG: perform_fund_received_action called for deposit_slip_data=======>>>>>: ", deposit_slip_data)
 		print("=========================================================================")
-		doc = frappe.get_doc("Fund Received", docname)
+		# for_update=True takes a row lock (SELECT ... FOR UPDATE) for the life of
+		# this transaction. Without it, two near-simultaneous calls for the same
+		# Fund Received (two approvers, or a double-click) can both load the same
+		# version, both do their processing, and the second one's doc.save() then
+		# fails with TimestampMismatchError — which was previously being silently
+		# swallowed below, discarding any field changes made in this function
+		# (only workflow_state survived via the db_set fallback). Locking here
+		# makes the second caller block until the first commits, instead of
+		# racing and losing data.
+		doc = frappe.get_doc("Fund Received", docname, for_update=True)
 		current_state = doc.workflow_state or "Draft"
 
 		# FIX: Ensure doc has a workflow_state in DB to avoid WorkflowStateError on first save
@@ -1360,6 +1369,13 @@ def perform_fund_received_action(docname, action, deposit_slip_data=None, deposi
 			"workflow_state": next_state,
 			"next_actions": get_fund_received_workflow_actions(docname)
 		}
+
+	except frappe.ValidationError as e:
+		# Expected, user-correctable validation failure (e.g. budget head
+		# reconciliation mismatch) — not a bug. Roll back so the doc stays
+		# untouched, but don't spam Error Log / page Mattermost for it.
+		frappe.db.rollback()
+		return {"status": "error", "message": str(e)}
 
 	except Exception as e:
 		import datetime

@@ -831,14 +831,28 @@ def get_sanctions_for_project(project_name):
 		if doc_dict.get("sanction_related_files"):
 			# Loop through each file attached to this sanction document
 			for file_info in doc_dict.get("sanction_related_files"):
-				try:
-					# Get the File document from the file_url
-					file_url = file_info.get("sanction_file")
-					if not file_url:
-						continue
+				file_url = file_info.get("sanction_file")
+				if not file_url:
+					continue
 
+				try:
 					# The actual file document contains the content
 					file_doc = frappe.get_doc("File", {"file_url": file_url})
+
+					# Legacy records may carry a synthetic file_url (e.g.
+					# "/Project_Registration/<name>/fund_sanction/<file>")
+					# that was never actually written to disk/remote storage —
+					# get_content()'s own validate_file_url() would reject it
+					# and raise, so check upfront instead of relying on the
+					# exception path (this also avoids logging a fresh error
+					# on every single page load for the same known-broken file).
+					if not file_doc.is_remote_file and not (file_doc.file_url or "").startswith(
+						("/files/", "/private/files/")
+					):
+						file_info["file_name"] = file_doc.file_name
+						file_info["file_data"] = None
+						file_info["file_unavailable"] = True
+						continue
 
 					# Get the raw binary content of the file
 					file_content = file_doc.get_content()
@@ -851,11 +865,19 @@ def get_sanctions_for_project(project_name):
 					file_info["file_name"] = file_doc.file_name
 					file_info["file_data"] = base64_content
 
-				except Exception as e:
-					# If a file is missing from disk or another error occurs, log it
-					# and continue without crashing the whole API call.
-					print(f"Could not read file for URL {file_url}: {e}")
-					file_info["file_data"] = None  # Indicate that the file content is missing
+				except frappe.DoesNotExistError:
+					# No File record for this URL — nothing to attach.
+					file_info["file_data"] = None
+					file_info["file_unavailable"] = True
+				except Exception:
+					# File is missing from disk, unreadable, or otherwise broken —
+					# log it and continue without crashing the whole API call.
+					frappe.log_error(
+						title="Fund Sanction: file read failed",
+						message=f"Could not read file for URL {file_url}\n{frappe.get_traceback()}",
+					)
+					file_info["file_data"] = None
+					file_info["file_unavailable"] = True
 
 		sanctions_list.append(doc_dict)
 

@@ -242,6 +242,12 @@ def save_d_consultancy_deposit_slip(doc_data):
 			"balance_operation_charge": "balance_operation_charge",
 			"total_gst": "total_gst",
 			"total_amount": "total_amount",
+			"gst_tds__2": "gst_tds__2",
+			"income_tax_tds": "income_tax_tds",
+			"idf_amount": "idf_amount",
+			"staff_welfare_amount": "staff_welfare_amount",
+			"student_welfare_amount": "student_welfare_amount",
+			"idf_percentage": "idf_percentage",
 		}
 
 		for form_field, doctype_field in field_mapping.items():

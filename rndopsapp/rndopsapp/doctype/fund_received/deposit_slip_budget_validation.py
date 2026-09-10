@@ -14,7 +14,7 @@ AMOUNT_TOLERANCE = 0.01
 OVERHEAD_FIELD_BY_DOCTYPE = {
 	"Research Deposit Slip": "overhead_amount",
 	"Research Consultancy Deposit Slip": "overhead_amount",
-	"D Consultancy Deposit Slip": "total_overhead_amount",
+	"D Consultancy Deposit Slip": "total_overhead_institute_share",
 	"E Non Routine Deposit Slip": "overhead_amount",
 	"T Testing Deposit Slip": "overhead_amount",
 	"Other Event Deposit Slip": "overhead_amount",
@@ -34,7 +34,7 @@ GST_FIELD_BY_DOCTYPE = {
 OVERHEAD_FIELD_BY_TYPE = {
 	"research_deposit_slip": "overhead_amount",
 	"research_consultancy": "overhead_amount",
-	"d_consultancy": "total_overhead_amount",
+	"d_consultancy": "total_overhead_institute_share",
 	"e_non_routine": "overhead_amount",
 	"t_testing": "overhead_amount",
 	"other_event": "overhead_amount",
