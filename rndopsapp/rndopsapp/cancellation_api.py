@@ -33,6 +33,47 @@ def _is_terminal_state(state):
 	return state.strip().lower() in TERMINAL_STATES
 
 
+# ─── Workflow states a Cancellation Request must always bypass ───
+# A Head already approved the original document to get it into (or past) this
+# state; cancelling it shouldn't route back through that same Head-approval
+# gate a second time, on any doctype that has one.
+CANCELLATION_SKIP_STATES = {"pending head approval"}
+
+# Action names that move a document BACKWARD/OFF the happy path — never
+# follow one of these when looking for what a skipped state "would have"
+# moved on to. Matches the forward-only "Approve"/"Forward" verbs used
+# across this app's workflows (see project_registration.py's own
+# is_head_submitting skip-ahead logic, which this mirrors).
+_NON_FORWARD_ACTIONS = {"reject", "return", "revert"}
+
+
+def _resolve_cancellation_next_state(state_name, source_wf, _seen=None):
+	"""
+	If `state_name` is a state the cancellation workflow always bypasses
+	(CANCELLATION_SKIP_STATES), follow that state's own forward transition
+	in the source workflow (whatever it's called — "Approve", "Forward",
+	etc. differs per doctype, so any transition that isn't a
+	reject/return counts) to find what it would have moved to next, and
+	return that instead — recursively, in case of several skip-states back
+	to back. Any other state is returned unchanged.
+	"""
+	if not state_name:
+		return state_name
+
+	_seen = _seen or set()
+	if state_name.strip().lower() not in CANCELLATION_SKIP_STATES or state_name in _seen:
+		return state_name
+
+	_seen.add(state_name)
+	for transition in source_wf.transitions:
+		if transition.state == state_name and (transition.action or "").strip().lower() not in _NON_FORWARD_ACTIONS:
+			return _resolve_cancellation_next_state(transition.next_state, source_wf, _seen)
+
+	# No forward transition found to skip to — leave as-is rather than
+	# dropping the document's path entirely.
+	return state_name
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. GET MY APPLICATIONS
 # ──────────────────────────────────────────────────────────────────────────────
@@ -453,13 +494,15 @@ def _setup_cancellation_workflow(source_workflow_name):
 
 		source_wf = frappe.get_doc("Workflow", source_workflow_name)
 
-		# Check if cancellation workflow already exists
+		# Always rebuild rather than reuse a stale one — the mirroring logic
+		# below (e.g. CANCELLATION_SKIP_STATES) can change over time, and a
+		# cached cancellation workflow from before such a change would keep
+		# routing through a gate (like Head approval) that should now be
+		# bypassed. This only runs when a new Cancellation Request is being
+		# created, so the rebuild cost is negligible.
 		if frappe.db.exists("Workflow", cancel_wf_name):
-			if source_wf.document_type == "Reimbursement":
-				frappe.delete_doc("Workflow", cancel_wf_name, ignore_permissions=True)
-				frappe.clear_cache(doctype="Cancellation Request")
-			else:
-				return
+			frappe.delete_doc("Workflow", cancel_wf_name, ignore_permissions=True)
+			frappe.clear_cache(doctype="Cancellation Request")
 
 		new_wf = frappe.new_doc("Workflow")
 		new_wf.workflow_name = cancel_wf_name
@@ -481,7 +524,15 @@ def _setup_cancellation_workflow(source_workflow_name):
 
 		# Copy all transitions from the source workflow
 		for transition in source_wf.transitions:
-			next_state = transition.next_state
+			# A transition that starts FROM a state the cancellation flow always
+			# bypasses (CANCELLATION_SKIP_STATES) is unreachable now — every
+			# transition that used to land there has already been rerouted
+			# past it below, so this document will never actually sit in that
+			# state to fire this transition. Drop it rather than copy it.
+			if transition.state and transition.state.strip().lower() in CANCELLATION_SKIP_STATES:
+				continue
+
+			next_state = _resolve_cancellation_next_state(transition.next_state, source_wf)
 			action = transition.action
 			if (
 				source_wf.document_type == "Reimbursement"

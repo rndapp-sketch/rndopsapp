@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "format:{YYYY}{MM}{DD}2A{######}",
- "creation": "2026-02-11 16:13:10.506240",
+ "creation": "2026-08-20 15:16:31.064726",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -56,8 +56,7 @@
    "fieldname": "applying_for_self_or_other",
    "fieldtype": "Select",
    "label": "Applying for self or other",
-   "options": "Self\nOther",
-   "read_only": 1
+   "options": "Self\nOther"
   },
   {
    "fieldname": "applicant_details_section",
@@ -216,7 +215,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-07 14:59:40.169136",
+ "modified": "2026-09-09 17:18:46.744739",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Honorarium",

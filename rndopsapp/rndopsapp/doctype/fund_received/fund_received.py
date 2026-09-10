@@ -1571,6 +1571,13 @@ def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_typ
 			"operational_charge_z": "operational_charge_z",
 			"idf_percentage": "idf_percentage",
 			"iitg_invoice_no": "iitg_invoice_no",
+			"income_tax_tds": "income_tax_tds",
+			# Real doctype field is gst_tds__2 (double underscore), not gst_tds — the source key is
+			# kept as-is here since this mapping is {source_key: target_fieldname}, and the frontend
+			# creation payload key hasn't been touched, only where it lands on the new doc.
+			"gst_tds": "gst_tds__2",
+			"gst_tds__2": "gst_tds__2",
+			"other_deductions": "other_deductions",
 
 			# Other Event Deposit Slip specific fields
 			"event_title": "event_title",

@@ -22,6 +22,8 @@
   "amount_inclusive_of_gst",
   "igst_18_on_consultancy",
   "amount_after_gst_tds",
+  "income_tax_tds",
+  "gst_tds__2",
   "total_cost_x",
   "consultancy_charge_y",
   "operational_charge_z",
@@ -43,6 +45,7 @@
   "balance_consultancy_fee",
   "balance_operation_charge",
   "total_gst",
+  "other_deductions",
   "total_amount",
   "fund_received_ref",
   "budget_head_reconciliation_section",
@@ -123,6 +126,7 @@
   {
    "fieldname": "amount_after_gst_tds",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Amount after GST TDS @ 2%"
   },
   {
@@ -201,6 +205,11 @@
    "fieldname": "total_gst",
    "fieldtype": "Currency",
    "label": "Total GST"
+  },
+  {
+   "fieldname": "other_deductions",
+   "fieldtype": "Currency",
+   "label": "Other Deductions"
   },
   {
    "fieldname": "total_amount",
@@ -284,12 +293,22 @@
    "label": "Fund Budget Breakup",
    "options": "Project Received Budget",
    "read_only": 1
+  },
+  {
+   "fieldname": "gst_tds__2",
+   "fieldtype": "Currency",
+   "label": "GST TDS @ 2%"
+  },
+  {
+   "fieldname": "income_tax_tds",
+   "fieldtype": "Currency",
+   "label": "Income Tax TDS"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-29 15:48:35.918791",
+ "modified": "2026-09-03 16:20:55.731889",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "D Consultancy Deposit Slip",

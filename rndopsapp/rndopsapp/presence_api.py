@@ -12,10 +12,13 @@
 #   /api/method/rndopsapp.rndopsapp.presence_api.<function>
 
 import frappe
-from frappe.utils import getdate
+from frappe.utils import getdate, nowdate
 from datetime import timedelta
 
 PROJECT_STAFF_DOCTYPE = "Project Staff Details"
+# Tenure Details child table on Project Staff Details (fieldname `table_ymed`).
+# Each extension adds a row; the LAST row (highest idx) is the current tenure.
+TENURE_DOCTYPE = "Project Staff Tenure Details"
 LEAVE_MODULE_DOCTYPE = "Leave Module"
 LEAVE_DATA_DOCTYPE = "Leave Data"
 DEPARTMENT_DOCTYPE = "Department_prornd"
@@ -105,6 +108,9 @@ def get_project_staff(workflow_state="Approved"):
         limit_page_length=0,
     )
 
+    # Current tenure dates live on the last Tenure Details row, not on the parent.
+    latest_tenure = _latest_tenure_by_parent([r.get("name") for r in rows if r.get("name")])
+
     name_cache = {}
     out = []
     for r in rows:
@@ -123,8 +129,15 @@ def get_project_staff(workflow_state="Approved"):
             )
             or None
         )
+        # joiningDate stays the ORIGINAL joining date held on the parent — that is
+        # when the person first joined and it does not change on extension.
+        # rawJoiningDate and termCompletionDate track the CURRENT tenure, which
+        # lives on the last Tenure Details row. Falls back to the parent fields
+        # for staff whose Tenure Details table has never been filled in.
+        tenure = latest_tenure.get(r.get("name")) or {}
         joining = _iso(r.get("ps_joining_date"))
-        term = _iso(r.get("ps_term_completion_date"))
+        raw_joining = _iso(tenure.get("pstd_joining_date") or r.get("ps_joining_date"))
+        term = _iso(tenure.get("pstd_term_completion_date") or r.get("ps_term_completion_date"))
         pi_email = (r.get("pi_id") or "").strip()
 
         out.append(
@@ -137,7 +150,7 @@ def get_project_staff(workflow_state="Approved"):
                 "designation": r.get("ps_designation"),
                 "empClass": EMP_CLASS,
                 "joiningDate": joining,
-                "rawJoiningDate": joining,
+                "rawJoiningDate": raw_joining,
                 "termCompletionDate": term,
                 "piEmpId": None,
                 "piUsername": _username_from_email(pi_email),
@@ -147,6 +160,76 @@ def get_project_staff(workflow_state="Approved"):
             }
         )
     return out
+
+
+def _latest_tenure_by_parent(parents):
+    """
+    Map each Project Staff Details name to its CURRENT tenure dates.
+
+    Tenure Details rows accumulate as a staff member's term is extended, so the
+    parent's ps_joining_date / ps_term_completion_date hold the ORIGINAL term,
+    not the current one. The live dates are on the last row of the child table
+    — "last" being the highest idx, which is the bottom row as displayed.
+
+    Fetched in a single query for all parents rather than one per staff member.
+    """
+    if not parents:
+        return {}
+
+    try:
+        rows = frappe.get_all(
+            TENURE_DOCTYPE,
+            filters={"parent": ["in", list(parents)], "parenttype": PROJECT_STAFF_DOCTYPE},
+            fields=["parent", "idx", "pstd_joining_date", "pstd_term_completion_date"],
+            order_by="parent asc, idx asc",
+            limit_page_length=0,
+        )
+    except Exception:
+        # Child table missing or renamed — callers fall back to the parent dates.
+        return {}
+
+    by_parent = {}
+    for r in rows:
+        # Skip wholly blank rows, which the form allows to be added.
+        if not (r.get("pstd_joining_date") or r.get("pstd_term_completion_date")):
+            continue
+        by_parent.setdefault(r.get("parent"), []).append(r)
+
+    today = getdate(nowdate())
+    return {p: _pick_current_tenure(rs, today) for p, rs in by_parent.items()}
+
+
+def _pick_current_tenure(rows, today):
+    """
+    Choose the tenure row that is in force TODAY, from rows in idx order.
+
+    Not simply the last row: an extension is often recorded before the current
+    term has finished, so the bottom row can be a future tenure that has not
+    started yet. Taking it early would report a joining date in the future and
+    move the attendance window onto a term the person is not yet serving.
+
+      1. the row whose joining..term window contains today
+      2. otherwise the most recent row that has already started
+      3. otherwise the earliest row (every tenure is still in the future)
+    """
+    dated = [r for r in rows if r.get("pstd_joining_date")]
+    if not dated:
+        return rows[-1] if rows else None
+
+    for r in dated:
+        start = getdate(r.get("pstd_joining_date"))
+        end = r.get("pstd_term_completion_date")
+        if end:
+            if start <= today <= getdate(end):
+                return r
+        elif start <= today:
+            return r
+
+    started = [r for r in dated if getdate(r.get("pstd_joining_date")) <= today]
+    if started:
+        return started[-1]
+
+    return dated[0]
 
 
 def _resolve_emp_id(email, username):

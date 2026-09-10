@@ -1234,19 +1234,6 @@ def save_project_data(doc, html_content=None):
 	handles child tables, and processes Base64 encoded file attachments.
 	Optionally saves HTML content and converts it to PDF for endorsement.
 	"""
-	import os
-	import datetime
-	_log_path = os.path.join(os.path.dirname(__file__), "projects.log")
-	with open(_log_path, "a") as _lf:
-		_lf.write(f"\n{'='*60}\n")
-		_lf.write(f"[{datetime.datetime.now().isoformat()}] save_project_data called\n")
-		_lf.write(f"doc:\n{doc}\n")
-		_lf.write(f"html_content:\n{html_content}\n")
-		_lf.write(f"{'='*60}\n")
-
-	# print("$%$%$%$%$%$%$%$%$%$%$---------------------------$%$%$%$%$%$%$%$%$%$%$%4:")
-	# print(doc)
-	frappe.logger().warning(f"Jimmy Logging Debug save project data: {doc}")
 	upload_events = []
 	new_project = None
 	try:
@@ -1255,11 +1242,9 @@ def save_project_data(doc, html_content=None):
 		# This handles both cases.
 		if isinstance(doc, str):
 			form_data = json.loads(doc)
-			frappe.logger().warning(f"Jimmy Logging Debug save project data form_data: {form_data}")
 
 		else:
 			form_data = doc
-			frappe.logger().warning(f"Jimmy Logging Debug save project data doca: {form_data}")
 
 		# Get the metadata for the Doctype to validate fields
 		meta = frappe.get_meta("Project Registration")
@@ -1758,8 +1743,6 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			except Exception:
 				pass
 		frappe.logger().warning(f"Jimmy Logging Debug files_payload count: {len(files_payload) if files_payload else 0}")
-		if files_payload:
-			frappe.logger().warning(f"Jimmy Logging Debug first file: {files_payload[0] if len(files_payload) > 0 else 'None'}")
 
 		# Build lookup map: filename → file entry (for upload_supporting_docs matching)
 		# files_payload items look like: {"filename": "...", "content": "data:...;base64,..."}

@@ -23,6 +23,17 @@ _MANUALLY_STOPPED_KEY = "email_manager_consumer_manually_stopped"
 _RESTART_COOLDOWN = 60  # seconds between spawn attempts per worker process
 _last_start_attempt = 0.0  # per-process guard
 
+# Cross-process spawn lock: without this, two Gunicorn/bench worker
+# processes can both pass the is_consumer_running_globally() heartbeat
+# check before either one's spawned subprocess has written its first
+# heartbeat (the heartbeat thread only starts once worker_process_init
+# finishes Celery's own startup), so both spawn a worker — observed live
+# on this site as 4 duplicate "pragati_email_worker@%h" processes running
+# at once, each holding its own DB connection. The TTL just needs to
+# outlast that startup race, not the worker's lifetime.
+_SPAWN_LOCK_KEY = "email_manager_consumer_spawn_lock"
+_SPAWN_LOCK_TTL = 30
+
 # Kept only so this process can kill what IT spawned on stop_email_consumer;
 # other Gunicorn/bench worker processes rely on the Redis heartbeat instead.
 _process = None
@@ -49,6 +60,22 @@ def is_consumer_running_globally() -> bool:
 		return bool(frappe.cache().get_value(_HEARTBEAT_KEY))
 	except Exception:
 		return False
+
+
+def _try_acquire_spawn_lock() -> bool:
+	"""
+	True if THIS process won the right to spawn — a Redis SETNX, so only one
+	of any number of concurrent callers (across processes) gets True. Used
+	to close the race where multiple processes pass the heartbeat check
+	before any spawned worker has written its first heartbeat.
+	"""
+	try:
+		key = frappe.cache().make_key(_SPAWN_LOCK_KEY)
+		return bool(frappe.cache().set(key, "1", nx=True, ex=_SPAWN_LOCK_TTL))
+	except Exception:
+		# Redis unreachable — fall back to "allowed", same as every other
+		# guard in this module failing open (see ensure_consumer_running).
+		return True
 
 
 def _spawn_worker_process():
@@ -92,6 +119,8 @@ def start_email_consumer(**kwargs):
 	_set_manually_stopped(False)
 	if is_consumer_running_globally():
 		return {"status": "warning", "message": "Consumer already running"}
+	if not _try_acquire_spawn_lock():
+		return {"status": "warning", "message": "Consumer is already starting"}
 	_spawn_worker_process()
 	return {"status": "success", "message": "Email Manager Celery worker starting"}
 
@@ -131,6 +160,9 @@ def ensure_consumer_running():
 	     by calling start_email_consumer again).
 	  3. Cooldown between spawn attempts per worker process, so a crashing
 	     worker can't spam restarts on every request.
+	  4. Cross-process spawn lock (_try_acquire_spawn_lock) — closes the
+	     race between (1) and a spawned worker's first heartbeat, which
+	     previously let multiple processes spawn duplicate workers.
 	"""
 	global _last_start_attempt
 	try:
@@ -145,6 +177,10 @@ def ensure_consumer_running():
 			return
 
 		_last_start_attempt = now
+
+		if not _try_acquire_spawn_lock():
+			return
+
 		_spawn_worker_process()
 	except Exception:
 		pass  # never interrupt the request

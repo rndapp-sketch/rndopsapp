@@ -4,10 +4,17 @@ Status: **Implemented and live-tested.** One real config exists today:
 `Email Manager: Project Registration` → notify on status `Approved`,
 template `Project Registration`.
 
-**2026-08-29 update:** per-status template and role recipients (§2.2,
-§3, §5) — each `Doc Status` row can now pick its own Email Template
-(falling back to the parent's default if left blank) and an optional
-Role, whose members are additionally notified for that specific status.
+**2026-08-29 update:** per-status template (§2.2, §3) — each `Doc Status`
+row can pick its own Email Template, falling back to the parent's default
+if left blank.
+
+**2026-08-31 update — removed:** the 2026-08-29 change also added an
+optional per-row Notify Role, whose members were additionally notified for
+that status. An admin pointed it at `Permanent Employee` (~1,184 accounts,
+basically every staff/faculty user), so every Project Registration approval
+broadcast to nearly the whole institute — 10 approvals, ~11,840 emails,
+before it was caught. The feature has been removed entirely (not capped):
+recipients are now always just the document owner. See §5.
 
 Sends a short branded email to a document's owner when its `workflow_state`
 changes to a status an admin has configured, for whichever DocTypes an admin
@@ -35,8 +42,8 @@ for either part.
                 │  template resolves for that row (its own, else the parent's ─┘  invalidated on
                 │  default)? (config lookup — cheap, cached)                      Email Manager save
                 ├─ not already notified for this (doctype, doc, status)?
-                ├─ owner holds "Permanent Employee" role, OR the row's Notify
-                │  Role (if any) has enabled members — at least one recipient?
+                ├─ owner holds "Permanent Employee" role — at least one
+                │  recipient?
                 │
                 │  all four pass →
                 ▼
@@ -89,8 +96,8 @@ resend any Email Send Logs row.
 
 | Path | Purpose |
 |---|---|
-| `rndopsapp/rndopsapp/doctype/email_manager/` | One row per monitored DocType. Fields: `module` (Link → DocType, **not** Module Registry — see §2.1), `enabled` (Check), `template` (Link → Email Notification Template, **optional default/fallback** — see §2.2), `doc_status` (child table of statuses to notify on, each with its own template/role). `autoname: field:module` + `unique: 1` enforces exactly one config per DocType. |
-| `rndopsapp/rndopsapp/doctype/email_manager_status/` | Child table. Fields: `status` (Select, dropdown options populated **client-side** at runtime — see §2.1), `template` (Link → Email Notification Template, optional — per-status override of the parent's default), `role` (Link → Role, optional — see §5). |
+| `rndopsapp/rndopsapp/doctype/email_manager/` | One row per monitored DocType. Fields: `module` (Link → DocType, **not** Module Registry — see §2.1), `enabled` (Check), `template` (Link → Email Notification Template, **optional default/fallback** — see §2.2), `doc_status` (child table of statuses to notify on, each with its own template). `autoname: field:module` + `unique: 1` enforces exactly one config per DocType. |
+| `rndopsapp/rndopsapp/doctype/email_manager_status/` | Child table. Fields: `status` (Select, dropdown options populated **client-side** at runtime — see §2.1), `template` (Link → Email Notification Template, optional — per-status override of the parent's default). Used to also have a `role` field (Link → Role) — removed 2026-08-31, see §5. |
 | `rndopsapp/rndopsapp/doctype/email_notification_template/` | The email content itself. Fields: `template_name` (unique, autoname source), `category` (free-text, organizational only), `content` (the HTML+Jinja source), `is_active`. Replaces what used to be 43 static files on disk — see §2.3. |
 | `rndopsapp/rndopsapp/doctype/email_send_logs/` | The audit trail. One row per notification attempt: source doctype/doc, previous/new status, recipients, subject, `template_reference` (the Email Notification Template **name** used), Celery task id, attempt/retry counters, status (`Pending`/`Retrying`/`Success`/`Failed`), error message, timestamps. |
 
@@ -224,9 +231,7 @@ undesigned email).
    from that DocType's real Workflow states — if it's empty, that DocType
    has no Workflow at all, and Email Manager can never fire for it). For
    each row, optionally pick that row's own **Email Template** (overrides
-   the default for this status) and an optional **Notify Role** (§5) to
-   email everyone holding that Role in addition to the owner. Add more
-   rows for more trigger statuses.
+   the default for this status). Add more rows for more trigger statuses.
 5. **Enabled**: checked.
 6. Save.
 
@@ -236,12 +241,11 @@ record (the config cache is invalidated automatically by
 IS needed after editing **code** (`hooks.py`, `workflow_monitor.py`, etc.) —
 see §6.
 
-**Recipients are configurable per-row, via Notify Role.** Every notification
-always goes to the document's `owner` (if that owner holds the
-`Permanent Employee` role), plus — as of 2026-08-29 — every enabled User
-holding the Role picked on that specific Doc Status row, if any. See §5 for
-why the owner-side rule stays this narrow, and why the new per-row Role is
-safe to add on top of it.
+**There is no per-row recipient configuration.** Every notification always
+goes only to the document's `owner`, and only if that owner holds the
+`Permanent Employee` role. See §5 — a per-row Notify Role option existed
+briefly (2026-08-29 to 2026-08-31) and caused a real mass-email incident, so
+it was removed rather than capped.
 
 ---
 
@@ -309,54 +313,60 @@ comment exists if it resurfaces elsewhere.
 ## 5. Recipients — exactly who gets emailed, and why
 
 ```python
-def _get_recipients(doc, role: str | None = None) -> list[str]:
+def _get_recipients(doc) -> list[str]:
     recipients = []
     if doc.owner and doc.owner not in ("Administrator", "Guest"):
         if PERMANENT_EMPLOYEE_ROLE in frappe.get_roles(doc.owner):
             recipients.append(doc.owner)
-    if role:
-        for row in frappe.get_all("Has Role", filters={"role": role, "parenttype": "User"}, fields=["parent"]):
-            user = row.parent
-            if user in ("Administrator", "Guest") or user in recipients:
-                continue
-            if frappe.db.get_value("User", user, "enabled"):
-                recipients.append(user)
     return recipients
 ```
 
-**The document owner (gated on "Permanent Employee"), plus — as of
-2026-08-29 — every enabled User holding the Role configured on the
-matched Doc Status row (`Email Manager Status.role`), if any.** No CC, no
-approver-on-next-transition notification, no automatic broadcast.
+**The document owner only, gated on "Permanent Employee".** No CC, no
+role-based recipients, no approver-on-next-transition notification, no
+automatic broadcast.
 
-The owner-side rule went through two iterations before landing here, both
-driven by testing against real data on this site — worth knowing if the
+This rule went through three iterations before landing here, all driven by
+testing/incidents against real data on this site — worth knowing if the
 requirement changes again:
 
 1. First version: owner + everyone holding whatever role was allowed on
    the *next* Workflow transition. Discovered via a live test that
-   `Permanent Employee` specifically is held by **~700 real accounts**
-   here (it's used as the generic "can submit their own forms" role, not
-   an approver-scoped one) — a config that included it as an approver
-   role would have emailed nearly the entire institute on every single
-   transition.
-2. Explicitly corrected, per direct instruction, to the owner-only,
-   role-gated version above.
-
-**Why adding a per-row `role` field doesn't reopen that same risk:** the
-original mass-email bug came from *automatically* treating "whatever role
-the next workflow transition allows" as a recipient list — an admin never
-chose it. `Email Manager Status.role` is the opposite: an explicit,
-per-status opt-in an admin deliberately picks on a specific Doc Status row
-when configuring notifications for a specific DocType. Picking an overly
-broad Role there is a config mistake on the admin's own new, explicit
-choice — not a default behavior that silently broadcasts to everyone.
-Still, **avoid pointing it at `Permanent Employee` or similarly broad
-roles** for exactly the reason above.
+   `Permanent Employee` specifically is held by **~700-1,184 real
+   accounts** here (it's used as the generic "can submit their own forms"
+   role, not an approver-scoped one) — a config that included it as an
+   approver role would have emailed nearly the entire institute on every
+   single transition.
+2. Corrected, per direct instruction, to the owner-only, role-gated
+   version.
+3. 2026-08-29: reopened the same risk through an "opt-in" side door — a
+   per-row `Email Manager Status.role` field let an admin add "everyone
+   holding Role X" alongside the owner. The reasoning at the time was that
+   an *explicit* per-status admin choice couldn't cause the same silent
+   mass-broadcast as the automatic version in (1). That reasoning was
+   wrong in practice: on 2026-08-31 an admin pointed it at `Permanent
+   Employee` itself, and 10 real Project Registration approvals broadcast
+   to all 1,184 users before it was caught (~11,840 emails). **Removed
+   entirely** rather than capped — there is no role-based recipient path
+   left in the code at all, so this class of mistake can't recur through
+   config alone.
 
 If recipient logic needs to change again, **`_get_recipients` in
 `workflow_monitor.py` is the only place to touch** — nothing else in the
 pipeline knows or cares who the recipients are.
+
+**`MAX_RECIPIENTS = 1` (2026-08-31) is a hard structural cap, enforced at
+two independent gates**, not just documentation:
+1. `_handle()` — blocks before an `Email Send Logs` row is even created if
+   `_get_recipients` ever returns more than `MAX_RECIPIENTS`.
+2. `dispatch_notification()` — re-checks the `recipients` list it was
+   actually called with, right before publishing to RabbitMQ, so a future
+   direct/alternate call site can't bypass gate 1.
+
+Either gate tripping logs an Error Log entry ("Email Manager: recipient cap
+exceeded") and the row is marked `Failed` with an explanatory
+`error_message` — nothing sends. If recipients per notification ever
+legitimately need to exceed 1, raise `MAX_RECIPIENTS` deliberately and
+explain why in the commit — do not delete the cap.
 
 ---
 
@@ -365,7 +375,7 @@ pipeline knows or cares who the recipients are.
 ### 6.0 First: is a config even configured for what you're testing?
 ```python
 frappe.get_all("Email Manager", fields=["name", "module", "enabled", "template"])
-frappe.get_all("Email Manager Status", filters={"parenttype": "Email Manager"}, fields=["parent", "status", "template", "role"])
+frappe.get_all("Email Manager Status", filters={"parenttype": "Email Manager"}, fields=["parent", "status", "template"])
 ```
 No row for the doctype+status you expect, or **neither** the row's own
 `template` **nor** the parent's `template` is set for that status → nothing
@@ -471,7 +481,7 @@ from rndopsapp.rndopsapp.email.workflow_monitor import (
 )
 clear_config_cache()
 _get_matching_config("Project Registration", "Approved")   # None => no config match (or no template resolves for this status)
-_get_recipients(frappe.get_doc("Project Registration", "<docname>"))  # [] => owner gate failed and no role passed/matched
+_get_recipients(frappe.get_doc("Project Registration", "<docname>"))  # [] => owner doesn't hold Permanent Employee; [owner] otherwise, never more than 1
 
 frappe.get_hooks("doc_events")["*"]["on_update_after_submit"]  # confirm hook registration is live
 ```
@@ -582,10 +592,10 @@ regress if touched again without this context:
 - **No portal-facing notifications.** This only ever emails a Frappe
   `User` (via SMTP); the external Account Portal (Java backend) has its
   own, separate world and isn't touched by this feature.
-- **Recipient customization is role-based only, not user-level.** A Doc
-  Status row can add "everyone holding Role X" (§5) but there's no way to
-  name individual extra recipients, no CC/BCC, and no per-row override of
-  the owner-side "Permanent Employee" gate.
+- **No recipient customization at all.** Recipients are always exactly the
+  document owner (gated on "Permanent Employee"), or nobody — no CC/BCC, no
+  extra named recipients, no role-based option (removed 2026-08-31 after a
+  mass-email incident, see §5), no per-row override of the owner gate.
 - **Templates have a static login link, not a per-document deep link.**
   Deliberate — every template's button points at
   `https://pragati.iitg.ac.in/login`, not a URL for the specific

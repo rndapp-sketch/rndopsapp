@@ -15,7 +15,8 @@
   "applicant_designation",
   "applicant_department",
   "resignation_date",
-  "reason"
+  "reason",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -78,6 +79,13 @@
    "fieldtype": "Link",
    "label": "Email Id",
    "options": "User"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Link",
+   "label": "Workflow State",
+   "options": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

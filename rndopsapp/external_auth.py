@@ -6,6 +6,45 @@ from rndopsapp.static_config import EXTERNAL_AUTH_URL
 EXTERNAL_AUTH_TIMEOUT = 10  # seconds
 
 
+def quiet_guest_permission_tracebacks():
+	"""
+	Called via before_request hook, once per worker process (idempotent).
+
+	Unauthenticated (Guest) requests hitting authenticated-only /api/ endpoints are
+	correctly rejected by frappe.has_permission()/is_whitelisted() with a 403 — this
+	is expected, working-as-intended behaviour, not an application bug. But with
+	System Settings "Allow Error Traceback" on (left on deliberately — it's what
+	surfaces real 500s to the console during development), frappe.utils.response
+	.report_error() still prints the full traceback for every single one of these
+	403s, which was flooding the web worker log.
+
+	This patches frappe.utils.response.is_traceback_allowed() to additionally
+	return False only for the specific case of a Guest-triggered PermissionError —
+	every other exception (including PermissionError for a logged-in user without
+	the right role, or any 500) still prints exactly as before. The HTTP response
+	itself (status code, body) is completely unchanged; this only silences the
+	console mirror of an already-handled, already-expected rejection.
+	"""
+	import sys
+
+	import frappe.utils.response as response_mod
+
+	if getattr(response_mod, "_rndopsapp_quiet_patch_applied", False):
+		return
+
+	original_is_traceback_allowed = response_mod.is_traceback_allowed
+
+	def _is_traceback_allowed():
+		if frappe.session.user == "Guest":
+			exc_type, _exc_value, _tb = sys.exc_info()
+			if exc_type and issubclass(exc_type, frappe.PermissionError):
+				return False
+		return original_is_traceback_allowed()
+
+	response_mod.is_traceback_allowed = _is_traceback_allowed
+	response_mod._rndopsapp_quiet_patch_applied = True
+
+
 def get_external_auth_url():
 	return frappe.conf.get("external_auth_url", EXTERNAL_AUTH_URL)
 
@@ -141,6 +180,27 @@ def clear_admin_ip_lock():
 	ip = get_client_ip()
 	frappe.cache.hdel("login_failed_count", ip)
 	frappe.cache.hdel("login_failed_time", ip)
+
+
+def verify_external_user(username: str, password: str) -> bool:
+	"""
+	Verify a username/password pair against the external auth microservice only —
+	no Frappe User lookup, no session creation. For lightweight identity checks
+	(e.g. the Workflow Override second-factor on kafka_control.html) where the
+	person being verified need not be a Frappe user themselves.
+	"""
+	try:
+		response = requests.post(
+			get_external_auth_url(),
+			json={"username": username, "password": password},
+			timeout=EXTERNAL_AUTH_TIMEOUT,
+		)
+		response.raise_for_status()
+		data = response.json()
+	except requests.RequestException as e:
+		frappe.log_error(f"External auth service error: {e}", "ExternalAuth")
+		return False
+	return bool(data.get("success"))
 
 
 def patch_find_by_credentials():

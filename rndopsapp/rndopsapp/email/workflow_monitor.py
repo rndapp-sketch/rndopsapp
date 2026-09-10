@@ -19,6 +19,16 @@ import frappe
 CACHE_KEY = "email_manager_doctype_map"
 PERMANENT_EMPLOYEE_ROLE = "Permanent Employee"
 
+# Hard ceiling on recipients per notification — one document, one owner,
+# one email. Enforced at both the enqueue gate (_handle) and the publish
+# gate (dispatch_notification) so a bulk-send can't happen even if a future
+# change to _get_recipients, or a direct call to dispatch_notification,
+# tries to pass more. See 2026-08-31 incident in
+# docs/email_manager/implementation.md §5 — a "safe" opt-in bulk-recipient
+# feature broadcast ~11,840 emails before this cap existed. Never raise
+# this without also changing how recipients are computed to justify it.
+MAX_RECIPIENTS = 1
+
 
 def on_workflow_state_change(doc, method=None):
     """doc_events hook (on_update / on_update_after_submit / on_submit)."""
@@ -49,8 +59,18 @@ def _handle(doc):
     if _already_notified(doc.doctype, doc.name, new_state):
         return
 
-    recipients = _get_recipients(doc, config.get("role"))
+    recipients = _get_recipients(doc)
     if not recipients:
+        return
+
+    if len(recipients) > MAX_RECIPIENTS:
+        frappe.log_error(
+            f"Email Manager: blocked notification for {doc.doctype} {doc.name} -> "
+            f"{new_state}: {len(recipients)} recipients resolved, MAX_RECIPIENTS is "
+            f"{MAX_RECIPIENTS}. Not sent. This should be structurally impossible — "
+            "see docs/email_manager/implementation.md §5.",
+            "Email Manager: recipient cap exceeded",
+        )
         return
 
     log = frappe.get_doc(
@@ -88,17 +108,17 @@ def _handle(doc):
 # Config resolution ({doctype: {module, default_template, statuses}}, one
 # Email Manager row per doctype — "module" IS the monitored DocType itself,
 # enforced unique in the JSON). Each entry in `statuses` is itself
-# {status: {template, role}} — a row's own template/role, resolved against
+# {status: {template}} — a row's own template, resolved against
 # the parent's default_template at lookup time in _get_matching_config.
 # ---------------------------------------------------------------------------
 
 
 def _get_matching_config(doctype: str, new_state: str):
-    """{"module": doctype, "template": <Email Notification Template name>,
-    "role": <Role name or None>} for the specific Doc Status row matching
-    `new_state`, if an enabled Email Manager row exists for `doctype` with
-    that status configured AND a template resolves (row's own, else the
-    parent's default). None otherwise."""
+    """{"module": doctype, "template": <Email Notification Template name>}
+    for the specific Doc Status row matching `new_state`, if an enabled
+    Email Manager row exists for `doctype` with that status configured AND
+    a template resolves (row's own, else the parent's default). None
+    otherwise."""
     entry = _get_doctype_map().get(doctype)
     if not entry:
         return None
@@ -111,7 +131,7 @@ def _get_matching_config(doctype: str, new_state: str):
     if not template:
         return None
 
-    return {"module": entry["module"], "template": template, "role": status_cfg.get("role")}
+    return {"module": entry["module"], "template": template}
 
 
 def _get_doctype_map():
@@ -124,11 +144,11 @@ def _get_doctype_map():
         "Email Manager", filters={"enabled": 1}, fields=["name", "module", "template"]
     ):
         statuses = {
-            row.status: {"template": row.template, "role": row.role}
+            row.status: {"template": row.template}
             for row in frappe.get_all(
                 "Email Manager Status",
                 filters={"parent": em.name, "parenttype": "Email Manager"},
-                fields=["status", "template", "role"],
+                fields=["status", "template"],
             )
             if row.status
         }
@@ -172,35 +192,27 @@ def _already_notified(doctype: str, docname: str, new_state: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _get_recipients(doc, role: str | None = None) -> list[str]:
+def _get_recipients(doc) -> list[str]:
     """
-    The document owner (only when that owner actually holds the Permanent
-    Employee role — deliberately NOT "every user holding the Permanent
-    Employee role": that role is held by ~700 accounts, basically every
-    regular staff/faculty account, used just to submit their own forms —
-    confirmed live against this site), plus every enabled User holding the
-    specific `role` configured on the matched Doc Status row, if any.
+    The document owner only — and only when that owner actually holds the
+    Permanent Employee role — deliberately NOT "every user holding the
+    Permanent Employee role": that role is held by ~1,184 accounts,
+    basically every regular staff/faculty account, used just to submit
+    their own forms (confirmed live against this site).
 
-    The role is an explicit, per-status opt-in an admin picks on that row
-    (Email Manager Status.role) — not an automatic role inference — so it
-    doesn't carry the same mass-email risk that ruled out
-    Permanent-Employee-as-recipient-role above; an admin choosing an
-    overly broad role here is a config mistake on their own new opt-in,
-    not a default behavior that silently broadcasts.
+    There used to also be an opt-in "notify everyone holding Role X" per
+    Doc Status row (Email Manager Status.role). It was removed on
+    2026-08-31 after an admin pointed it at Permanent Employee itself,
+    broadcasting every Project Registration approval to all 1,184 users —
+    the exact mass-email risk this function's owner-gate was designed to
+    avoid, just reopened through the "opt-in" side door. Recipients are now
+    always exactly the single document owner, or nobody.
     """
     recipients: list[str] = []
 
     if doc.owner and doc.owner not in ("Administrator", "Guest"):
         if PERMANENT_EMPLOYEE_ROLE in frappe.get_roles(doc.owner):
             recipients.append(doc.owner)
-
-    if role:
-        for row in frappe.get_all("Has Role", filters={"role": role, "parenttype": "User"}, fields=["parent"]):
-            user = row.parent
-            if user in ("Administrator", "Guest") or user in recipients:
-                continue
-            if frappe.db.get_value("User", user, "enabled"):
-                recipients.append(user)
 
     return recipients
 
@@ -222,6 +234,26 @@ def dispatch_notification(log_name, doctype_name, docname, recipients, subject, 
     to surface an error to.
     """
     from rndopsapp.rndopsapp.email.rabbitmq_client import publish_task
+
+    if len(recipients) > MAX_RECIPIENTS:
+        frappe.db.set_value(
+            "Email Send Logs",
+            log_name,
+            {
+                "status": "Failed",
+                "error_message": f"Blocked: {len(recipients)} recipients exceeds "
+                f"MAX_RECIPIENTS ({MAX_RECIPIENTS}). Not published to RabbitMQ.",
+                "final_result": "Blocked — recipient cap exceeded",
+            },
+            update_modified=True,
+        )
+        frappe.db.commit()
+        frappe.log_error(
+            f"Email Manager: dispatch_notification blocked for {log_name}: "
+            f"{len(recipients)} recipients, MAX_RECIPIENTS is {MAX_RECIPIENTS}.",
+            "Email Manager: recipient cap exceeded",
+        )
+        return
 
     try:
         doc = frappe.get_doc(doctype_name, docname)

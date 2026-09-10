@@ -191,8 +191,27 @@ def save_recruitment_adhoc_contractual_data(data):
             if f.fieldtype != "Table" and f.fieldname in data:
                 doc.set(f.fieldname, data[f.fieldname])
 
-        if "workflow_state" in data:
-            doc.set("workflow_state", data["workflow_state"])
+        # `head` (PI head/mentor) is mandatory but the User.piheadmentor_user_id
+        # column it used to be fetched from is empty for many users. Prefer the
+        # department head of the project this contractual is raised against
+        # (Project Registration.department_head, resolved via upfa_project_code),
+        # which has far better coverage; fall back to piheadmentor_user_id, then
+        # to whatever the frontend already supplied.
+        if not doc.get("head"):
+            resolved_head = None
+            upfa_project_code = data.get("upfa_project_code") or doc.get("upfa_project_code")
+            if upfa_project_code:
+                resolved_head = frappe.db.get_value(
+                    "Project Registration",
+                    {"project_no": upfa_project_code},
+                    "department_head",
+                )
+            if not resolved_head:
+                webmail_id = data.get("webmail_id") or doc.get("webmail_id")
+                if webmail_id:
+                    resolved_head = frappe.db.get_value("User", webmail_id, "piheadmentor_user_id")
+            if resolved_head:
+                doc.set("head", resolved_head)
 
         # Handle Child Tables
         for f in meta.fields:

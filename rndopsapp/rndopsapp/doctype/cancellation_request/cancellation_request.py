@@ -4,7 +4,6 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from rndopsapp.static_config import ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS
 
 
 class CancellationRequest(Document):
@@ -83,14 +82,51 @@ class CancellationRequest(Document):
 
 	def on_update(self):
 		"""Handle workflow state changes."""
+		# The head stage can also be reached later (e.g. PI forwards to head).
+		# Skip it there too when the head cannot act on the request.
+		self._maybe_bypass_head()
+
 		# Check if the cancellation has reached an approved state
 		workflow_state = getattr(self, "workflow_state", None)
 		if workflow_state and self._is_approved_state(workflow_state):
 			self._mark_original_as_cancelled()
 
+	def _maybe_bypass_head(self):
+		"""Apply the head-approval bypass if this document is sitting at that state."""
+		from rndopsapp.rndopsapp.cancellation_api import (
+			HEAD_STATE,
+			_maybe_bypass_head_approval,
+		)
+
+		state = (getattr(self, "workflow_state", None) or "").strip().lower()
+		if state != HEAD_STATE.lower():
+			return
+		if not self.source_workflow:
+			return
+
+		try:
+			wf_name = f"cancel_{self.source_workflow}"
+			if not frappe.db.exists("Workflow", wf_name):
+				return
+			ref_doc = frappe.get_doc(self.reference_doctype, self.reference_name)
+			_maybe_bypass_head_approval(
+				self, ref_doc, self.requested_by, frappe.get_doc("Workflow", wf_name)
+			)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Cancellation head bypass failed")
+
+	def on_update_after_submit(self):
+		"""
+		Submitted documents (docstatus=1) fire this instead of on_update, and
+		every workflow transition — including the final approval — happens after
+		submit. Without this the approval was a no-op: the request reached
+		"Approved" but the original document was never marked Cancelled.
+		"""
+		self.on_update()
+
 	def on_submit(self):
 		"""When submitted, check if the cancellation workflow has been completed."""
-		pass
+		self.on_update()
 
 	def _mark_original_as_cancelled(self):
 		"""Mark the original document as cancelled when cancellation is approved."""
@@ -164,7 +200,7 @@ class CancellationRequest(Document):
 						project_number = resolved_proj
 
 				if project_number:
-					api_url = ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS
+					api_url = "http://172.16.134.81:18080/api/account-head-commit/status/by-project-frap"
 					headers = {"Content-Type": "application/json"}
 					body = {
 						"projectNumber": str(project_number),

@@ -24,8 +24,6 @@
   "details_of_disbursal",
   "section_break_lcud",
   "total_disbursal_amount",
-  "total_personal_share",
-  "total_institute_share",
   "institute_share_breakdown",
   "idf",
   "dpf",
@@ -154,18 +152,13 @@
   {
    "fieldname": "institute_share_breakdown",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Institute Share Breakdown (Calculated Fields)"
   },
   {
    "fieldname": "total_disbursal_amount",
    "fieldtype": "Currency",
    "label": "Total Disbursal Amount",
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_institute_share",
-   "fieldtype": "Currency",
-   "label": "Total Institute Share",
    "read_only": 1
   },
   {
@@ -184,12 +177,6 @@
    "fieldname": "staff_welfare_fund",
    "fieldtype": "Currency",
    "label": "Staff Welfare Fund (5%)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_personal_share",
-   "fieldtype": "Currency",
-   "label": "Total Personal Share",
    "read_only": 1
   },
   {
@@ -213,7 +200,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-11 15:21:49.288176",
+ "modified": "2026-09-03 13:20:11.163226",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Consultancy",

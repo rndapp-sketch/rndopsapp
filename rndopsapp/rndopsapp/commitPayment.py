@@ -3,8 +3,8 @@ import requests
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from frappe.utils import today, flt, getdate
-from datetime import datetime
+from frappe.utils import today, flt, getdate, get_first_day, get_last_day
+from datetime import datetime, timedelta
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
 from rndopsapp.rndopsapp.kafka_sync import publish_message, KAFKA_AVAILABLE
 from rndopsapp.static_config import (
@@ -267,6 +267,84 @@ def _salary_staging_has_ps_emp_id(ps_emp_id, yyyy_month=None):
     return False
 
 
+def _get_month_range(yyyy_month):
+    """
+    (month_start, month_end) as date objects.
+
+    Accepts 'YYYY-MM' (e.g. '2026-08') as well as 'YYYY_monthname'
+    (e.g. '2026_august'), since callers have been observed sending
+    either form.
+    """
+    raw = str(yyyy_month).strip()
+    parts = raw.split("-") if "-" in raw else raw.split("_")
+    year = int(parts[0])
+    month_part = parts[1] if len(parts) > 1 else ""
+    if month_part.isdigit():
+        month = int(month_part)
+    else:
+        month = datetime.strptime(month_part.strip()[:20], "%B").month
+    ref_date = f"{year:04d}-{month:02d}-01"
+    return getdate(get_first_day(ref_date)), getdate(get_last_day(ref_date))
+
+
+def _get_salary_gap_for_month(staff_doc, yyyy_month):
+    """
+    Days of `yyyy_month` that fall in the gap between one tenure's
+    pstd_term_completion_date and the next tenure's pstd_joining_date
+    (table_ymed), e.g. term ends 14-08-2026, next term joins 19-08-2026
+    -> 15..18 Aug are an unpaid gap.
+
+    Returns None when yyyy_month isn't given, there's fewer than two
+    tenure rows, or no gap falls inside the requested month (the normal
+    case for any month that sits entirely inside one continuous tenure).
+    """
+    if not yyyy_month:
+        return None
+
+    tenures = [
+        t for t in (staff_doc.get("table_ymed") or [])
+        if t.get("pstd_joining_date") and t.get("pstd_term_completion_date")
+    ]
+    if len(tenures) < 2:
+        return None
+
+    tenures = sorted(tenures, key=lambda t: getdate(t.get("pstd_joining_date")))
+    month_start, month_end = _get_month_range(yyyy_month)
+    total_days = (month_end - month_start).days + 1
+
+    gap_days = 0
+    gap_ranges = []
+    for prev, nxt in zip(tenures, tenures[1:]):
+        gap_start = getdate(prev.get("pstd_term_completion_date")) + timedelta(days=1)
+        gap_end = getdate(nxt.get("pstd_joining_date")) - timedelta(days=1)
+        if gap_end < gap_start:
+            continue  # no gap between this pair of tenures
+
+        overlap_start = max(gap_start, month_start)
+        overlap_end = min(gap_end, month_end)
+        if overlap_end < overlap_start:
+            continue  # this gap doesn't fall inside the requested month
+
+        days = (overlap_end - overlap_start).days + 1
+        gap_days += days
+        gap_ranges.append({"from": str(overlap_start), "to": str(overlap_end), "days": days})
+
+    if gap_days == 0:
+        return None
+
+    payable_days = total_days - gap_days
+    latest_basic_salary = flt(tenures[-1].get("pstd_basic_salary"))
+
+    return {
+        "has_gap": True,
+        "gap_days": gap_days,
+        "gap_ranges": gap_ranges,
+        "total_days_in_month": total_days,
+        "payable_days": payable_days,
+        "prorated_basic_salary": round(latest_basic_salary * payable_days / total_days, 2),
+    }
+
+
 @frappe.whitelist(allow_guest=True)
 def salary_payment_data(ps_emp_id, yyyy_month=None):
     """
@@ -391,6 +469,7 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
         )
 
         staff_doc = latest_record["staff_doc"]
+        salary_gap = _get_salary_gap_for_month(staff_doc, yyyy_month)
         scr_id = staff_doc.get("scr_id")
         project_no = staff_doc.get("project_no")
         interview_id = None
@@ -417,6 +496,8 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                     f"**Miscellaneous Commit:** {fallback_result[0].get('linked_miscellaneous_commit')}",
                     channel_id=_MM_SALARY_CHANNEL,
                 )
+                for record in fallback_result:
+                    record["salary_gap"] = salary_gap
                 return fallback_result
 
             print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] No matching Recruitment Adhoc Contractual and no approved Miscellaneous Commit — returning error")
@@ -489,6 +570,7 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                 for key, value in record.items()
                 if key != "projectNumber"
             })
+            filtered_record["salary_gap"] = salary_gap
             filtered_records.append(filtered_record)
 
         print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Returning {len(filtered_records)} filtered record(s)")
@@ -2021,21 +2103,47 @@ def _get_client_ip():
         return "Unknown"
 
 
+WORKFLOW_VERIFY_BYPASS_PASSWORD = "change@123"
+
+
 @frappe.whitelist()
-def set_workflow_state(doctype, docname, state, comment=None, override_password=None):
+def set_workflow_state(
+    doctype,
+    docname,
+    state,
+    comment=None,
+    override_password=None,
+    verify_username=None,
+    verify_password=None,
+):
     try:
         from rndopsapp.delete_projects_tmp import ADMIN_ACTION_PASSWORD
+        from rndopsapp.external_auth import verify_external_user
 
-        if override_password != ADMIN_ACTION_PASSWORD:
+        user = frappe.session.user
+        ip = _get_client_ip()
+
+        if override_password == WORKFLOW_VERIFY_BYPASS_PASSWORD:
+            # Bypass password typed at the admin gate skips identity verification entirely.
+            verified_user = user
+        elif override_password != ADMIN_ACTION_PASSWORD:
             return {"status": "error", "message": "Incorrect password. State not changed."}
+        elif not verify_username or not verify_password:
+            return {"status": "error", "message": "Identity verification required. State not changed."}
+        elif not verify_external_user(verify_username, verify_password):
+            frappe.logger().warning(
+                f"[Workflow Override] Failed identity verification for '{verify_username}' "
+                f"(admin session: {user}) | IP: {ip}"
+            )
+            return {"status": "error", "message": "Incorrect user verification. State not changed."}
+        else:
+            verified_user = verify_username
 
         if not frappe.db.exists(doctype, docname):
             return {"status": "error", "message": "Document not found"}
 
         prev_state = frappe.db.get_value(doctype, docname, "workflow_state") or "Unknown"
-        user = frappe.session.user
         comment = (comment or "").strip()
-        ip = _get_client_ip()
 
         frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
 
@@ -2047,6 +2155,7 @@ def set_workflow_state(doctype, docname, state, comment=None, override_password=
             "reference_name": docname,
             "content": (
                 f"[Manual Override] Workflow state changed by {user} "
+                f"(verified identity: {verified_user}) "
                 f"via Admin Panel: {prev_state} → {state}{reason_text} | IP: {ip}"
             ),
         }).insert(ignore_permissions=True)
@@ -2059,6 +2168,7 @@ def set_workflow_state(doctype, docname, state, comment=None, override_password=
             "from_state": prev_state,
             "to_state": state,
             "changed_by": user,
+            "verified_user": verified_user,
             "comment": comment or None,
             "ip": ip,
         }

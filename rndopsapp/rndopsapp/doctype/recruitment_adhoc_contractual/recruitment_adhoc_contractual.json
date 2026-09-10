@@ -216,10 +216,12 @@
    "fieldtype": "Section Break"
   },
   {
-   "fetch_from": "webmail_id.piheadmentor_user_id",
+   "fetch_from": "upfa_department.dept_head",
    "fieldname": "head",
    "fieldtype": "Data",
-   "label": "Head"
+   "label": "Head",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "webmail_id",
@@ -274,7 +276,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-13 15:46:20.045381",
+ "modified": "2026-09-03 12:13:40.465483",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",

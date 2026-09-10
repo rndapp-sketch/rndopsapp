@@ -43,6 +43,20 @@ app.conf.update(
     worker_prefetch_multiplier=1,
     broker_connection_retry_on_startup=True,
     task_track_started=True,
+    # This worker shares a broker with the pre-existing notification-celery
+    # deployment and its Flower dashboard (see module docstring). Flower
+    # periodically broadcasts pidbox control commands (e.g. enable_events)
+    # to every worker on the broker, unique node name or not — a unique
+    # name only avoids colliding on *reply* identity, it doesn't stop this
+    # worker from *receiving* the broadcast. Since this worker runs
+    # --without-heartbeat/--without-gossip/--without-mingle, it has no
+    # event dispatcher to enable, so handling that command crashed with
+    # "AttributeError: 'NoneType' object has no attribute 'groups'" every
+    # ~5s (harmless to task processing, but constant log noise/exception
+    # overhead — confirmed still happening live on 2026-08-31). Disabling
+    # remote control means this worker no longer subscribes to the pidbox
+    # exchange at all, so it never receives (or mishandles) that command.
+    worker_enable_remote_control=False,
 )
 
 # Redis key this worker process's heartbeat thread writes to, so
@@ -99,6 +113,34 @@ def _init_frappe_context(**kwargs):
     threading.Thread(target=_heartbeat_loop, args=(site,), daemon=True).start()
 
 
+def _write_log(log_name: str, values: dict):
+    """
+    frappe.db.set_value + commit, reconnecting once on a dead connection.
+
+    This worker's Frappe DB connection is opened once at process start
+    (worker_process_init) and then reused across every task for as long as
+    the process lives — unlike a normal Frappe request, which gets a fresh
+    connection each time. If the underlying MySQL connection dies while
+    idle between tasks (network blip, server restart, proxy timeout —
+    happened repeatedly here, see logs/email_manager_celery_worker.log
+    around 2026-08-29 to 2026-08-31), pymysql raises InterfaceError on the
+    next use and does not auto-reconnect. Previously that propagated out of
+    this function uncaught, so even the "mark as Failed" write in the
+    except-block below could fail the same way — leaving the Email Send
+    Logs row stuck at whatever status it last reached (see ESL-20260831-03165).
+    """
+    import frappe
+    from pymysql.err import InterfaceError, OperationalError
+
+    try:
+        frappe.db.set_value("Email Send Logs", log_name, values, update_modified=True)
+        frappe.db.commit()
+    except (InterfaceError, OperationalError):
+        frappe.db.connect()
+        frappe.db.set_value("Email Send Logs", log_name, values, update_modified=True)
+        frappe.db.commit()
+
+
 @app.task(
     bind=True,
     name="pragati.send_status_email",
@@ -117,8 +159,7 @@ def send_status_email(self, log_name: str, to_addresses: list[str], subject: str
     attempt = self.request.retries + 1
 
     if self.request.retries > 0:
-        frappe.db.set_value(
-            "Email Send Logs",
+        _write_log(
             log_name,
             {
                 "status": "Retrying",
@@ -126,9 +167,7 @@ def send_status_email(self, log_name: str, to_addresses: list[str], subject: str
                 "retry_count": self.request.retries,
                 "last_retry_at": frappe.utils.now_datetime(),
             },
-            update_modified=True,
         )
-        frappe.db.commit()
 
     ok = send_email_with_password(
         to_address=", ".join(to_addresses),
@@ -141,8 +180,7 @@ def send_status_email(self, log_name: str, to_addresses: list[str], subject: str
         if self.request.retries >= self.max_retries:
             # send_email_with_password already logged the real traceback via
             # frappe.log_error — point at that instead of duplicating it here.
-            frappe.db.set_value(
-                "Email Send Logs",
+            _write_log(
                 log_name,
                 {
                     "status": "Failed",
@@ -152,16 +190,12 @@ def send_status_email(self, log_name: str, to_addresses: list[str], subject: str
                     "error_message": "SMTP send failed on every retry — see Error Log for "
                     "'send_email_with_password failed' entries around this time.",
                 },
-                update_modified=True,
             )
-            frappe.db.commit()
             return {"status": "failed", "log_name": log_name}
 
-        frappe.db.commit()
         raise RuntimeError("SMTP send failed — retrying")
 
-    frappe.db.set_value(
-        "Email Send Logs",
+    _write_log(
         log_name,
         {
             "status": "Success",
@@ -171,7 +205,5 @@ def send_status_email(self, log_name: str, to_addresses: list[str], subject: str
             "final_result": "Delivered",
             "error_message": "",
         },
-        update_modified=True,
     )
-    frappe.db.commit()
     return {"status": "sent", "log_name": log_name}

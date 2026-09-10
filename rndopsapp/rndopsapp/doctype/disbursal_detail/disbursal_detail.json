@@ -12,9 +12,7 @@
   "designation",
   "emp_id",
   "disbursal_pdf_no_or_bank_account_no",
-  "disbursal_amount",
-  "disbursal_personal_share",
-  "disbursal_institute_share"
+  "disbursal_amount"
  ],
  "fields": [
   {
@@ -33,24 +31,13 @@
   {
    "fieldname": "disbursal_pdf_no_or_bank_account_no",
    "fieldtype": "Data",
-   "label": "PDF No./Bank account No."
+   "label": "PFMS/Account Number",
+   "options": "\nPDF\nBank Account"
   },
   {
    "fieldname": "disbursal_amount",
    "fieldtype": "Currency",
    "label": "Amount to be Disbursed (Rs.)"
-  },
-  {
-   "fieldname": "disbursal_personal_share",
-   "fieldtype": "Currency",
-   "label": "Personal Share (70%)(Rs.)",
-   "read_only": 1
-  },
-  {
-   "fieldname": "disbursal_institute_share",
-   "fieldtype": "Currency",
-   "label": "Institute's Share (30%)(Rs.)",
-   "read_only": 1
   },
   {
    "fieldname": "web_mail_id",
@@ -77,7 +64,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-27 11:11:02.209568",
+ "modified": "2026-09-03 13:20:37.734729",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal Detail",

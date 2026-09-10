@@ -66,6 +66,28 @@ class ProjectStaffDetails(Document):
 		sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
 		return sorted_tenures[-1].pstd_joining_date
 
+	def get_gap_from_previous_tenure(self):
+		"""
+		Days between the latest tenure row's joining date and the term
+		completion date of the row right before it, based on `table_ymed`.
+		Returns None if there are fewer than two tenure rows.
+		"""
+		tenures = self.get("table_ymed") or []
+		valid_tenures = [t for t in tenures if t.pstd_joining_date]
+
+		if len(valid_tenures) < 2:
+			return None
+
+		from frappe.utils import getdate
+
+		sorted_tenures = sorted(valid_tenures, key=lambda x: getdate(x.pstd_joining_date))
+		latest, previous = sorted_tenures[-1], sorted_tenures[-2]
+
+		if not previous.pstd_term_completion_date:
+			return None
+
+		return (getdate(latest.pstd_joining_date) - getdate(previous.pstd_term_completion_date)).days
+
 
 def generate_emp_id():
 	"""
@@ -703,6 +725,17 @@ def get_project_staff_details_list(filters=None, limit=100000):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Project Staff Details List Error")
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_gap_from_previous_tenure(docname):
+	"""
+	Days between the latest tenure row's joining date and the term
+	completion date of the row right before it, for a Project Staff Details
+	docname. Returns None in `gap_days` if there are fewer than two rows.
+	"""
+	doc = frappe.get_doc("Project Staff Details", docname)
+	return {"status": "success", "gap_days": doc.get_gap_from_previous_tenure()}
 
 
 @frappe.whitelist()

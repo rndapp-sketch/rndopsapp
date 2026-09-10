@@ -63,6 +63,7 @@ SPECIFIC_APPROVER_MAP = {
 	"Indent General Form": ("Pending Other PI", "igf_other_pi_id"),
 	"Indent Cum Sanction Sheet": ("Pending Other PI", "icss_other_pi_id"),
 	"Rate Contract": ("Pending Other PI", "other_pi_email"),
+	"Direct Purchase": ("Pending Other PI", "dp_other_pi_id"),
 }
 
 # Kept in one place, referenced by name in get_pending_task and reused by
@@ -435,7 +436,7 @@ def get_pending_application():
 	    a) ex_emp_id against Project Staff Details.pi_id / User.piheadmentor_user_id
 	    b) the document's owner being a User whose piheadmentor_user_id == current user
 	- Other-PI forms (Travel, Indent General Form, Indent Cum Sanction Sheet,
-	  Reimbursement): the applicant charged the form to a project owned by
+	  Reimbursement, Direct Purchase): the applicant charged the form to a project owned by
 	  this user, so it is parked with them ("Pending Other PI", or "Pending PI
 	  Approval" for Reimbursement) until they pick the funding project/account
 	  head. Without this the designated PI has no inbox for them, since the
@@ -505,6 +506,7 @@ def get_pending_application():
 		"Indent General Form": ("igf_other_pi_id", "Pending Other PI", "igf_indenter"),
 		"Indent Cum Sanction Sheet": ("icss_other_pi_id", "Pending Other PI", "icss_applicant_name"),
 		"Reimbursement": ("reimbursement_for_id", "Pending PI Approval", "applicant_webmail"),
+		"Direct Purchase": ("dp_other_pi_id", "Pending Other PI", "applicant_name"),
 	}
 
 	for dt, (pi_field, state, name_field) in other_pi_sources.items():

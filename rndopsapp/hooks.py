@@ -168,6 +168,7 @@ doc_events = {
 	"*": {
 		"on_update": [
 			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.rndopsapp.activity_logger.log_workflow_transition",
 			"rndopsapp.external_auth.log_impersonated_action",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
@@ -177,6 +178,7 @@ doc_events = {
 		# on_update — most real approval-chain transitions happen post-submit,
 		# so without this entry Email Manager never sees them.
 		"on_update_after_submit": [
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
 		],
 		"after_insert": ["rndopsapp.external_auth.log_impersonated_action"],
@@ -186,6 +188,7 @@ doc_events = {
 		# its own event. Same handler, same dedupe, so this is pure
 		# coverage, not a behavior change.
 		"on_submit": [
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.external_auth.log_impersonated_action",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
 		],
@@ -246,6 +249,7 @@ scheduler_events = {
 before_request = [
 	"rndopsapp.rndopsapp.doctype.project_verification.project_verification.restrict_verification_staff_routes",
 	"rndopsapp.rndopsapp.email.consumer_service.ensure_consumer_running",
+	"rndopsapp.external_auth.quiet_guest_permission_tracebacks",
 ]
 before_login = [
 	"rndopsapp.external_auth.clear_admin_ip_lock",
