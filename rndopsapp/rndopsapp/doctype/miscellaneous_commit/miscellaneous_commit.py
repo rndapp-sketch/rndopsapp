@@ -37,7 +37,7 @@ def get_miscellaneous_commit_fields(doc_name=None):
 			mr_doc = frappe.get_doc("Module Registry", mr_parent[0].name)
 			module_names = sorted({
 				row.doctype_name for row in (mr_doc.get("doctype_name") or [])
-				if row.doctype_name and row.doctype_name != DOCTYPE
+				if row.doctype_name
 			})
 	except Exception:
 		module_names = []
