@@ -15,6 +15,7 @@
   "pstd_joining_number",
   "pstd_pi_extension_sought",
   "pstd_staff_extension_sought",
+  "pstd_scr_id",
   "pstd_tentative_joining_date"
  ],
  "fields": [
@@ -65,6 +66,11 @@
    "fieldname": "pstd_staff_extension_sought",
    "fieldtype": "Data",
    "label": "Staff Extension Sought"
+  },
+  {
+   "fieldname": "pstd_scr_id",
+   "fieldtype": "Data",
+   "label": "Selection Committee Report ID"
   },
   {
    "fieldname": "pstd_tentative_joining_date",

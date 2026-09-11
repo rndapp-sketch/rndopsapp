@@ -221,7 +221,21 @@ class ProjectStaffExtension(Document):
 			"pstd_extension_sought": self.ex_period_staff or self.ex_period,
 			"pstd_pi_extension_sought": self.ex_period_pi,
 			"pstd_staff_extension_sought": self.ex_period_staff,
+			"pstd_scr_id": self.ex_scr_id or None,
 		})
+
+		# The parent doc's top-level joining/term-completion dates are what every
+		# other module (Salary Module included) reads directly — without this,
+		# an approved extension only shows up inside table_ymed and everything
+		# else keeps displaying the stale pre-extension date.
+		parent_doc.ps_joining_date = new_joining_date
+		parent_doc.ps_term_completion_date = new_term_completion_date
+
+		# Record the committee that authorized this extension on the parent
+		# record too, mirroring how scr_id is set at initial joining — so the
+		# most recent extension's committee is always the one on file.
+		if self.ex_scr_id:
+			parent_doc.scr_id = self.ex_scr_id
 
 		parent_doc.flags.ignore_permissions = True
 		parent_doc.save()

@@ -22,6 +22,7 @@
   "ex_period",
   "ex_period_pi",
   "ex_period_staff",
+  "ex_scr_id",
   "increment_by_pi",
   "increment_by_staff",
   "ex_computed_new_joining_date",
@@ -133,6 +134,11 @@
    "fieldtype": "Select",
    "label": "Period Of Re-Engagement/Extension allowed by Staff (Month)",
    "options": "\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11"
+  },
+  {
+   "fieldname": "ex_scr_id",
+   "fieldtype": "Data",
+   "label": "New Selection Committee Report ID"
   },
   {
    "fieldname": "increment_by_pi",

@@ -30,6 +30,7 @@
   "ps_pan",
   "ps_aadhar_number",
   "bank_account_number",
+  "ifsc_code",
   "ps_blood_group",
   "ps_gender",
   "ps_maritial_status",
@@ -261,6 +262,11 @@
    "fieldname": "bank_account_number",
    "fieldtype": "Data",
    "label": "Bank Account Number"
+  },
+  {
+   "fieldname": "ifsc_code",
+   "fieldtype": "Data",
+   "label": "IFSC Code"
   },
   {
    "fieldname": "ps_ta",
