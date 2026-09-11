@@ -13,6 +13,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.workflow import apply_workflow, get_transitions
+from frappe.utils import getdate
 from frappe.utils.csvutils import read_csv_content
 from frappe.utils.xlsxutils import read_xls_file_from_attached_file, read_xlsx_file_from_attached_file
 
@@ -24,7 +25,33 @@ def _extract_eval(expression):
 	return expression[5:].strip() if expression.startswith("eval:") else expression
 
 
+# Personal-details name fields get title-cased on entry, since staff/HR type
+# them in all-caps, all-lowercase, or mixed case interchangeably (e.g.
+# "JOHN DOE", "john doe" -> "John Doe"). str.title() also does the right
+# thing across hyphens and apostrophes ("mary-jane" -> "Mary-Jane",
+# "d'angelo" -> "D'Angelo").
+NAME_FIELDS_TO_TITLE_CASE = {"ps_first_name", "ps_middle_name", "ps_last_name", "ps_fathers_name"}
+
+
+def _normalize_name_casing(value):
+	value = str(value or "").strip()
+	return value.title() if value else value
+
+
 class ProjectStaffDetails(Document):
+	def validate(self):
+		# Runs on every insert/save regardless of entry point — the
+		# `/insert_project_staff` admin tool, its bulk CSV/Excel importer,
+		# Frappe Desk's own Data Import tool, direct Desk edits, or API
+		# scripts — so name casing and IFSC formatting stay consistent no
+		# matter how the record was created.
+		for field in NAME_FIELDS_TO_TITLE_CASE:
+			value = self.get(field)
+			if value:
+				self.set(field, _normalize_name_casing(value))
+		if self.ifsc_code:
+			self.ifsc_code = self.ifsc_code.strip().upper()
+
 	# Employee ID is allocated when the staff submits the joining form
 	# (see `submit_project_staff_details`), not at draft-insert time, so
 	# abandoned drafts don't burn numbers in the series.
@@ -178,6 +205,24 @@ def get_project_staff_details_fields(doc_name=None):
 		doc = frappe.get_doc("Project Staff Details", doc_name)
 		prefill_data = doc.as_dict()
 
+		# table_ymed (Tenure Details) is the real source of truth for the
+		# current joining/term-completion/basic-salary — a staff member's
+		# service is a sequence of tenure rows (original hire + each
+		# extension), and the parent's own ps_joining_date /
+		# ps_term_completion_date / ps_basic_salary only reflect whichever
+		# tenure last happened to write them. Override with the latest row
+		# here instead of trusting the parent fields to always be in sync.
+		valid_tenures = [
+			t for t in (doc.get("table_ymed") or [])
+			if t.get("pstd_joining_date") and t.get("pstd_term_completion_date")
+		]
+		if valid_tenures:
+			latest_tenure = max(valid_tenures, key=lambda t: getdate(t.get("pstd_joining_date")))
+			prefill_data["ps_joining_date"] = latest_tenure.get("pstd_joining_date")
+			prefill_data["ps_term_completion_date"] = latest_tenure.get("pstd_term_completion_date")
+			if latest_tenure.get("pstd_basic_salary"):
+				prefill_data["ps_basic_salary"] = latest_tenure.get("pstd_basic_salary")
+
 	client_scripts = []
 	try:
 		scripts = frappe.get_all(
@@ -246,6 +291,7 @@ def create_project_staff_details_entry(data):
 		"ps_hostel",
 		"ps_citizenship",
 		"bank_account_number",
+		"ifsc_code",
 		"erp_mail",
 	]
 
@@ -315,6 +361,8 @@ BULK_IMPORT_HEADER_MAP = {
 	"presentaddress": "ps_present_address",
 	"permanentaddress": "ps_permanent_address",
 	"bankaccountnumber": "bank_account_number",
+	"ifsccode": "ifsc_code",
+	"ifsc": "ifsc_code",
 	"pan": "ps_pan",
 	"aadharnumber": "ps_aadhar_number",
 	"joiningdate": "ps_joining_date",

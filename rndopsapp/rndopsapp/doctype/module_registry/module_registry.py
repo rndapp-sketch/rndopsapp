@@ -498,7 +498,35 @@ def get_pending_application():
 		for r in extension_records:
 			r["doctype"] = "Project Staff Extension"
 
-	records = leave_records + extension_records
+	# Project Staff Resignation: same no-"pi"-field situation as Extension above,
+	# matched the same way via applicant_emp_id / owner. Unlike Extension, this
+	# doctype stays at docstatus 0 all the way through "Pending PI Approval"
+	# (it only reaches docstatus 1 once Dean-approved), so the docstatus filter
+	# here is 0, not 1.
+	resignation_records = []
+	if pi_emp_ids or pi_owner_emails:
+		or_filters = []
+		if pi_emp_ids:
+			or_filters.append(["applicant_emp_id", "in", list(pi_emp_ids)])
+		if pi_owner_emails:
+			or_filters.append(["owner", "in", pi_owner_emails])
+
+		resignation_records = frappe.get_list(
+			"Project Staff Resignation",
+			filters={
+				"workflow_state": "Pending PI Approval",
+				"docstatus": 0,
+			},
+			or_filters=or_filters,
+			fields=["name", "applicant_name", "applicant_prj_num", "applicant_emp_id", "workflow_state", "modified", "owner", "docstatus", "creation"],
+			order_by="modified desc",
+			limit_page_length=10000,
+			ignore_permissions=True,
+		)
+		for r in resignation_records:
+			r["doctype"] = "Project Staff Resignation"
+
+	records = leave_records + extension_records + resignation_records
 
 	# doctype -> (other-PI field, state it waits in, applicant-name field)
 	other_pi_sources = {
