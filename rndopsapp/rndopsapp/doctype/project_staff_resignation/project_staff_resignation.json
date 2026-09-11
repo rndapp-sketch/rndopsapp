@@ -92,7 +92,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-16 11:19:39.951558",
+ "modified": "2026-09-10 17:12:37.215149",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Staff Resignation",
@@ -107,6 +107,19 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
    "share": 1,
    "submit": 1,
    "write": 1
