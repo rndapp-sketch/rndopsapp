@@ -345,6 +345,76 @@ def _get_salary_gap_for_month(staff_doc, yyyy_month):
     }
 
 
+def _compute_total_months_and_gaps(staff_doc):
+    """
+    Career totals (not scoped to any one payroll month): cumulative months
+    worked across every Project Staff Tenure Details row, and the total
+    calendar-day gap(s) between consecutive tenures. Mirrors the
+    total_months_worked math in project_staff_extension.compute_new_tenure so
+    the Salary Module's "months worked" agrees with the Extension form's.
+    """
+    tenures = [
+        t for t in (staff_doc.get("table_ymed") or [])
+        if t.get("pstd_joining_date") and t.get("pstd_term_completion_date")
+    ]
+    if not tenures:
+        return {"total_months_worked": 0, "total_gap_days": 0, "gap_ranges": []}
+
+    tenures = sorted(tenures, key=lambda t: getdate(t.get("pstd_joining_date")))
+
+    total_months = 0
+    for t in tenures:
+        d1 = getdate(t.get("pstd_joining_date"))
+        d2 = getdate(t.get("pstd_term_completion_date"))
+        days = (d2 - d1).days + 1
+        total_months += round(days / 30.437)
+
+    gap_days = 0
+    gap_ranges = []
+    for prev, nxt in zip(tenures, tenures[1:]):
+        gap_start = getdate(prev.get("pstd_term_completion_date")) + timedelta(days=1)
+        gap_end = getdate(nxt.get("pstd_joining_date")) - timedelta(days=1)
+        if gap_end < gap_start:
+            continue  # no gap between this pair of tenures
+        days = (gap_end - gap_start).days + 1
+        gap_days += days
+        gap_ranges.append({"from": str(gap_start), "to": str(gap_end), "days": days})
+
+    return {
+        "total_months_worked": total_months,
+        "total_gap_days": gap_days,
+        "gap_ranges": gap_ranges,
+    }
+
+
+@frappe.whitelist(allow_guest=True)
+def get_staff_tenure_summary(ps_emp_ids):
+    """
+    Bulk lookup: given a JSON list (or single string) of ps_emp_id, returns
+    {ps_emp_id: {total_months_worked, total_gap_days, gap_ranges}} for each,
+    computed from Project Staff Tenure Details. Used by the Salary Module to
+    show cumulative months worked / gap period without an N+1 query per row.
+    """
+    if isinstance(ps_emp_ids, str):
+        try:
+            ps_emp_ids = json.loads(ps_emp_ids)
+        except (ValueError, TypeError):
+            ps_emp_ids = [ps_emp_ids]
+    if not ps_emp_ids:
+        return {}
+
+    result = {}
+    staff_records = frappe.get_all(
+        "Project Staff Details",
+        filters={"ps_emp_id": ["in", ps_emp_ids]},
+        fields=["name", "ps_emp_id"],
+    )
+    for rec in staff_records:
+        staff_doc = frappe.get_doc("Project Staff Details", rec.name)
+        result[rec.ps_emp_id] = _compute_total_months_and_gaps(staff_doc)
+    return result
+
+
 @frappe.whitelist(allow_guest=True)
 def salary_payment_data(ps_emp_id, yyyy_month=None):
     """
