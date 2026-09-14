@@ -29,3 +29,9 @@ bench.log
 # Ignore config
 config.py
 email_config.py
+
+# Local machine IP overrides (never commit)
+static_config_local.py
+
+# Personal local dev notes (never commit)
+LOCAL_DEV_NOTES.md

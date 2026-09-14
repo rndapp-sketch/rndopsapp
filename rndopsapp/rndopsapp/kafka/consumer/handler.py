@@ -10,6 +10,10 @@ from .fund_received_dlq.consumer import handle_fund_received_dlq_error
 from .deposit_slip_dlq.consumer import handle_deposit_slip_dlq_error
 from .commit_dlq.consumer import handle_account_head_commit_dlq_error
 from .loan_request_dlq.consumer import handle_loan_request_dlq_error
+from .payment_update import (
+    handle_account_head_payment_update,
+    handle_overhead_payment_update,
+)
 from ..config import (
     TOPIC_ACCOUNTS_FUND_RECEIVED,
     TOPIC_DEPOSIT_SLIP_UPDATE,
@@ -19,6 +23,8 @@ from ..config import (
     TOPIC_DEPOSIT_SLIP_DLQ,
     TOPIC_ACCOUNT_HEAD_COMMIT_DLQ,
     TOPIC_LOAN_REQUEST_DLQ,
+    TOPIC_OVERHEAD_PAYMENT_UPDATE,
+    TOPIC_ACCOUNT_HEAD_PAYMENT_UPDATE,
 )
 
 
@@ -32,6 +38,8 @@ TOPIC_HANDLERS = {
     TOPIC_DEPOSIT_SLIP_DLQ: handle_deposit_slip_dlq_error,
     TOPIC_ACCOUNT_HEAD_COMMIT_DLQ: handle_account_head_commit_dlq_error,
     TOPIC_LOAN_REQUEST_DLQ: handle_loan_request_dlq_error,
+    TOPIC_OVERHEAD_PAYMENT_UPDATE: handle_overhead_payment_update,
+    TOPIC_ACCOUNT_HEAD_PAYMENT_UPDATE: handle_account_head_payment_update,
 }
 
 
