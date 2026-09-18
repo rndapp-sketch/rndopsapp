@@ -480,6 +480,50 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 		return {"status": "error", "message": str(e)}
 
 
+def _expand_roles(raw):
+	"""
+	Workflow Document State.allow_edit and Workflow Transition.allowed are
+	core Frappe Link -> Role fields, meant to hold exactly one Role name — but
+	this app stores several roles in one string when a state/transition should
+	be editable by more than one role (e.g. "Dean, RnD\nDirector"). Note "Dean,
+	RnD" is itself a single real Role name that happens to contain a comma, so
+	a naive comma-split would wrongly break it into "Dean" and "RnD" — split on
+	newline first, and only comma-split a line that isn't already an exact
+	Role match. Mirrors the same resolution module_registry.py's
+	track_application already does for role strings, kept separate here since
+	that copy is a local closure, not an importable helper.
+
+	Returns the list of real Role names found in `raw` (each once). Frappe's
+	own Workflow doctype already supports several Document State/Transition
+	rows sharing the same state so multiple roles can each get their own,
+	valid, single-Role row — used by _setup_cancellation_workflow below to
+	build a cloned workflow that will actually pass link validation.
+	"""
+	if not raw:
+		return []
+
+	all_role_names = set(frappe.get_all("Role", pluck="name"))
+	raw = str(raw).strip()
+	if raw in all_role_names:
+		return [raw]
+
+	found = []
+	for line in raw.split("\n"):
+		line = line.strip()
+		if not line:
+			continue
+		if line in all_role_names:
+			if line not in found:
+				found.append(line)
+			continue
+		for part in line.split(","):
+			part = part.strip()
+			if part in all_role_names and part not in found:
+				found.append(part)
+
+	return found
+
+
 def _setup_cancellation_workflow(source_workflow_name):
 	"""
 	Set up workflow for the Cancellation Request by creating/reusing a
@@ -510,17 +554,25 @@ def _setup_cancellation_workflow(source_workflow_name):
 		new_wf.is_active = 1
 		new_wf.workflow_state_field = "workflow_state"
 
-		# Copy all states from the source workflow
+		# Copy all states from the source workflow — allow_edit is a
+		# Link -> Role field expecting exactly one role, so a multi-role
+		# source value (e.g. "Dean, RnD\nDirector") is expanded into one
+		# row per role rather than copied verbatim (which would fail link
+		# validation on insert() below). Frappe already treats several
+		# rows sharing the same `state` as "any of these roles may edit",
+		# so this preserves the original multi-role semantics.
 		for state in source_wf.states:
-			new_wf.append(
-				"states",
-				{
-					"state": state.state,
-					"doc_status": state.doc_status,
-					"allow_edit": state.allow_edit,
-					"is_optional_state": getattr(state, "is_optional_state", 0),
-				},
-			)
+			roles = _expand_roles(state.allow_edit) or [state.allow_edit]
+			for role in roles:
+				new_wf.append(
+					"states",
+					{
+						"state": state.state,
+						"doc_status": state.doc_status,
+						"allow_edit": role,
+						"is_optional_state": getattr(state, "is_optional_state", 0),
+					},
+				)
 
 		# Copy all transitions from the source workflow
 		for transition in source_wf.transitions:
@@ -552,16 +604,19 @@ def _setup_cancellation_workflow(source_workflow_name):
 				next_state = approved_state_name
 				action = "Approve"
 
-			new_wf.append(
-				"transitions",
-				{
-					"state": transition.state,
-					"action": action,
-					"next_state": next_state,
-					"allowed": transition.allowed,
-					"allow_self_approval": getattr(transition, "allow_self_approval", 1),
-				},
-			)
+			# allowed is a Link -> Role field expecting exactly one role, same
+			# expansion as allow_edit above.
+			for role in (_expand_roles(transition.allowed) or [transition.allowed]):
+				new_wf.append(
+					"transitions",
+					{
+						"state": transition.state,
+						"action": action,
+						"next_state": next_state,
+						"allowed": role,
+						"allow_self_approval": getattr(transition, "allow_self_approval", 1),
+					},
+				)
 
 		new_wf.flags.ignore_permissions = True
 		new_wf.insert()
