@@ -220,6 +220,22 @@ def save_indent_general_form_data(data, files=None, file=None):
     except Exception as e:
         frappe.db.rollback()
         print(f"[IGF] ERROR: {e}")
+        # Logged to Error Log (not just stdout) so a save failure can be looked
+        # up afterwards by docname/user instead of needing the browser error
+        # text reproduced by hand — includes the exact submitted field values
+        # implicated in most save failures (igf_account_head in particular:
+        # see _resolve_account_head_label, a Link -> Budget Head that fails
+        # link validation if given a value matching no Budget Head at all).
+        frappe.log_error(
+            title="Indent General Form Save Error",
+            message=(
+                f"User: {frappe.session.user}\n"
+                f"docname (if updating): {data.get('name')}\n"
+                f"igf_account_head submitted: {data.get('igf_account_head')!r}\n"
+                f"workflow_state submitted: {data.get('workflow_state')!r}\n\n"
+                f"{frappe.get_traceback()}"
+            ),
+        )
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
