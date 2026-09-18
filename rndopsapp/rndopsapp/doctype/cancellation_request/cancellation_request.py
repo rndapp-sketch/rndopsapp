@@ -82,38 +82,15 @@ class CancellationRequest(Document):
 
 	def on_update(self):
 		"""Handle workflow state changes."""
-		# The head stage can also be reached later (e.g. PI forwards to head).
-		# Skip it there too when the head cannot act on the request.
-		self._maybe_bypass_head()
+		# The "Pending Head Approval" skip is applied once, at workflow-clone
+		# time, by cancellation_api._setup_cancellation_workflow (rewiring the
+		# cloned workflow's own transitions via CANCELLATION_SKIP_STATES) —
+		# not here on every save.
 
 		# Check if the cancellation has reached an approved state
 		workflow_state = getattr(self, "workflow_state", None)
 		if workflow_state and self._is_approved_state(workflow_state):
 			self._mark_original_as_cancelled()
-
-	def _maybe_bypass_head(self):
-		"""Apply the head-approval bypass if this document is sitting at that state."""
-		from rndopsapp.rndopsapp.cancellation_api import (
-			HEAD_STATE,
-			_maybe_bypass_head_approval,
-		)
-
-		state = (getattr(self, "workflow_state", None) or "").strip().lower()
-		if state != HEAD_STATE.lower():
-			return
-		if not self.source_workflow:
-			return
-
-		try:
-			wf_name = f"cancel_{self.source_workflow}"
-			if not frappe.db.exists("Workflow", wf_name):
-				return
-			ref_doc = frappe.get_doc(self.reference_doctype, self.reference_name)
-			_maybe_bypass_head_approval(
-				self, ref_doc, self.requested_by, frappe.get_doc("Workflow", wf_name)
-			)
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), "Cancellation head bypass failed")
 
 	def on_update_after_submit(self):
 		"""

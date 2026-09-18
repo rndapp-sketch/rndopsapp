@@ -303,72 +303,83 @@ def get_pending_task(page_name="pending-task"):
 			if dt == "Cancellation Request" and not is_system_manager:
 				ref_dt = r.get("reference_doctype")
 				ref_name = r.get("reference_name")
+				curr_status = r.get(status_field)
+				ref_doc = None
 				if ref_dt and ref_name and frappe.db.exists(ref_dt, ref_name):
 					ref_doc = frappe.db.get_value(ref_dt, ref_name, "*", as_dict=True)
-					if ref_doc:
-						curr_status = r.get(status_field)
 
-						# A) Head Approval filtering for the underlying reference document
-						if curr_status == "Pending Head Approval":
-							# Travel Other-PI: the head step is re-pointed to the
-							# funding PI's department head, so honour that first.
-							travel_head = (ref_doc.get("travel_head_approver_id") or "").strip().lower()
-							if ref_dt == "Travel" and travel_head:
-								if travel_head != current_user.lower():
-									continue
-							elif ref_dt in dept_field_map:
-								if not _heads_this_department(ref_doc.get(dept_field_map[ref_dt])):
-									continue
-							elif ref_dt in head_field_map:
-								h_field = head_field_map[ref_dt]
-								h_email = (ref_doc.get(h_field) or "").strip().lower()
-								if h_email and h_email != current_user.lower():
-									continue
-							else:
-								h_email = (
-									ref_doc.get("head")
-									or ref_doc.get("head_approver")
-									or ref_doc.get("department_head")
-									or ref_doc.get("dept_head")
-									or ""
-								).strip().lower()
-								if h_email:
-									if h_email != current_user.lower():
-										continue
-								else:
-									# No head field and no known department field:
-									# fall back to any department-looking value so
-									# the request is not exposed to every head.
-									dept_val = (
-										ref_doc.get("applicant_department")
-										or ref_doc.get("department")
-										or ""
-									)
-									if not _heads_this_department(dept_val):
-										continue
-
-						# B) Specific Approver / Other PI filtering for reference document
-						ref_sa = specific_approver_map.get(ref_dt)
-						if ref_sa:
-							ref_sa_state, ref_sa_field = ref_sa
-							if curr_status == ref_sa_state:
-								appr_email = (ref_doc.get(ref_sa_field) or "").strip().lower()
-								if appr_email and appr_email != current_user.lower():
-									continue
-
-						# C) Pending PI Approval filtering for reference document
-						if curr_status == "Pending PI Approval":
-							pi_email = (
-								ref_doc.get("reimbursement_for_id")
-								or ref_doc.get("pi_id")
-								or ref_doc.get("pi_webmail")
-								or ref_doc.get("pi")
-								or ref_doc.get("pi_email")
-								or ref_doc.get("pi_mentor_user")
+				# Reference document missing/deleted/unreadable: these states can
+				# only be scoped by reading a field off that document, so without
+				# it we can't verify who the intended approver is. Fail CLOSED
+				# (skip) rather than show it to everyone the broad role check let in.
+				if not ref_doc:
+					if curr_status in ("Pending Head Approval", "Pending Other PI", "Pending PI Approval"):
+						continue
+				else:
+					# A) Head Approval filtering for the underlying reference document
+					if curr_status == "Pending Head Approval":
+						# Travel Other-PI: the head step is re-pointed to the
+						# funding PI's department head, so honour that first.
+						travel_head = (ref_doc.get("travel_head_approver_id") or "").strip().lower()
+						if ref_dt == "Travel" and travel_head:
+							if travel_head != current_user.lower():
+								continue
+						elif ref_dt in dept_field_map:
+							if not _heads_this_department(ref_doc.get(dept_field_map[ref_dt])):
+								continue
+						elif ref_dt in head_field_map:
+							h_field = head_field_map[ref_dt]
+							h_email = (ref_doc.get(h_field) or "").strip().lower()
+							if h_email != current_user.lower():
+								continue
+						else:
+							h_email = (
+								ref_doc.get("head")
+								or ref_doc.get("head_approver")
+								or ref_doc.get("department_head")
+								or ref_doc.get("dept_head")
 								or ""
 							).strip().lower()
-							if pi_email and pi_email != current_user.lower():
+							if h_email:
+								if h_email != current_user.lower():
+									continue
+							else:
+								# No head field and no known department field:
+								# fall back to any department-looking value so
+								# the request is not exposed to every head.
+								dept_val = (
+									ref_doc.get("applicant_department")
+									or ref_doc.get("department")
+									or ""
+								)
+								if not _heads_this_department(dept_val):
+									continue
+
+					# B) Specific Approver / Other PI filtering for reference document.
+					# Fail CLOSED: if no approver is recorded on the reference doc,
+					# don't fall through to "visible to everyone with the role" —
+					# these states are only ever meant for one specific person.
+					ref_sa = specific_approver_map.get(ref_dt)
+					if ref_sa:
+						ref_sa_state, ref_sa_field = ref_sa
+						if curr_status == ref_sa_state:
+							appr_email = (ref_doc.get(ref_sa_field) or "").strip().lower()
+							if appr_email != current_user.lower():
 								continue
+
+					# C) Pending PI Approval filtering for reference document (fail closed, as above).
+					if curr_status == "Pending PI Approval":
+						pi_email = (
+							ref_doc.get("reimbursement_for_id")
+							or ref_doc.get("pi_id")
+							or ref_doc.get("pi_webmail")
+							or ref_doc.get("pi")
+							or ref_doc.get("pi_email")
+							or ref_doc.get("pi_mentor_user")
+							or ""
+						).strip().lower()
+						if pi_email != current_user.lower():
+							continue
 
 			if head_field and r.get(status_field) == "Pending Head Approval" and not is_system_manager:
 				head_email = (r.get(head_field) or "").strip().lower()
@@ -441,6 +452,11 @@ def get_pending_application():
 	  Approval" for Reimbursement) until they pick the funding project/account
 	  head. Without this the designated PI has no inbox for them, since the
 	  Pending Task page is not shown to Permanent Employees.
+	- Cancellation Request, any pending state: "Pending Other PI" / "Pending PI
+	  Approval" is scoped to the specific PI recorded on the referenced
+	  document (same as the Other-PI forms above); every other pending state
+	  (Staff, HoS, Associate Dean, Dean, Head, Director, ...) is scoped to
+	  whoever holds that state's role on the cancellation's own workflow.
 	Each record is tagged with "doctype" so callers can tell the sources apart.
 	"""
 
@@ -561,9 +577,350 @@ def get_pending_application():
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"get_pending_application: {dt} lookup failed")
 
+	# Cancellation Request: was showing every pending cancellation to every
+	# user, regardless of state. Scope each one the same way its *own* state
+	# is scoped on the source doctype:
+	#   - "Pending Other PI" / "Pending PI Approval" -> the specific PI/other-PI
+	#     recorded on the referenced document (other_pi_sources above).
+	#   - every other "Pending ..." step (Staff, HoS, Associate Dean, Dean,
+	#     Head, Director, ...) -> whoever holds that state's `allow_edit` role
+	#     on the cancellation's own workflow (cancel_<source_workflow>), same
+	#     as a normal role-gated approval step.
+	try:
+		user_roles = frappe.get_roles(current_user)
+		is_system_manager = "System Manager" in user_roles
+
+		cancel_records = frappe.get_list(
+			"Cancellation Request",
+			filters={"docstatus": ["<", 2]},
+			fields=[
+				"name", "reference_doctype", "reference_name", "workflow_state",
+				"source_workflow", "modified", "owner", "docstatus", "creation",
+			],
+			order_by="modified desc",
+			limit_page_length=10000,
+			ignore_permissions=True,
+		)
+
+		_allow_edit_cache = {}
+
+		def _allow_edit_role(source_workflow, state):
+			key = (source_workflow, state)
+			if key not in _allow_edit_cache:
+				role = None
+				if source_workflow:
+					role = frappe.db.get_value(
+						"Workflow Document State",
+						{"parent": f"cancel_{source_workflow}", "state": state},
+						"allow_edit",
+					)
+				_allow_edit_cache[key] = role
+			return _allow_edit_cache[key]
+
+		for r in cancel_records:
+			state = r.get("workflow_state") or ""
+			if "pending" not in state.lower():
+				# Draft / Approved / Rejected / *Generated / *Printed etc. — not
+				# awaiting anyone's action.
+				continue
+
+			ref_dt = r.get("reference_doctype")
+			ref_name = r.get("reference_name")
+			src = other_pi_sources.get(ref_dt)
+
+			if src and src[1] == state:
+				# PI-specific step: same scoping as the non-cancellation records above.
+				pi_field, _expected_state, name_field = src
+				if not ref_name or not frappe.db.exists(ref_dt, ref_name):
+					continue
+				approver = (frappe.db.get_value(ref_dt, ref_name, pi_field) or "").strip()
+				if approver.lower() != current_user.lower():
+					continue
+				r["pi"] = current_user
+				r["username"] = frappe.db.get_value(ref_dt, ref_name, name_field) or r.get("owner")
+			elif not is_system_manager:
+				role = _allow_edit_role(r.get("source_workflow"), state)
+				if not role or role not in user_roles:
+					continue
+
+			r["doctype"] = "Cancellation Request"
+			records.append(r)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "get_pending_application: Cancellation Request lookup failed")
+
 	records.sort(key=lambda r: r.get("modified") or "", reverse=True)
 
 	return {"user": current_user, "results": records}
+
+
+def _categorize_task_results(doctype_groups):
+	"""
+	Buckets every record across `doctype_groups` (the common {doctype, records:
+	[{name, title, status, creation, owner, ...}]} shape shared by
+	get_pending_task's and get_task_registry's `results`) into research /
+	consultancy / others, resolving each record's linked Project Registration
+	via DOCTYPE_PR_LINKS (project_type_links.py) with two batched queries
+	(Project Registration by name, by project_no) instead of one query per
+	record or a client-side bulk fetch of every Project Registration.
+	"""
+	from rndopsapp.rndopsapp.doctype.module_registry.project_type_links import (
+		DOCTYPE_PR_LINKS,
+		DEPOSIT_SLIP_DOCTYPES,
+		HARDCODED_CONSULTANCY_DOCTYPES,
+		pr_link_fields,
+		resolve_project_category,
+		resolve_project_no,
+	)
+
+	buckets = {"research": [], "consultancy": [], "others": []}
+
+	# 1. Batch-fetch the PR-link field(s) (plus, for Fund Received, its own
+	# reference number; for Cancellation Request, the reference_doctype/
+	# reference_name it points at — get_task_registry doesn't fetch those by
+	# default, so they're re-fetched here regardless of source) each doctype
+	# needs beyond what's already on the record.
+	for group in doctype_groups:
+		dt = group.get("doctype")
+		records = group.get("records") or []
+		if not records or not frappe.db.exists("DocType", dt):
+			continue
+
+		wanted = set(pr_link_fields(dt))
+		if dt == "Fund Received":
+			wanted.add("fund_received_ref_number")
+		if dt == "Cancellation Request":
+			wanted |= {"reference_doctype", "reference_name"}
+
+		fetch_fields = [f for f in wanted if frappe.db.has_column(dt, f)]
+
+		extra_by_name = {}
+		if fetch_fields:
+			names = [r.get("name") for r in records if r.get("name")]
+			if names:
+				rows = frappe.get_all(
+					dt,
+					filters={"name": ["in", names]},
+					fields=["name"] + fetch_fields,
+					ignore_permissions=True,
+				)
+				extra_by_name = {row["name"]: row for row in rows}
+
+		for r in records:
+			r["_extra"] = extra_by_name.get(r.get("name"), {})
+
+	# 1b. Cancellation Request has no Project Registration link of its own —
+	# it cancels some other application (Travel, Reimbursement, Project
+	# Registration itself, ...) named by reference_doctype/reference_name.
+	# Resolve each Cancellation Request row to that underlying application's
+	# (doctype, record) pair instead, batch-fetching the referenced doctype's
+	# own PR-link field(s) the same way step 1 does for a direct doctype, so
+	# a cancellation is bucketed by the project it actually cancels against.
+	logical_target = {}  # Cancellation Request name -> (logical_dt, logical_record)
+	cr_group = next((g for g in doctype_groups if g.get("doctype") == "Cancellation Request"), None)
+	if cr_group:
+		by_ref_dt = {}
+		for r in cr_group.get("records") or []:
+			extra = r.get("_extra", {})
+			ref_dt, ref_name = extra.get("reference_doctype"), extra.get("reference_name")
+			if ref_dt and ref_name:
+				by_ref_dt.setdefault(ref_dt, set()).add(ref_name)
+
+		ref_extra = {}  # (ref_dt, ref_name) -> fetched field dict
+		for ref_dt, ref_names in by_ref_dt.items():
+			if not frappe.db.exists("DocType", ref_dt):
+				continue
+			fields = [f for f in pr_link_fields(ref_dt) if frappe.db.has_column(ref_dt, f)]
+			rows = frappe.get_all(
+				ref_dt,
+				filters={"name": ["in", list(ref_names)]},
+				fields=["name"] + fields,
+				ignore_permissions=True,
+			)
+			for row in rows:
+				ref_extra[(ref_dt, row["name"])] = row
+
+		for r in cr_group.get("records") or []:
+			extra = r.get("_extra", {})
+			ref_dt, ref_name = extra.get("reference_doctype"), extra.get("reference_name")
+			if not ref_dt or not ref_name:
+				continue
+			fetched = ref_extra.get((ref_dt, ref_name), {"name": ref_name})
+			logical_target[r.get("name")] = (ref_dt, {**fetched, "name": ref_name})
+
+	def _logical(dt, r, merged):
+		"""(doctype, record) to actually resolve project links against."""
+		if dt == "Cancellation Request" and r.get("name") in logical_target:
+			return logical_target[r["name"]]
+		return dt, merged
+
+	# 2. Collect every PR `name` / `project_no` referenced in this batch, to
+	# resolve project_type in two queries instead of one per record.
+	pr_names, pr_nos = set(), set()
+	for group in doctype_groups:
+		dt = group.get("doctype")
+		for r in group.get("records") or []:
+			merged = {**r, **r.get("_extra", {})}
+			logical_dt, logical_record = _logical(dt, r, merged)
+			mapping = DOCTYPE_PR_LINKS.get(logical_dt)
+			if logical_dt in HARDCODED_CONSULTANCY_DOCTYPES or not mapping:
+				continue
+			for strategy in (mapping.get("primary"), mapping.get("fallback")):
+				if not strategy:
+					continue
+				kind, field = strategy
+				if kind == "self":
+					if logical_record.get("name"):
+						pr_names.add(logical_record["name"])
+				elif kind == "pr_name" and logical_record.get(field):
+					pr_names.add(logical_record[field])
+				elif kind == "pr_project_no" and logical_record.get(field):
+					pr_nos.add(logical_record[field])
+
+	pr_name_to_type, pr_name_to_no = {}, {}
+	if pr_names:
+		rows = frappe.get_all(
+			"Project Registration",
+			filters={"name": ["in", list(pr_names)]},
+			fields=["name", "project_type", "project_no"],
+			ignore_permissions=True,
+		)
+		for row in rows:
+			pr_name_to_type[row["name"]] = row.get("project_type")
+			pr_name_to_no[row["name"]] = row.get("project_no")
+
+	pr_no_to_type = {}
+	if pr_nos:
+		rows = frappe.get_all(
+			"Project Registration",
+			filters={"project_no": ["in", list(pr_nos)]},
+			fields=["project_no", "project_type"],
+			ignore_permissions=True,
+		)
+		for row in rows:
+			pr_no_to_type[row["project_no"]] = row.get("project_type")
+
+	# 3. Batch-resolve the "Deposit: RES-DS-..." sub-line for Fund Received rows
+	# — every deposit-slip doctype stores `fund_received_ref` == the parent
+	# Fund Received's own `fund_received_ref_number`.
+	deposit_by_ref = {}
+	fr_group = next((g for g in doctype_groups if g.get("doctype") == "Fund Received"), None)
+	if fr_group:
+		refs = list({
+			r["_extra"].get("fund_received_ref_number")
+			for r in fr_group.get("records") or []
+			if r.get("_extra", {}).get("fund_received_ref_number")
+		})
+		if refs:
+			for ds_dt in DEPOSIT_SLIP_DOCTYPES:
+				if not frappe.db.exists("DocType", ds_dt):
+					continue
+				rows = frappe.get_all(
+					ds_dt,
+					filters={"fund_received_ref": ["in", refs]},
+					fields=["name", "fund_received_ref"],
+					ignore_permissions=True,
+				)
+				for row in rows:
+					deposit_by_ref.setdefault(row["fund_received_ref"], row["name"])
+
+	# 4. Flatten every doctype's records into one row shape, bucketed by category.
+	for group in doctype_groups:
+		dt = group.get("doctype")
+		for r in group.get("records") or []:
+			extra = r.get("_extra", {})
+			merged = {**r, **extra}
+			logical_dt, logical_record = _logical(dt, r, merged)
+
+			category = resolve_project_category(logical_record, logical_dt, pr_name_to_type, pr_no_to_type)
+			project_no = resolve_project_no(logical_record, logical_dt, pr_name_to_no)
+
+			# mod_vis is passed through unfiltered, exactly as get_pending_task's
+			# own results already do (it's None for get_task_registry, which has
+			# no such concept). Neither this field nor the HoS bypass for
+			# mod_vis=0 groups on "Pending HoS Approval" records is filtered
+			# here — that logic has always lived in the frontend, not in
+			# get_pending_task, and this endpoint intentionally leaves it there
+			# too rather than guessing at a rule it can't see.
+			row = {
+				"status": r.get("status"),
+				"module": dt,
+				"title": r.get("title"),
+				"project_no": project_no,
+				"date": str(r.get("creation"))[:10] if r.get("creation") else None,
+				"owner": r.get("owner"),
+				"doctype": dt,
+				"name": r.get("name"),
+				"mod_vis": group.get("mod_vis"),
+			}
+
+			if dt == "Fund Received":
+				deposit_slip = deposit_by_ref.get(extra.get("fund_received_ref_number"))
+				if deposit_slip:
+					row["deposit_slip"] = deposit_slip
+
+			buckets[category].append(row)
+
+	return buckets
+
+
+@frappe.whitelist()
+def get_categorized_pending_task(page_name="pending-task"):
+	"""
+	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_categorized_pending_task
+
+	Same records as get_pending_task(page_name) — that function's permission,
+	workflow-state and role/department-head scoping is reused as-is, not
+	duplicated — but pre-bucketed into {"research": [...], "consultancy": [...],
+	"others": [...]} so the frontend no longer needs to bulk-fetch every
+	Project Registration and resolve DOCTYPE_PR_LINKS client-side.
+	"""
+	base = get_pending_task(page_name=page_name)
+	return _categorize_task_results(base.get("results") or [])
+
+
+def _module_registry_doctypes(page_name):
+	"""
+	The set of doctype names registered under Module Registry(page_name) —
+	the same curated "application" list get_pending_task(page_name) scopes
+	itself to. get_task_registry, unlike get_pending_task, has no such
+	restriction of its own: it walks every doctype in the whole Rndopsapp
+	module (internal logs like Staff Activity Log / Kafka *, deposit-slip
+	doctypes that aren't user-facing applications like D Consultancy Deposit
+	Slip, etc. included). get_categorized_task_registry uses this to narrow
+	its output back down to real "pending task" modules only.
+	"""
+	if not frappe.db.exists("Module Registry", page_name):
+		return set()
+	return set(
+		frappe.get_all(
+			"Module Registry Item", filters={"parent": page_name}, pluck="doctype_name"
+		)
+	)
+
+
+@frappe.whitelist()
+def get_categorized_task_registry(debug=0, page_name="pending-task"):
+	"""
+	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_categorized_task_registry
+
+	Same records as get_task_registry(debug) — that function's role gating and
+	document-discovery logic is reused as-is, not duplicated — but narrowed to
+	only the doctypes registered in Module Registry(page_name) (the same
+	"pending task" module list get_categorized_pending_task is scoped to —
+	see _module_registry_doctypes) and pre-bucketed into {"research": [...],
+	"consultancy": [...], "others": [...]} the same way
+	get_categorized_pending_task is.
+	"""
+	base = get_task_registry(debug=debug)
+	if not base.get("success"):
+		return base
+
+	allowed = _module_registry_doctypes(page_name)
+	scoped_results = [g for g in (base.get("results") or []) if g.get("doctype") in allowed]
+
+	grouped = _categorize_task_results(scoped_results)
+	grouped["success"] = True
+	return grouped
 
 
 @frappe.whitelist()

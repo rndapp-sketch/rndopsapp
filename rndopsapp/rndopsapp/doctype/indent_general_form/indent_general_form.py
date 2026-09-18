@@ -13,7 +13,27 @@ DOCTYPE = "Indent General Form"
 
 
 class IndentGeneralForm(Document):
-	pass
+	def validate(self):
+		self._resolve_account_head_label()
+
+	def _resolve_account_head_label(self):
+		"""
+		igf_account_head is a Link -> Budget Head (must store the Budget Head's
+		`name`, a generated id) but used to be a hardcoded Select storing plain
+		label text ("Consumable"/"Contingency"/"Equipments"/"Other" etc — see
+		rndopsapp/patchs/migrate_igf_account_head_to_link.py, which rewrote
+		existing records the same way). Whatever client path still submits the
+		label instead of the Budget Head name would otherwise fail Frappe's own
+		link validation with a confusing "Could not find Account Head: <label>"
+		at save time — resolve it here first instead.
+		"""
+		value = (self.igf_account_head or "").strip()
+		if not value or frappe.db.exists("Budget Head", value):
+			return
+
+		budget_head_name = frappe.db.get_value("Budget Head", {"budget_head": value}, "name")
+		if budget_head_name:
+			self.igf_account_head = budget_head_name
 
 @frappe.whitelist()
 def get_indent_general_form_fields(doc_name=None):
@@ -319,6 +339,8 @@ def _resolve_igf_next_state(doc, current_state, action, wf):
 
     if current_state == "Pending Dean Approval" and action == "Approve":
         account_head = (doc.get("igf_account_head") or "").strip()
+        if account_head:
+            account_head = frappe.db.get_value("Budget Head", account_head, "budget_head") or account_head
         total = flt(doc.get("igf_total_estimate") or 0)
 
         if (account_head == "Equipments" and total > 1_000_000) or \

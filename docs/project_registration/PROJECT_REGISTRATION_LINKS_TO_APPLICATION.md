@@ -121,6 +121,8 @@ These DocTypes store Project Registration identifiers as plain `Data`/`Long Text
 | 40 | **Top Up Fellowship** | `project_title` | Long Text | PR title (string) | ❌ No | **Moved here 2026-08-25** |
 | 41 | **Travel** | `travel_project_number` | Data | `project_no` (via fetch_from) | ❌ No | Auto-filled via `travel_project_title.project_no` |
 | 42 | **User Delegation** | `project_names` | Long Text | PR names (JSON array) | ❌ No | Stores multiple PR `name` values as JSON string; no FK enforcement |
+| 43 | **Project Staff Resignation** | `applicant_prj_num` | Data | `project_no` | ❌ No | Label = "Project No."; **added 2026-09-15** — missing from every prior version of this report |
+| 44 | **Project Staff Extension** | `ex_proj_no` | Data | `project_no` | ❌ No | Label = "Project Number"; **added 2026-09-15** — missing from every prior version of this report |
 
 ---
 
@@ -172,10 +174,10 @@ These doctypes mention "project" fields but don't reference an *existing* Projec
 |----------|-------|
 | DocTypes with **Direct Links** (fieldtype=Link, options=Project Registration) | **28 unique doctypes (29 link rows)** |
 | Unique PR fields referenced via `fetch_from` | **7** (`project_no`, `project_type`, `consultancy_gstin`, `pi_userid`, `funding_agen`, `other_project_type_name`, fetched in Travel too) |
-| DocTypes with **Indirect Data references only** | **19 additional** (not already counted in Section 1) |
+| DocTypes with **Indirect Data references only** | **21 additional** (not already counted in Section 1) |
 | Related but not a per-record reference (Section 3) | **5** (kept separate — see above) |
 | Anomalous `Data` fields with `options=Project Registration` | **2** |
-| **Total DocTypes with a direct-record PR relationship** (Section 1 ∪ Section 2) | **47** |
+| **Total DocTypes with a direct-record PR relationship** (Section 1 ∪ Section 2) | **49** |
 
 ---
 
@@ -230,11 +232,14 @@ These doctypes mention "project" fields but don't reference an *existing* Projec
 | Travel | `travel_project_title` | `name` | `project_no` | `travel_project_number` |
 | UC Request | `project_id` | `name` | — | — |
 | User Delegation | — | — | — | `project_names` (Long Text JSON) |
+| Project Staff Resignation | — | — | — | `applicant_prj_num` |
+| Project Staff Extension | — | — | — | `ex_proj_no` |
 
 ---
 
 ## Changelog
 
+- **2026-09-15** — Added `Project Staff Resignation` (`applicant_prj_num`) and `Project Staff Extension` (`ex_proj_no`) to Section 2 — both store the linked PR's `project_no` as a plain Data field but were missing from every prior version of this report. Found while porting the frontend's `DOCTYPE_PR_LINKS` mapping to a backend Python source of truth (`rndopsapp/rndopsapp/project_type_links.py`), where they were already present. Total relationship count moved from 47 to **49**.
 - **2026-08-25** — Regenerated against live DocType metadata instead of a static read. Changes from the 2026-06-24 version:
   - Added `Miscellaneous Commit` and `Project Verification` to Section 1 (both had a genuine `Link` to Project Registration that the prior version missed).
   - Moved `Top Up Fellowship` from Section 1 to Section 2 — its `project_code` field is no longer a `Link` (now a plain `project_no` Data field + separate `project_title` Long Text field).
