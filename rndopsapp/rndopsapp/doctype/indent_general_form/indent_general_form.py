@@ -138,6 +138,15 @@ def save_indent_general_form_data(data, files=None, file=None):
             if field in data:
                 doc.set(field, data[field])
 
+        # Frappe's own link validation (_validate_links) runs BEFORE the
+        # doctype's validate() hook in both insert() and _save() — see
+        # frappe/model/document.py, _validate_links() is called ahead of
+        # run_before_save_methods()/_validate() in both paths — so resolving
+        # this in IndentGeneralForm.validate() (_resolve_account_head_label)
+        # is too late to stop "Could not find Account Head: <label>" here.
+        # Resolve it here, before doc.save() ever runs link validation.
+        doc._resolve_account_head_label()
+
         # Handle Child Tables
         table_fields = [f.fieldname for f in meta.fields if f.fieldtype == "Table"]
         for table_field in table_fields:
