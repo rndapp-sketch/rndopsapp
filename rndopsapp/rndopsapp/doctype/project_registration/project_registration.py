@@ -610,7 +610,13 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None, endor
 			doc.save(ignore_permissions=True)
 	
 	# --- Integration with External API (Kafka) ---
-	if not endorsement and doc.workflow_state == "Approved" and doc.docstatus == 1 :
+	# Overhead fund projects are deliberately excluded: the Accounts service already
+	# tracks these funds (fundType + employeeId for PDF, + departmentId for DPF) and has
+	# no project for any of them. Publishing would create a phantom project alongside the
+	# fund they already track.
+	# See docs/pdf-project-implementation.md §3.5 / §5.1 and docs/dpf-project-implementation.md §5.1.
+	if not endorsement and doc.workflow_state == "Approved" and doc.docstatus == 1 \
+			and not doc.get("is_overhead_project") and not doc.get("is_pdf_project"):
 		# print("doc inside: ", doc.as_dict())
 		try:
 			success = publish_project(doc)

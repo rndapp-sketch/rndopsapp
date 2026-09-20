@@ -29,3 +29,6 @@ bench.log
 # Ignore config
 config.py
 email_config.py
+
+# Personal local dev notes (never commit)
+LOCAL_DEV_NOTES.md

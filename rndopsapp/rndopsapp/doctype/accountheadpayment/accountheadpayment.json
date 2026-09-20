@@ -19,7 +19,14 @@
   "payment_bmr",
   "payment_status",
   "bank_transaction_number",
-  "bank_transaction_date"
+  "bank_transaction_date",
+  "settlement_section",
+  "accounts_payment_id",
+  "settlement_source",
+  "settlement_remarks",
+  "commit_status",
+  "total_paid_amount",
+  "remaining_amount"
  ],
  "fields": [
   {
@@ -105,6 +112,63 @@
    "fieldname": "commit_id",
    "fieldtype": "Data",
    "label": "Commit Id"
+  },
+  {
+   "fieldname": "settlement_section",
+   "fieldtype": "Section Break",
+   "label": "Accounts Settlement",
+   "collapsible": 1,
+   "description": "Written by the accounts settlement consumer. Never edited here.",
+   "hidden": 1
+  },
+  {
+   "fieldname": "accounts_payment_id",
+   "fieldtype": "Data",
+   "label": "Accounts Payment Id",
+   "read_only": 1,
+   "description": "The accounts service's own payment PK (overheadPaymentId / transactionPaymentNumber). Harvested from a creation echo or written by the first decision. Written by the settlement consumer via db.set_value; hidden because it is storage, not a field anyone fills in.",
+   "hidden": 1
+  },
+  {
+   "fieldname": "settlement_source",
+   "fieldtype": "Select",
+   "label": "Settlement Source",
+   "read_only": 1,
+   "options": "\nOVERHEAD\nPROJECT",
+   "description": "Which accounts stream settled this. Overhead and project payment ids overlap, so the id alone is never a key. Written by the settlement consumer via db.set_value; hidden because it is storage, not a field anyone fills in.",
+   "hidden": 1
+  },
+  {
+   "fieldname": "settlement_remarks",
+   "fieldtype": "Small Text",
+   "label": "Settlement Remarks",
+   "read_only": 1,
+   "description": "The accounts officer's reason for a rejection or rectification. Cleared when a payment is marked paid. Written by the settlement consumer via db.set_value; hidden because it is storage, not a field anyone fills in.",
+   "hidden": 1
+  },
+  {
+   "fieldname": "commit_status",
+   "fieldtype": "Data",
+   "label": "Commit Status",
+   "read_only": 1,
+   "description": "Parent commit state recomputed by accounts: COMMITTED / PARTIALLY_PAID / SETTLED / OVERPAYMENT. Written by the settlement consumer via db.set_value; hidden because it is storage, not a field anyone fills in.",
+   "hidden": 1
+  },
+  {
+   "fieldname": "total_paid_amount",
+   "fieldtype": "Currency",
+   "label": "Total Paid Against Commit",
+   "read_only": 1,
+   "hidden": 1,
+   "description": " Written by the settlement consumer via db.set_value; hidden because it is storage, not a field anyone fills in."
+  },
+  {
+   "fieldname": "remaining_amount",
+   "fieldtype": "Currency",
+   "label": "Remaining On Commit",
+   "read_only": 1,
+   "hidden": 1,
+   "description": " Written by the settlement consumer via db.set_value; hidden because it is storage, not a field anyone fills in."
   }
  ],
  "grid_page_length": 50,

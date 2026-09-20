@@ -120,7 +120,10 @@ app_license = "mit"
 _DU = "rndopsapp.rndopsapp.delegate_user.delegate_user"
 
 permission_query_conditions = {
-	"Project Registration":          f"{_DU}.project_registration_permission_query",
+	# Composed: delegation (expands visibility) AND the overhead restriction (hides other
+	# people's Personal / Departmental Development Fund projects). See overhead_fund for
+	# why they are combined in one callable rather than listed separately.
+	"Project Registration":          "rndopsapp.rndopsapp.overhead_fund.project_registration_permission_query",
 	"Travel":                        f"{_DU}.travel_permission_query",
 	"TA DA Settlement":              f"{_DU}.ta_da_settlement_permission_query",
 	"Temporary Advance":             f"{_DU}.temporary_advance_permission_query",

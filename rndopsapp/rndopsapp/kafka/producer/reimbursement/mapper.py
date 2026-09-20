@@ -413,6 +413,9 @@ class AccountHeadPaymentMapper:
             bankTransactionNumber=bank_txn_num,
             bankTransactionDate=bank_txn_date,
             frapAppId=resolved_frap_app_id,
+            # The payment row's own docname — unique per payment, unlike frapAppId which
+            # here falls back to the project number when no application id is passed.
+            frapRowId=getattr(doc, "name", "") or "",
             moduleId=resolved_module_id,
             billAmount=resolved_bill_amount
         )
