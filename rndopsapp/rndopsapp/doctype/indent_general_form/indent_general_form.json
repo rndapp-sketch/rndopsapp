@@ -98,11 +98,11 @@
    "fieldtype": "Section Break"
   },
   {
+   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code",
    "fetch_from": "igf_project_title.project_no",
    "fieldname": "igf_project_code",
    "fieldtype": "Data",
-   "label": "Project Code",
-   "depends_on": "eval:doc.igf_other_pi != \"Other\" || doc.igf_project_code"
+   "label": "Project Code"
   },
   {
    "default": "Self",
@@ -128,10 +128,10 @@
   },
   {
    "fieldname": "igf_account_head",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Account Head",
-   "options": "\nConsumable\nContingency\nEquipments\nOther",
+   "options": "Budget Head",
    "placeholder": "Select the Account Head",
    "reqd": 1
   },
@@ -271,7 +271,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-13 17:13:45.840867",
+ "modified": "2026-09-18 17:08:59.408418",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Indent General Form",
@@ -302,6 +302,78 @@
    "role": "All_ProRnd_User",
    "share": 1,
    "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Ado_RnD",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Dean, RnD",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "share": 1,
    "write": 1
   }
  ],

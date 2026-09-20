@@ -85,6 +85,10 @@ ICSS_PUT_BACK_RULES = {
         "roles": ["Dean, RnD", "System Manager"],
         "targets": ["HoS", "Staff", "PI", "Requestor"],
     },
+    "Pending Director Approval": {
+        "roles": ["Dean, RnD", "System Manager"],
+        "targets": ["HoS", "Staff", "PI", "Requestor"],
+    },
     "Pending Associate Dean": {
         "roles": ["Ado_RnD", "System Manager"],
         "targets": ["HoS", "Staff", "PI", "Requestor"],
@@ -224,8 +228,8 @@ def _get_available_icss_put_back_action_rows(doc, user_roles=None):
 
 
 def _clear_icss_director_fields_for_put_back(docname, current_state):
-    """Clear director approval tracking fields when putting back from Dean stage."""
-    if current_state == "Pending Dean Approval":
+    """Clear director approval tracking fields when putting back from Dean/Director stage."""
+    if current_state in ("Pending Dean Approval", "Pending Director Approval"):
         frappe.db.set_value(
             DOCTYPE,
             docname,
@@ -1555,7 +1559,9 @@ def perform_icss_action(docname, action, extra_data=None):
             next_state = "Pending Staff Approval"
 
         # ── STEP 3: Director approval gate ───────────────────────────────
-        if action == "Approve" and current_state == "Pending Dean Approval":
+        if action == "Approve" and current_state in (
+            "Pending Dean Approval", "Pending Director Approval"
+        ):
             if _is_icss_director_approval_required(doc):
                 if not (doc.get("director_signed_pdf") or "").strip():
                     frappe.throw(
@@ -1800,9 +1806,10 @@ def update_send_to_director_icss(docname, send_to_director):
     Dean marks an ICSS as requiring offline Director approval.
 
     Allowed roles: Dean, RnD / System Manager.
-    ICSS must be in 'Pending Dean Approval'.
-    Director approval threshold must be met.
-    One-way: cannot clear once set.
+    ICSS must be in 'Pending Dean Approval' (or already 'Pending Director Approval',
+    which is a no-op). Director approval threshold must be met.
+    One-way: cannot clear once set. Moves workflow_state to
+    'Pending Director Approval' (mirrors the IGF director-hardcopy flow).
     """
     try:
         doc = frappe.get_doc(DOCTYPE, docname)
@@ -1811,7 +1818,8 @@ def update_send_to_director_icss(docname, send_to_director):
         if not (any(r in user_roles for r in ["Dean, RnD", "System Manager"])):
             frappe.throw(_("Only Dean, RnD or System Manager can mark send to Director."))
 
-        if (doc.workflow_state or "") != "Pending Dean Approval":
+        current_state = doc.workflow_state or ""
+        if current_state not in ("Pending Dean Approval", "Pending Director Approval"):
             frappe.throw(
                 _("Send to Director can only be set when ICSS is in 'Pending Dean Approval'.")
             )
@@ -1823,26 +1831,39 @@ def update_send_to_director_icss(docname, send_to_director):
 
         send_val = int(send_to_director) if send_to_director is not None else 0
 
-        # One-way: cannot clear
-        if doc.send_to_director and not send_val:
-            frappe.throw(_("Cannot clear 'Send to Director' once it has been set."))
+        # Already set: idempotent no-op (one-way, cannot clear).
+        if doc.send_to_director:
+            return {
+                "status": "success",
+                "docname": docname,
+                "workflow_state": doc.workflow_state,
+                "send_to_director": 1,
+                "director_approval_required": 1,
+                "director_signed_pdf": doc.get("director_signed_pdf"),
+            }
+
+        if not send_val:
+            frappe.throw(_("send_to_director can only be set, not cleared."))
 
         frappe.db.set_value(
             DOCTYPE,
             docname,
             {
-                "send_to_director": send_val,
+                "send_to_director": 1,
                 "director_approval_required": 1,
+                "workflow_state": "Pending Director Approval",
             },
             update_modified=True,
         )
+        doc._sync_sub_doctype_workflow_state("Pending Director Approval")
         frappe.db.commit()
+        doc.reload()
 
         return {
             "status": "success",
             "docname": docname,
             "workflow_state": doc.workflow_state,
-            "send_to_director": send_val,
+            "send_to_director": 1,
             "director_approval_required": 1,
             "director_signed_pdf": doc.get("director_signed_pdf"),
         }
@@ -1859,7 +1880,7 @@ def attach_director_pdf_icss(docname, file_url=None, file_name=None, file_data=N
     Staff/R&D attaches the Director-approved signed ICSS PDF.
 
     Allowed roles: staff, RnD / System Manager.
-    ICSS must be in 'Pending Dean Approval' with send_to_director = 1.
+    ICSS must be in 'Pending Director Approval' with send_to_director = 1.
     """
     try:
         doc = frappe.get_doc(DOCTYPE, docname)
@@ -1869,9 +1890,9 @@ def attach_director_pdf_icss(docname, file_url=None, file_name=None, file_data=N
         if not any(r in user_roles for r in rnd_roles):
             frappe.throw(_("Only Staff/R&D or System Manager can attach the Director PDF."))
 
-        if (doc.workflow_state or "") != "Pending Dean Approval":
+        if (doc.workflow_state or "") != "Pending Director Approval":
             frappe.throw(
-                _("Director PDF can only be attached when ICSS is in 'Pending Dean Approval'.")
+                _("Director PDF can only be attached when ICSS is in 'Pending Director Approval'.")
             )
 
         if not _is_icss_director_approval_required(doc):
@@ -1917,7 +1938,7 @@ def attach_director_pdf_icss(docname, file_url=None, file_name=None, file_data=N
 @frappe.whitelist()
 def get_pending_director_uploads_icss():
     """
-    Return ICSS documents in 'Pending Dean Approval' that have been flagged for
+    Return ICSS documents in 'Pending Director Approval' that have been flagged for
     Director PDF upload.  Includes records with and without the PDF so Staff/R&D
     can view or replace.
     """
@@ -1925,7 +1946,7 @@ def get_pending_director_uploads_icss():
         records = frappe.get_all(
             DOCTYPE,
             filters={
-                "workflow_state": "Pending Dean Approval",
+                "workflow_state": "Pending Director Approval",
                 "send_to_director": 1,
             },
             fields=[

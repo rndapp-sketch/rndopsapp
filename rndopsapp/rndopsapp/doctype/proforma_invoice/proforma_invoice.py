@@ -62,45 +62,10 @@ def _get_user_signature(user):
 	return sig
 
 
-def _get_hos_users():
-	"""Enabled users holding the HoS role. Queried via Has Role because a
-	`{"roles": [role]}` filter on User trips an IndexError in make_filter_tuple."""
-	candidates = frappe.get_all(
-		"Has Role", filters={"role": HOS_ROLE, "parenttype": "User"}, pluck="parent"
-	)
-	return [u for u in set(candidates) if frappe.db.get_value("User", u, "enabled")]
-
-
-def _notify_hos(doc):
-	"""Create a ToDo for every enabled HoS user so the invoice appears in their
-	dashboard 'To Do' list. Dedup-guarded so re-submits don't pile up."""
-	hos_users = _get_hos_users()
-	for user_id in hos_users:
-		if frappe.db.exists("ToDo", {
-			"reference_type": "Proforma_Invoice",
-			"reference_name": doc.name,
-			"allocated_to": user_id,
-			"status": "Open",
-		}):
-			continue
-		frappe.get_doc({
-			"doctype": "ToDo",
-			"description": f"Review Proforma Invoice: {doc.name}",
-			"assigned_by": frappe.session.user,
-			"allocated_to": user_id,
-			"reference_type": "Proforma_Invoice",
-			"reference_name": doc.name,
-			"status": "Open",
-			"priority": "High",
-		}).insert(ignore_permissions=True)
-	if not hos_users:
-		frappe.log_error(
-			f"No enabled '{HOS_ROLE}' users to notify for {doc.name}",
-			"Proforma Invoice",
-		)
-
-
 def _close_hos_todos(doc):
+	"""Close any leftover per-user ToDos from before this doctype switched to
+	role-based visibility for 'Pending HoS Approval' (mirrors ICSS/IGF, which
+	never create per-approver ToDos)."""
 	for todo in frappe.get_all("ToDo", filters={
 		"reference_type": "Proforma_Invoice",
 		"reference_name": doc.name,
@@ -172,7 +137,8 @@ def save_proforma_invoice(project_no, invoice_content, docname=None):
 @frappe.whitelist()
 def submit_proforma_for_approval(docname=None, project_no=None, invoice_content=None, comment=None):
 	"""Move the invoice to 'Pending HoS Approval': persist the latest content,
-	generate an UNSIGNED PDF, and raise a ToDo for the HoS role. An optional
+	generate an UNSIGNED PDF, and make it visible to the HoS role via
+	workflow_state (no per-user ToDo, mirrors ICSS/IGF). An optional
 	comment is recorded on the document timeline."""
 	if not docname:
 		if not project_no:
@@ -195,10 +161,9 @@ def submit_proforma_for_approval(docname=None, project_no=None, invoice_content=
 	doc.flags.ignore_permissions = True
 	doc.save(ignore_permissions=True)
 	# ...then move to Pending via a direct DB write (bypasses the transition gate;
-	# these APIs enforce their own access rules). Persist state + HoS ToDos and
+	# these APIs enforce their own access rules). Persist state + comment and
 	# commit BEFORE the best-effort PDF so a wkhtmltopdf failure can't revert them.
 	doc.db_set("workflow_state", STATE_PENDING)
-	_notify_hos(doc)
 	_add_workflow_comment(doc, "Submitted for HoS Approval", comment)
 	frappe.db.commit()
 

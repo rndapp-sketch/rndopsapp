@@ -604,11 +604,18 @@ def get_disbursal_of_honorarium_workflow_actions(docname):
 	# only sees the action buttons they are allowed to perform.
 	user_roles = frappe.get_roles(frappe.session.user)
 
-	actions = [
-		t.action
-		for t in workflow.transitions
-		if t.state == current_state and t.allowed in user_roles
-	]
+	actions = []
+	for t in workflow.transitions:
+		if t.state != current_state or t.allowed not in user_roles:
+			continue
+		condition = getattr(t, "condition", None)
+		if condition:
+			try:
+				if not frappe.safe_eval(condition, None, {"doc": doc}):
+					continue
+			except Exception:
+				continue
+		actions.append(t.action)
 	return list(dict.fromkeys(actions))
 
 
