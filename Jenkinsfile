@@ -2,8 +2,6 @@
 // Tracked branch: testing-backend. See JENKINS_CI_CD_PLAN.md in the bench root.
 //
 // JOB CONFIG THIS PIPELINE ASSUMES:
-//   - Custom workspace: /home/rndadmin/frappe-dev/prornd/apps/rndopsapp
-//     (Jenkins' checkout IS the live bench app, not a copy.)
 //   - "Clean before checkout" / "Wipe out repository" must be DISABLED. Those
 //     delete untracked files, which here includes the frontend build output
 //     (public/frontend/assets/*, www/rndopsapp.html) written by the
@@ -19,7 +17,18 @@
 // Frappe-side work of making the running site pick it up.
 
 pipeline {
-  agent any
+  // The checkout must land in the live bench app directory — that is what
+  // Frappe actually serves. With a plain `agent any`, Jenkins would check out
+  // into /var/lib/jenkins/workspace/... and the migrate/restart below would run
+  // against unchanged code: a deploy that reports success while deploying
+  // nothing. (customWorkspace is the Pipeline equivalent of a freestyle job's
+  // "Custom workspace" field — it cannot be set from the job config UI here.)
+  agent {
+    node {
+      label ''
+      customWorkspace '/home/rndadmin/frappe-dev/prornd/apps/rndopsapp'
+    }
+  }
 
   triggers { pollSCM('H/3 * * * *') }
 
