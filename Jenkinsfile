@@ -51,7 +51,7 @@ pipeline {
     // bench migrate takes its own backup before applying schema changes.
     stage('Migrate') {
       steps {
-        sh '''
+        sh '''#!/bin/bash
           set -euo pipefail
           cd "$BENCH_DIR"
           "$BENCH" --site "$SITE" migrate
@@ -61,7 +61,7 @@ pipeline {
 
     stage('Clear cache') {
       steps {
-        sh '''
+        sh '''#!/bin/bash
           set -euo pipefail
           cd "$BENCH_DIR"
           "$BENCH" --site "$SITE" clear-cache
@@ -75,7 +75,7 @@ pipeline {
     // procedure, driven through the tmux session honcho runs in.
     stage('Restart bench') {
       steps {
-        sh '''
+        sh '''#!/bin/bash
           set -euo pipefail
 
           if ! tmux has-session -t "$TMUX" 2>/dev/null; then
@@ -97,7 +97,7 @@ pipeline {
     // turns a healthy deploy into a false failure (or hides a real one).
     stage('Wait for bench') {
       steps {
-        sh '''
+        sh '''#!/bin/bash
           set -euo pipefail
           for i in $(seq 1 45); do
             if curl -fsS "$BASE_URL/api/method/ping" 2>/dev/null | grep -q pong; then
@@ -115,7 +115,7 @@ pipeline {
 
     stage('Smoke test') {
       steps {
-        sh '''
+        sh '''#!/bin/bash
           set -euo pipefail
 
           ping=$(curl -fsS "$BASE_URL/api/method/ping")
