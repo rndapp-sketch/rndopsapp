@@ -43,7 +43,11 @@ pipeline {
     BENCH      = '/home/rndadmin/.local/bin/bench'
     BENCH_DIR  = '/home/rndadmin/frappe-dev/prornd'
     SITE       = 'prornd.local'
-    TMUX       = 'frappe'
+    // NOT named TMUX: that is tmux's own reserved variable (it expects
+    // <socket-path>,<pid>,<idx> and uses it to detect nesting). Setting
+    // TMUX='frappe' made tmux treat 'frappe' as a socket path and fail with
+    // "error connecting to frappe" — which looked exactly like a missing session.
+    TMUX_SESSION = 'frappe'
     BASE_URL   = 'http://127.0.0.1:8000'
   }
 
@@ -78,17 +82,16 @@ pipeline {
         sh '''#!/bin/bash
           set -euo pipefail
 
-          if ! tmux has-session -t "$TMUX" 2>/dev/null; then
-            echo "FATAL: tmux session '$TMUX' not found."
+          if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+            echo "FATAL: tmux session '$TMUX_SESSION' not found."
             echo "Bench is expected to run inside it (see BENCH_RUNBOOK.md)."
-            echo "If Jenkins runs as a systemd service, check it is not using a"
-            echo "private /tmp, which would hide /tmp/tmux-1000/."
+            echo "Check: tmux ls   (socket lives at /tmp/tmux-\$(id -u)/default)"
             exit 1
           fi
 
-          tmux send-keys -t "$TMUX" C-c
+          tmux send-keys -t "$TMUX_SESSION" C-c
           sleep 3
-          tmux send-keys -t "$TMUX" "cd $BENCH_DIR && bench start" Enter
+          tmux send-keys -t "$TMUX_SESSION" "cd $BENCH_DIR && bench start" Enter
         '''
       }
     }
@@ -107,7 +110,7 @@ pipeline {
             sleep 2
           done
           echo "FATAL: bench did not answer /api/method/ping within 90s"
-          echo "Attach with: tmux attach -t $TMUX"
+          echo "Attach with: tmux attach -t $TMUX_SESSION"
           exit 1
         '''
       }
