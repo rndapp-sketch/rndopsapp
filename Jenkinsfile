@@ -43,11 +43,6 @@ pipeline {
     BENCH      = '/home/rndadmin/.local/bin/bench'
     BENCH_DIR  = '/home/rndadmin/frappe-dev/prornd'
     SITE       = 'prornd.local'
-    // NOT named TMUX: that is tmux's own reserved variable (it expects
-    // <socket-path>,<pid>,<idx> and uses it to detect nesting). Setting
-    // TMUX='frappe' made tmux treat 'frappe' as a socket path and fail with
-    // "error connecting to frappe" — which looked exactly like a missing session.
-    TMUX_SESSION = 'frappe'
     BASE_URL   = 'http://127.0.0.1:8000'
   }
 
@@ -75,23 +70,30 @@ pipeline {
 
     // The gunicorn web process auto-reloads on .py changes, but the worker,
     // scheduler and kafka_consumer processes do NOT — they need a real restart
-    // to pick up new code. This is BENCH_RUNBOOK.md's documented full-restart
-    // procedure, driven through the tmux session honcho runs in.
+    // to pick up new code.
+    //
+    // Bench runs as the frappe-bench user unit, not in a tmux session: tmux did
+    // not survive a reboot, so Jenkins would come back and keep reporting
+    // successful deploys to a server that was down.
     stage('Restart bench') {
       steps {
         sh '''#!/bin/bash
           set -euo pipefail
 
-          if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-            echo "FATAL: tmux session '$TMUX_SESSION' not found."
-            echo "Bench is expected to run inside it (see BENCH_RUNBOOK.md)."
-            echo "Check: tmux ls   (socket lives at /tmp/tmux-\$(id -u)/default)"
+          # Jenkins is a SYSTEM service running as rndadmin, so it inherits no
+          # XDG_RUNTIME_DIR and `systemctl --user` cannot find the user bus
+          # without it. /run/user/1000 persists with no login only because
+          # lingering is enabled for rndadmin (loginctl enable-linger).
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+
+          if ! systemctl --user cat frappe-bench.service >/dev/null 2>&1; then
+            echo "FATAL: frappe-bench.service not found for user $(whoami)."
+            echo "Expected at ~/.config/systemd/user/frappe-bench.service"
             exit 1
           fi
 
-          tmux send-keys -t "$TMUX_SESSION" C-c
-          sleep 3
-          tmux send-keys -t "$TMUX_SESSION" "cd $BENCH_DIR && bench start" Enter
+          systemctl --user restart frappe-bench
+          systemctl --user --no-pager is-active frappe-bench || true
         '''
       }
     }
@@ -110,7 +112,7 @@ pipeline {
             sleep 2
           done
           echo "FATAL: bench did not answer /api/method/ping within 90s"
-          echo "Attach with: tmux attach -t $TMUX_SESSION"
+          echo "Logs: journalctl --user -u frappe-bench -n 50 --no-pager"
           exit 1
         '''
       }
@@ -142,7 +144,7 @@ pipeline {
     success { echo "Deployed testing-backend to 172.17.1.46" }
     failure {
       echo "Deploy FAILED. The site may be mid-restart or down."
-      echo "Check: tmux attach -t frappe   /   tail -50 ${BENCH_DIR}/logs/web.error.log"
+      echo "Check: journalctl --user -u frappe-bench -n 50 --no-pager  /  tail -50 ${BENCH_DIR}/logs/web.error.log"
     }
   }
 }
