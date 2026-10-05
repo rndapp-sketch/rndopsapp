@@ -1,0 +1,163 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}FS{######}",
+ "creation": "2026-06-10 10:14:09.010436",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_main",
+  "purchase_order_number",
+  "po_total_value",
+  "total_committed_till_now",
+  "account_head",
+  "ref_details",
+  "particulars",
+  "other_expenses",
+  "workflow_state",
+  "amended_from",
+  "section_break_settlement_details",
+  "settlement_accounts",
+  "section_break_files",
+  "upload_attachments"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_main",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "purchase_order_number",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Purchase Order Number",
+   "options": "sanction_sheet",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "purchase_order_number.ss_grand_total",
+   "fieldname": "po_total_value",
+   "fieldtype": "Currency",
+   "label": "PO Total Value",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_committed_till_now",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Total Committed Till Now",
+   "read_only": 1
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Account Head",
+   "options": "Budget Head",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ref_details",
+   "fieldtype": "Int",
+   "label": "Ref Details",
+   "read_only": 1
+  },
+  {
+   "fieldname": "particulars",
+   "fieldtype": "Data",
+   "label": "Particulars"
+  },
+  {
+   "fieldname": "other_expenses",
+   "fieldtype": "Select",
+   "label": "Other Expenses",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Po Commit Adjustment",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "depends_on": "eval:doc.other_expenses=='Yes'",
+   "fieldname": "section_break_settlement_details",
+   "fieldtype": "Section Break",
+   "label": "Settlement Details"
+  },
+  {
+   "depends_on": "eval:doc.other_expenses=='Yes'",
+   "fieldname": "settlement_accounts",
+   "fieldtype": "Table",
+   "label": "Settlement Accounts",
+   "options": "Settlement Accounts"
+  },
+  {
+   "depends_on": "eval:doc.other_expenses=='Yes'",
+   "fieldname": "section_break_files",
+   "fieldtype": "Section Break",
+   "label": "Attachments"
+  },
+  {
+   "depends_on": "eval:doc.other_expenses=='Yes'",
+   "fieldname": "upload_attachments",
+   "fieldtype": "Attach",
+   "label": "Upload Attachments"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-06-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Po Commit Adjustment",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

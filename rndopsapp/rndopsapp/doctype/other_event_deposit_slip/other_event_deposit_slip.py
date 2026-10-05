@@ -18,7 +18,12 @@ def extract_eval_expression(expression):
 	return expression
 
 
-from rndopsapp.rndopsapp.fund_deposits.consultancy import publish_consultancy_deposit_slip
+from rndopsapp.rndopsapp.kafka.producer import publish_deposit_slip as publish_consultancy_deposit_slip
+from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation import (
+	validate_overhead_gst_budget_heads_for_doc,
+)
+from rndopsapp.rndopsapp.kafka.utils import record_publish_state
+from rndopsapp.rndopsapp.kafka.config import TOPIC_DEPOSIT_SLIP
 
 class OtherEventDepositSlip(Document):
 	def autoname(self):
@@ -26,23 +31,39 @@ class OtherEventDepositSlip(Document):
 
 	def on_update(self):
 		"""
-		Trigger Kafka sync on workflow state change.
+		Trigger Kafka sync on workflow state change. Publish must succeed for the
+		transition to be allowed — on failure this raises, aborting and rolling
+		back the save/submit that triggered it, so the document reverts to its
+		previous state.
 		"""
-		try:
-			doc_before_save = self.get_doc_before_save()
-			old_state = doc_before_save.workflow_state if doc_before_save else None
-			new_state = self.workflow_state
-			target_states = ["Approved", "Verified", "Submitted"]
-			
-			if (new_state in target_states and old_state != new_state):
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (Other) for state {new_state}")
-				publish_consultancy_deposit_slip(self)
-			elif self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0):
-				frappe.msgprint(f"DEBUG: Triggering Kafka Sync (Other) for Submit")
-				publish_consultancy_deposit_slip(self)
-		except Exception as e:
-			frappe.log_error(f"Error in Other Event Deposit Slip on_update: {e}", "Other Event Deposit Slip Error")
-			pass
+		if self.flags.get('skip_kafka_sync'):
+			return
+
+		doc_before_save = self.get_doc_before_save()
+		old_state = doc_before_save.workflow_state if doc_before_save else None
+		new_state = self.workflow_state
+		target_states = ["Approved", "Verified", "Submitted"]
+
+		is_state_transition = new_state in target_states and old_state != new_state
+		is_fresh_submit = self.docstatus == 1 and (not doc_before_save or doc_before_save.docstatus == 0)
+
+		if is_state_transition or is_fresh_submit:
+			# Final-gate reconciliation backstop (implementation doc §3.4).
+			if self.fund_received_ref and frappe.db.exists("Fund Received", self.fund_received_ref):
+				fr_doc = frappe.get_doc("Fund Received", self.fund_received_ref)
+				validate_overhead_gst_budget_heads_for_doc(self, fr_doc)
+
+			record_publish_state(
+				self.doctype, self.name, TOPIC_DEPOSIT_SLIP,
+				old_state, new_state,
+			)
+			try:
+				success = publish_consultancy_deposit_slip(self)
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), "Other Event Deposit Slip Error")
+				frappe.throw(_("Cannot proceed: Kafka sync failed ({0}).").format(str(e)))
+			if not success:
+				frappe.throw(_("Cannot proceed: Kafka sync returned False (check validation errors in the Error Log)."))
 
 
 @frappe.whitelist()
@@ -272,6 +293,27 @@ def submit_other_event_deposit_slip(docname):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Other Event Deposit Slip Submit Error")
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def update_other_event_deposit_slip_fields(docname, changes=None, child_table_changes=None):
+	"""
+	Update only the given fields (and optionally ecs_dates / credit_distribution
+	/ additional_project_credits rows) on an Other Event Deposit Slip document,
+	including after its workflow_state has reached a locked state. Restricted
+	to `staff, RnD` / System Manager. See
+	rndopsapp.rndopsapp.deposit_slip_common.update_locked_deposit_slip.
+
+	changes: JSON dict {fieldname: new_value}.
+	child_table_changes: JSON list of
+	    {"fieldname": "ecs_dates" | "credit_distribution" | "additional_project_credits",
+	     "updated": [{"name": <row name>, "changes": {field: value}}, ...],
+	     "inserted": [{field: value, ...}, ...],
+	     "deleted": [<row name>, ...]}
+	"""
+	from rndopsapp.rndopsapp.deposit_slip_common import update_locked_deposit_slip
+
+	return update_locked_deposit_slip("Other Event Deposit Slip", docname, changes, child_table_changes)
 
 
 @frappe.whitelist()

@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}18{#####}",
  "creation": "2026-02-26 11:13:27.460486",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -18,6 +19,9 @@
   "ss_balance_available",
   "ss_actual_expenditure",
   "ss_name_of_firms",
+  "project_no",
+  "app_id",
+  "p11_no",
   "brief_details_of_the_purchase_currency_section",
   "table_bttk",
   "section_break_lqsb",
@@ -34,7 +38,9 @@
   "ss_delivery",
   "ss_payment",
   "additional_terms_and_conditions_if_any",
+  "file_path",
   "declaration_section",
+  "check_the_below_declaration",
   "html_dqce"
  ],
  "fields": [
@@ -45,6 +51,7 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "sanction_sheet",
@@ -104,8 +111,8 @@
   },
   {
    "fieldname": "ss_name_of_firms",
-   "fieldtype": "Data",
-   "label": "Name of Firms"
+   "fieldtype": "Small Text",
+   "label": "Name of Firm"
   },
   {
    "fieldname": "brief_details_of_the_purchase_currency_section",
@@ -168,17 +175,17 @@
   },
   {
    "fieldname": "ss_warranty",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Warranty"
   },
   {
    "fieldname": "ss_delivery",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Delivery"
   },
   {
    "fieldname": "ss_payment",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "Payment"
   },
   {
@@ -195,16 +202,48 @@
    "fieldname": "html_dqce",
    "fieldtype": "HTML",
    "options": "<p>Purchase made under direct procurement of the purchase committee up to 10 lakhs by submission of quotation(s).</p>\n<p>Principal Investigator</p>\n\n<p>HoS (II&amp;SI)</p>\n\n<p>Assoc. Dean, R&amp;D</p>"
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "app_id",
+   "fieldtype": "Data",
+   "label": "Application ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "p11_no",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "RDP11 Number",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "check_the_below_declaration",
+   "fieldtype": "Check",
+   "label": "Check the declaration below"
+  },
+  {
+   "fieldname": "file_path",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Uploaded PO"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-26 12:29:08.884849",
+ "modified": "2026-08-07 15:21:17.048894",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "sanction_sheet",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -222,6 +261,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

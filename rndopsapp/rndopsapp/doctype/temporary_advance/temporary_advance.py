@@ -353,7 +353,7 @@ def get_temporary_advance_fields(project_code=None):
 		projects = frappe.get_all(
 			"Project Registration",
 			fields=["name as value", "project_title as label"],
-			limit_page_length=500
+			limit_page_length=0
 		)
 		link_options["project_code"] = projects
 		link_options["project_name"] = projects
@@ -367,7 +367,7 @@ def get_temporary_advance_fields(project_code=None):
 			"User",
 			filters={"enabled": 1},
 			fields=["name as value", "full_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["advance_for_id"] = users
 		link_options["applicant_webmail"] = users
@@ -380,7 +380,7 @@ def get_temporary_advance_fields(project_code=None):
 		departments = frappe.get_all(
 			"Department_prornd",
 			fields=["name as value", "dept_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["advance_for_department"] = departments
 		link_options["applicant_department"] = departments
@@ -393,7 +393,7 @@ def get_temporary_advance_fields(project_code=None):
 		designations = frappe.get_all(
 			"Designation_prornd",
 			fields=["name as value", "designation_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["advance_for_designation"] = designations
 		link_options["applicant_designation"] = designations
@@ -422,7 +422,7 @@ def get_temporary_advance_fields(project_code=None):
 		account_heads = frappe.get_all(
 			"Budget Head",
 			fields=["name as value", "budget_head as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		# If budget_head is empty, use name as label
 		link_options["account_head"] = [

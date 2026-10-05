@@ -23,7 +23,7 @@ class FundReceivedProducer:
     SCHEMA_VERSION = SCHEMA_VERSION_FUND_RECEIVED
 
     @classmethod
-    def publish(cls, doc, validate: bool = True, log_errors: bool = True) -> bool:
+    def publish(cls, doc, validate: bool = True, log_errors: bool = True, fund_received_status=None) -> bool:
         """
         Main entry point for publishing Fund Received to Kafka.
 
@@ -31,6 +31,10 @@ class FundReceivedProducer:
             doc: Fund Received Frappe document
             validate: Whether to validate the DTO before publishing
             log_errors: Whether to log validation errors
+            fund_received_status: Optional override for the `fundReceivedStatus`
+                field on the outgoing payload — see FundReceivedMapper.map_to_dto.
+                Defaults to None, which preserves the historical hardcoded
+                "PENDING_APPROVAL" behavior.
 
         Returns:
             bool: True if successfully published, False otherwise
@@ -74,8 +78,41 @@ class FundReceivedProducer:
                     "prjreg_title is empty"
                 )
 
+            # Pre-flight: verify sanctionLetterNo is available before mapping.
+            # The accounts consumer cannot create ProjectFundReceivedDetails without
+            # a valid sanctionLetterNo to look up ProjectSanctionDetails.
+            sanction_ref = getattr(doc, 'sanction_ref_no', None)
+            sanction_letter_no = getattr(doc, 'sanctioned_letter_no', None)
+            if sanction_ref and not sanction_letter_no:
+                try:
+                    row = frappe.db.get_value(
+                        "Fund Sanction", sanction_ref, "sanctioned_letter_no"
+                    )
+                    sanction_letter_no = row or None
+                except Exception:
+                    sanction_letter_no = None
+
+            if not sanction_letter_no:
+                msg = (
+                    f"sanctionLetterNo is missing for Fund Received {doc.name} "
+                    f"(linked sanction: {sanction_ref or 'none'}) — "
+                    "publish aborted to prevent consumer ProjectSanctionDetails lookup failure"
+                )
+                log_producer_event("FUND_RECEIVED", doc.name, cls.TOPIC, "ABORTED", msg)
+                frappe.log_error(msg, "Fund Received Kafka Pre-flight Error")
+                return False
+
+            if not sanction_ref:
+                msg = (
+                    f"sanctionNumber (sanction_ref_no) is missing for Fund Received {doc.name} — "
+                    "publish aborted to prevent consumer null-identifier on ProjectFundReceivedDetails"
+                )
+                log_producer_event("FUND_RECEIVED", doc.name, cls.TOPIC, "ABORTED", msg)
+                frappe.log_error(msg, "Fund Received Kafka Pre-flight Error")
+                return False
+
             # Step 2: Map Frappe document to Event DTO
-            event = FundReceivedMapper.map_to_event(doc)
+            event = FundReceivedMapper.map_to_event(doc, fund_received_status=fund_received_status)
 
             # Step 3: Validate DTO
             if validate:
@@ -226,7 +263,7 @@ class FundReceivedProducer:
             }
 
 
-def publish_fund_received(doc, validate: bool = True, log_errors: bool = True) -> bool:
+def publish_fund_received(doc, validate: bool = True, log_errors: bool = True, fund_received_status=None) -> bool:
     """
     Convenience function to publish Fund Received.
 
@@ -234,8 +271,12 @@ def publish_fund_received(doc, validate: bool = True, log_errors: bool = True) -
         doc: Fund Received Frappe document
         validate: Whether to validate before publishing
         log_errors: Whether to log validation errors
+        fund_received_status: Optional override for the `fundReceivedStatus`
+            field — see FundReceivedProducer.publish / FundReceivedMapper.map_to_dto.
 
     Returns:
         bool: True if successful, False otherwise
     """
-    return FundReceivedProducer.publish(doc, validate=validate, log_errors=log_errors)
+    return FundReceivedProducer.publish(
+        doc, validate=validate, log_errors=log_errors, fund_received_status=fund_received_status
+    )

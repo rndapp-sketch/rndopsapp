@@ -63,23 +63,39 @@ class ConsultancyDepositSlipMapper:
         Returns:
             str: Project number
         """
-        # Try different field names used by different doctypes
-        project_number = (
-            getattr(doc, 'project_number', '') or
-            getattr(doc, 'consultancy_title', '') or
-            getattr(doc, 'event_title', '') or
-            ""
-        )
+        # project_number is a direct numeric/code field on Research-type slips.
+        # consultancy_title and event_title are free-text titles — never use them as a project number.
+        # For E Non Routine / T Testing, project_title is a Link → Project Registration;
+        # look up project_no from there.
+        # For Other Event / D Consultancy (no project link on the slip itself),
+        # trace back via fund_received_ref → Fund Received.prjreg_title → Project Registration.project_no.
+        project_number = getattr(doc, 'project_number', '') or ""
 
         if not project_number and getattr(doc, 'project_title', None):
             try:
                 project_number = frappe.db.get_value(
                     "Project Registration",
                     doc.project_title,
-                    "name"
-                ) or doc.project_title
+                    "project_no"
+                ) or ""
             except Exception:
-                project_number = doc.project_title or ""
+                project_number = ""
+
+        if not project_number and getattr(doc, 'fund_received_ref', None):
+            try:
+                prjreg = frappe.db.get_value(
+                    "Fund Received",
+                    doc.fund_received_ref,
+                    "prjreg_title"
+                )
+                if prjreg:
+                    project_number = frappe.db.get_value(
+                        "Project Registration",
+                        prjreg,
+                        "project_no"
+                    ) or ""
+            except Exception:
+                project_number = ""
 
         return project_number
 

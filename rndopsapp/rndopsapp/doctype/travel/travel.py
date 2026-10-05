@@ -6,6 +6,55 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import date_diff, getdate
+
+
+def _resolve_travel_project_docname(doc):
+	"""
+	Resolve the Project Registration docname this Travel application belongs
+	to, so file uploads land in the same "Project Registration" MinIO
+	namespace every other module (TA DA Settlement, Disbursal of Honorarium,
+	Direct Purchase, etc.) groups its uploads under.
+	"""
+	return doc.travel_project_title or doc.name
+
+
+def _upload_travel_file_to_minio(val, project_docname, folder="travel"):
+	"""Upload a base64 file dict ({file_name, file_data}) to MinIO. Returns the MinIO URL or None."""
+	import base64
+
+	try:
+		from rndopsapp.minio import get_rnd_file_service
+
+		filename = val.get("file_name", "attachment")
+		content_b64 = val["file_data"]
+
+		if isinstance(content_b64, str) and content_b64.startswith("data:"):
+			content_b64 = content_b64.split(",", 1)[1]
+
+		file_content = base64.b64decode(content_b64)
+
+		upload_result = get_rnd_file_service().save_file(
+			filename=filename,
+			content=file_content,
+			is_private=False,
+			doctype="Project Registration",
+			docname=project_docname,
+			folder=folder,
+		)
+
+		if upload_result.get("status"):
+			file_url = upload_result.get("data", {}).get("file_url")
+			frappe.logger().info(f"[Travel] File uploaded to MinIO: {file_url}")
+			return file_url
+
+		frappe.log_error(
+			f"MinIO upload failed: {upload_result.get('message')}",
+			"Travel MinIO Upload",
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel MinIO Upload Error")
+	return None
 
 
 def extract_eval_expression(expression):
@@ -162,6 +211,13 @@ def get_travel_fields(doc_name=None):
 				limit_page_length=500
 			)
 
+	# Other-PI dropdown: restrict to Permanent Employees (all PIs are Permanent Employees)
+	try:
+		from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import _get_permanent_employee_options
+		link_options["travel_other_pi_id"] = _get_permanent_employee_options()
+	except Exception:
+		pass
+
 	# Department options (explicit)
 	try:
 		departments = frappe.get_all(
@@ -207,6 +263,19 @@ def get_travel_fields(doc_name=None):
 	except Exception:
 		pass
 
+	# Inject live SCL balance into the HTML field so React sees real data.
+	# For an existing document, the balance must be computed for the actual
+	# traveler (doc.webmail_id_travel) — not the person currently viewing the
+	# page. Otherwise an approver (HoD/HoS/etc.) opening someone else's Travel
+	# request sees their own (usually non-existent) SCL eligibility instead of
+	# the applicant's, even though the applicant correctly filled it in.
+	scl_target_user = (related_data.get("webmail_id_travel") if doc_name else None) or current_user
+	scl_html = _build_scl_balance_html(scl_target_user)
+	for f in fields:
+		if f["fieldname"] == "travel_leave_balance_html":
+			f["options"] = scl_html
+			break
+
 	return {
 		"fields": fields,
 		"prefill_data": prefill_data,
@@ -214,6 +283,7 @@ def get_travel_fields(doc_name=None):
 		"related_data": related_data,
 		"client_scripts": client_scripts,
 		"child_table_meta": child_table_meta,
+		"scl_balance": _get_raw_scl_balance(scl_target_user),
 	}
 
 
@@ -254,12 +324,80 @@ def get_user_details_travel(user_email):
 
 
 @frappe.whitelist()
+def get_special_leave_balance_for_travel(employee=None):
+	"""
+	Thin proxy so the Travel form can call a single endpoint.
+	Delegates to the canonical implementation in special_leave_balance.py.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import (
+		get_special_leave_balance,
+	)
+	return get_special_leave_balance(employee)
+
+
+def _get_raw_scl_balance(employee):
+	"""Return raw SCL balance dict for the employee (no throw on error)."""
+	try:
+		from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import (
+			get_special_leave_balance,
+		)
+		return get_special_leave_balance(employee)
+	except Exception:
+		return {"is_eligible": False}
+
+
+def _build_scl_balance_html(employee):
+	"""Build the HTML string for the SCL balance card shown in the Travel form."""
+	data = _get_raw_scl_balance(employee)
+
+	if not data or not data.get("is_eligible"):
+		return """
+		<div style="border:1px solid #d1d8dd;padding:12px;border-radius:6px;background:#f9f9f9;">
+			<strong>Special Casual Leave (SCL)</strong><br>
+			<span style="color:#888;">Not eligible for SCL.</span>
+		</div>"""
+
+	available = data.get("available_balance", 0)
+	total    = data.get("total_credited", 0)
+	utilized = data.get("utilized_balance", 0)
+	year     = data.get("year", "")
+	color    = "#1a7f37" if available > 0 else "#cf1322"
+	icon     = "✅" if available > 0 else "⚠️"
+	exhausted_msg = ""
+	if available == 0:
+		exhausted_msg = f"""
+		<div style="margin-top:8px;padding:6px 10px;background:#fff1f0;
+		            border-radius:4px;color:#cf1322;font-size:12px;">
+			You have exhausted your SCL quota for {year}.
+		</div>"""
+
+	return f"""
+	<div style="border:1px solid #d1d8dd;padding:12px;border-radius:6px;background:#fff;">
+		<strong style="font-size:14px;">Special Casual Leave (SCL) — {year}</strong>
+		<table style="margin-top:8px;width:100%;border-collapse:collapse;font-size:13px;">
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Total Credited</td>
+				<td style="padding:2px 0;font-weight:600;">{total} days</td>
+			</tr>
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Utilized</td>
+				<td style="padding:2px 0;font-weight:600;">{utilized} days</td>
+			</tr>
+			<tr>
+				<td style="padding:2px 8px 2px 0;color:#555;">Available</td>
+				<td style="padding:2px 0;font-weight:700;color:{color};">{available} days {icon}</td>
+			</tr>
+		</table>
+		{exhausted_msg}
+	</div>"""
+
+
+@frappe.whitelist()
 def save_travel(doc_data):
 	"""Saves or updates the Travel data from the React form.
-	Handles file uploads for Attach fields.
+	Handles file uploads for Attach fields (uploaded to MinIO, grouped under
+	the linked project — same convention every other module in this app uses).
 	"""
-	from frappe.utils.file_manager import save_file
-	
 	try:
 		data = json.loads(doc_data) if isinstance(doc_data, str) else doc_data
 		print("Received data for Travel:", data)  # Debug log
@@ -270,8 +408,12 @@ def save_travel(doc_data):
 		# 1. Initialize Document
 		if doc_name and frappe.db.exists("Travel", doc_name):
 			doc = frappe.get_doc("Travel", doc_name)
-			if doc.docstatus != 0:
-				frappe.throw(_("Cannot edit a submitted or cancelled document."))
+			if doc.workflow_state != "Draft":
+				frappe.throw(_("Cannot edit a document that is already under review or approved."))
+			# Fix documents incorrectly submitted via the old doc.submit() path.
+			if doc.docstatus == 1:
+				frappe.db.set_value("Travel", doc_name, "docstatus", 0)
+				doc.docstatus = 0
 		else:
 			doc = frappe.new_doc("Travel")
 			is_new = True
@@ -301,6 +443,7 @@ def save_travel(doc_data):
 
 		# 3. Create/Save Initial Document to get Name (if new)
 		doc.flags.ignore_permissions = True
+		doc.flags.ignore_version = True
 		if is_new:
 			doc.insert(ignore_mandatory=True)
 			print(f"Created new Travel doc: {doc.name}")
@@ -309,59 +452,43 @@ def save_travel(doc_data):
 			print(f"Updated existing Travel doc: {doc.name}")
 
 		# 4. Second Pass: Process Files and Tables (Now we have doc.name)
+		project_docname = None
+
+		def _project_docname():
+			nonlocal project_docname
+			if project_docname is None:
+				project_docname = _resolve_travel_project_docname(doc)
+			return project_docname
+
 		for fieldname, value in file_fields:
 			df = meta.get_field(fieldname)
-			
+
 			if df.fieldtype == "Table" and isinstance(value, list):
 				doc.set(fieldname, []) # Clear existing
 				child_meta = frappe.get_meta(df.options)
-				
+
 				for child_row in value:
 					row_dict = child_row.copy()
-					
+
 					# Handle files in child row
 					for cf in child_meta.fields:
 						if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
 							f_val = row_dict[cf.fieldname]
-							
+
 							if isinstance(f_val, dict) and f_val.get("file_data"):
-								try:
-									saved_file = save_file(
-										f_val.get("file_name", "attachment"),
-										f_val["file_data"],
-										"Travel",
-										doc.name, # Attach to parent
-										decode=True,
-										is_private=1,
-										df=cf.fieldname
-									)
-									row_dict[cf.fieldname] = saved_file.file_url
-									print(f"Child table file saved: {saved_file.file_url}")
-								except Exception as e:
-									frappe.log_error(f"Child File Error: {e}")
-									
+								file_url = _upload_travel_file_to_minio(f_val, _project_docname())
+								row_dict[cf.fieldname] = file_url
+								print(f"Child table file uploaded to MinIO: {file_url}")
+
 					doc.append(fieldname, row_dict)
-					
+
 			elif df.fieldtype in ["Attach", "Attach Image"]:
 				if isinstance(value, dict) and value.get("file_data"):
-					try:
-						print(f"Uploading file for {fieldname}...")
-						saved_file = save_file(
-							value.get("file_name", "attachment"),
-							value["file_data"],
-							"Travel",
-							doc.name,
-							decode=True,
-							is_private=1,
-							df=fieldname
-						)
-						# Explicitly update the field in DB immediately? No, doc.save() will do it.
-						doc.set(fieldname, saved_file.file_url)
-						print(f"Set {fieldname} to {saved_file.file_url}")
-					except Exception as e:
-						frappe.log_error(f"File Upload Error for {fieldname}: {str(e)}")
-						print(f"Error uploading {fieldname}: {e}")
-				
+					print(f"Uploading file for {fieldname} to MinIO...")
+					file_url = _upload_travel_file_to_minio(value, _project_docname())
+					doc.set(fieldname, file_url)
+					print(f"Set {fieldname} to {file_url}")
+
 				elif isinstance(value, str):
 					# Keep existing URL
 					doc.set(fieldname, value)
@@ -374,44 +501,191 @@ def save_travel(doc_data):
 
 		return {"status": "success", "docname": doc.name}
 
+	except frappe.ValidationError:
+		frappe.db.rollback()
+		raise
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Travel Save Error")
 		frappe.db.rollback()
 		frappe.throw(f"Failed to save Travel: {str(e)}")
 
 
+def _assign_travel_to_other_pi(doc):
+	"""Assign the Travel doc to the selected Other PI so it appears in their
+	Pending Tasks and they get notified while it sits in 'Pending Other PI'."""
+	other_pi = (doc.get("travel_other_pi_id") or "").strip()
+	if not other_pi:
+		return
+	try:
+		from frappe.desk.form.assign_to import add as assign_add
+
+		existing = frappe.get_all(
+			"ToDo",
+			filters={
+				"reference_type": "Travel",
+				"reference_name": doc.name,
+				"allocated_to": other_pi,
+				"status": "Open",
+			},
+			limit=1,
+		)
+		if not existing:
+			assign_add(
+				{
+					"assign_to": [other_pi],
+					"doctype": "Travel",
+					"name": doc.name,
+					"description": _(
+						"Travel application awaiting your approval "
+						"(charged to your project)."
+					),
+					"notify": 1,
+				}
+			)
+	except Exception:
+		# Assignment is a convenience — never let it block the submission.
+		frappe.log_error(frappe.get_traceback(), "Travel Other-PI assignment failed")
+
+
+def _clear_other_pi_assignment(doc):
+	"""Close the Other-PI's assignment once they've acted on the travel."""
+	other_pi = (doc.get("travel_other_pi_id") or "").strip()
+	if not other_pi:
+		return
+	try:
+		from frappe.desk.form.assign_to import remove as assign_remove
+
+		assign_remove("Travel", doc.name, other_pi)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel Other-PI unassign failed")
+
+
+def _resolve_dept_head(user_id):
+	"""Return the department head (HoD user) for a given user's department.
+
+	user -> User.department_name (a Department_prornd link) -> dept_head.
+	Returns None if anything is missing so callers can fall back gracefully.
+	"""
+	user_id = (user_id or "").strip()
+	if not user_id:
+		return None
+	try:
+		dept = frappe.db.get_value("User", user_id, "department_name")
+		if not dept:
+			return None
+		return frappe.db.get_value("Department_prornd", dept, "dept_head") or None
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel dept-head resolution failed")
+		return None
+
+
+def _assign_travel_to_user(doc, user, description):
+	"""Assign the Travel doc to a specific user (idempotent) so it lands in
+	their Pending Tasks and they get notified. Best-effort — never blocks."""
+	user = (user or "").strip()
+	if not user:
+		return
+	try:
+		from frappe.desk.form.assign_to import add as assign_add
+
+		existing = frappe.get_all(
+			"ToDo",
+			filters={
+				"reference_type": "Travel",
+				"reference_name": doc.name,
+				"allocated_to": user,
+				"status": "Open",
+			},
+			limit=1,
+		)
+		if not existing:
+			assign_add(
+				{
+					"assign_to": [user],
+					"doctype": "Travel",
+					"name": doc.name,
+					"description": description,
+					"notify": 1,
+				}
+			)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Travel assignment failed")
+
+
 @frappe.whitelist()
 def submit_travel(docname):
 	"""
-	Submit a Travel document.
+	Apply the 'Submit' workflow transition on a Travel document (Draft → Pending Approval).
+	Does not call doc.submit() — the workflow keeps docstatus=0 throughout.
 	"""
+	from frappe.model.workflow import get_workflow, get_transitions
+
 	try:
 		doc = frappe.get_doc("Travel", docname)
-		
-		if doc.docstatus == 0:
-			doc.submit()
-			frappe.db.commit()
-			return {
-				"status": "success",
-				"message": f"Travel '{docname}' submitted successfully.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		elif doc.docstatus == 1:
+
+		if doc.workflow_state != "Draft":
 			return {
 				"status": "info",
-				"message": f"Travel '{docname}' is already submitted.",
+				"message": f"Travel '{docname}' is already submitted (state: {doc.workflow_state}).",
 				"docname": docname,
-				"docstatus": doc.docstatus,
-			}
-		else:
-			return {
-				"status": "error",
-				"message": f"Travel '{docname}' is cancelled and cannot be submitted.",
-				"docname": docname,
-				"docstatus": doc.docstatus,
+				"workflow_state": doc.workflow_state,
 			}
 
+		# Fix documents incorrectly left with docstatus=1 by the old doc.submit() path.
+		# All workflow states have doc_status=0 so the document must stay as draft.
+		# Must update the DB first and reload so check_docstatus_transition sees 0→0.
+		if doc.docstatus == 1:
+			frappe.db.sql("UPDATE `tabTravel` SET docstatus=0 WHERE name=%s", docname)
+			doc = frappe.get_doc("Travel", docname)
+
+		workflow = get_workflow("Travel")
+		transitions = get_transitions(doc, workflow)
+
+		# Other-PI flow: the travel is charged to a project owned by a different
+		# PI, so route it to that PI (Pending Other PI) instead of the normal chain.
+		is_other_pi = (doc.get("travel_other_pi") or "").strip() == "Other"
+		if is_other_pi and not doc.get("travel_other_pi_id"):
+			frappe.throw(_("Please select the Other PI before submitting."))
+
+		if is_other_pi:
+			transition = next(
+				(t for t in transitions
+				 if t["action"] == "Submit" and t["next_state"] == "Pending Other PI"),
+				None,
+			)
+		else:
+			transition = next(
+				(t for t in transitions
+				 if t["action"] == "Submit" and t["next_state"] != "Pending Other PI"),
+				None,
+			)
+
+		if not transition:
+			frappe.throw(_("Submit action is not available for your role on this document."))
+
+		next_state = next(s for s in workflow.states if s.state == transition["next_state"])
+
+		doc.set(workflow.workflow_state_field, next_state.state)
+		doc.flags.ignore_validate_update_after_submit = True
+		doc.save(ignore_permissions=True)
+		doc.add_comment("Workflow", _(next_state.state))
+
+		frappe.db.commit()
+
+		# Charged to another PI's project — hand the form to that PI.
+		if next_state.state == "Pending Other PI":
+			_assign_travel_to_other_pi(doc)
+
+		return {
+			"status": "success",
+			"message": f"Travel '{docname}' submitted successfully.",
+			"docname": docname,
+			"workflow_state": doc.workflow_state,
+		}
+
+	except frappe.ValidationError:
+		frappe.db.rollback()
+		raise
 	except Exception as e:
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Travel Submit Error")
@@ -419,10 +693,60 @@ def submit_travel(docname):
 
 
 @frappe.whitelist()
+def get_travel_commit_details(docname):
+	"""
+	Returns commit-related fields for the Travel pending task page UI.
+	Called by the frontend when rendering the Staff's commit form on the Pending Task page.
+	Frontend should call submit_commit_data + perform_travel_action('Forward') on commit.
+	"""
+	if not frappe.db.exists("Travel", docname):
+		frappe.throw(_("Travel document not found."))
+
+	doc = frappe.get_doc("Travel", docname)
+
+	# Resolve project number from project registration
+	project_number = None
+	if doc.travel_project_title:
+		project_number = frappe.db.get_value(
+			"Project Registration", doc.travel_project_title, "project_no"
+		)
+
+	# account_head is now a Link to Budget Head — use directly
+	budget_head = doc.account_head or None
+
+	# Resolve moduleId from Module Registry for "Travel"
+	module_id = frappe.db.get_value(
+		"Module Registry Item",
+		{"doctype_name": "Travel", "parent": "pending-task"},
+		"mod_vis"
+	) or 7
+
+	return {
+		"docname": docname,
+		"workflow_state": doc.workflow_state,
+		"applicant_name": doc.applicant_name_travel,
+		"webmail_id": doc.webmail_id_travel,
+		"project_name": doc.travel_project_title,
+		"project_number": project_number,
+		"total_estimate": doc.total_estimate,
+		"budget_head": budget_head,
+		"account_head": doc.account_head,
+		"do_you_need_advance": doc.do_you_need_advance,
+		"from_date": str(doc.from_date) if doc.from_date else None,
+		"to_date": str(doc.to_date) if doc.to_date else None,
+		"nature_of_travel": doc.nature_of_travel,
+		"purpose_of_visit": doc.purpose_of_visit,
+		"module_id": module_id,
+	}
+
+
+@frappe.whitelist()
 def get_travel_workflow_actions(docname):
 	"""
 	Get available workflow actions for the current user based on document state.
 	"""
+	from frappe.model.workflow import is_transition_condition_satisfied
+
 	doc = frappe.get_doc("Travel", docname)
 	current_state = doc.workflow_state or "Draft"
 	user_roles = frappe.get_roles(frappe.session.user)
@@ -451,20 +775,68 @@ def get_travel_workflow_actions(docname):
 			transition_roles = [transition_roles]
 
 		# User can perform action if they have allowed role
-		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
-			allowed_actions.append(transition.action)
+		if not (any(role in user_roles for role in transition_roles) or "System Manager" in user_roles):
+			continue
+
+		# e.g. the Director-approval branch is gated on doc.nature_of_travel ==
+		# "International" (see docs/travel-director-approval-implementation.md)
+		if not is_transition_condition_satisfied(transition, doc):
+			continue
+
+		allowed_actions.append(transition.action)
 
 	return list(dict.fromkeys(allowed_actions))
 
 
 @frappe.whitelist()
-def perform_travel_action(docname, action):
+def get_travel_pi_projects(pi=None):
+	"""Projects owned by the (session) PI — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+	return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def get_travel_project_account_heads(project_name):
+	"""Account heads for a given project — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_project_account_heads
+	return get_project_account_heads(project_name)
+
+
+@frappe.whitelist()
+def perform_travel_action(docname, action, extra_data=None):
 	"""
 	Executes the selected workflow action and updates the document state.
+	On 'Approved' state, publishes staged commit data to Kafka (two-phase commit pattern).
+
+	extra_data (optional JSON/dict): when the Other PI acts from the
+	'Pending Other PI' state they choose which of their own projects to charge
+	and the account head — passed here and persisted onto the document.
 	"""
+	from frappe.model.workflow import is_transition_condition_satisfied
+
 	try:
 		doc = frappe.get_doc("Travel", docname)
 		current_state = doc.workflow_state or "Draft"
+
+		# Only the specifically-assigned Other PI (or a System Manager) may act on a
+		# travel parked in 'Pending Other PI' — the 'Permanent Employee' role on the
+		# transition is not enough on its own.
+		if current_state == "Pending Other PI":
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			assigned_pi = (doc.get("travel_other_pi_id") or "").lower()
+			if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this travel application."))
+
+		# When the travel was charged to another PI's project, the Head-approval
+		# step is re-pointed to that FUNDING PI's department head (set at the
+		# Other-PI forward). Only they (or a System Manager) may act — the
+		# applicant's HoD does not approve a charge on someone else's project.
+		# For the normal flow this field is empty, so the guard is a no-op.
+		if current_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			designated_head = (doc.get("travel_head_approver_id") or "").lower()
+			if not is_system_manager and designated_head != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this travel application — it is with the funding PI's department head."))
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.db.get_value(
@@ -490,17 +862,71 @@ def perform_travel_action(docname, action):
 				allowed_roles = t.get("allowed") or []
 				if isinstance(allowed_roles, str):
 					allowed_roles = [allowed_roles]
-				
-				# If "System Manager" is in roles, they can usually do anything, 
-				# but strictly following workflow rules is safer for logic differentiation.
-				# However, standard practice is to allow if role matches.
-				if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
-					next_state = t.next_state
-					transition = t
-					break
+
+				if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
+					continue
+
+				# e.g. Director approval only applies when doc.nature_of_travel ==
+				# "International", and the final Approve from "Pending Director
+				# Approval" requires doc.director_signed_pdf to be set (see
+				# docs/travel-director-approval-implementation.md). A transition
+				# whose condition fails is treated as not found, same as a role
+				# mismatch — this is what actually prevents the action, not just
+				# the frontend hiding the button.
+				if not is_transition_condition_satisfied(t, doc):
+					continue
+
+				next_state = t.next_state
+				transition = t
+				break
 
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
+
+		# Other-PI approval: the PI charges the travel to one of THEIR OWN projects
+		# and picks that project's account head. Validate ownership + head, then persist.
+		if current_state == "Pending Other PI" and action in ("Forward", "Approve"):
+			from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
+				get_pi_projects,
+				get_project_account_heads,
+			)
+			if isinstance(extra_data, str):
+				extra_data = json.loads(extra_data or "{}")
+			extra_data = extra_data or {}
+
+			project_name = (extra_data.get("project_name") or "").strip()
+			account_head = (extra_data.get("account_head") or "").strip()
+			if not project_name or not account_head:
+				frappe.throw(_("Please select a project and account head before approving."))
+
+			# project must belong to the acting PI
+			owns = next((p for p in get_pi_projects() if p.get("value") == project_name), None)
+			if not owns:
+				frappe.throw(_("Selected project does not belong to you."))
+
+			# head must be one of that project's account heads
+			valid_heads = {h["value"].lower() for h in get_project_account_heads(project_name)}
+			if account_head.lower() not in valid_heads:
+				frappe.throw(_("Selected account head is not valid for this project."))
+
+			# resolve the head label to a Budget Head master record if one exists,
+			# otherwise fall back to the free-text account head note.
+			if frappe.db.exists("Budget Head", account_head):
+				bh_name = account_head
+			else:
+				bh_name = frappe.db.get_value("Budget Head", {"budget_head": account_head}, "name")
+			if bh_name:
+				doc.account_head = bh_name
+			else:
+				doc.account_head = frappe.db.get_value("Budget Head", {"budget_head": "Other"}, "name") or None
+
+			doc.travel_project_title = project_name
+			doc.travel_project_number = owns.get("project_no") or owns.get("project_number")
+
+			# Re-point the HoD step to the FUNDING PI's department head — the
+			# charge now sits on the Other PI's project, so their dept HoD (not
+			# the applicant's) approves. Falls back gracefully if unresolved.
+			doc.travel_head_approver_id = _resolve_dept_head(doc.get("travel_other_pi_id"))
 
 		# Update workflow state
 		doc.workflow_state = next_state
@@ -514,6 +940,88 @@ def perform_travel_action(docname, action):
 			doc.cancel()
 		else:
 			doc.save(ignore_permissions=True)
+
+		# The Other PI has acted (Forward/Put Back) — release their assignment
+		# and hand the form to the funding PI's department head.
+		if current_state == "Pending Other PI":
+			_clear_other_pi_assignment(doc)
+			if next_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+				_assign_travel_to_user(
+					doc,
+					doc.travel_head_approver_id,
+					_("Travel application awaiting your approval "
+					  "(charged to a project in your department)."),
+				)
+
+		# The funding-PI's HoD has acted — release their assignment.
+		if current_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
+			try:
+				from frappe.desk.form.assign_to import remove as assign_remove
+				assign_remove("Travel", doc.name, doc.travel_head_approver_id)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), "Travel head unassign failed")
+
+		# --- Special Casual Leave deduction on Approval ---
+		if next_state == "Approved" and doc.travel_special_casual_leave == "Required":
+			_deduct_scl_on_approval(doc)
+
+		# Kafka publish on Dean / Associate Dean approval
+		if next_state == "Approved":
+			frappe.logger().info(f"[Travel Kafka] Approval triggered for {docname}. Searching for staged commits.")
+			try:
+				from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit as kafka_publish_commit
+				staging_docs = frappe.get_all("Kafka Commit Staging", filters={
+					"reference_doctype": "Travel",
+					"reference_name": docname,
+					"status": ["in", ["PENDING_APPROVAL", "FAILED"]]
+				})
+				frappe.logger().info(f"[Travel Kafka] Found {len(staging_docs)} staged commit(s) for {docname}.")
+				if not staging_docs:
+					all_staging = frappe.get_all("Kafka Commit Staging", filters={
+						"reference_doctype": "Travel",
+						"reference_name": docname,
+					}, fields=["name", "status", "creation"])
+					frappe.log_error(
+						f"[Travel Kafka] No PENDING_APPROVAL/FAILED staging records found for {docname}. "
+						f"All staging records for this doc: {all_staging}. "
+						f"Ensure submit_commit_data was called before the staff Forward action.",
+						"Travel Kafka - No Staging Record"
+					)
+				for st in staging_docs:
+					staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
+					try:
+						payload = json.loads(staging_doc.payload)
+						frappe.logger().info(
+							f"[Travel Kafka] Publishing staging record {staging_doc.name} for {docname}. "
+							f"Payload keys: {list(payload.keys())}, commit_amount={payload.get('commit_amount')}, "
+							f"budget_head={payload.get('budget_head')}, project_name={payload.get('project_name')}"
+						)
+						success = kafka_publish_commit(
+							doc=doc,
+							commit_amount=payload.get("commit_amount"),
+							budget_head=payload.get("budget_head"),
+							project_name=payload.get("project_name"),
+							bmr=payload.get("bmr"),
+							bill_amount=payload.get("bill_amount"),
+							frap_app_id=payload.get("frap_app_id"),
+							ref_details=payload.get("ref_details"),
+							commit_particular=payload.get("commit_particular")
+						)
+						if success:
+							staging_doc.db_set("status", "PUBLISHED")
+						else:
+							staging_doc.db_set("status", "FAILED")
+							staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+							frappe.log_error(
+								f"[Travel Kafka] kafka_publish_commit returned False for staging {staging_doc.name}",
+								"Travel Kafka - Publish Failed"
+							)
+					except Exception as e:
+						frappe.log_error(frappe.get_traceback(), f"[Travel Kafka] Exception processing staging {staging_doc.name} for {docname}")
+						staging_doc.db_set("status", "FAILED")
+						staging_doc.db_set("error_message", str(e))
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), f"[Travel Kafka] Outer exception for {docname}")
 
 		frappe.db.commit()
 
@@ -530,3 +1038,161 @@ def perform_travel_action(docname, action):
 		frappe.log_error(frappe.get_traceback(), "Travel Action Error")
 		return {"status": "error", "message": str(e)}
 
+
+# ---------------------------------------------------------------------------
+# SCL helpers
+# ---------------------------------------------------------------------------
+
+def _calculate_scl_days(doc):
+	"""Return the number of SCL days requested in this Travel doc."""
+	if not doc.travel_leave_from_date or not doc.travel_leave_to_date:
+		return 0
+	delta = date_diff(doc.travel_leave_to_date, doc.travel_leave_from_date)
+	return max(0, delta + 1)
+
+
+def _deduct_scl_on_approval(doc):
+	"""
+	Called when a Travel application moves to Approved and SCL is Required.
+	Deducts days from the employee's special_leave_balance for the year of
+	travel_leave_from_date (or current year as fallback).
+	Logs a warning in Frappe error log if balance is insufficient but does
+	NOT block approval — raise frappe.throw() here if you prefer hard block.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import deduct_leaves
+
+	employee = doc.webmail_id_travel
+	if not employee:
+		frappe.log_error(
+			f"[SCL] Cannot deduct: webmail_id_travel is empty on Travel {doc.name}",
+			"SCL Deduction Warning"
+		)
+		return
+
+	days = _calculate_scl_days(doc)
+	if days <= 0:
+		frappe.log_error(
+			f"[SCL] Cannot deduct: leave dates missing or invalid on Travel {doc.name}",
+			"SCL Deduction Warning"
+		)
+		return
+
+	# Use the year of the leave start date
+	year = getdate(doc.travel_leave_from_date).year
+
+	success = deduct_leaves(
+		employee=employee,
+		year=year,
+		days=days,
+		reference_doctype="Travel",
+		reference_name=doc.name,
+	)
+
+	if not success:
+		# Warn in error log; optionally notify approver
+		frappe.log_error(
+			f"[SCL] Insufficient balance for {employee} in {year}. "
+			f"Requested {days} days but balance is exhausted. Travel: {doc.name}",
+			"SCL Insufficient Balance"
+		)
+		# --- Uncomment the line below to HARD BLOCK approval instead of warning ---
+		# frappe.throw(_(f"Insufficient Special Casual Leave balance. Requested {days} days exceeds available balance."))
+	else:
+		frappe.logger().info(
+			f"[SCL] Deducted {days} day(s) from {employee} ({year}) for Travel {doc.name}"
+		)
+
+
+@frappe.whitelist()
+def cancel_travel_scl(docname):
+	"""
+	Reverses the SCL deduction when a Travel application is cancelled.
+	Call this from the frontend cancel flow after cancelling the doc.
+	"""
+	from rndopsapp.rndopsapp.doctype.special_leave_balance.special_leave_balance import reverse_leaves
+
+	if not frappe.db.exists("Travel", docname):
+		return {"status": "error", "message": "Travel document not found."}
+
+	doc = frappe.get_doc("Travel", docname)
+
+	if doc.travel_special_casual_leave != "Required":
+		return {"status": "skipped", "message": "SCL was not required for this travel."}
+
+	employee = doc.webmail_id_travel
+	days = _calculate_scl_days(doc)
+
+	if not employee or days <= 0:
+		return {"status": "skipped", "message": "No valid employee/dates to reverse."}
+
+	year = getdate(doc.travel_leave_from_date).year
+
+	reverse_leaves(
+		employee=employee,
+		year=year,
+		days=days,
+		reference_doctype="Travel",
+		reference_name=docname,
+	)
+
+	return {
+		"status": "success",
+		"message": f"Reversed {days} SCL day(s) for {employee} ({year}).",
+	}
+
+
+# ---------------------------------------------------------------------------
+# Director Approval (International travel) — see
+# docs/travel-director-approval-implementation.md for the full design.
+#
+# This is a real Workflow branch (state "Pending Director Approval", added by
+# rndopsapp.patchs.add_travel_director_approval_workflow), not a flag on the
+# doctype: the Dean's "Send for Director Approval" and "Approve" actions are
+# ordinary transitions in Travel_Workflow, gated by `condition` expressions
+# (see is_transition_condition_satisfied usage in get_travel_workflow_actions /
+# perform_travel_action above). The only Travel-specific field this flow needs
+# is director_signed_pdf (Attach, hidden from the applicant's form).
+# ---------------------------------------------------------------------------
+
+DIRECTOR_UPLOAD_ROLES = ["staff, RnD", "RnD Staff", "R&D Staff", "System Manager"]
+
+
+@frappe.whitelist()
+def attach_director_pdf_travel(docname, file_url):
+	"""Called by staff, RnD after the Director signs the printed review copy."""
+	if not frappe.db.exists("Travel", docname):
+		frappe.throw(_("Travel document not found."))
+
+	user_roles = frappe.get_roles(frappe.session.user)
+	if not any(role in user_roles for role in DIRECTOR_UPLOAD_ROLES):
+		frappe.throw(_("You are not permitted to perform this action."), frappe.PermissionError)
+
+	if not file_url:
+		frappe.throw(_("No file was uploaded."))
+
+	doc = frappe.get_doc("Travel", docname)
+
+	if doc.workflow_state != "Pending Director Approval":
+		frappe.throw(_("This application is not currently awaiting a Director-signed copy."))
+
+	frappe.db.set_value("Travel", docname, "director_signed_pdf", file_url)
+	frappe.db.commit()
+
+	return {"status": "success", "director_signed_pdf": file_url}
+
+
+@frappe.whitelist()
+def get_pending_director_uploads_travel():
+	"""Return Travel documents awaiting a Director-signed copy, for the staff,
+	RnD upload screen (DirectorPdfUpload.tsx)."""
+	docs = frappe.get_all(
+		"Travel",
+		filters={"workflow_state": "Pending Director Approval"},
+		fields=[
+			"name", "workflow_state", "modified",
+			"applicant_name_travel", "travel_project_number",
+			"department_travel", "director_signed_pdf",
+		],
+		order_by="modified desc",
+	)
+	return {"status": "success", "data": docs}

@@ -7,8 +7,11 @@
  "field_order": [
   "section_break_6sgc",
   "amended_from",
+  "indent_cum_sanction_sheet_id",
   "project_no",
   "project_ref",
+  "indent_type",
+  "workflow_state",
   "proprietary_itemss_purchase_details_section",
   "pp_manufacturer_name",
   "table_qanf",
@@ -50,14 +53,40 @@
    "search_index": 1
   },
   {
+   "fieldname": "indent_cum_sanction_sheet_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Indent Cum Sanction Sheet ID",
+   "options": "Indent Cum Sanction Sheet",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
    "fieldname": "project_no",
    "fieldtype": "Data",
-   "label": "project_no"
+   "label": "Project Number",
+   "read_only": 1
   },
   {
    "fieldname": "project_ref",
+   "fieldtype": "Link",
+   "label": "Project Reference",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "indent_type",
    "fieldtype": "Data",
-   "label": "project_ref"
+   "label": "Indent Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Workflow State",
+   "options": "Workflow State",
+   "read_only": 1
   },
   {
    "fieldname": "proprietary_itemss_purchase_details_section",
@@ -122,7 +151,7 @@
   },
   {
    "fieldname": "pp_supplier_details",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "label": "Supplier Name & Address"
   },
   {
@@ -190,7 +219,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-05 18:45:14.331873",
+ "modified": "2026-06-09 12:27:38.676215",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "proprietary_purchase",
@@ -211,6 +240,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

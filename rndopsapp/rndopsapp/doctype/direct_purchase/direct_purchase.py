@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 def extract_eval_expression(expression):
@@ -143,7 +144,7 @@ def get_direct_purchase_fields(doc_name=None):
 		account_heads = frappe.get_all(
 			"Budget Head",
 			fields=["name as value", "budget_head as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["account_head"] = [
 			{"value": r["value"], "label": r.get("label") or r["value"]} for r in account_heads
@@ -157,7 +158,7 @@ def get_direct_purchase_fields(doc_name=None):
 			"User",
 			filters={"enabled": 1},
 			fields=["name as value", "full_name as label"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		link_options["applying_for_name"] = users
 	except Exception:
@@ -180,7 +181,7 @@ def get_direct_purchase_fields(doc_name=None):
 			"User",
 			filters=user_filters,
 			fields=["name", "full_name", "designation_name"],
-			limit_page_length=500,
+			limit_page_length=0,
 		)
 		# Build options with extra fields for auto-populate
 		committee_users = []
@@ -194,6 +195,18 @@ def get_direct_purchase_fields(doc_name=None):
 		link_options["webmail_id"] = committee_users
 	except Exception:
 		link_options["webmail_id"] = []
+
+	# ---- Other-PI picker ----
+	# Same source the other Other-PI modules use, so the type-to-search list is
+	# identical across Travel / IGF / ICSS / Reimbursement / Direct Purchase.
+	try:
+		from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
+			_get_permanent_employee_options,
+		)
+
+		link_options["dp_other_pi_id"] = _get_permanent_employee_options()
+	except Exception:
+		link_options["dp_other_pi_id"] = []
 
 	# ---- Client Scripts ----
 	client_scripts = []
@@ -302,9 +315,10 @@ def get_direct_purchase_fields(doc_name=None):
 def save_direct_purchase_data(data):
 	"""
 	Creates or updates a Direct Purchase document.
-	Handles child tables and file uploads (Attach fields).
+	Handles child tables and file uploads (Attach fields) via MinIO.
 	"""
-	from frappe.utils.file_manager import save_file
+	from rndopsapp.minio import get_rnd_file_service
+	import base64
 
 	try:
 		if isinstance(data, str):
@@ -348,54 +362,95 @@ def save_direct_purchase_data(data):
 		doc.flags.ignore_permissions = True
 		if is_new:
 			doc.insert(ignore_mandatory=True)
-		else:
-			doc.save(ignore_permissions=True)
 
 		# 4. Second Pass: Process Files and Tables (now we have doc.name)
+
+		# Resolve Project Registration docname from project_no for correct MinIO path:
+		# rnd-files/Project_Registration/{project_docname}/directpurchase/{doc.name}/
+		_proj_no = doc.project_no or data.get("project_no")
+		_project_docname = None
+		if _proj_no:
+			_project_docname = frappe.db.get_value(
+				"Project Registration", {"project_no": _proj_no}, "name"
+			)
+		# Fall back to attaching directly to Direct Purchase if no project found
+		_file_doctype = "Project Registration" if _project_docname else "Direct Purchase"
+		_file_docname = _project_docname if _project_docname else doc.name
+		_folder = f"directpurchase/{doc.name}"
+
+		# Only connect to object storage (MinIO) once we actually have a file to
+		# upload. Building the client eagerly made every save fail — including
+		# saves with no attachments at all — wherever the MinIO endpoint is not
+		# configured, e.g. local/dev environments. Same fix as
+		# indent_general_form.save_indent_general_form_data.
+		_file_service_cache = {}
+
+		def file_service_lazy():
+			if "client" not in _file_service_cache:
+				_file_service_cache["client"] = get_rnd_file_service()
+			return _file_service_cache["client"]
+
 		for fieldname, value in file_fields:
 			df = meta.get_field(fieldname)
 
-			if df.fieldtype == "Table" and isinstance(value, list):
-				doc.set(fieldname, [])  # Clear existing
-				child_meta = frappe.get_meta(df.options)
+			if df.fieldtype == "Table":
+				if isinstance(value, str):
+					try:
+						value = json.loads(value)
+					except Exception:
+						pass
 
-				for child_row in value:
-					row_dict = child_row.copy()
+				if isinstance(value, list):
+					doc.set(fieldname, [])  # Clear existing
+					child_meta = frappe.get_meta(df.options)
 
-					# Handle files in child row
-					for cf in child_meta.fields:
-						if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
-							f_val = row_dict[cf.fieldname]
-							if isinstance(f_val, dict) and f_val.get("file_data"):
-								try:
-									saved_file = save_file(
-										f_val.get("file_name", "attachment"),
-										f_val["file_data"],
-										"Direct Purchase",
-										doc.name,
-										decode=True,
-										is_private=1,
-										df=cf.fieldname
-									)
-									row_dict[cf.fieldname] = saved_file.file_url
-								except Exception as e:
-									frappe.log_error(f"Child File Error: {e}")
+					for child_row in value:
+						row_dict = child_row.copy()
+						
+						# Remove 'name' for new rows to allow Frappe to auto-generate proper names
+						if row_dict.get("name") and str(row_dict.get("name")).startswith("new-"):
+							del row_dict["name"]
 
-					doc.append(fieldname, row_dict)
+						# Remove internal properties not needed for appending
+						for k in ["creation", "modified", "owner", "modified_by", "docstatus", "parent", "parentfield", "parenttype"]:
+							row_dict.pop(k, None)
+
+						# Handle files in child row
+						for cf in child_meta.fields:
+							if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
+								f_val = row_dict[cf.fieldname]
+								if isinstance(f_val, dict) and f_val.get("file_data"):
+									try:
+										content = base64.b64decode(f_val["file_data"])
+										result = file_service_lazy().save_file(
+											filename=f_val.get("file_name", "attachment"),
+											content=content,
+											is_private=True,
+											doctype=_file_doctype,
+											docname=_file_docname,
+											folder=_folder
+										)
+										if result.get("status"):
+											row_dict[cf.fieldname] = result.get("file_url") or result.get("data", {}).get("file_url")
+									except Exception as e:
+										frappe.log_error(f"Child File Error: {e}")
+
+						doc.append(fieldname, row_dict)
 
 			elif df.fieldtype in ["Attach", "Attach Image"]:
 				if isinstance(value, dict) and value.get("file_data"):
 					try:
-						saved_file = save_file(
-							value.get("file_name", "attachment"),
-							value["file_data"],
-							"Direct Purchase",
-							doc.name,
-							decode=True,
-							is_private=1,
-							df=fieldname
+						content = base64.b64decode(value["file_data"])
+						result = file_service_lazy().save_file(
+							filename=value.get("file_name", "attachment"),
+							content=content,
+							is_private=True,
+							doctype=_file_doctype,
+							docname=_file_docname,
+							folder=_folder
 						)
-						doc.set(fieldname, saved_file.file_url)
+						if result.get("status"):
+							doc.set(fieldname, result.get("file_url") or result.get("data", {}).get("file_url"))
 					except Exception as e:
 						frappe.log_error(f"File Upload Error for {fieldname}: {str(e)}")
 
@@ -424,6 +479,9 @@ def get_direct_purchase_workflow_actions(docname):
 	current_state = doc.workflow_state or "Draft"
 	user_roles = frappe.get_roles(frappe.session.user)
 
+	print(f"\n--- [GET_ACTIONS] docname={docname}, current_state='{current_state}', user={frappe.session.user}")
+	print(f"    User Roles: {user_roles}")
+
 	workflow_name = frappe.db.get_value(
 		"Workflow",
 		{"document_type": "Direct Purchase", "is_active": 1},
@@ -433,6 +491,17 @@ def get_direct_purchase_workflow_actions(docname):
 	if not workflow_name:
 		return []
 
+	# Only the specifically-assigned Other PI (or a System Manager) may act on a
+	# purchase parked in 'Pending Other PI'. The transition is role-gated on
+	# "Permanent Employee", which the applicant usually is too — so without this
+	# the applicant was offered a Forward button they could not actually use
+	# (perform_direct_purchase_action throws on click).
+	if current_state == "Pending Other PI":
+		is_system_manager = "System Manager" in user_roles
+		assigned_pi = (doc.get("dp_other_pi_id") or "").lower()
+		if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+			return []
+
 	workflow = frappe.get_doc("Workflow", workflow_name)
 	allowed_actions = []
 
@@ -440,32 +509,146 @@ def get_direct_purchase_workflow_actions(docname):
 		if transition.state != current_state:
 			continue
 
+		print(f"    Transition: state='{transition.state}' action='{transition.action}' allowed='{transition.allowed}'")
+
 		transition_roles = transition.get("allowed") or []
 		if isinstance(transition_roles, str):
 			transition_roles = [transition_roles]
 
 		if any(role in user_roles for role in transition_roles) or "System Manager" in user_roles:
+			print(f"      [PASS] Role check passed")
 			if transition.condition:
+				print(f"      Condition: {transition.condition}")
 				try:
-					if not frappe.safe_eval(transition.condition, None, {"doc": doc}):
+					eval_context = {
+						"doc": doc,
+						"flt": frappe.utils.flt,
+						"cint": frappe.utils.cint,
+						"frappe": frappe._dict(
+							db=frappe._dict(
+								get_value=frappe.db.get_value,
+								get_list=frappe.db.get_list,
+								get_single_value=frappe.db.get_single_value,
+							),
+							utils=frappe._dict(
+								flt=frappe.utils.flt,
+								cint=frappe.utils.cint,
+							),
+							session=frappe.session,
+						),
+					}
+					result = frappe.safe_eval(transition.condition, None, eval_context)
+					print(f"      Condition result: {result}")
+					if not result:
+						print(f"      [SKIP] Condition is False")
 						continue
-				except Exception:
+				except Exception as e:
+					print(f"      [ERROR] Condition eval failed: {str(e)}")
 					continue
 
 			allowed_actions.append(transition.action)
+			print(f"      [ADDED] action='{transition.action}'")
+		else:
+			print(f"      [FAIL] Role check. Expected one of: {transition_roles}")
+
+	print(f"    Final allowed_actions: {list(dict.fromkeys(allowed_actions))}")
 
 	return list(dict.fromkeys(allowed_actions))
 
 
+# @frappe.whitelist()
+# def perform_direct_purchase_action(docname, action):
+# 	"""
+# 	Executes the selected workflow action and updates the document state.
+# 	"""
+# 	try:
+# 		doc = frappe.get_doc("Direct Purchase", docname)
+# 		current_state = doc.workflow_state or "Draft"
+# 		user_roles = frappe.get_roles(frappe.session.user)
+
+# 		workflow_name = frappe.db.get_value(
+# 			"Workflow",
+# 			{"document_type": "Direct Purchase", "is_active": 1},
+# 			"name"
+# 		)
+
+# 		if not workflow_name:
+# 			frappe.throw("No active workflow found for Direct Purchase.")
+
+# 		workflow = frappe.get_doc("Workflow", workflow_name)
+
+# 		next_state = None
+# 		transition = None
+
+# 		for t in workflow.transitions:
+# 			if t.state == current_state and t.action == action:
+# 				allowed_roles = t.get("allowed") or []
+# 				if isinstance(allowed_roles, str):
+# 					allowed_roles = [allowed_roles]
+
+# 				if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
+# 					continue
+
+# 				if t.condition:
+# 					try:
+# 						if not frappe.safe_eval(t.condition, None, {"doc": doc}):
+# 							continue
+# 					except Exception as e:
+# 						frappe.log_error(f"Workflow condition error: {str(e)}", "Workflow Error")
+# 						continue
+
+# 				next_state = t.next_state
+# 				transition = t
+# 				break
+
+# 		if not next_state:
+# 			frappe.throw(
+# 				f"No valid transition found for action '{action}' from state "
+# 				f"'{current_state}' matching your role and conditions."
+# 			)
+
+# 		doc.workflow_state = next_state
+
+# 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
+
+# 		if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
+# 			doc.submit()
+# 		elif state_doc and state_doc.doc_status == "2" and doc.docstatus != 2:
+# 			doc.cancel()
+# 		else:
+# 			doc.save(ignore_permissions=True)
+
+# 		frappe.db.commit()
+
+# 		return {
+# 			"status": "success",
+# 			"message": f"Action '{action}' completed. New State: {next_state}",
+# 			"docname": docname,
+# 			"workflow_state": next_state,
+# 			"next_actions": get_direct_purchase_workflow_actions(docname)
+# 		}
+
+# 	except Exception as e:
+# 		frappe.db.rollback()
+# 		frappe.log_error(frappe.get_traceback(), "Direct Purchase Action Error")
+# 		return {"status": "error", "message": str(e)}
+
 @frappe.whitelist()
-def perform_direct_purchase_action(docname, action):
+def perform_direct_purchase_action(docname, action, extra_data=None):
+	print("------=-==-=-=-=-=-=-=-=-=-=-=-DP-=-=-=-=-=-=-=-=-=-=-=-")
 	"""
 	Executes the selected workflow action and updates the document state.
 	"""
+	print(f"\n--- [START] perform_direct_purchase_action ---")
+	print(f"Docname: {docname} | Action requested: {action}")
+	
 	try:
 		doc = frappe.get_doc("Direct Purchase", docname)
 		current_state = doc.workflow_state or "Draft"
 		user_roles = frappe.get_roles(frappe.session.user)
+		
+		print(f"Current State: '{current_state}' | User: {frappe.session.user}")
+		print(f"User Roles: {user_roles}")
 
 		workflow_name = frappe.db.get_value(
 			"Workflow",
@@ -473,53 +656,190 @@ def perform_direct_purchase_action(docname, action):
 			"name"
 		)
 
+		print(f"Active Workflow Found: {workflow_name}")
+
 		if not workflow_name:
+			print("[ERROR] No active workflow found for Direct Purchase.")
 			frappe.throw("No active workflow found for Direct Purchase.")
 
 		workflow = frappe.get_doc("Workflow", workflow_name)
 
+		# --- Other-PI routing -------------------------------------------------
+		# On Submit, a purchase charged to another PI's project goes to that
+		# specific PI first (Pending Other PI) rather than straight down the
+		# normal chain. Mirrors perform_indent_general_form_action.
+		if (
+			action == "Submit"
+			and current_state == "Draft"
+			and (doc.get("dp_other_pi") or "").strip() == "Other"
+		):
+			if not doc.get("dp_other_pi_id"):
+				frappe.throw("Please select the Other PI before submitting.")
+			doc.workflow_state = "Pending Other PI"
+			doc.save(ignore_permissions=True)
+			frappe.db.commit()
+			return {"status": "success", "next_state": "Pending Other PI"}
+
+		# At the Other-PI step only the assigned PI (or a System Manager) may
+		# act, and approving means charging one of THEIR OWN projects.
+		if current_state == "Pending Other PI":
+			is_system_manager = "System Manager" in user_roles
+			assigned_pi = (doc.get("dp_other_pi_id") or "").lower()
+			if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
+				frappe.throw("You are not authorised to act on this purchase.")
+
+			if action in ("Forward", "Approve"):
+				from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+
+				data = extra_data
+				if isinstance(data, str):
+					data = json.loads(data or "{}")
+				data = data or {}
+
+				project_name = (data.get("project_name") or "").strip()
+				if not project_name:
+					frappe.throw("Please select a project before approving.")
+
+				owns = next(
+					(p for p in get_pi_projects() if p.get("value") == project_name), None
+				)
+				if not owns:
+					frappe.throw("Selected project does not belong to you.")
+
+				doc.project_no = (
+					owns.get("project_no") or owns.get("project_number") or project_name
+				)
+				# The Other-PI picker lists a project's account heads by LABEL
+				# ("Overhead"), but Direct Purchase.account_head is a Link to
+				# Budget Head, whose docnames are hashes ("h1lhg99vfq").
+				# Assigning the label directly fails link validation with
+				# "Could not find Account Head: Overhead", so resolve it.
+				account_head = (data.get("account_head") or "").strip()
+				if account_head:
+					resolved = None
+					if frappe.db.exists("Budget Head", account_head):
+						resolved = account_head
+					else:
+						resolved = frappe.db.get_value(
+							"Budget Head", {"budget_head": account_head}, "name"
+						)
+					if resolved:
+						doc.account_head = resolved
+					else:
+						# Leave whatever the applicant chose rather than blanking
+						# the field, but make the mismatch visible.
+						frappe.msgprint(
+							_("Account head {0} has no matching Budget Head; left unchanged.").format(
+								account_head
+							),
+							indicator="orange",
+							alert=True,
+						)
+
+				doc.workflow_state = "Pending Staff Approval"
+				doc.save(ignore_permissions=True)
+				frappe.db.commit()
+				return {"status": "success", "next_state": "Pending Staff Approval"}
+			# Reject / Put Back fall through to the normal transition resolver.
+
 		next_state = None
 		transition = None
 
+		print("Iterating over workflow transitions...")
 		for t in workflow.transitions:
+			# Debug transition match
+			print(f"  Checking Transition -> State: '{t.state}', Action: '{t.action}'")
+			
 			if t.state == current_state and t.action == action:
+				print(f"    [MATCH] State & Action match found!")
+				
 				allowed_roles = t.get("allowed") or []
 				if isinstance(allowed_roles, str):
 					allowed_roles = [allowed_roles]
+				
+				print(f"    Allowed roles for transition: {allowed_roles}")
 
+				# Role check
 				if not (any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles):
+					print(f"    [FAIL] Role check failed.")
+					print(f"           - Workflow expects one of: {allowed_roles}")
+					print(f"           - User actually has: {user_roles}")
+					print(f"           -> TIP: Make sure the Role Name in the Workflow exactly matches the Role Name assigned to the user.")
 					continue
+				else:
+					print("    [PASS] Role check passed.")
 
+				# Condition check
 				if t.condition:
+					print(f"    Evaluating condition: {t.condition}")
 					try:
-						if not frappe.safe_eval(t.condition, None, {"doc": doc}):
+						eval_context = {
+							"doc": doc,
+							"flt": frappe.utils.flt,
+							"cint": frappe.utils.cint,
+							"frappe": frappe._dict(
+								db=frappe._dict(
+									get_value=frappe.db.get_value,
+									get_list=frappe.db.get_list,
+									get_single_value=frappe.db.get_single_value,
+								),
+								utils=frappe._dict(
+									flt=frappe.utils.flt,
+									cint=frappe.utils.cint,
+								),
+								session=frappe.session,
+							),
+						}
+						if not frappe.safe_eval(t.condition, None, eval_context):
+							print("    [FAIL] Condition evaluated to False.")
 							continue
+						print("    [PASS] Condition evaluated to True.")
 					except Exception as e:
+						print(f"    [ERROR] Workflow condition error: {str(e)}")
 						frappe.log_error(f"Workflow condition error: {str(e)}", "Workflow Error")
 						continue
 
+				# Successful transition found
 				next_state = t.next_state
 				transition = t
+				print(f"    [SUCCESS] Transition approved! Next state will be: '{next_state}'")
 				break
+			else:
+				# Just skip quietly if not matching current state/action
+				pass
 
 		if not next_state:
-			frappe.throw(
-				f"No valid transition found for action '{action}' from state "
-				f"'{current_state}' matching your role and conditions."
-			)
+			error_msg = f"No valid transition found for action '{action}' from state '{current_state}' matching your role and conditions."
+			print(f"[ERROR] {error_msg}")
+			frappe.throw(error_msg)
 
 		doc.workflow_state = next_state
-
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
 
+		if state_doc:
+			print(f"Target state doc_status: {state_doc.doc_status} (Current docstatus: {doc.docstatus})")
+
 		if state_doc and state_doc.doc_status == "1" and doc.docstatus == 0:
+			print("[ACTION] Submitting document...")
 			doc.submit()
 		elif state_doc and state_doc.doc_status == "2" and doc.docstatus != 2:
+			print("[ACTION] Cancelling document...")
 			doc.cancel()
 		else:
-			doc.save(ignore_permissions=True)
+			print("[ACTION] Updating workflow_state via db.set_value (bypassing Frappe workflow sandbox)...")
+			frappe.db.set_value("Direct Purchase", docname, "workflow_state", next_state)
+
+			# Since db.set_value does NOT trigger on_update hooks,
+			# manually call the Kafka publishing hook if state is now 'Approved'
+			if next_state == "Approved":
+				print("[KAFKA] State is 'Approved' — manually triggering check_workflow_and_publish...")
+				from rndopsapp.rndopsapp.commitPayment import check_workflow_and_publish
+				# Reload the doc so it reflects the updated workflow_state
+				doc.reload()
+				check_workflow_and_publish(doc)
 
 		frappe.db.commit()
+		print(f"--- [END] perform_direct_purchase_action SUCCESS ---\n")
 
 		return {
 			"status": "success",
@@ -531,8 +851,28 @@ def perform_direct_purchase_action(docname, action):
 
 	except Exception as e:
 		frappe.db.rollback()
+		print(f"\n--- [EXCEPTION] perform_direct_purchase_action ---")
+		print(f"Error: {str(e)}")
 		frappe.log_error(frappe.get_traceback(), "Direct Purchase Action Error")
 		return {"status": "error", "message": str(e)}
+
+
+
+
+@frappe.whitelist()
+def get_direct_purchase_pi_projects(pi=None):
+	"""Projects owned by the (session) PI — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_pi_projects
+
+	return get_pi_projects(pi)
+
+
+@frappe.whitelist()
+def get_direct_purchase_project_account_heads(project_name):
+	"""Account heads for a given project — used by the Other-PI approval step."""
+	from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import get_project_account_heads
+
+	return get_project_account_heads(project_name)
 
 
 @frappe.whitelist()
@@ -722,3 +1062,136 @@ def generate_purchase_order(sanction_sheet_name, dp_docname=None):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "PO Generation Error")
 		return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def upload_po_document(docname, app_id, project_no):
+	"""
+	Endpoint to upload a Purchase Order PDF or Image to object storage (MinIO).
+	Saves the file inside: prod-rnd-files/Project_Registration/{project_docname}/directpurchase/{app_id}/
+	"""
+	print(f"[PO UPLOAD START] -> docname={docname}, app_id={app_id}, project_no={project_no}")
+	import sys; sys.stdout.flush()
+
+	from rndopsapp.minio import get_rnd_file_service
+
+	if "file" in frappe.request.files:
+		file_obj = frappe.request.files["file"]
+		filename = file_obj.filename
+		content = file_obj.stream.read()
+	elif frappe.local.uploaded_file:
+		content = frappe.local.uploaded_file
+		filename = frappe.local.uploaded_filename
+	else:
+		print("[PO UPLOAD ERROR] No file attached")
+		return {"status": False, "message": "No file attached"}
+
+	try:
+		file_service = get_rnd_file_service()
+
+		# Resolve Project Registration docname from project_no field
+		project_docname = frappe.db.get_value(
+			"Project Registration", {"project_no": project_no}, "name"
+		)
+		if not project_docname:
+			print(f"[PO UPLOAD ERROR] No Project Registration found for project_no: {project_no}")
+			return {"status": False, "message": f"No Project Registration found for project_no: {project_no}"}
+
+		print(f"[PO UPLOAD] Found project_docname: {project_docname}")
+
+		# Path: rnd-files/Project_Registration/{project_docname}/directpurchase/{app_id}/po/
+		folder_path = f"directpurchase/{app_id}/po"
+
+		# Prepare file data for MinIO
+		data = file_service._bytes(content)
+		file_hash = file_service._hash(data)
+		path = file_service._path(
+			filename=filename, 
+			file_hash=file_hash, 
+			private=True, 
+			doctype="Project Registration", 
+			docname=project_docname, 
+			folder=folder_path,
+			use_hash=False
+		)
+		mime = file_service._mime(filename)
+
+		print(f"[PO UPLOAD] Generated MinIO path: {path}")
+
+		# Upload directly to object storage WITHOUT creating a Frappe File doc
+		# This bypasses Frappe's `URL must start with http` File doctype validation.
+		file_service.storage.upload(path, data, mime)
+		
+		full_minio_path = f"prod-rnd-files/{path}"
+		print(f"[PO UPLOAD] Successful MinIO upload directly. Path: {full_minio_path}")
+		import sys; sys.stdout.flush()
+
+		# Update the corresponding Sanction Sheet's file_path using purely SQL
+		if frappe.db.exists("sanction_sheet", docname):
+			frappe.db.sql(
+				"""UPDATE `tabsanction_sheet` SET file_path = %s, modified = NOW() WHERE name = %s""",
+				(full_minio_path, docname)
+			)
+			frappe.db.commit()
+			print(f"[PO UPLOAD] Successfully updated DB for sanction_sheet: {docname}")
+		else:
+			print(f"[PO UPLOAD WARNING] The specified sanction_sheet docname '{docname}' does not exist. Cannot update file_path.")
+
+		return {"status": True, "message": "File saved and path stored", "data": {"path": path, "file_url": full_minio_path}}
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "PO Upload Error (Direct Purchase)")
+		print(f"\n[PO UPLOAD FATAL ERROR] {str(e)}")
+		print(frappe.get_traceback())
+		return {"status": False, "message": str(e)}
+
+@frappe.whitelist()
+def get_po_document(docname, app_id, project_no):
+	"""
+	Endpoint to download the uploaded Purchase Order document directly from MinIO.
+	"""
+	from rndopsapp.minio import get_rnd_file_service
+
+	try:
+		# Resolve Project Registration docname from project_no field
+		project_docname = frappe.db.get_value(
+			"Project Registration", {"project_no": project_no}, "name"
+		)
+		if not project_docname:
+			frappe.local.response.http_status_code = 404
+			return {"status": False, "message": f"No Project Registration found for project_no: {project_no}"}
+
+		folder_path = f"directpurchase/{app_id}/po"
+		minio_prefix = f"Project_Registration/{project_docname}/{folder_path}/"
+
+		file_service = get_rnd_file_service()
+
+		# Search MinIO directly — upload_po_document skips creating a Frappe File doc
+		objects = file_service.storage.list_prefix(minio_prefix)
+
+		if not objects:
+			frappe.local.response.http_status_code = 404
+			return {"status": False, "message": "No PO document found for this direct purchase."}
+
+		# Take the most recently modified object
+		latest = sorted(objects, key=lambda o: o.last_modified, reverse=True)[0]
+		object_name = latest.object_name
+		filename = object_name.split("/")[-1]
+
+		# Fetch file bytes from MinIO
+		content = file_service.storage.get(object_name)
+
+		if content is None:
+			frappe.local.response.http_status_code = 404
+			return {"status": False, "message": "File not found in storage."}
+
+		# Serve the bytes as a downloadable file
+		frappe.local.response.filename = filename
+		frappe.local.response.filecontent = content
+		frappe.local.response.type = "download"
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "PO Download Error (Direct Purchase)")
+		if hasattr(frappe.local, "response"):
+			frappe.local.response.http_status_code = 500
+		return {"status": False, "message": str(e)}

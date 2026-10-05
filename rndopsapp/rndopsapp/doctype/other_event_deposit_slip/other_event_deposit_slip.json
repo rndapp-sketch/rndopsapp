@@ -26,7 +26,12 @@
   "additional_project_credits",
   "totals_section",
   "gst_final",
-  "total"
+  "total",
+  "fund_received_ref",
+  "budget_head_reconciliation_section",
+  "overhead_source_head",
+  "gst_source_head",
+  "fund_budget_breakup"
  ],
  "fields": [
   {
@@ -97,14 +102,12 @@
   {
    "fieldname": "gst_amount",
    "fieldtype": "Currency",
-   "label": "GST Amount",
-   "read_only": 1
+   "label": "GST Amount"
   },
   {
    "fieldname": "training_fee",
    "fieldtype": "Currency",
-   "label": "Training Fee",
-   "read_only": 1
+   "label": "License Fee"
   },
   {
    "fieldname": "overhead_amount",
@@ -136,20 +139,55 @@
   {
    "fieldname": "gst_final",
    "fieldtype": "Currency",
-   "label": "GST (Final)",
-   "read_only": 1
+   "label": "GST (Final)"
   },
   {
    "fieldname": "total",
    "fieldtype": "Currency",
    "label": "Total",
    "read_only": 1
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "budget_head_reconciliation_section",
+   "fieldtype": "Section Break",
+   "label": "Budget Head Reconciliation"
+  },
+  {
+   "description": "Fund Received budget head the overhead amount was transferred from.",
+   "fieldname": "overhead_source_head",
+   "fieldtype": "Link",
+   "label": "Overhead Source Head",
+   "options": "Budget Head",
+   "read_only": 1
+  },
+  {
+   "description": "Fund Received budget head the GST amount was transferred from.",
+   "fieldname": "gst_source_head",
+   "fieldtype": "Link",
+   "label": "GST Source Head",
+   "options": "Budget Head",
+   "read_only": 1
+  },
+  {
+   "description": "Mirror of the linked Fund Received's budget head breakup (received_amt_breakup).",
+   "fieldname": "fund_budget_breakup",
+   "fieldtype": "Table",
+   "label": "Fund Budget Breakup",
+   "options": "Project Received Budget",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-12 10:44:10.454665",
+ "modified": "2026-06-17 15:25:40.614491",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Other Event Deposit Slip",
@@ -182,6 +220,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

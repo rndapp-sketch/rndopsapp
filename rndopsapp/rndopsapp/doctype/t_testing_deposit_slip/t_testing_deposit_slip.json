@@ -28,7 +28,12 @@
   "student_welfare_t_testing_fund",
   "totals_section",
   "total_gst",
-  "total_budget"
+  "total_budget",
+  "fund_received_ref",
+  "budget_head_reconciliation_section",
+  "overhead_source_head",
+  "gst_source_head",
+  "fund_budget_breakup"
  ],
  "fields": [
   {
@@ -157,12 +162,48 @@
    "fieldname": "student_welfare_t_testing_fund",
    "fieldtype": "Data",
    "label": "(d.) Student Welfare fund"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "budget_head_reconciliation_section",
+   "fieldtype": "Section Break",
+   "label": "Budget Head Reconciliation"
+  },
+  {
+   "description": "Fund Received budget head the overhead amount was transferred from.",
+   "fieldname": "overhead_source_head",
+   "fieldtype": "Link",
+   "label": "Overhead Source Head",
+   "options": "Budget Head",
+   "read_only": 1
+  },
+  {
+   "description": "Fund Received budget head the GST amount was transferred from.",
+   "fieldname": "gst_source_head",
+   "fieldtype": "Link",
+   "label": "GST Source Head",
+   "options": "Budget Head",
+   "read_only": 1
+  },
+  {
+   "description": "Mirror of the linked Fund Received's budget head breakup (received_amt_breakup).",
+   "fieldname": "fund_budget_breakup",
+   "fieldtype": "Table",
+   "label": "Fund Budget Breakup",
+   "options": "Project Received Budget",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-21 11:04:07.009414",
+ "modified": "2026-02-16 11:19:39.617713",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "T Testing Deposit Slip",
@@ -195,6 +236,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

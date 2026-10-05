@@ -1,12 +1,8 @@
 import json
 from kafka import KafkaConsumer
+from rndopsapp.static_config import KAFKA_BOOTSTRAP_SERVERS
 
-# Configuration
-KAFKA_BOOTSTRAP_SERVERS = [
-    '172.16.135.118:9095',
-    '172.16.135.118:9096',
-
-]
+# Configuration (imported from centralized config)
 
 TOPIC = 'fund-received-events'
 GROUP_ID = 'rndopsapp-consumer-group-v2'

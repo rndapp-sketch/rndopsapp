@@ -146,7 +146,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-10-20 14:52:31.932513",
+ "modified": "2026-04-15 13:49:14.779690",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "project_sanction_details",
@@ -167,6 +167,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

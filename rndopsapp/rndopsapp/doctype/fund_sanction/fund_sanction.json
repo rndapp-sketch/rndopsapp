@@ -11,6 +11,7 @@
   "project_proposal",
   "refnum_prj_num",
   "sanction_workflow_status",
+  "workflow_status",
   "section_break_edqq",
   "total_sanctioned_amount",
   "sanctioned_letter_no",
@@ -55,9 +56,11 @@
    "non_negative": 1
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sanctioned_letter_no",
    "fieldtype": "Data",
-   "label": "Sanctioned Letter No."
+   "label": "Sanctioned Letter No.",
+   "reqd": 1
   },
   {
    "fieldname": "sanctioned_letter_date",
@@ -65,6 +68,7 @@
    "label": "Date of Sanctioned Letter"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sanctioned_budget_breakup",
    "fieldtype": "Table",
    "label": "Total Budget Break-up",
@@ -75,6 +79,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sanction_related_files",
    "fieldtype": "Table",
    "label": "Upload Sanction Related Files",
@@ -156,16 +161,23 @@
    "label": "Ref Number (Project Registration)"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "sanction_workflow_status",
    "fieldtype": "Data",
    "label": "Workflow Status"
+  },
+  {
+   "fieldname": "workflow_status",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "workflow state"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-08 10:34:47.164217",
+ "modified": "2026-07-23 10:42:57.189013",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Fund Sanction",
@@ -201,6 +213,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

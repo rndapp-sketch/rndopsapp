@@ -9,6 +9,7 @@ readme = "README.md"
 dynamic = ["version"]
 dependencies = [
     # "frappe~=15.0.0" # Installed and managed by bench.
+    "celery~=5.6.3",  # rndopsapp/rndopsapp/email/celery_app.py — Email Manager notification task/worker
 ]
 
 [build-system]

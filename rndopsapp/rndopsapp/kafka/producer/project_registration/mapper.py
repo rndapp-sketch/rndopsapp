@@ -2,7 +2,7 @@
 # Project Registration Mapper - Maps Frappe document to DTO
 
 import frappe
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import List, Optional, Tuple
 
 from .dto import ProjectDataDTO, ProjectEventDTO
@@ -142,8 +142,8 @@ class ProjectRegistrationMapper:
             Tuple: (overhead_amount, gst_amount, grand_total, budget_with_overhead)
         """
         # First try document-level fields
-        overhead_amount = float(doc.overhead_research or doc.overhead_consultancy or 0)
-        gst_amount = float(doc.service_tax_research or doc.service_tax_consultancy or 0)
+        overhead_amount = float(getattr(doc, 'overhead_research', 0) or getattr(doc, 'overhead_consultancy', 0) or 0)
+        gst_amount = float(getattr(doc, 'service_tax_research', 0) or getattr(doc, 'service_tax_consultancy', 0) or 0)
 
         # If document-level fields are 0, extract from proposed_budget_breakup
         if overhead_amount == 0 or gst_amount == 0:
@@ -157,10 +157,10 @@ class ProjectRegistrationMapper:
                 elif gst_amount == 0 and account_head == 'gst':
                     gst_amount = row_amount
 
-        grand_total = float(doc.total_budget_amount or doc.grand_total_consultancy or 0)
+        grand_total = float(getattr(doc, 'total_budget_amount', 0) or getattr(doc, 'grand_total_consultancy', 0) or 0)
         budget_with_overhead = float(
-            doc.budget_including_overhead_research or
-            doc.budget_including_overhead_consultancy or 0
+            getattr(doc, 'budget_including_overhead_research', 0) or
+            getattr(doc, 'budget_including_overhead_consultancy', 0) or 0
         )
 
         # If budget_with_overhead is 0, calculate as: sum - GST
@@ -168,6 +168,29 @@ class ProjectRegistrationMapper:
             budget_with_overhead = base_total_budget - gst_amount
 
         return overhead_amount, gst_amount, grand_total, budget_with_overhead
+
+    @staticmethod
+    def get_account_type_fields(doc) -> Tuple[bool, Optional[str], Optional[str]]:
+        """
+        Map Project Registration account-type fields to the Kafka DTO.
+
+        is_the_account_type_pfms is a Yes/No Select field on the doctype.
+        - "Yes" → PFMS scheme: scheme_name + enter_scheme_number
+        - "No"  → Bank account: bank_name + account_number
+
+        Returns:
+            Tuple: (is_pfms, scheme_name_or_bank_name, scheme_number_or_account_number)
+        """
+        is_pfms = (getattr(doc, "is_the_account_type_pfms", None) or "").strip().lower() == "yes"
+
+        if is_pfms:
+            scheme_name_bank_name = getattr(doc, "scheme_name", None) or None
+            scheme_number_account_number = getattr(doc, "enter_scheme_number", None) or None
+        else:
+            scheme_name_bank_name = getattr(doc, "bank_name", None) or None
+            scheme_number_account_number = getattr(doc, "account_number", None) or None
+
+        return is_pfms, scheme_name_bank_name, scheme_number_account_number
 
     @classmethod
     def map_to_dto(cls, doc) -> ProjectDataDTO:
@@ -186,9 +209,10 @@ class ProjectRegistrationMapper:
         # Get funding agency ID
         funding_agency_id = cls.get_funding_agency(doc)
 
-        # Parse dates
-        start_date = doc.prj_start_date or doc.start_date
-        completion_date = doc.prj_end_date or doc.completion_date
+        # Parse dates - default to today and today + 1 month if missing
+        today = date.today()
+        start_date = doc.prj_start_date or getattr(doc, 'start_date', None) or today
+        completion_date = doc.prj_end_date or getattr(doc, 'completion_date', None) or (today + timedelta(days=30))
 
         # Apply/Verdict Dates
         apply_date = doc.creation if doc.creation else datetime.utcnow()
@@ -216,14 +240,23 @@ class ProjectRegistrationMapper:
             overhead_amount, gst_amount, grand_total, budget_with_overhead = \
                 cls.get_research_amounts(doc, base_total_budget)
 
+        # For categories where total_budget_amount is not used (e.g. Cat E/F),
+        # the grand total is stored in category-specific fields instead.
+        if not base_total_budget:
+            base_total_budget = grand_total
+
         # Calculate total budget and overhead percentage
         calculated_total_budget, overhead_percentage = cls.calculate_budget_amounts(
             base_total_budget, overhead_amount, gst_amount
         )
 
+        # Account type (PFMS vs. Bank Account)
+        is_pfms, scheme_name_bank_name, scheme_number_account_number = \
+            cls.get_account_type_fields(doc)
+
         # Build ProjectDataDTO
         return ProjectDataDTO(
-            projectNumber=doc.project_no or "",
+            projectNumber=doc.project_no or doc.name,
             empId=doc.pi_employee_id or "",
             departmentId=department_id or "",
             projectType=doc.project_type or "",
@@ -239,11 +272,14 @@ class ProjectRegistrationMapper:
             grandTotal=grand_total,
             startDate=start_date,
             completionDate=completion_date,
-            durationMonths=str(doc.project_duration_months) if doc.project_duration_months else "0",
+            durationMonths=str(doc.project_duration_months) if doc.project_duration_months else "00",
             durationInDays=str(doc.project_duration_days) if doc.project_duration_days else "0",
             status=doc.workflow_state or "",
             applyDate=apply_date,
-            implementedDeptCentres=dept_centres
+            implementedDeptCentres=dept_centres,
+            isPfms=is_pfms,
+            schemeNameBankName=scheme_name_bank_name,
+            schemeNumberAccountNumber=scheme_number_account_number,
         )
 
     @classmethod

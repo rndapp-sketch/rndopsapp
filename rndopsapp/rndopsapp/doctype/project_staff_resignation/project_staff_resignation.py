@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils.html_utils import sanitize_html
 
 
 def extract_eval_expression(expression):
@@ -228,4 +229,130 @@ def get_project_staff_resignation_list():
 		return {"status": "success", "data": resignations}
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "Error fetching Project Staff Resignation list")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_project_staff_resignation_workflow_actions(docname):
+	"""
+	Returns the workflow actions available to the current user for this document.
+	"""
+	try:
+		doc = frappe.get_doc("Project Staff Resignation", docname)
+		doc.flags.ignore_permissions = True
+		current_state = doc.workflow_state or "Draft"
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		workflow_name = frappe.db.get_value(
+			"Workflow",
+			{"document_type": "Project Staff Resignation", "is_active": 1},
+			"name",
+		)
+		if not workflow_name:
+			return {"status": "success", "actions": [], "workflow_state": current_state, "docstatus": doc.docstatus}
+
+		workflow = frappe.get_doc("Workflow", workflow_name)
+		allowed_actions = []
+
+		for transition in workflow.get("transitions", []):
+			if transition.state != current_state:
+				continue
+			allowed_roles = transition.get("allowed") or []
+			if isinstance(allowed_roles, str):
+				allowed_roles = [allowed_roles]
+			if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
+				allowed_actions.append(transition.action)
+
+		return {
+			"status": "success",
+			"actions": list(dict.fromkeys(allowed_actions)),
+			"workflow_state": current_state,
+			"docstatus": doc.docstatus,
+		}
+
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "Project Staff Resignation Workflow Actions Error")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def perform_project_staff_resignation_action(docname, action, comment=""):
+	"""
+	Executes a workflow action on a Project Staff Resignation document.
+
+	Previously missing entirely: the frontend's own workflow-action button
+	always failed here (method didn't exist), which silently tripped its
+	"Submit" fallback into calling submit_project_staff_resignation() — a
+	raw doc.submit() with no workflow awareness. Since "Approved" is the
+	only state with doc_status=1, that raw submit finalized the document
+	immediately on the applicant's first Submit click, skipping Pending PI
+	/ Staff / HoS / Dean Approval entirely while the UI optimistically
+	(and incorrectly) showed "Pending PI Approval".
+	"""
+	try:
+		if not comment or not str(comment).strip():
+			frappe.throw(_("A comment is required before performing this action."))
+
+		doc = frappe.get_doc("Project Staff Resignation", docname)
+		doc.flags.ignore_permissions = True
+		current_state = doc.workflow_state or "Draft"
+		user_roles = frappe.get_roles(frappe.session.user)
+
+		workflow_name = frappe.db.get_value(
+			"Workflow",
+			{"document_type": "Project Staff Resignation", "is_active": 1},
+			"name",
+		)
+		if not workflow_name:
+			frappe.throw(_("No active workflow found for Project Staff Resignation."))
+
+		workflow = frappe.get_doc("Workflow", workflow_name)
+
+		next_state = None
+		for t in workflow.transitions:
+			if t.state != current_state or t.action != action:
+				continue
+			allowed_roles = t.get("allowed") or []
+			if isinstance(allowed_roles, str):
+				allowed_roles = [allowed_roles]
+			if any(role in user_roles for role in allowed_roles) or "System Manager" in user_roles:
+				next_state = t.next_state
+				break
+
+		if not next_state:
+			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
+
+		# Record comment
+		doc.add_comment(
+			"Workflow",
+			sanitize_html(f"[{action}] {comment}"),
+		)
+
+		doc.workflow_state = next_state
+
+		state_meta = next((s for s in workflow.states if s.state == next_state), None)
+		if state_meta and int(state_meta.doc_status or 0) == 1 and doc.docstatus == 0:
+			doc.flags.ignore_permissions = True
+			doc.submit()
+		elif state_meta and int(state_meta.doc_status or 0) == 2 and doc.docstatus != 2:
+			doc.flags.ignore_permissions = True
+			doc.cancel()
+		else:
+			doc.save(ignore_permissions=True)
+
+		frappe.db.commit()
+
+		next_actions_resp = get_project_staff_resignation_workflow_actions(docname)
+		return {
+			"status": "success",
+			"message": _(f"Action '{action}' completed. New state: {next_state}"),
+			"docname": docname,
+			"workflow_state": next_state,
+			"docstatus": doc.docstatus,
+			"next_actions": next_actions_resp.get("actions", []),
+		}
+
+	except Exception as e:
+		frappe.db.rollback()
+		frappe.log_error(frappe.get_traceback(), "Project Staff Resignation Action Error")
 		return {"status": "error", "message": str(e)}

@@ -1,0 +1,131 @@
+{
+    "actions": [],
+    "creation": "2026-07-28 00:00:00.000000",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "timestamp",
+        "user",
+        "event_type",
+        "target_user",
+        "status",
+        "action_doctype",
+        "action_docname",
+        "action_type",
+        "ip_address",
+        "client_reported_ip",
+        "user_agent",
+        "details"
+    ],
+    "fields": [
+        {
+            "fieldname": "timestamp",
+            "fieldtype": "Datetime",
+            "in_list_view": 1,
+            "label": "Timestamp",
+            "reqd": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "user",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Actor / Login Input",
+            "reqd": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "event_type",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Event Type",
+            "options": "Login\nImpersonate\nLogout\nDocument Action",
+            "reqd": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "target_user",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Target User"
+        },
+        {
+            "default": "Success",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Status",
+            "options": "Success\nFailed",
+            "reqd": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "action_doctype",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Doctype"
+        },
+        {
+            "fieldname": "action_docname",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Document"
+        },
+        {
+            "fieldname": "action_type",
+            "fieldtype": "Data",
+            "label": "Action"
+        },
+        {
+            "description": "Real client IP, derived server-side from the request/X-Forwarded-For. Authoritative for audit purposes.",
+            "fieldname": "ip_address",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "IP Address (server-verified)"
+        },
+        {
+            "description": "IP the frontend self-reported at login time. Client-supplied — NOT trustworthy on its own, informational only.",
+            "fieldname": "client_reported_ip",
+            "fieldtype": "Data",
+            "label": "IP Address (client-reported, unverified)"
+        },
+        {
+            "fieldname": "user_agent",
+            "fieldtype": "Data",
+            "label": "User Agent"
+        },
+        {
+            "fieldname": "details",
+            "fieldtype": "Small Text",
+            "label": "Details"
+        }
+    ],
+    "is_submittable": 0,
+    "modified": "2026-07-28 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "ProRnd Admin Access Log",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 0,
+            "export": 1,
+            "print": 0,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 0,
+            "write": 0
+        }
+    ],
+    "sort_field": "timestamp",
+    "sort_order": "DESC",
+    "track_changes": 0
+}

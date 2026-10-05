@@ -10,6 +10,7 @@
   "rules_content",
   "section_break_ujss",
   "self_other",
+  "reimb_applying_for",
   "applying_for_section",
   "reimbursement_for_id",
   "reimbursement_for_department",
@@ -18,9 +19,14 @@
   "applicant_webmail",
   "applicant_department",
   "applicant_designation",
+  "reimb_applying_for_section",
+  "reimb_applying_for_mail",
+  "reimb_applying_for_name",
+  "reimb_applying_for_department",
+  "reimb_applying_for_designation",
   "section_break_tgxi",
-  "bank_name",
   "account_holder_name",
+  "bank_name",
   "bank_account_number",
   "ifsc_code",
   "project_and_item_details_section",
@@ -35,7 +41,8 @@
   "dec2",
   "dec3",
   "dec4",
-  "amended_from"
+  "amended_from",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -56,15 +63,20 @@
   {
    "fieldname": "project_number",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Project Number",
    "options": "Project Registration",
-   "read_only": 1
+   "read_only": 1,
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name",
    "fieldname": "account_head",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Account Head",
-   "options": "Budget Head"
+   "options": "Budget Head",
+   "mandatory_depends_on": "eval:doc.self_other==\"Self\""
   },
   {
    "fieldname": "comment",
@@ -75,13 +87,14 @@
    "fieldname": "table_bosk",
    "fieldtype": "Table",
    "label": "Particulars of Items",
-   "options": "Particulars of Items Reimbursement"
+   "options": "Particulars of Items Reimbursement",
+   "reqd": 1
   },
   {
    "depends_on": "eval:doc.self_other==\"Other\"",
    "fieldname": "applying_for_section",
    "fieldtype": "Section Break",
-   "label": "Applying for"
+   "label": "Other PI Details"
   },
   {
    "depends_on": "eval:doc.self_other==\"Self\"",
@@ -112,8 +125,10 @@
   {
    "fieldname": "project_name",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Project Name",
-   "options": "Project Registration"
+   "options": "Project Registration",
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name"
   },
   {
    "fieldname": "declarations",
@@ -156,7 +171,7 @@
   {
    "fieldname": "rules_content",
    "fieldtype": "HTML",
-   "options": "<li> Maximum Limit \u20b9 25000, Not applicable for rate contract items.</li>\n<li> Splitting the bill applying for reimbursement for the same item is not allowed.</li>\n"
+   "options": "<li> Maximum Limit \u20b9 100000, Not applicable for rate contract items.</li>\n<li> Splitting the bill applying for reimbursement for the same item is not allowed.</li>\n"
   },
   {
    "fieldname": "amended_from",
@@ -176,30 +191,26 @@
    "fieldtype": "Data"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Other\"",
    "fieldname": "reimbursement_for_id",
    "fieldtype": "Link",
    "label": "PI Webmail Id",
+   "mandatory_depends_on": "eval:doc.self_other==\"Other\"",
    "options": "User"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Other\"",
    "fetch_from": "reimbursement_for_id.department_name",
    "fieldname": "reimbursement_for_department",
    "fieldtype": "Data",
    "label": "Department"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Other\"",
    "fetch_from": "reimbursement_for_id.designation_name",
    "fieldname": "reimbursement_for_designation",
    "fieldtype": "Data",
    "label": "Designation"
-  },
-  {
-   "allow_in_quick_entry": 1,
-   "fieldname": "applicant_webmail",
-   "fieldtype": "Link",
-   "label": "Webmail Id",
-   "options": "User",
-   "read_only": 1
   },
   {
    "fieldname": "bank_account_number",
@@ -210,19 +221,77 @@
    "default": "Self",
    "fieldname": "self_other",
    "fieldtype": "Select",
-   "label": "Applying for self or other?",
+   "label": "Is this charged to another PI's project?",
    "options": "\nSelf\nOther"
   },
   {
    "fieldname": "section_break_ujss",
    "fieldtype": "Section Break"
+  },
+  {
+   "allow_in_quick_entry": 1,
+   "fieldname": "applicant_webmail",
+   "fieldtype": "Link",
+   "label": "Webmail Id",
+   "options": "User"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reimb_applying_for",
+   "fieldtype": "Select",
+   "label": "Applying for self or other?",
+   "options": "\nSelf\nOther",
+   "default": "Self"
+  },
+  {
+   "fieldname": "reimb_applying_for_section",
+   "fieldtype": "Section Break",
+   "label": "Applying For",
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\""
+  },
+  {
+   "fieldname": "reimb_applying_for_mail",
+   "fieldtype": "Link",
+   "label": "Applying for Webmail ID",
+   "options": "User",
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "mandatory_depends_on": "eval:doc.reimb_applying_for==\"Other\""
+  },
+  {
+   "fieldname": "reimb_applying_for_name",
+   "fieldtype": "Data",
+   "label": "Applying for Name",
+   "fetch_from": "reimb_applying_for_mail.full_name",
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reimb_applying_for_department",
+   "fieldtype": "Data",
+   "label": "Applying For Department / Centre / Section",
+   "fetch_from": "reimb_applying_for_mail.department_name",
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reimb_applying_for_designation",
+   "fieldtype": "Data",
+   "label": "Applying For Designation",
+   "fetch_from": "reimb_applying_for_mail.designation_name",
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-18 18:18:49.455381",
+ "modified": "2026-07-22 11:25:34.461125",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Reimbursement",
@@ -244,6 +313,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

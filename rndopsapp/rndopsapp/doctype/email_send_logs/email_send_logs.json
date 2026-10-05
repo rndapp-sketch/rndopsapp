@@ -1,0 +1,189 @@
+{
+    "actions": [],
+    "allow_rename": 0,
+    "autoname": "format:ESL-{YYYY}{MM}{DD}-{#####}",
+    "creation": "2026-08-28 15:23:00.000000",
+    "doctype": "DocType",
+    "engine": "InnoDB",
+    "field_order": [
+        "source_section",
+        "module",
+        "reference_doctype",
+        "reference_name",
+        "column_break_source",
+        "previous_status",
+        "new_status",
+        "email_section",
+        "recipients",
+        "subject",
+        "template_reference",
+        "column_break_email",
+        "task_id",
+        "attempt_number",
+        "retry_count",
+        "status_section",
+        "status",
+        "final_result",
+        "column_break_status_2",
+        "error_message",
+        "timing_section",
+        "sent_at",
+        "last_retry_at"
+    ],
+    "fields": [
+        {
+            "fieldname": "source_section",
+            "fieldtype": "Section Break",
+            "label": "Source"
+        },
+        {
+            "description": "The Email Manager config (by monitored DocType) that triggered this notification.",
+            "fieldname": "module",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Module (DocType)",
+            "options": "DocType"
+        },
+        {
+            "fieldname": "reference_doctype",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "label": "Source DocType",
+            "options": "DocType"
+        },
+        {
+            "fieldname": "reference_name",
+            "fieldtype": "Dynamic Link",
+            "in_list_view": 1,
+            "label": "Source Document",
+            "options": "reference_doctype"
+        },
+        {
+            "fieldname": "column_break_source",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "previous_status",
+            "fieldtype": "Data",
+            "label": "Previous Status"
+        },
+        {
+            "fieldname": "new_status",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "New Status"
+        },
+        {
+            "fieldname": "email_section",
+            "fieldtype": "Section Break",
+            "label": "Email"
+        },
+        {
+            "fieldname": "recipients",
+            "fieldtype": "Small Text",
+            "label": "Recipient(s)"
+        },
+        {
+            "fieldname": "subject",
+            "fieldtype": "Data",
+            "label": "Subject"
+        },
+        {
+            "fieldname": "template_reference",
+            "fieldtype": "Data",
+            "label": "Email Template Reference"
+        },
+        {
+            "fieldname": "column_break_email",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "task_id",
+            "fieldtype": "Data",
+            "label": "RabbitMQ / Celery Task ID"
+        },
+        {
+            "default": "1",
+            "fieldname": "attempt_number",
+            "fieldtype": "Int",
+            "label": "Attempt Number"
+        },
+        {
+            "default": "0",
+            "fieldname": "retry_count",
+            "fieldtype": "Int",
+            "label": "Retry Count"
+        },
+        {
+            "fieldname": "status_section",
+            "fieldtype": "Section Break",
+            "label": "Status"
+        },
+        {
+            "default": "Pending",
+            "fieldname": "status",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Status",
+            "options": "Pending\nRetrying\nSuccess\nFailed"
+        },
+        {
+            "fieldname": "final_result",
+            "fieldtype": "Data",
+            "label": "Final Result"
+        },
+        {
+            "fieldname": "column_break_status_2",
+            "fieldtype": "Column Break"
+        },
+        {
+            "fieldname": "error_message",
+            "fieldtype": "Long Text",
+            "label": "Error Message"
+        },
+        {
+            "fieldname": "timing_section",
+            "fieldtype": "Section Break",
+            "label": "Timing"
+        },
+        {
+            "fieldname": "sent_at",
+            "fieldtype": "Datetime",
+            "label": "Sent At"
+        },
+        {
+            "fieldname": "last_retry_at",
+            "fieldtype": "Datetime",
+            "label": "Last Retry At"
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "links": [],
+    "modified": "2026-08-28 15:23:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "Email Send Logs",
+    "naming_rule": "Expression",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 1,
+            "email": 1,
+            "export": 1,
+            "print": 1,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 1,
+            "write": 1
+        }
+    ],
+    "row_format": "Dynamic",
+    "sort_field": "creation",
+    "sort_order": "DESC",
+    "states": [],
+    "track_changes": 0
+}

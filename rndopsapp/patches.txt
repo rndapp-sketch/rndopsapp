@@ -4,3 +4,11 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+rndopsapp.patchs.create_icss_workflow_v1
+rndopsapp.patchs.add_igf_director_approval_state
+rndopsapp.patchs.add_travel_director_approval_workflow
+rndopsapp.patchs.create_verification_staff_role
+rndopsapp.patchs.fix_delegation_application_scope
+rndopsapp.patchs.add_travel_other_pi_workflow
+rndopsapp.patchs.create_loan_settlement_workflow
+rndopsapp.patchs.migrate_email_templates_to_db

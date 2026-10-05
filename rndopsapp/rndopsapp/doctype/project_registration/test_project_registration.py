@@ -15,6 +15,7 @@
 import frappe
 import unittest
 import os
+from unittest.mock import patch, MagicMock
 from frappe.utils import nowdate
 
 # IMPORTANT: Adjust this import path to match your app and api.py file location
@@ -192,10 +193,141 @@ def _create_dummy_file():
     # Check if a test file already exists to avoid creating duplicates
     if frappe.db.exists("File", {"file_name": "test_upload.pdf"}):
         return frappe.get_doc("File", {"file_name": "test_upload.pdf"})
-        
+
     file = frappe.new_doc("File")
     file.file_name = "test_upload.pdf"
     file.content = "This is a test file for automated testing."
     file.is_private = 1
     file.insert(ignore_permissions=True)
     return file
+
+
+class TestMinIOFileUpload(unittest.TestCase):
+    """
+    Test suite for MinIO file upload integration in Project Registration.
+    Tests verify that generate_endorsement_pdf() uses MinIO instead of local filesystem.
+    """
+
+    @patch('rndopsapp.rndopsapp.doctype.project_registration.project_registration.get_rnd_file_service')
+    def test_generate_endorsement_pdf_calls_minio(self, mock_get_service):
+        """
+        Test that generate_endorsement_pdf() calls RNDFileService.save_file()
+        for both HTML and PDF, and does not write to local filesystem.
+        """
+        # Setup mock
+        mock_service = MagicMock()
+        mock_service.save_file.return_value = {
+            "status": True,
+            "message": "File saved",
+            "data": {
+                "file_url": "/private/Project Registration/TEST-001/Endorsement/2025/03/ab/cd/abcd1234_test.html",
+                "path": "private/Project Registration/TEST-001/Endorsement/2025/03/ab/cd/abcd1234_test.html",
+                "hash": "abcd1234"
+            }
+        }
+        mock_get_service.return_value = mock_service
+
+        # Create a test document
+        frappe.set_user("Administrator")
+        doc = frappe.new_doc("Project Registration")
+        doc.project_title = "MinIO Test Project"
+        doc.text_editor_zwfu = "<html><body><h1>Test Endorsement</h1></body></html>"
+        doc.workflow_state = "Draft"
+        doc.insert(ignore_permissions=True)
+
+        # Call the method
+        doc.generate_endorsement_pdf()
+
+        # Assertions
+        # Should have been called twice: once for HTML, once for PDF
+        self.assertEqual(mock_service.save_file.call_count, 2)
+
+        # Verify HTML call
+        html_call = mock_service.save_file.call_args_list[0]
+        self.assertEqual(html_call[1]['filename'], f"{doc.name}-Endorsement.html")
+        self.assertIn("<h1>Test Endorsement</h1>", html_call[1]['content'])
+        self.assertTrue(html_call[1]['is_private'])
+        self.assertEqual(html_call[1]['doctype'], doc.doctype)
+        self.assertEqual(html_call[1]['docname'], doc.name)
+        self.assertEqual(html_call[1]['folder'], "Endorsement")
+
+        # Verify PDF call
+        pdf_call = mock_service.save_file.call_args_list[1]
+        self.assertEqual(pdf_call[1]['filename'], f"{doc.name}-Endorsement.pdf")
+        self.assertTrue(isinstance(pdf_call[1]['content'], bytes))  # PDF is bytes
+        self.assertTrue(pdf_call[1]['is_private'])
+        self.assertEqual(pdf_call[1]['doctype'], doc.doctype)
+        self.assertEqual(pdf_call[1]['docname'], doc.name)
+        self.assertEqual(pdf_call[1]['folder'], "Endorsement")
+
+        # Cleanup
+        frappe.delete_doc("Project Registration", doc.name, force=True)
+
+    @patch('rndopsapp.rndopsapp.doctype.project_registration.project_registration.get_rnd_file_service')
+    @patch('os.makedirs')
+    @patch('builtins.open')
+    def test_no_local_filesystem_writes(self, mock_open, mock_makedirs, mock_get_service):
+        """
+        Test that no os.makedirs() or open() calls are made when using MinIO.
+        This ensures we're not writing to local disk anymore.
+        """
+        # Setup mock
+        mock_service = MagicMock()
+        mock_service.save_file.return_value = {
+            "status": True,
+            "message": "File saved",
+            "data": {"file_url": "/test/path"}
+        }
+        mock_get_service.return_value = mock_service
+
+        # Create a test document
+        frappe.set_user("Administrator")
+        doc = frappe.new_doc("Project Registration")
+        doc.project_title = "Filesystem Test Project"
+        doc.text_editor_zwfu = "<html><body>Test</body></html>"
+        doc.workflow_state = "Draft"
+        doc.insert(ignore_permissions=True)
+
+        # Call the method
+        doc.generate_endorsement_pdf()
+
+        # Assert no filesystem operations occurred
+        mock_makedirs.assert_not_called()
+        mock_open.assert_not_called()
+
+        # Cleanup
+        frappe.delete_doc("Project Registration", doc.name, force=True)
+
+    @patch('rndopsapp.rndopsapp.doctype.project_registration.project_registration.get_rnd_file_service')
+    def test_generate_endorsement_pdf_handles_minio_failure(self, mock_get_service):
+        """
+        Test that generate_endorsement_pdf() logs errors gracefully when MinIO upload fails.
+        """
+        # Setup mock to simulate failure
+        mock_service = MagicMock()
+        mock_service.save_file.return_value = {
+            "status": False,
+            "message": "MinIO connection error"
+        }
+        mock_get_service.return_value = mock_service
+
+        # Create a test document
+        frappe.set_user("Administrator")
+        doc = frappe.new_doc("Project Registration")
+        doc.project_title = "Error Handling Test"
+        doc.text_editor_zwfu = "<html><body>Test</body></html>"
+        doc.workflow_state = "Draft"
+        doc.insert(ignore_permissions=True)
+
+        # Call the method - should not raise exception
+        try:
+            doc.generate_endorsement_pdf()
+            test_passed = True
+        except Exception:
+            test_passed = False
+
+        # Should handle error gracefully
+        self.assertTrue(test_passed)
+
+        # Cleanup
+        frappe.delete_doc("Project Registration", doc.name, force=True)

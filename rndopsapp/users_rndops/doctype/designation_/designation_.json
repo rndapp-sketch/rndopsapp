@@ -23,7 +23,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-09-28 14:26:17.055449",
+ "modified": "2025-09-28 16:01:13.143366",
  "modified_by": "Administrator",
  "module": "users_rndops",
  "name": "designation_",
@@ -43,6 +43,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

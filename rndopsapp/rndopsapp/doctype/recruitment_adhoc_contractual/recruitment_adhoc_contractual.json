@@ -6,6 +6,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "workflow_state",
   "section_break_e3vp",
   "column_break_mlei",
   "amended_from",
@@ -19,6 +20,7 @@
   "upfa_project_code",
   "upfa_department",
   "upfa_project_duration",
+  "account_head",
   "upfa_financial_section",
   "upfa_funds_sanctioned",
   "upfa_funds_received",
@@ -27,11 +29,13 @@
   "mode_of_interview",
   "upfa_interview_venue",
   "upfa_pi_contact",
+  "last_date_of_appllication",
+  "walk_in",
   "details_of_posts_section",
   "upfa_post_details",
   "section_break_izok",
   "chairperson_webmail_id",
-  "chairperson",
+  "chairperson_name",
   "upfa_selection_committee_section",
   "upfa_selection_committee",
   "upfa_declaration_section",
@@ -41,6 +45,14 @@
   "upfa_declaration_advertisement"
  ],
  "fields": [
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "no_copy": 1,
+   "print_hide": 1,
+   "read_only": 1
+  },
   {
    "fieldname": "section_break_e3vp",
    "fieldtype": "Section Break",
@@ -62,6 +74,7 @@
    "label": "Appointment Details"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "upfa_appointment_type",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -75,10 +88,10 @@
    "label": "Project Details"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "upfa_project_title",
-   "fieldtype": "Data",
-   "label": "Project Title",
-   "read_only": 1
+   "fieldtype": "Long Text",
+   "label": "Project Title"
   },
   {
    "fieldname": "upfa_project_code",
@@ -115,13 +128,14 @@
    "label": "Funds Received for Staff"
   },
   {
-   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"||",
    "fieldname": "upfa_interview_date",
    "fieldtype": "Date",
    "label": "Date of Interview"
   },
   {
-   "depends_on": "eval:doc.upfa_appointment_type==\"Contractual\"",
+   "allow_on_submit": 1,
    "fieldname": "upfa_interview_time",
    "fieldtype": "Time",
    "label": "Time of Interview"
@@ -138,11 +152,13 @@
    "label": "PI Contact Number"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "details_of_posts_section",
    "fieldtype": "Section Break",
    "label": "Details of Posts"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "upfa_post_details",
    "fieldtype": "Table",
    "options": "Unified Project Post Details"
@@ -154,6 +170,7 @@
    "label": "Selection Committee"
   },
   {
+   "allow_on_submit": 1,
    "description": "*If the member is from outside, his/her email id should be provided. Otherwise, the webmail ID excluding the part @iitg.ac.in should be provided.",
    "fieldname": "upfa_selection_committee",
    "fieldtype": "Table",
@@ -199,10 +216,12 @@
    "fieldtype": "Section Break"
   },
   {
-   "fetch_from": "webmail_id.piheadmentor_user_id",
+   "fetch_from": "upfa_department.dept_head",
    "fieldname": "head",
    "fieldtype": "Data",
-   "label": "Head"
+   "label": "Head",
+   "read_only": 1,
+   "reqd": 1
   },
   {
    "fieldname": "webmail_id",
@@ -221,25 +240,43 @@
    "fieldtype": "Section Break"
   },
   {
-   "fetch_from": "webmail_id.full_name",
-   "fieldname": "chairperson",
+   "allow_on_submit": 1,
+   "fieldname": "chairperson_webmail_id",
+   "fieldtype": "Data",
+   "label": "Chairperson Webmail",
+   "options": "Email"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "chairperson_name",
    "fieldtype": "Data",
    "label": "Chairperson"
   },
   {
-   "depends_on": "eval:frappe.session.user==\"dornd\" && doc.upfa_appointment_type==\"Contractual\"",
-   "fetch_from": "webmail_id.piheadmentor_user_id",
-   "fieldname": "chairperson_webmail_id",
-   "fieldtype": "Data",
-   "label": "Chairperson Webmail ID",
-   "options": "User"
+   "allow_on_submit": 1,
+   "fieldname": "last_date_of_appllication",
+   "fieldtype": "Datetime",
+   "label": "Last Date of Appllication"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "walk_in",
+   "fieldtype": "Select",
+   "label": "Walk In",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-17 17:21:20.986049",
+ "modified": "2026-09-03 12:13:40.465483",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",
@@ -247,6 +284,8 @@
  "owner": "Administrator",
  "permissions": [
   {
+   "amend": 1,
+   "cancel": 1,
    "create": 1,
    "delete": 1,
    "email": 1,
@@ -255,6 +294,7 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "select": 1,
    "share": 1,
    "submit": 1,
    "write": 1
@@ -334,7 +374,9 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }

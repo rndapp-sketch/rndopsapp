@@ -34,6 +34,9 @@ class FundSanctionDTO:
     sanctionLetterNo: Optional[str] = None
     sanctionLetterDate: Optional[str] = None
     totalSanctionAmount: float = 0.0
+    isPfms: bool = False
+    schemeNameBankName: Optional[str] = None
+    schemeNumberAccountNumber: Optional[str] = None
     budgetBreakups: List[BudgetBreakupDTO] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -43,6 +46,9 @@ class FundSanctionDTO:
             "sanctionLetterNo": self.sanctionLetterNo,
             "sanctionLetterDate": self.sanctionLetterDate,
             "totalSanctionAmount": self.totalSanctionAmount,
+            "isPfms": self.isPfms,
+            "schemeNameBankName": self.schemeNameBankName,
+            "schemeNumberAccountNumber": self.schemeNumberAccountNumber,
             "budgetBreakups": [b.to_dict() for b in self.budgetBreakups]
         }
 

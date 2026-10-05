@@ -306,8 +306,10 @@ class ResearchDepositSlipMapper:
         pdf_percentage = 25.0  # As per doctype description
 
         # Overhead percentage - calculate from total_amount and overhead_amount if available
+        # Research Consultancy Deposit Slip has no total_amount field; fall back to
+        # amount_inclusive_gst_capital, which is its equivalent.
         overhead_amount = flt(getattr(doc, 'overhead_amount', 0))
-        total_amount = flt(getattr(doc, 'total_amount', 0))
+        total_amount = flt(getattr(doc, 'total_amount', 0) or getattr(doc, 'amount_inclusive_gst_capital', 0))
         overhead_percentage = 10.0  # Default
         if total_amount > 0 and overhead_amount > 0:
             overhead_percentage = (overhead_amount / total_amount) * 100
@@ -326,15 +328,22 @@ class ResearchDepositSlipMapper:
             ecsAccountNo=getattr(doc, 'ecs_scheme_no', '') or getattr(doc, 'ecs_ac_no', '') or "",
             bankName=getattr(doc, 'bank_name', '') or "",
             bmrNumber=getattr(doc, 'bmr_number', '') or getattr(doc, 'account_number', '') or "",
-            amountReceived=flt(getattr(doc, 'total_amount', 0)),
-            amountInclusiveGst=flt(getattr(doc, 'total_amount', 0)),  # No GST for research
+            amountReceived=total_amount,
+            amountInclusiveGst=total_amount,
             gstType=gst_type,
-            finalGstAmount=0.0,  # No GST for research
-            finalTotalAmount=flt(getattr(doc, 'grand_total', 0)),  # Grand total
+            # Plain Research Deposit Slip has no GST fields (defaults to 0); Research
+            # Consultancy Deposit Slip does.
+            finalGstAmount=flt(getattr(doc, 'total_gst', 0)),
+            finalTotalAmount=flt(getattr(doc, 'grand_total', 0) or getattr(doc, 'total_budget', 0) or total_amount),
             totalOverheadPercentage=overhead_percentage,
             totalOverheadAmount=overhead_amount,
-            # netProjectAmount = total_amount - gst - overhead (after deduction of GST and overhead)
-            netProjectAmount=flt(total_amount - overhead_amount),  # For research, no GST so just: total - overhead
+            # netProjectAmount: prefer the doctype's own post-GST/overhead balance field;
+            # fall back to total - overhead only when neither is present (plain Research Deposit Slip).
+            netProjectAmount=flt(
+                getattr(doc, 'project_balance_after_gst', 0)
+                or getattr(doc, 'prj_amount', 0)
+                or (total_amount - overhead_amount)
+            ),
             depositDate=fmt_date(getattr(doc, 'deposit_date', None) or getattr(doc, 'creation', None)),
             createdAt=fmt_date(getattr(doc, 'creation', None)),
             updatedAt=fmt_date(getattr(doc, 'modified', None)),

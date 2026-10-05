@@ -117,13 +117,40 @@ app_license = "mit"
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+_DU = "rndopsapp.rndopsapp.delegate_user.delegate_user"
+
+permission_query_conditions = {
+	"Project Registration":          f"{_DU}.project_registration_permission_query",
+	"Travel":                        f"{_DU}.travel_permission_query",
+	"TA DA Settlement":              f"{_DU}.ta_da_settlement_permission_query",
+	"Temporary Advance":             f"{_DU}.temporary_advance_permission_query",
+	"Advance Settlement":            f"{_DU}.advance_settlement_permission_query",
+	"Reimbursement":                 f"{_DU}.reimbursement_permission_query",
+	"Direct Purchase":               f"{_DU}.direct_purchase_permission_query",
+	"Disbursal of Consultancy":      f"{_DU}.disbursal_of_consultancy_permission_query",
+	"Disbursal of Honorarium":       f"{_DU}.disbursal_of_honorarium_permission_query",
+	"Loan Request":                  f"{_DU}.loan_request_permission_query",
+	"Indent General Form":           f"{_DU}.indent_general_form_permission_query",
+	"Indent Cum Sanction Sheet":     f"{_DU}.indent_cum_sanction_sheet_permission_query",
+	"Recruitment Adhoc Contractual": f"{_DU}.recruitment_adhoc_contractual_permission_query",
+	"User Delegation":               f"{_DU}.user_delegation_permission_query",
+}
+
+has_permission = {
+	"Project Registration":          f"{_DU}.has_delegated_access",
+	"Travel":                        f"{_DU}.has_delegated_access",
+	"TA DA Settlement":              f"{_DU}.has_delegated_access",
+	"Temporary Advance":             f"{_DU}.has_delegated_access",
+	"Advance Settlement":            f"{_DU}.has_delegated_access",
+	"Reimbursement":                 f"{_DU}.has_delegated_access",
+	"Direct Purchase":               f"{_DU}.has_delegated_access",
+	"Disbursal of Consultancy":      f"{_DU}.has_delegated_access",
+	"Disbursal of Honorarium":       f"{_DU}.has_delegated_access",
+	"Loan Request":                  f"{_DU}.has_delegated_access",
+	"Indent General Form":           f"{_DU}.has_delegated_access",
+	"Indent Cum Sanction Sheet":     f"{_DU}.has_delegated_access",
+	"Recruitment Adhoc Contractual": f"{_DU}.has_delegated_access",
+}
 
 # DocType Class
 # ---------------
@@ -137,34 +164,57 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"*": {
+		"on_update": [
+			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
+			"rndopsapp.rndopsapp.activity_logger.log_workflow_transition",
+			"rndopsapp.external_auth.log_impersonated_action",
+			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
+		],
+		# Submittable doctypes (Project Registration, Reimbursement, ...) route
+		# every save AFTER docstatus becomes 1 through this event instead of
+		# on_update — most real approval-chain transitions happen post-submit,
+		# so without this entry Email Manager never sees them.
+		"on_update_after_submit": [
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
+			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
+		],
+		"after_insert": ["rndopsapp.external_auth.log_impersonated_action"],
+		# Covers the case where workflow_state changes AT the moment a
+		# document is first submitted (docstatus 0 -> 1 via doc.submit())
+		# -- that is neither on_update nor on_update_after_submit, it is
+		# its own event. Same handler, same dedupe, so this is pure
+		# coverage, not a behavior change.
+		"on_submit": [
+			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
+			"rndopsapp.external_auth.log_impersonated_action",
+			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
+		],
+		"on_cancel": ["rndopsapp.external_auth.log_impersonated_action"],
+		"on_trash": ["rndopsapp.external_auth.log_impersonated_action"],
+	}
+}
 
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"rndopsapp.tasks.all"
-# 	],
-# 	"daily": [
-# 		"rndopsapp.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"rndopsapp.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"rndopsapp.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"rndopsapp.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
+	],
+	"cron": {
+		# SCL January credit — Jan 1 at midnight (creates new-year record, credits 15 days)
+		"0 0 1 1 *": [
+			"rndopsapp.rndopsapp.tasks.scl_credit.credit_january_scl"
+		],
+		# SCL July credit — Jul 1 at midnight (adds 15 days, total becomes 30)
+		"0 0 1 7 *": [
+			"rndopsapp.rndopsapp.tasks.scl_credit.credit_july_scl"
+		],
+	},
+}
 
 # Testing
 # -------
@@ -196,7 +246,16 @@ app_license = "mit"
 
 # Request Events
 # ----------------
-# before_request = ["rndopsapp.utils.before_request"]
+before_request = [
+	"rndopsapp.rndopsapp.doctype.project_verification.project_verification.restrict_verification_staff_routes",
+	"rndopsapp.rndopsapp.email.consumer_service.ensure_consumer_running",
+	"rndopsapp.external_auth.quiet_guest_permission_tracebacks",
+]
+before_login = [
+	"rndopsapp.external_auth.clear_admin_ip_lock",
+	"rndopsapp.external_auth.patch_find_by_credentials",
+]
+on_logout = ["rndopsapp.external_auth.log_admin_logout"]
 # after_request = ["rndopsapp.utils.after_request"]
 
 # Job Events

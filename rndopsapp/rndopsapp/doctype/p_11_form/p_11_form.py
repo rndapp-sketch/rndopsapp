@@ -115,6 +115,8 @@ def save_p_11_form_data(data):
 	try:
 		if isinstance(data, str):
 			data = json.loads(data)
+		
+		print("P_11 :",data)
 
 		doc_name = data.get("name")
 		is_new = False
@@ -144,38 +146,55 @@ def save_p_11_form_data(data):
 				if value not in [None, ""]:
 					doc.set(fieldname, value)
 
+		# Explicitly set workflow_status as requested
+		doc.workflow_status = "Pending Staff Approval"
+
 		doc.flags.ignore_permissions = True
 		if is_new:
 			doc.insert(ignore_mandatory=True)
-		else:
-			doc.save(ignore_permissions=True)
 
 		# Handle Tables & Files
 		for fieldname, value in file_fields:
 			df = meta.get_field(fieldname)
-			if df.fieldtype == "Table" and isinstance(value, list):
-				doc.set(fieldname, [])
-				child_meta = frappe.get_meta(df.options)
-				for child_row in value:
-					row_dict = child_row.copy()
-					for cf in child_meta.fields:
-						if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
-							f_val = row_dict[cf.fieldname]
-							if isinstance(f_val, dict) and f_val.get("file_data"):
-								try:
-									saved_file = save_file(
-										f_val.get("file_name", "attachment"),
-										f_val["file_data"],
-										"P_11 Form",
-										doc.name,
-										decode=True,
-										is_private=1,
-										df=cf.fieldname
-									)
-									row_dict[cf.fieldname] = saved_file.file_url
-								except Exception as e:
-									frappe.log_error(f"Child File Error: {e}")
-					doc.append(fieldname, row_dict)
+			if df.fieldtype == "Table":
+				if isinstance(value, str):
+					try:
+						value = json.loads(value)
+					except Exception:
+						pass
+
+				if isinstance(value, list):
+					doc.set(fieldname, [])
+					child_meta = frappe.get_meta(df.options)
+					for child_row in value:
+						row_dict = child_row.copy()
+						
+						# Remove 'name' for new rows to allow Frappe to auto-generate proper names
+						if row_dict.get("name") and str(row_dict.get("name")).startswith("new-"):
+							del row_dict["name"]
+
+						# Remove internal properties not needed for appending
+						for k in ["creation", "modified", "owner", "modified_by", "docstatus", "parent", "parentfield", "parenttype"]:
+							row_dict.pop(k, None)
+
+						for cf in child_meta.fields:
+							if cf.fieldtype in ["Attach", "Attach Image"] and row_dict.get(cf.fieldname):
+								f_val = row_dict[cf.fieldname]
+								if isinstance(f_val, dict) and f_val.get("file_data"):
+									try:
+										saved_file = save_file(
+											f_val.get("file_name", "attachment"),
+											f_val["file_data"],
+											"P_11 Form",
+											doc.name,
+											decode=True,
+											is_private=1,
+											df=cf.fieldname
+										)
+										row_dict[cf.fieldname] = saved_file.file_url
+									except Exception as e:
+										frappe.log_error(f"Child File Error: {e}")
+						doc.append(fieldname, row_dict)
 			elif df.fieldtype in ["Attach", "Attach Image"]:
 				if isinstance(value, dict) and value.get("file_data"):
 					try:

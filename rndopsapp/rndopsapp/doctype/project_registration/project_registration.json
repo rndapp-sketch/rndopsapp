@@ -44,6 +44,7 @@
   "executive_summary",
   "upload_proj_prop",
   "my_projects",
+  "upload_supporting_docs",
   "for_office_use_only_section",
   "project_no",
   "section_break_vwve",
@@ -76,6 +77,19 @@
   "project_duration_months",
   "project_duration_days",
   "prj_end_date",
+  "section_break_evkq",
+  "column_break_egms",
+  "is_the_account_type_pfms",
+  "scheme_details_section",
+  "scheme_name",
+  "column_break_hwjp",
+  "enter_scheme_number",
+  "account_details_section",
+  "account_number",
+  "column_break_vivr",
+  "bank_name",
+  "existing_project_details_section",
+  "existing_project_number",
   "collaborators",
   "section_break_nlcs",
   "column_break_xjtz",
@@ -165,7 +179,8 @@
   "amount_received",
   "fund_transactions",
   "iitg_bank_account_number",
-  "received_amount_breakup"
+  "received_amount_breakup",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -195,7 +210,7 @@
   {
    "fieldname": "pi_webmail",
    "fieldtype": "Link",
-   "label": "If you are registering this project on behalf of other, please enter the email Id of the Principal Investigator",
+   "label": "Enter the email Id of the Principal Investigator",
    "options": "User",
    "placeholder": "example@iitg.ac.in"
   },
@@ -207,6 +222,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "pi_webmail.full_name",
    "fieldname": "principal_investigator_name",
    "fieldtype": "Data",
@@ -220,7 +236,7 @@
   },
   {
    "fieldname": "project_title",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "in_list_view": 1,
    "label": "Project Title",
    "reqd": 1
@@ -241,8 +257,12 @@
    "label": "Executive Summary"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "implementation_department",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Department/Centre where the project will be implemented",
    "options": "Department_prornd",
    "reqd": 1
@@ -272,6 +292,7 @@
    "label": "Proposed Budget"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.funding_agency_type_1",
    "fieldname": "funding_agency_type",
    "fieldtype": "Data",
@@ -401,13 +422,15 @@
    "fieldname": "designation",
    "fieldtype": "Data",
    "label": "Designation",
-   "options": "User"
+   "options": "User",
+   "reqd": 1
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.is_additional_pi == \"Yes\"",
    "fieldname": "additional_pi_table",
    "fieldtype": "Table",
-   "label": "Details of Additional Principal Investigator(s)",
+   "label": "Details of Additional Principal Investigator(s) ",
    "mandatory_depends_on": "eval:doc.is_additional_pi == \"Yes\"",
    "options": "Project Additional PI"
   },
@@ -430,22 +453,22 @@
    "depends_on": "eval:doc.project_type == 'Other'",
    "fieldname": "other_project_type_name",
    "fieldtype": "Data",
-   "label": "*Mention the (Other Project Type)"
+   "label": "*Mention the (Other Project Type)",
+   "placeholder": "Technology Transfer (TOT), Travel Grant, etc"
   },
   {
    "depends_on": "eval:doc.project_type == 'Research'",
    "fieldname": "project_duration_months",
    "fieldtype": "Int",
-   "label": "Duration of the Project (in Months)",
+   "label": "Duration of the Project (in Months) (Tentative Month)",
    "mandatory_depends_on": "eval:doc.project_type == 'Research'",
-   "non_negative": 1,
-   "reqd": 1
+   "non_negative": 1
   },
   {
    "depends_on": "eval:doc.project_type == 'Consultancy'",
    "fieldname": "project_duration_days",
    "fieldtype": "Int",
-   "label": "Number of Days",
+   "label": "Number of Days (Tentative Days)",
    "mandatory_depends_on": "eval:doc.project_type == 'Consultancy'",
    "non_negative": 1
   },
@@ -585,9 +608,11 @@
    "in_list_view": 1,
    "label": "Department of Applicant",
    "options": "Department_prornd",
-   "read_only": 1
+   "read_only": 1,
+   "reqd": 1
   },
   {
+   "allow_on_submit": 1,
    "description": "*The Head of the effective department (Applicant or Implementation) who will approve this application.\n",
    "fieldname": "department_head",
    "fieldtype": "Link",
@@ -596,6 +621,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "description": "Hidden field used by the workflow to dynamically assign the Head approval task.",
    "fieldname": "head_approver",
    "fieldtype": "Link",
@@ -636,7 +662,8 @@
   {
    "fieldname": "upload_proj_prop",
    "fieldtype": "Attach",
-   "label": "Upload Project Proposal"
+   "hidden": 1,
+   "label": "Upload Project Proposal / Invitation Letter (*If there's multiple files kindly merge them into single pdf and upload here) :"
   },
   {
    "depends_on": "eval:doc.project_type == 'Research' || doc.project_type == 'Consultancy' || doc.project_type == 'Other'",
@@ -649,12 +676,14 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.project_type==\"Research\"",
    "fieldname": "budget_proposal_details_section",
    "fieldtype": "Section Break",
    "label": "Budget Details"
   },
   {
    "allow_in_quick_entry": 1,
+   "allow_on_submit": 1,
    "fieldname": "proposed_budget_breakup",
    "fieldtype": "Table",
    "label": "Proposed Budget Break-up",
@@ -703,8 +732,7 @@
    "fieldname": "is_additional_pi",
    "fieldtype": "Select",
    "label": "Does this project has additional PI?",
-   "options": "Yes\nNo",
-   "reqd": 1
+   "options": "Yes\nNo"
   },
   {
    "depends_on": "eval:doc.funding_agency_type == \"Government\" && doc.nature_funding_agency == \"National\"",
@@ -771,7 +799,8 @@
   },
   {
    "fieldname": "section_break_qtll",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "Enter the details of Equipment and Manpower (Optional) :-"
   },
   {
    "fieldname": "section_break_ufyb",
@@ -792,12 +821,15 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
+   "description": "Funding Agency not found? Register a new Funding Agency.",
    "fieldname": "funding_agen",
    "fieldtype": "Link",
    "label": "Select Funding Agency",
    "options": "fundingagency_"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "funding_agency_schemes",
    "fieldtype": "Small Text",
    "label": "Name of the Research Scheme if applicable"
@@ -876,6 +908,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.origin_of_funding_agency",
    "fieldname": "origin_of_funding_agency",
    "fieldtype": "Data",
@@ -883,6 +916,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_country",
    "fieldname": "address_country",
    "fieldtype": "Data",
@@ -891,13 +925,15 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_address",
    "fieldname": "address_street_village_locality",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "label": "Street/Locality Address",
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_state",
    "fieldname": "address_state",
    "fieldtype": "Data",
@@ -905,6 +941,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.fundingagency_postalcode",
    "fieldname": "address_postal_code",
    "fieldtype": "Data",
@@ -912,6 +949,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.funding_agency_type == \"Government\"",
    "fetch_from": "funding_agen.ministry_funding_agency",
    "fieldname": "funding_agency_ministry",
@@ -938,13 +976,12 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "description": "* For Office Use Only",
    "fieldname": "project_no",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Project No.",
-   "length": 22,
-   "read_only": 1
+   "length": 30
   },
   {
    "fieldname": "my_projects",
@@ -956,6 +993,7 @@
    "read_only": 1
   },
   {
+   "allow_on_submit": 1,
    "depends_on": "eval:doc.funding_agency_type == \"Government\"",
    "fetch_from": "funding_agen.funding_agency_initials",
    "fieldname": "fund_agen_initials",
@@ -966,14 +1004,14 @@
   {
    "fieldname": "prj_start_date",
    "fieldtype": "Date",
-   "label": "Project Start Date",
-   "reqd": 1
+   "hidden": 1,
+   "label": "Project Start Date (if available)"
   },
   {
    "fieldname": "prj_end_date",
    "fieldtype": "Date",
-   "label": "Project End Date",
-   "reqd": 1
+   "hidden": 1,
+   "label": "Project End Date"
   },
   {
    "depends_on": "eval:doc.project_type == 'Consultancy'",
@@ -984,7 +1022,7 @@
   {
    "fieldname": "consultancy_gstin",
    "fieldtype": "Data",
-   "label": "GSTIN Number"
+   "label": "GSTIN for Agency, if Available"
   },
   {
    "default": "18",
@@ -1032,13 +1070,13 @@
   {
    "fieldname": "cat_d_cf_base",
    "fieldtype": "Currency",
-   "label": "Consultancy Fee/Honorarium (Base)",
+   "label": "Consultancy Fee/Honorarium",
    "read_only": 1
   },
   {
    "fieldname": "cat_d_oe_base",
    "fieldtype": "Currency",
-   "label": "Operational Expenses (Base)",
+   "label": "Operational Expenses",
    "read_only": 1
   },
   {
@@ -1077,6 +1115,7 @@
    "label": "Total Amount (Excluding GST) *"
   },
   {
+   "description": "*(TE = Total Expenses)",
    "fieldname": "col_break_ef",
    "fieldtype": "Column Break",
    "label": "Breakup Details"
@@ -1084,13 +1123,13 @@
   {
    "fieldname": "cat_ef_honorarium",
    "fieldtype": "Currency",
-   "label": "Honorarium (0.3 * TE)",
+   "label": "Honorarium and other expenses (0.3 * TE)",
    "read_only": 1
   },
   {
    "fieldname": "cat_ef_institute_share",
    "fieldtype": "Currency",
-   "label": "Institute Share (0.7 * TE)",
+   "label": "Institute Overhead/Share (0.7 * TE)",
    "read_only": 1
   },
   {
@@ -1123,12 +1162,14 @@
    "options": "<div style=\"color:#0000ff;\"><b>Consultancy Type</b><br>\n                                        <b>Category T: Routine/Testing</b><br>\n                                        The project is category T based.<br>\n                                        </div>"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.gstin_of_funding_agency",
    "fieldname": "gstin_number",
    "fieldtype": "Data",
    "label": "GSTIN number"
   },
   {
+   "allow_on_submit": 1,
    "fetch_from": "funding_agen.funding_agency_id",
    "fieldname": "funding_agency_id",
    "fieldtype": "Data",
@@ -1148,13 +1189,108 @@
    "fieldtype": "Button",
    "label": "Add New Funding Agency",
    "options": "fundingagency_"
+  },
+  {
+   "fieldname": "section_break_evkq",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "is_the_account_type_pfms",
+   "fieldtype": "Select",
+   "label": "Is the account type PFMS?",
+   "options": "\nYes\nNo"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.is_the_account_type_pfms==\"Yes\"",
+   "fieldname": "enter_scheme_number",
+   "fieldtype": "Data",
+   "label": "Enter Scheme Number"
+  },
+  {
+   "description": "*Visible in RnD Staff approval page",
+   "fieldname": "column_break_egms",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.is_the_account_type_pfms==\"Yes\"",
+   "description": "*Visible in RnD Staff approval page",
+   "fieldname": "scheme_details_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Scheme Details"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.is_the_account_type_pfms==\"Yes\"",
+   "fieldname": "scheme_name",
+   "fieldtype": "Data",
+   "label": "Scheme Name"
+  },
+  {
+   "fieldname": "column_break_hwjp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.is_the_account_type_pfms==\"No\"",
+   "description": "*Visible in RnD Staff approval page",
+   "fieldname": "account_details_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Account Details"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.is_the_account_type_pfms==\"No\"",
+   "fieldname": "account_number",
+   "fieldtype": "Data",
+   "label": "Account Number"
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.is_the_account_type_pfms==\"No\"",
+   "fieldname": "bank_name",
+   "fieldtype": "Data",
+   "label": "Bank Name"
+  },
+  {
+   "fieldname": "column_break_vivr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "If the project is been registered for existing project Enter its Project Number below",
+   "fieldname": "existing_project_details_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Existing Project Details"
+  },
+  {
+   "description": "*Enter the Old Project Number for which this project will be registered",
+   "fieldname": "existing_project_number",
+   "fieldtype": "Data",
+   "label": "Enter Existing Project Number"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "upload_supporting_docs",
+   "fieldtype": "Table",
+   "label": "Upload Supporting Docs ( Project Proposal / Invitation Letter)",
+   "options": "Project Files"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-02 16:12:30.495857",
+ "modified": "2026-07-21 17:37:08.046594",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
@@ -1295,6 +1431,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",

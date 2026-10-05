@@ -21,8 +21,8 @@
   "section_break_ueiu",
   "pi_mentor_user",
   "bank_details_section",
-  "bank_name",
   "account",
+  "bank_name",
   "bank_account_number",
   "ifsc_code",
   "project_and_amount_details_section",
@@ -36,7 +36,8 @@
   "comments",
   "section_break_hqxl",
   "declaration_settlement",
-  "declaration_rate_contract"
+  "declaration_rate_contract",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -118,14 +119,12 @@
   {
    "fieldname": "project_code",
    "fieldtype": "Data",
-   "label": "Project Code",
-   "read_only": 1
+   "label": "Project Code"
   },
   {
    "fieldname": "project_name",
-   "fieldtype": "Data",
-   "label": "Project Name",
-   "read_only": 1
+   "fieldtype": "Long Text",
+   "label": "Project Name"
   },
   {
    "fieldname": "account_head",
@@ -201,6 +200,7 @@
    "fetch_from": "advance_for_id.empclass",
    "fieldname": "other_applicant_category",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Other Applicant Category (Empclass)",
    "read_only": 1
   },
@@ -208,6 +208,7 @@
    "fetch_from": "applicant_webmail.empclass",
    "fieldname": "applicant_category",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Applicant Category (Empclass)",
    "read_only": 1
   },
@@ -216,7 +217,8 @@
    "fieldname": "applying_for_select",
    "fieldtype": "Select",
    "label": "Are you applying this for someone?",
-   "options": "\nYes\nNo"
+   "options": "\nYes\nNo",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_ueiu",
@@ -229,13 +231,19 @@
    "label": "PI/Mentor User",
    "options": "User",
    "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-22 20:37:29.066380",
+ "modified": "2026-07-21 15:28:56.260692",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Temporary Advance",
@@ -322,6 +330,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

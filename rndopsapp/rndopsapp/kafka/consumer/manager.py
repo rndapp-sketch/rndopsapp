@@ -30,9 +30,63 @@ _consumer = None
 _consumer_thread = None
 _stop_consumer = threading.Event()
 
+# Redis keys — shared across all Gunicorn workers
+_HEARTBEAT_KEY = "kafka_consumer_heartbeat"
+_HEARTBEAT_TTL = 15  # seconds — if no heartbeat for this long, consumer is considered dead
+_HEARTBEAT_INTERVAL = 5  # seconds between heartbeats written by the consumer loop
+
+
+def _write_heartbeat():
+    """Called from the consumer loop thread to mark itself alive in Redis."""
+    try:
+        import time as _time
+        frappe.cache().set_value(_HEARTBEAT_KEY, _time.time(), expires_in_sec=_HEARTBEAT_TTL)
+    except Exception:
+        pass
+
+
+def _clear_heartbeat():
+    """Called when the consumer loop exits cleanly."""
+    try:
+        frappe.cache().delete_value(_HEARTBEAT_KEY)
+    except Exception:
+        pass
+
+
+def is_consumer_running_globally() -> bool:
+    """
+    Returns True if a consumer heartbeat exists in Redis (fresh within TTL).
+    Safe to call from any Gunicorn worker — does not rely on per-process thread state.
+    """
+    try:
+        return bool(frappe.cache().get_value(_HEARTBEAT_KEY))
+    except Exception:
+        # Fall back to local thread check if Redis unavailable
+        return _consumer_thread is not None and _consumer_thread.is_alive()
+
 
 def get_consumer():
-    """Returns a singleton KafkaConsumer instance with manual assignment."""
+    """
+    Returns a singleton KafkaConsumer bound to CONSUMER_GROUP_ID, resuming from
+    the group's committed offsets.
+
+    HISTORY — why this is NOT manual assign() + seek_to_beginning() any more:
+    this consumer previously ran with no group_id, enable_auto_commit=False and
+    an unconditional seek_to_beginning() on every startup ("default to beginning
+    for early testing/dev"). That meant zero offset persistence: every restart
+    replayed the ENTIRE topic history and re-applied every historical message.
+    Because ensure_consumer_running() restarts the consumer from the
+    before_request hook whenever the Redis heartbeat goes stale, stale messages
+    could be re-applied at any moment — silently reverting current data (e.g. a
+    Fund Received budget breakup that had just been re-allocated, and writing
+    stale numeric accountHeadIds back over resolved Budget Head links).
+
+    auto_offset_reset='latest' is deliberate: if the group has no committed
+    offset yet (first run after this change), start at the END rather than
+    replaying history that has demonstrably already been applied many times.
+    Once offsets are committed, the group resumes from them normally.
+    To intentionally replay, use reset_consumer_offset_to_beginning().
+    """
     global _consumer
 
     if not KAFKA_AVAILABLE:
@@ -43,33 +97,21 @@ def get_consumer():
         return _consumer
 
     try:
-        # Create consumer WITHOUT group_id for manual assignment
         _consumer = KafkaConsumer(
+            *ALL_CONSUMER_TOPICS,
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            group_id=CONSUMER_GROUP_ID,
             value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-            auto_offset_reset='earliest',
-            enable_auto_commit=False,  # Manual assignment doesn't use commit in the same way
+            auto_offset_reset='latest',
+            enable_auto_commit=True,
             max_poll_records=CONSUMER_MAX_POLL_RECORDS
         )
 
-        all_topic_partitions = []
-        for topic in ALL_CONSUMER_TOPICS:
-            partitions = _consumer.partitions_for_topic(topic)
-            if partitions:
-                all_topic_partitions.extend([TopicPartition(topic, p) for p in partitions])
-                log_info(f"Found {len(partitions)} partitions for topic: {topic}", "consumer")
-            else:
-                log_warning(f"No partitions found for topic: {topic}", "consumer")
-
-        if all_topic_partitions:
-            _consumer.assign(all_topic_partitions)
-            # Default to beginning for early testing/dev as per user's previous code
-            _consumer.seek_to_beginning()
-            log_info(f"Assigned {len(all_topic_partitions)} partitions and seeked to beginning", "consumer")
-        else:
-            log_error(f"No partitions found for any topic in {ALL_CONSUMER_TOPICS}", "KAFKA_CONFIG_ERROR")
-            return None
-
+        log_info(
+            f"Subscribed to {list(ALL_CONSUMER_TOPICS)} as group '{CONSUMER_GROUP_ID}' "
+            f"(resuming from committed offsets)",
+            "consumer"
+        )
         return _consumer
     except Exception as e:
         log_error(f"Failed to connect Kafka Consumer: {str(e)}", "KAFKA_CONNECTION_ERROR")
@@ -96,6 +138,13 @@ def ensure_frappe_site_init():
         if frappe.local and hasattr(frappe.local, 'site') and frappe.local.site:
             if not frappe.db:
                 frappe.connect()
+            else:
+                # Verify the connection is still alive — MySQL silently drops idle
+                # connections after wait_timeout, which causes InterfaceError (0, '').
+                try:
+                    frappe.db.sql("SELECT 1")
+                except Exception:
+                    frappe.connect()
             return True
 
         # Try to determine site name
@@ -166,11 +215,19 @@ def start_consumer_loop():
 
     log_info("Starting Kafka consumer loop...", "consumer")
     poll_count = 0
+    last_heartbeat = 0.0
 
     try:
         while not _stop_consumer.is_set():
             try:
                 poll_count += 1
+                now = time.monotonic()
+
+                # Write heartbeat to Redis every HEARTBEAT_INTERVAL seconds
+                if now - last_heartbeat >= _HEARTBEAT_INTERVAL:
+                    _write_heartbeat()
+                    last_heartbeat = now
+
                 message_batch = consumer.poll(timeout_ms=1000, max_records=CONSUMER_MAX_POLL_RECORDS)
 
                 if not message_batch:
@@ -191,6 +248,7 @@ def start_consumer_loop():
     except Exception as e:
         log_error(f"Consumer loop terminated: {str(e)}", "TERMINAL_ERROR")
     finally:
+        _clear_heartbeat()
         close_consumer()
 
     log_info("Kafka consumer loop stopped", "consumer")
@@ -225,7 +283,7 @@ def stop_kafka_consumer():
 def get_kafka_consumer_status():
     """Returns the current status of the Kafka consumer."""
     return {
-        "running": _consumer_thread is not None and _consumer_thread.is_alive(),
+        "running": is_consumer_running_globally(),
         "topics": ALL_CONSUMER_TOPICS,
         "bootstrap_servers": KAFKA_BOOTSTRAP_SERVERS,
         "group_id": CONSUMER_GROUP_ID,

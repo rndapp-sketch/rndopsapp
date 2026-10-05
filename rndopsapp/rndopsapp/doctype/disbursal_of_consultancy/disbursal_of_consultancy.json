@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}1C{######}",
  "creation": "2025-12-22 09:57:55.727081",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -23,8 +24,6 @@
   "details_of_disbursal",
   "section_break_lcud",
   "total_disbursal_amount",
-  "total_personal_share",
-  "total_institute_share",
   "institute_share_breakdown",
   "idf",
   "dpf",
@@ -34,7 +33,8 @@
   "disbursal_note",
   "please_attach_a_copy_of_completion_report",
   "section_break_vjlz",
-  "disbursal_additional_documents"
+  "disbursal_additional_documents",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -44,6 +44,7 @@
   {
    "fieldname": "amended_from",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Amended From",
    "no_copy": 1,
    "options": "Disbursal of Consultancy",
@@ -79,8 +80,9 @@
   },
   {
    "fieldname": "project_title",
-   "fieldtype": "Data",
-   "label": "Project Title"
+   "fieldtype": "Long Text",
+   "label": "Project Title",
+   "read_only": 1
   },
   {
    "fieldname": "date_of_registration",
@@ -109,9 +111,10 @@
   {
    "default": "PDF",
    "fieldname": "disbursal_project_number",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "label": "Project Number",
-   "options": "Select\nPDF"
+   "options": "Select\nPDF",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_vaha",
@@ -149,18 +152,13 @@
   {
    "fieldname": "institute_share_breakdown",
    "fieldtype": "Section Break",
+   "hidden": 1,
    "label": "Institute Share Breakdown (Calculated Fields)"
   },
   {
    "fieldname": "total_disbursal_amount",
    "fieldtype": "Currency",
    "label": "Total Disbursal Amount",
-   "read_only": 1
-  },
-  {
-   "fieldname": "total_institute_share",
-   "fieldtype": "Currency",
-   "label": "Total Institute Share",
    "read_only": 1
   },
   {
@@ -182,12 +180,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "total_personal_share",
-   "fieldtype": "Currency",
-   "label": "Total Personal Share",
-   "read_only": 1
-  },
-  {
    "fieldname": "section_break_lcud",
    "fieldtype": "Section Break"
   },
@@ -196,16 +188,23 @@
    "fieldtype": "Currency",
    "label": "Student Welfare Fund (5%)",
    "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-23 16:21:26.365865",
+ "modified": "2026-09-03 13:20:11.163226",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Disbursal of Consultancy",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -223,6 +222,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

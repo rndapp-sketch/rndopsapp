@@ -22,6 +22,8 @@
   "amount_inclusive_of_gst",
   "igst_18_on_consultancy",
   "amount_after_gst_tds",
+  "income_tax_tds",
+  "gst_tds__2",
   "total_cost_x",
   "consultancy_charge_y",
   "operational_charge_z",
@@ -32,23 +34,33 @@
   "institute_share_amount",
   "total_overhead_institute_share",
   "credit_distribution_section",
+  "idf_percentage",
+  "column_break_umfm",
   "idf_amount",
-  "dpf_amount",
-  "staff_welfare_amount",
+  "section_break_rwhj",
+  "dpf_credit_distributions",
   "student_welfare_amount",
+  "staff_welfare_amount",
   "final_totals",
   "balance_consultancy_fee",
   "balance_operation_charge",
   "total_gst",
-  "total_amount"
+  "other_deductions",
+  "total_amount",
+  "fund_received_ref",
+  "budget_head_reconciliation_section",
+  "overhead_source_head",
+  "gst_source_head",
+  "fund_budget_breakup"
  ],
  "fields": [
   {
    "fieldname": "consultancy_title",
-   "fieldtype": "Data",
-   "label": "Consultancy Title"
+   "fieldtype": "Text",
+   "label": "Project Title"
   },
   {
+   "default": "Category D",
    "fieldname": "category_d",
    "fieldtype": "Data",
    "label": "Category"
@@ -56,7 +68,7 @@
   {
    "fieldname": "principal_consultant",
    "fieldtype": "Link",
-   "label": "Principal Consultant",
+   "label": "Principal Investigator/Consultant",
    "options": "User"
   },
   {
@@ -83,7 +95,7 @@
   {
    "fieldname": "bank",
    "fieldtype": "Data",
-   "label": "Bank"
+   "label": "Bank Name"
   },
   {
    "fieldname": "ecs_ac_no",
@@ -114,10 +126,11 @@
   {
    "fieldname": "amount_after_gst_tds",
    "fieldtype": "Currency",
+   "hidden": 1,
    "label": "Amount after GST TDS @ 2%"
   },
   {
-   "description": "Total Cost X (Balance after GST Deduction)",
+   "description": "Total Cost X (Balance after GST Deduction from amount received)",
    "fieldname": "total_cost_x",
    "fieldtype": "Currency",
    "label": "Total Cost X"
@@ -136,38 +149,32 @@
    "fieldname": "column_break_fwob",
    "fieldtype": "Column Break",
    "hidden": 1,
-   "label": "COL 3",
-   "read_only": 1
+   "label": "COL 3"
   },
   {
    "fieldname": "overhead_from_y_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Y (10% * Y) Amount",
-   "read_only": 1
+   "label": "Overhead from Y (10% * Y) Amount"
   },
   {
    "fieldname": "overhead_from_z_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Z (10% * Z) Amount",
-   "read_only": 1
+   "label": "Overhead from Z (10% * Z) Amount"
   },
   {
    "fieldname": "total_overhead_amount",
    "fieldtype": "Currency",
-   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount",
-   "read_only": 1
+   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount"
   },
   {
    "fieldname": "institute_share_amount",
    "fieldtype": "Currency",
-   "label": "Institute Share (20% * Y) Amount",
-   "read_only": 1
+   "label": "Institute Share (20% * Y) Amount"
   },
   {
    "fieldname": "total_overhead_institute_share",
    "fieldtype": "Currency",
-   "label": "Overhead + Institute Share",
-   "read_only": 1
+   "label": "Overhead + Institute Share"
   },
   {
    "fieldname": "primary_details",
@@ -187,14 +194,12 @@
   {
    "fieldname": "balance_consultancy_fee",
    "fieldtype": "Currency",
-   "label": "Balance Consultancy Fee",
-   "read_only": 1
+   "label": "Balance Consultancy Fee"
   },
   {
    "fieldname": "balance_operation_charge",
    "fieldtype": "Currency",
-   "label": "Balance Operation Charge",
-   "read_only": 1
+   "label": "Balance Operation Charge"
   },
   {
    "fieldname": "total_gst",
@@ -202,10 +207,14 @@
    "label": "Total GST"
   },
   {
+   "fieldname": "other_deductions",
+   "fieldtype": "Currency",
+   "label": "Other Deductions"
+  },
+  {
    "fieldname": "total_amount",
    "fieldtype": "Currency",
-   "label": "Total Amount",
-   "read_only": 1
+   "label": "Total Amount"
   },
   {
    "fieldname": "col_1_column",
@@ -214,34 +223,92 @@
    "label": "COL 1"
   },
   {
-   "description": "(40% of Overhead + Institute Share)",
+   "description": "(IDF %age of Overhead + Institute Share)",
    "fieldname": "idf_amount",
    "fieldtype": "Currency",
-   "label": "IDF"
-  },
-  {
-   "description": "(50% of Overhead + Institute Share)",
-   "fieldname": "dpf_amount",
-   "fieldtype": "Currency",
-   "label": "DPF/CE"
+   "label": "IDF Amount"
   },
   {
    "description": "(5% of Overhead + Institute Share)",
    "fieldname": "staff_welfare_amount",
    "fieldtype": "Currency",
-   "label": "Staff welfare Amount"
+   "label": "(D) Staff welfare Amount"
   },
   {
    "description": "(5% of Overhead + Institute Share)",
    "fieldname": "student_welfare_amount",
    "fieldtype": "Currency",
-   "label": "Student welfare Amount"
+   "label": "(C) Student welfare Amount"
+  },
+  {
+   "fieldname": "idf_percentage",
+   "fieldtype": "Float",
+   "label": "(A) IDF % age"
+  },
+  {
+   "fieldname": "column_break_umfm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_rwhj",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "dpf_credit_distributions",
+   "fieldtype": "Table",
+   "label": "(B) DPF Credit Distribution",
+   "options": "DPF Credit Distribution"
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "label": "Fund Received Ref"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "budget_head_reconciliation_section",
+   "fieldtype": "Section Break",
+   "label": "Budget Head Reconciliation"
+  },
+  {
+   "description": "Fund Received budget head the overhead amount was transferred from.",
+   "fieldname": "overhead_source_head",
+   "fieldtype": "Link",
+   "label": "Overhead Source Head",
+   "options": "Budget Head",
+   "read_only": 1
+  },
+  {
+   "description": "Fund Received budget head the GST amount was transferred from.",
+   "fieldname": "gst_source_head",
+   "fieldtype": "Link",
+   "label": "GST Source Head",
+   "options": "Budget Head",
+   "read_only": 1
+  },
+  {
+   "description": "Mirror of the linked Fund Received's budget head breakup (received_amt_breakup).",
+   "fieldname": "fund_budget_breakup",
+   "fieldtype": "Table",
+   "label": "Fund Budget Breakup",
+   "options": "Project Received Budget",
+   "read_only": 1
+  },
+  {
+   "fieldname": "gst_tds__2",
+   "fieldtype": "Currency",
+   "label": "GST TDS @ 2%"
+  },
+  {
+   "fieldname": "income_tax_tds",
+   "fieldtype": "Currency",
+   "label": "Income Tax TDS"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-19 14:35:04.050814",
+ "modified": "2026-09-03 16:20:55.731889",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "D Consultancy Deposit Slip",
@@ -274,6 +341,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

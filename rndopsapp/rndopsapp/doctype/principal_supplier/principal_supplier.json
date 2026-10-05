@@ -67,7 +67,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-12-22 11:20:17.860190",
+ "modified": "2026-02-16 11:19:37.474618",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Principal Supplier",
@@ -87,6 +87,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",

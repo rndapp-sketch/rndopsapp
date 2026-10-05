@@ -10,6 +10,7 @@
   "amended_from",
   "prjreg_title",
   "fund_received_ref_number",
+  "sanction_ref_no",
   "section_break_qyal",
   "fund_received_amt",
   "bank_account",
@@ -18,7 +19,8 @@
   "invoice_no",
   "document_upload",
   "fund_transactions",
-  "received_amt_breakup"
+  "received_amt_breakup",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -45,13 +47,15 @@
   {
    "fieldname": "fund_received_amt",
    "fieldtype": "Currency",
-   "label": "Fund Received Amount"
+   "label": "Fund Received Amount",
+   "reqd": 1
   },
   {
-   "description": "*Where money is received",
+   "description": "*Where money is received (Give any one of these)",
    "fieldname": "bank_account",
    "fieldtype": "Data",
-   "label": "Bank Account Number"
+   "label": "Bank Account Number / Scheme - (Name / Number)",
+   "reqd": 1
   },
   {
    "fieldname": "section_break_hchd",
@@ -90,6 +94,7 @@
    "in_list_view": 1,
    "label": "Project Title",
    "options": "Project Registration",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -101,17 +106,27 @@
    "description": "* Receiving from Accounts Portal",
    "fieldname": "fund_received_ref_number",
    "fieldtype": "Data",
-   "hidden": 1,
    "label": "Fund Received Ref No.",
    "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sanction_ref_no",
+   "fieldtype": "Data",
+   "label": "Sanction Ref No."
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-30 11:01:08.858293",
- "modified_by": "Administrator",
+ "modified": "2026-07-22 23:13:07.761366",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Fund Received",
  "naming_rule": "Expression",
@@ -155,9 +170,23 @@
    "share": 1,
    "submit": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "share": 1,
+   "submit": 1,
+   "write": 1
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

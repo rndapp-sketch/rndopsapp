@@ -1,0 +1,136 @@
+{
+    "actions": [],
+    "creation": "2026-07-01 00:00:00.000000",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "user",
+        "timestamp",
+        "doctype_name",
+        "document_name",
+        "form_category",
+        "from_state",
+        "to_state",
+        "action",
+        "time_in_queue",
+        "project_no"
+    ],
+    "fields": [
+        {
+            "fieldname": "user",
+            "fieldtype": "Link",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "User",
+            "options": "User",
+            "reqd": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "timestamp",
+            "fieldtype": "Datetime",
+            "in_list_view": 1,
+            "label": "Timestamp",
+            "reqd": 1,
+            "search_index": 1
+        },
+        {
+            "fieldname": "doctype_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Form Type",
+            "reqd": 1
+        },
+        {
+            "fieldname": "document_name",
+            "fieldtype": "Data",
+            "in_list_view": 1,
+            "label": "Document Name",
+            "reqd": 1
+        },
+        {
+            "fieldname": "form_category",
+            "fieldtype": "Select",
+            "in_list_view": 1,
+            "in_standard_filter": 1,
+            "label": "Form Category",
+            "options": "\nPurchase\nFinancial\nProject\nHR / Staff\nDeposits\nTravel\nIPR\nOther",
+            "search_index": 1
+        },
+        {
+            "fieldname": "from_state",
+            "fieldtype": "Data",
+            "label": "From State"
+        },
+        {
+            "fieldname": "to_state",
+            "fieldtype": "Data",
+            "label": "To State"
+        },
+        {
+            "fieldname": "action",
+            "fieldtype": "Select",
+            "label": "Action",
+            "options": "\nSubmit\nApprove\nForward\nReject"
+        },
+        {
+            "fieldname": "time_in_queue",
+            "fieldtype": "Float",
+            "label": "Time in Queue (hrs)"
+        },
+        {
+            "fieldname": "project_no",
+            "fieldtype": "Data",
+            "label": "Project No"
+        }
+    ],
+    "is_submittable": 0,
+    "modified": "2026-07-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "Staff Activity Log",
+    "naming_rule": "Random",
+    "owner": "Administrator",
+    "permissions": [
+        {
+            "create": 1,
+            "delete": 0,
+            "email": 0,
+            "export": 1,
+            "print": 0,
+            "read": 1,
+            "report": 1,
+            "role": "System Manager",
+            "share": 0,
+            "write": 0
+        },
+        {
+            "create": 0,
+            "delete": 0,
+            "email": 0,
+            "export": 0,
+            "print": 0,
+            "read": 1,
+            "report": 1,
+            "role": "staff, RnD",
+            "share": 0,
+            "write": 0
+        },
+        {
+            "create": 0,
+            "delete": 0,
+            "email": 0,
+            "export": 0,
+            "print": 0,
+            "read": 1,
+            "report": 1,
+            "role": "Hos, RnD (Head of Section, RnD)",
+            "share": 0,
+            "write": 0
+        }
+    ],
+    "sort_field": "timestamp",
+    "sort_order": "DESC",
+    "track_changes": 0
+}

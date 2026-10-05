@@ -14,6 +14,7 @@
   "year_of_passing_u_r",
   "result_type_u_r",
   "score_u_r",
+  "division_u_r",
   "certificate_file_u_r"
  ],
  "fields": [
@@ -67,28 +68,34 @@
   },
   {
    "fieldname": "score_u_r",
-   "fieldtype": "Select",
+   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Score/Division",
-   "options": "\nPercentage\nCGPA\nGrade"
+   "label": "Score"
   },
   {
    "fieldname": "certificate_file_u_r",
    "fieldtype": "Attach",
    "label": "Certificate"
+  },
+  {
+   "fieldname": "division_u_r",
+   "fieldtype": "Select",
+   "label": "Division",
+   "options": "\n1st Division\n2nd Division\n3rd Division"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-16 17:20:56.514444",
+ "modified": "2026-08-11 10:23:26.774119",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Personal Qualification__",
  "owner": "Administrator",
  "permissions": [],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

@@ -1,0 +1,77 @@
+{
+    "actions": [],
+    "allow_rename": 1,
+    "creation": "2026-07-20 00:00:00.000000",
+    "doctype": "DocType",
+    "editable_grid": 1,
+    "engine": "InnoDB",
+    "field_order": [
+        "departure_station",
+        "departure_date",
+        "arrival_station",
+        "arrival_date",
+        "mode_of_journey",
+        "mode_of_journey_other",
+        "fare",
+        "ticket_pnr_no"
+    ],
+    "fields": [
+        {
+            "fieldname": "departure_station",
+            "fieldtype": "Data",
+            "label": "Departure Station"
+        },
+        {
+            "fieldname": "departure_date",
+            "fieldtype": "Date",
+            "label": "Departure Date"
+        },
+        {
+            "fieldname": "arrival_station",
+            "fieldtype": "Data",
+            "label": "Arrival Station"
+        },
+        {
+            "fieldname": "arrival_date",
+            "fieldtype": "Date",
+            "label": "Arrival Date"
+        },
+        {
+            "fieldname": "mode_of_journey",
+            "fieldtype": "Select",
+            "label": "Mode of Journey",
+            "options": "Road\nRail\nAir\nOther"
+        },
+        {
+            "depends_on": "eval:doc.mode_of_journey == 'Other'",
+            "fieldname": "mode_of_journey_other",
+            "fieldtype": "Data",
+            "label": "Specify Other Mode"
+        },
+        {
+            "fieldname": "fare",
+            "fieldtype": "Currency",
+            "label": "Fare (in INR)"
+        },
+        {
+            "fieldname": "ticket_pnr_no",
+            "fieldtype": "Data",
+            "label": "Ticket/PNR No."
+        }
+    ],
+    "grid_page_length": 50,
+    "index_web_pages_for_search": 1,
+    "istable": 1,
+    "links": [],
+    "modified": "2026-07-20 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Rndopsapp",
+    "name": "TA DA Journey Particular",
+    "owner": "Administrator",
+    "permissions": [],
+    "row_format": "Dynamic",
+    "rows_threshold_for_grid_search": 20,
+    "sort_field": "modified",
+    "sort_order": "DESC",
+    "states": []
+}

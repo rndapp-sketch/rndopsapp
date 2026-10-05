@@ -6,6 +6,102 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
+
+# "For Office Use" fields: filled in by `staff, RnD` only, while the document
+# sits at "Pending Staff Approval". Hidden from the applicant on the frontend;
+# also gated here so a non-staff caller can't slip values into these fields
+# via the API (the DocType itself has no permlevel restriction on them).
+OFFICE_USE_INPUT_FIELDS = [
+	"railways_air_steamer_busfare",
+	"road_mileage",
+	"local_conveyance",
+	"food_charges",
+	"cccommodation_charges",
+	"registration_fee_other",
+	"less_advance_paid_to_applicant",
+]
+
+
+def can_edit_office_use_fields():
+	user_roles = frappe.get_roles(frappe.session.user)
+	return bool(
+		{"staff, RnD", "System Manager", "Administrator"} & set(user_roles)
+	)
+
+
+def _coerce_scalar_field_value(fieldname, value):
+	"""
+	Guard against a Select/Autocomplete field on the form sending the whole
+	{value, label} option object instead of just the selected value —
+	pymysql can't serialize a dict as a SQL param, so this used to blow up
+	doc.insert()/doc.save() with an opaque 'dict can not be used as
+	parameter' TypeError deep inside db_insert, with no indication of which
+	field was at fault. Unwraps the common option shapes; anything else is
+	rejected here with a clear, field-named error instead.
+	"""
+	if not isinstance(value, dict):
+		return value
+	for key in ("value", "name", "label"):
+		if key in value and not isinstance(value[key], (dict, list)):
+			return value[key]
+	frappe.throw(
+		f"Invalid value received for '{fieldname}': expected a plain value, got an object ({value})."
+	)
+
+
+def _resolve_ta_da_project_docname(doc):
+	"""
+	Resolve the Project Registration docname this settlement belongs to, via
+	its linked Travel application — same "Project Registration" namespace
+	every other module (Disbursal of Honorarium, Direct Purchase, etc.)
+	stores its MinIO uploads under, so files stay grouped by project.
+	"""
+	if getattr(doc, "ta_da_travel_application", None):
+		project_docname = frappe.db.get_value(
+			"Travel", doc.ta_da_travel_application, "travel_project_title"
+		)
+		if project_docname:
+			return project_docname
+	return doc.project_no or doc.name
+
+
+def _upload_ta_da_file_to_minio(val, project_docname, folder="ta_da_settlement"):
+	"""Upload a base64 file dict ({file_name, file_data}) to MinIO. Returns the MinIO URL or None."""
+	import base64
+
+	try:
+		from rndopsapp.minio import get_rnd_file_service
+
+		filename = val["file_name"]
+		content_b64 = val["file_data"]
+
+		if isinstance(content_b64, str) and content_b64.startswith("data:"):
+			content_b64 = content_b64.split(",", 1)[1]
+
+		file_content = base64.b64decode(content_b64)
+
+		upload_result = get_rnd_file_service().save_file(
+			filename=filename,
+			content=file_content,
+			is_private=False,
+			doctype="Project Registration",
+			docname=project_docname,
+			folder=folder,
+		)
+
+		if upload_result.get("status"):
+			file_url = upload_result.get("data", {}).get("file_url")
+			frappe.logger().info(f"[TA DA Settlement] File uploaded to MinIO: {file_url}")
+			return file_url
+
+		frappe.log_error(
+			f"MinIO upload failed: {upload_result.get('message')}",
+			"TA DA Settlement MinIO Upload",
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "TA DA Settlement MinIO Upload Error")
+	return None
 
 
 def extract_eval_expression(expression):
@@ -142,6 +238,10 @@ def get_ta_da_settlement_fields(doc_name=None, travel_ref=None):
 			# Purpose of journey from Travel's purpose_of_visit
 			prefill_data["ta_da_purpose_of_journey"] = travel_doc.purpose_of_visit
 
+			# Account head from Travel
+			if travel_doc.account_head:
+				prefill_data["ta_da_account_head"] = travel_doc.account_head
+
 			# Advance taken from Travel's total_estimate
 			if travel_doc.total_estimate:
 				prefill_data["ta_da_advance_taken"] = travel_doc.total_estimate
@@ -249,15 +349,38 @@ def save_ta_da_settlement(doc_data):
 			"ta_da_boarding_lodging_status": "boarding_and_lodging_status",
 			"boarding_and_lodging_status": "boarding_and_lodging_status",
 			"ta_da_free_transport": "ta_da_free_transport",
+			# Account head (auto-filled from linked Travel)
+			"ta_da_account_head": "ta_da_account_head",
 			# Direct doctype fieldname fallbacks
 			"webmail_id": "webmail_id",
 			"project_no": "project_no",
 		}
 
+		# "For Office Use" fields are only ever settable by staff, RnD (or admins) —
+		# never by the applicant. total_admissible_amount / net_amount are never
+		# taken from the client; they're always recomputed below.
+		office_use_editable = can_edit_office_use_fields()
+		if office_use_editable:
+			for fieldname in OFFICE_USE_INPUT_FIELDS:
+				field_mapping[fieldname] = fieldname
+
 		# Update document with mapped data
 		for form_field, doctype_field in field_mapping.items():
 			if form_field in data and data[form_field] not in [None, ""]:
-				doc.set(doctype_field, data[form_field])
+				doc.set(doctype_field, _coerce_scalar_field_value(doctype_field, data[form_field]))
+
+		# Recompute the "For Office Use" totals server-side so they can never
+		# drift from the individual line items, regardless of what the client sent.
+		if office_use_editable:
+			doc.total_admissible_amount = (
+				flt(doc.railways_air_steamer_busfare)
+				+ flt(doc.road_mileage)
+				+ flt(doc.local_conveyance)
+				+ flt(doc.food_charges)
+				+ flt(doc.cccommodation_charges)
+				+ flt(doc.registration_fee_other)
+			)
+			doc.net_amount = flt(doc.total_admissible_amount) - flt(doc.less_advance_paid_to_applicant)
 
 		# Fetch and set applicant_category for workflow evaluations
 		if doc.webmail_id:
@@ -271,17 +394,128 @@ def save_ta_da_settlement(doc_data):
 				print(f"Error fetching applicant category for user {doc.webmail_id}: {e}")
 
 		# Handle child table - ta_da_other_expenses_p
+		# ta_da_proof_other_expense is an Attach field — a not-yet-uploaded row
+		# arrives as {file_name, file_data} and must be pushed to MinIO first,
+		# same as ta_da_supporting_docs below, otherwise db_insert() chokes
+		# trying to bind a dict as a SQL parameter.
 		other_expenses = data.get("ta_da_other_expenses_p")
 		if isinstance(other_expenses, list):
+			project_docname = None
 			doc.set("ta_da_other_expenses_p", [])  # Clear existing
 			for expense in other_expenses:
 				if expense.get("ta_da_expense_type_other_expense") or expense.get("ta_da_amount_other_expense"):
+					proof_file = expense.get("ta_da_proof_other_expense")
+					file_url = None
+
+					if isinstance(proof_file, dict) and proof_file.get("file_data"):
+						if project_docname is None:
+							project_docname = _resolve_ta_da_project_docname(doc)
+						file_url = _upload_ta_da_file_to_minio(proof_file, project_docname)
+					elif isinstance(proof_file, str):
+						file_url = proof_file  # already-uploaded URL (re-save)
+
 					doc.append(
 						"ta_da_other_expenses_p",
 						{
-							"ta_da_expense_type_other_expense": expense.get("ta_da_expense_type_other_expense"),
+							"ta_da_expense_type_other_expense": _coerce_scalar_field_value(
+								"ta_da_expense_type_other_expense",
+								expense.get("ta_da_expense_type_other_expense"),
+							),
 							"ta_da_amount_other_expense": expense.get("ta_da_amount_other_expense", 0),
-							"ta_da_proof_other_expense": expense.get("ta_da_proof_other_expense"),
+							"ta_da_proof_other_expense": file_url,
+						},
+					)
+
+		# Handle child table - ta_da_journey_particulars_table
+		journey_particulars = data.get("ta_da_journey_particulars_table")
+		if isinstance(journey_particulars, list):
+			doc.set("ta_da_journey_particulars_table", [])  # Clear existing
+			for row in journey_particulars:
+				if any(
+					row.get(f)
+					for f in (
+						"departure_station",
+						"departure_date",
+						"arrival_station",
+						"arrival_date",
+						"mode_of_journey",
+						"fare",
+						"ticket_pnr_no",
+					)
+				):
+					doc.append(
+						"ta_da_journey_particulars_table",
+						{
+							"departure_station": row.get("departure_station"),
+							"departure_date": row.get("departure_date"),
+							"arrival_station": row.get("arrival_station"),
+							"arrival_date": row.get("arrival_date"),
+							"mode_of_journey": _coerce_scalar_field_value(
+								"mode_of_journey", row.get("mode_of_journey")
+							),
+							"mode_of_journey_other": row.get("mode_of_journey_other"),
+							"fare": row.get("fare", 0),
+							"ticket_pnr_no": row.get("ticket_pnr_no"),
+						},
+					)
+
+		# Handle child table - ta_da_local_conveyance_table
+		local_conveyance_rows = data.get("ta_da_local_conveyance_table")
+		if isinstance(local_conveyance_rows, list):
+			doc.set("ta_da_local_conveyance_table", [])  # Clear existing
+			for row in local_conveyance_rows:
+				if any(
+					row.get(f)
+					for f in (
+						"conveyance_date",
+						"conveyance_time",
+						"from_location",
+						"to_location",
+						"distance_traveled_km",
+						"mode_of_journey",
+						"fare",
+					)
+				):
+					doc.append(
+						"ta_da_local_conveyance_table",
+						{
+							"conveyance_date": row.get("conveyance_date"),
+							"conveyance_time": row.get("conveyance_time"),
+							"from_location": row.get("from_location"),
+							"to_location": row.get("to_location"),
+							"distance_traveled_km": row.get("distance_traveled_km", 0),
+							"mode_of_journey": _coerce_scalar_field_value(
+								"mode_of_journey", row.get("mode_of_journey")
+							),
+							"mode_of_journey_other": row.get("mode_of_journey_other"),
+							"fare": row.get("fare", 0),
+						},
+					)
+
+		# Handle child table - ta_da_supporting_docs (file uploads go to MinIO,
+		# grouped under the linked project — same convention every other
+		# module in this app uses)
+		supporting_docs = data.get("ta_da_supporting_docs")
+		if isinstance(supporting_docs, list):
+			project_docname = None
+			doc.set("ta_da_supporting_docs", [])  # Clear existing
+			for row in supporting_docs:
+				supporting_file = row.get("supporting_file")
+				file_url = None
+
+				if isinstance(supporting_file, dict) and supporting_file.get("file_data"):
+					if project_docname is None:
+						project_docname = _resolve_ta_da_project_docname(doc)
+					file_url = _upload_ta_da_file_to_minio(supporting_file, project_docname)
+				elif isinstance(supporting_file, str):
+					file_url = supporting_file  # already-uploaded URL (re-save)
+
+				if row.get("file_description") or file_url:
+					doc.append(
+						"ta_da_supporting_docs",
+						{
+							"file_description": row.get("file_description"),
+							"supporting_file": file_url,
 						},
 					)
 
@@ -387,6 +621,71 @@ def get_ta_da_settlement_workflow_actions(docname):
 
 
 @frappe.whitelist()
+def get_ta_da_settlement_commit_details(docname):
+	"""
+	Returns commit-related fields for the TA DA Settlement pending task page UI.
+	Called by the frontend when rendering the Staff's commit form at Pending Staff Approval.
+	Frontend should call submit_commit_data + perform_ta_da_settlement_action('Forward') on commit.
+	"""
+	if not frappe.db.exists("TA DA Settlement", docname):
+		frappe.throw(_("TA DA Settlement document not found."))
+
+	doc = frappe.get_doc("TA DA Settlement", docname)
+
+	# Resolve project registration name and number via the linked Travel doc
+	project_name = None  # Project Registration docname
+	project_number = None  # project_no like "26RBSBESP0391XXLS0010"
+
+	if doc.ta_da_travel_application:
+		travel_project_title = frappe.db.get_value(
+			"Travel", doc.ta_da_travel_application, "travel_project_title"
+		)
+		if travel_project_title:
+			project_name = travel_project_title
+			project_number = frappe.db.get_value(
+				"Project Registration", travel_project_title, "project_no"
+			)
+
+	# Fall back to project_no stored directly on the doc
+	if not project_number and doc.project_no:
+		project_number = doc.project_no
+
+	# TA/DA is always funded from Travel Head
+	budget_head = "Travel Head"
+
+	# Commit amount is the net claimed (after deducting advance taken)
+	commit_amount = doc.ta_da_net_claimed or doc.ta_da_total_claimed or 0
+
+	# Resolve moduleId from Module Registry for "TA DA Settlement"
+	module_id = frappe.db.get_value(
+		"Module Registry Item",
+		{"doctype_name": "TA DA Settlement", "parent": "pending-task"},
+		"mod_vis"
+	) or None
+
+	return {
+		"docname": docname,
+		"workflow_state": doc.workflow_state,
+		"applicant_name": doc.ta_da_name,
+		"webmail_id": doc.webmail_id,
+		"travel_application": doc.ta_da_travel_application,
+		"project_name": project_name,
+		"project_number": project_number,
+		"project_no": doc.project_no,
+		"total_claimed": doc.ta_da_total_claimed,
+		"advance_taken": doc.ta_da_advance_taken,
+		"net_claimed": doc.ta_da_net_claimed,
+		"commit_amount": commit_amount,
+		"budget_head": budget_head,
+		"purpose_of_journey": doc.ta_da_purpose_of_journey,
+		"module_id": module_id,
+		# refDetails = parent Travel's frapAppId (Travel docname)
+		# Frontend must pass this as refDetails when calling submit_commit_data
+		"ref_details": doc.ta_da_travel_application,
+	}
+
+
+@frappe.whitelist()
 def perform_ta_da_settlement_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.
@@ -440,6 +739,12 @@ def perform_ta_da_settlement_action(docname, action):
 		if not next_state:
 			frappe.throw(_(f"No valid transition found for action '{action}' from state '{current_state}'."))
 
+		# NOTE: staff, RnD is intentionally NOT required to have a non-zero
+		# Total Admissible Amount before Forward/Approve — a Travel application
+		# can legitimately be settled for 0 (e.g. leave-permission-only travel
+		# where no balance is claimed), so a zero total is a valid, deliberate
+		# entry, not a sign the "For Office Use" section was skipped.
+
 		# Update workflow state
 		doc.workflow_state = next_state
 
@@ -459,6 +764,66 @@ def perform_ta_da_settlement_action(docname, action):
 			doc.db_set("workflow_state", next_state, update_modified=True)
 			if getattr(doc, "applicant_category", None):
 				doc.db_set("applicant_category", doc.applicant_category, update_modified=False)
+
+		# Kafka publish on Dean / Associate Dean approval
+		# db_set is used above (not doc.save()), so check_workflow_and_publish hook
+		# does NOT fire automatically — we must publish staged commits explicitly here.
+		if next_state == "Approved":
+			frappe.logger().info(f"[TA DA Kafka] Approval triggered for {docname}. Searching for staged commits.")
+			try:
+				from rndopsapp.rndopsapp.kafka.producer.reimbursement import publish_commit as kafka_publish_commit
+				staging_docs = frappe.get_all("Kafka Commit Staging", filters={
+					"reference_doctype": "TA DA Settlement",
+					"reference_name": docname,
+					"status": ["in", ["PENDING_APPROVAL", "FAILED"]]
+				})
+				frappe.logger().info(f"[TA DA Kafka] Found {len(staging_docs)} staged commit(s) for {docname}.")
+				if not staging_docs:
+					all_staging = frappe.get_all("Kafka Commit Staging", filters={
+						"reference_doctype": "TA DA Settlement",
+						"reference_name": docname,
+					}, fields=["name", "status", "creation"])
+					frappe.log_error(
+						f"[TA DA Kafka] No PENDING_APPROVAL/FAILED staging records found for {docname}. "
+						f"All staging records for this doc: {all_staging}. "
+						f"Ensure submit_commit_data was called before the staff Forward action.",
+						"TA DA Kafka - No Staging Record"
+					)
+				for st in staging_docs:
+					staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
+					try:
+						payload = json.loads(staging_doc.payload)
+						frappe.logger().info(
+							f"[TA DA Kafka] Publishing staging record {staging_doc.name} for {docname}. "
+							f"Payload keys: {list(payload.keys())}, commit_amount={payload.get('commit_amount')}, "
+							f"budget_head={payload.get('budget_head')}, project_name={payload.get('project_name')}"
+						)
+						success = kafka_publish_commit(
+							doc=doc,
+							commit_amount=payload.get("commit_amount"),
+							budget_head=payload.get("budget_head"),
+							project_name=payload.get("project_name"),
+							bmr=payload.get("bmr"),
+							bill_amount=payload.get("bill_amount"),
+							frap_app_id=payload.get("frap_app_id"),
+							ref_details=payload.get("ref_details"),
+							commit_particular=payload.get("commit_particular")
+						)
+						if success:
+							staging_doc.db_set("status", "PUBLISHED")
+						else:
+							staging_doc.db_set("status", "FAILED")
+							staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+							frappe.log_error(
+								f"[TA DA Kafka] kafka_publish_commit returned False for staging {staging_doc.name}",
+								"TA DA Kafka - Publish Failed"
+							)
+					except Exception as e:
+						frappe.log_error(frappe.get_traceback(), f"[TA DA Kafka] Exception processing staging {staging_doc.name} for {docname}")
+						staging_doc.db_set("status", "FAILED")
+						staging_doc.db_set("error_message", str(e))
+			except Exception as e:
+				frappe.log_error(frappe.get_traceback(), f"[TA DA Kafka] Outer exception for {docname}")
 
 		frappe.db.commit()
 

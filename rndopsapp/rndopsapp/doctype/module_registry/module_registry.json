@@ -26,7 +26,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-10 10:08:53.832703",
+ "modified": "2026-02-16 11:19:27.873178",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Module Registry",
@@ -47,6 +47,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

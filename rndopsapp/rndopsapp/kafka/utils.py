@@ -3,9 +3,32 @@
 
 import json
 import time
+import threading
 import frappe
+import requests
 from datetime import datetime, date
 from typing import Optional, Any
+from rndopsapp.static_config import MATTERMOST_POSTS_URL
+
+# --- MATTERMOST CONFIG ---
+_MM_URL = MATTERMOST_POSTS_URL
+_MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
+_MM_KAFKA_CHANNEL = "yh7piky97iycjrdytia1hqy99a"  # "kafka logs" channel
+
+
+def mm_notify(message: str):
+    """Fire-and-forget Mattermost notification. Never blocks or raises."""
+    def _post():
+        try:
+            requests.post(
+                _MM_URL,
+                json={"channel_id": _MM_KAFKA_CHANNEL, "message": message},
+                headers={"Authorization": _MM_TOKEN, "Content-Type": "application/json"},
+                timeout=(2, 3),
+            )
+        except Exception:
+            pass
+    threading.Thread(target=_post, daemon=True).start()
 
 from .config import (
     KAFKA_BOOTSTRAP_SERVERS,
@@ -168,6 +191,43 @@ def publish_message(
     return False
 
 
+def record_publish_state(
+    reference_doctype: str,
+    reference_name: str,
+    topic: str,
+    previous_state: Optional[str],
+    published_state: Optional[str],
+) -> None:
+    """
+    Captures the workflow_state a document had immediately before it's
+    published to Kafka, so an async DLQ consumer — which runs long after this
+    save transaction and can't call get_doc_before_save() itself — knows what
+    to revert to if the downstream ledger service rejects the event.
+
+    Call this right before publish_message()/publish_*, using the same
+    old_state/previous_state each caller already computes for its own
+    on_update logic. Skipped when there's no real transition to revert
+    (brand new documents, or republishing the same state).
+    """
+    if not previous_state or previous_state == published_state:
+        return
+    try:
+        frappe.get_doc({
+            "doctype": "Kafka Publish State Log",
+            "reference_doctype": reference_doctype,
+            "reference_name": reference_name,
+            "topic": topic,
+            "previous_workflow_state": previous_state,
+            "published_state": published_state,
+            "status": "PUBLISHED",
+        }).insert(ignore_permissions=True)
+    except Exception as e:
+        log_error(
+            f"Failed to record publish state for {reference_doctype} {reference_name}: {e}",
+            "PUBLISH_STATE_LOG_ERROR",
+        )
+
+
 # --- DATE UTILITIES ---
 
 def fmt_date(d: Any) -> Optional[str]:
@@ -279,12 +339,61 @@ def get_funding_agency_id(funding_agency_link: Optional[str]) -> Optional[str]:
         return None
 
 
+def resolve_budget_head_name(value) -> Optional[str]:
+    """
+    Resolve any of the three forms `account_head` is found in across the data
+    set to a canonical Budget Head document name.
+
+    `Project Received Budget.account_head` is declared as a Link to Budget Head,
+    but real rows hold one of:
+      1. the Budget Head docname       (e.g. "h1lhg99vfq") — set via the UI
+      2. the numeric Budget Head `id`  (e.g. "1")          — historically written
+         by the Kafka consumer's update_budget_breakup, which stored the
+         incoming `accountHeadId` verbatim into this Link field
+      3. the raw label                 (e.g. "Overhead")   — legacy/manual rows
+
+    Anything that resolves is returned as the docname; unresolvable input
+    returns None so callers can decide whether to skip or throw.
+
+    Args:
+        value: docname, numeric id, or budget_head label
+
+    Returns:
+        str or None: Budget Head document name if resolvable
+    """
+    if value in (None, ""):
+        return None
+
+    value_str = str(value).strip()
+
+    try:
+        # 1. Already a docname
+        if frappe.db.exists("Budget Head", value_str):
+            return value_str
+
+        # 2. Numeric Budget Head id
+        if value_str.isdigit():
+            by_id = frappe.db.get_value("Budget Head", {"id": int(value_str)}, "name")
+            if by_id:
+                return by_id
+
+        # 3. budget_head label
+        by_label = frappe.db.get_value("Budget Head", {"budget_head": value_str}, "name")
+        if by_label:
+            return by_label
+
+        return None
+    except Exception:
+        return None
+
+
 def get_budget_head_id(account_head: Optional[str]) -> Optional[int]:
     """
     Get budget head ID from Budget Head doctype.
 
     Args:
-        account_head: Budget Head document name or budget_head field value
+        account_head: Budget Head document name, numeric id, or budget_head
+            field value
 
     Returns:
         int or None: Budget Head ID if found
@@ -293,6 +402,15 @@ def get_budget_head_id(account_head: Optional[str]) -> Optional[int]:
         return None
 
     try:
+        # Fast path: the value is already the numeric id (as written into
+        # account_head by the Kafka consumer). Confirm it maps to a real
+        # Budget Head before trusting it.
+        account_head_str = str(account_head).strip()
+        if account_head_str.isdigit():
+            confirmed = frappe.db.get_value("Budget Head", {"id": int(account_head_str)}, "id")
+            if confirmed:
+                return confirmed
+
         # Try direct lookup by name
         account_head_id = frappe.db.get_value("Budget Head", account_head, "id")
 

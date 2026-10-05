@@ -8,6 +8,8 @@
  "field_order": [
   "section_break_vtw2",
   "register_for",
+  "dp_other_pi",
+  "dp_other_pi_id",
   "project_no",
   "applicant_details_section",
   "applicant_name",
@@ -18,6 +20,7 @@
   "applying_for_department",
   "applying_for_designation",
   "section_break_jsdg",
+  "is_foreign",
   "account_head",
   "table_gdxp",
   "total_estimate",
@@ -29,7 +32,8 @@
   "declaration_section",
   "dec_1",
   "dec_2",
-  "amended_from"
+  "amended_from",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -41,10 +45,12 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "account_head",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Account Head",
+   "options": "Budget Head",
    "reqd": 1
   },
   {
@@ -80,7 +86,8 @@
    "fieldname": "is_sanctioned",
    "fieldtype": "Select",
    "label": "Were the above items sanctioned by the Funding Agency?",
-   "options": "Choose Option\nYes\nNo",
+   "options": "\nYes\nNo",
+   "placeholder": "Choose Option",
    "reqd": 1
   },
   {
@@ -110,7 +117,8 @@
    "fieldname": "register_for",
    "fieldtype": "Select",
    "label": "If you are doing this purchase for Self or other User",
-   "options": "\nSelf\nOther"
+   "options": "\nSelf\nOther",
+   "read_only": 1
   },
   {
    "fieldname": "amended_from",
@@ -165,17 +173,48 @@
    "label": "Designation"
   },
   {
+   "allow_on_submit": 1,
    "fieldname": "project_no",
    "fieldtype": "Data",
    "label": "Project Number",
+   "depends_on": "eval:doc.dp_other_pi != \"Other\" || doc.project_no"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "is_foreign",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Is it Foreign Purchase?",
+   "options": "\nYes\nNo",
+   "reqd": 1
+  },
+  {
+   "fieldname": "dp_other_pi",
+   "fieldtype": "Select",
+   "label": "Is this purchase charged to another PI's project?",
+   "options": "\nSelf\nOther",
+   "default": "Self"
+  },
+  {
+   "fieldname": "dp_other_pi_id",
+   "fieldtype": "Link",
+   "label": "Other PI Webmail Id",
+   "options": "User",
+   "depends_on": "eval:doc.dp_other_pi == \"Other\"",
+   "mandatory_depends_on": "eval:doc.dp_other_pi == \"Other\""
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-01 17:45:11.384298",
+ "modified": "2026-06-11 12:32:50.321049",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Direct Purchase",
@@ -209,6 +248,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

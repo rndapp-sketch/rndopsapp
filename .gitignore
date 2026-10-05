@@ -26,3 +26,12 @@ __pycache__/
 .env
 bench.log
 
+# Ignore config
+config.py
+email_config.py
+
+# Frontend build output, deployed here by the prornd-ui Jenkins pipeline.
+# Untracked on purpose: if these were tracked, this repo's checkout would
+# revert every frontend deploy. See JENKINS_CI_CD_PLAN.md section 4.
+rndopsapp/public/frontend/
+rndopsapp/www/rndopsapp.html

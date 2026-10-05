@@ -9,6 +9,15 @@ class Reimbursement(Document):
 	pass
 
 
+def _roles_list(allowed):
+	"""Normalise a transition 'allowed' value into a list of role names."""
+	if not allowed:
+		return []
+	if isinstance(allowed, (list, tuple)):
+		return [str(r).strip() for r in allowed if str(r).strip()]
+	return [part.strip() for part in str(allowed).split(",") if part.strip()]
+
+
 def extract_eval_expression(expression):
 	"""
 	Extracts the JavaScript expression from a Frappe 'eval:' string.
@@ -215,9 +224,10 @@ def get_reimbursement_fields(doc_name=None):
 			fields=["name as value", "full_name as label"],
 			limit_page_length=200,
 		)
-		link_options["reimbursement_for_id"] = users
-		# also for applicant_webmail (same source)
+		# applicant_webmail = any enabled user; reimbursement_for_id (Other PI)
+		# is restricted to Permanent Employees only.
 		link_options["applicant_webmail"] = users
+		link_options["reimbursement_for_id"] = _get_permanent_employee_options()
 	except Exception:
 		pass
 
@@ -270,6 +280,40 @@ def get_reimbursement_fields(doc_name=None):
 	}
 
 
+def _get_permanent_employee_options():
+	"""
+	Return link options (value/label) for all enabled Users holding the
+	'Permanent Employee' role. Used for the 'Other PI' selector, since every
+	PI is a Permanent Employee.
+	"""
+	try:
+		rows = frappe.get_all(
+			"Has Role",
+			filters={"role": "Permanent Employee", "parenttype": "User"},
+			fields=["parent"],
+			limit_page_length=0,
+		)
+		emails = [r["parent"] for r in rows]
+		if not emails:
+			return []
+		users = frappe.get_all(
+			"User",
+			filters={"name": ["in", emails], "enabled": 1},
+			fields=["name as value", "full_name as label"],
+			limit_page_length=0,
+			order_by="full_name asc",
+		)
+		# Two accounts can share the same full name (e.g. a personal login and a
+		# role account), which makes the picker ambiguous and lets the applicant
+		# select the wrong PI. Always show the email alongside the name.
+		for u in users:
+			name = (u.get("label") or "").strip()
+			u["label"] = f"{name} ({u['value']})" if name else u["value"]
+		return users
+	except Exception:
+		return []
+
+
 def _safe_populate_link_options(link_options):
 	"""
 	Fill a minimal set of master lists useful to the Reimbursement form when no project provided.
@@ -283,7 +327,7 @@ def _safe_populate_link_options(link_options):
 			limit_page_length=200,
 		)
 		link_options["applicant_webmail"] = users
-		link_options["reimbursement_for_id"] = users
+		link_options["reimbursement_for_id"] = _get_permanent_employee_options()
 	except Exception:
 		pass
 
@@ -341,6 +385,7 @@ def save_reimbursement_data(data):
 			"reimbursement_for_id",
 			"reimbursement_for_department",
 			"reimbursement_for_designation",
+			"self_other",
 			"dec1",
 			"dec2",
 			"dec3",
@@ -454,6 +499,7 @@ def edit_reimbursement(data):
 			"reimbursement_for_id",
 			"reimbursement_for_department",
 			"reimbursement_for_designation",
+			"self_other",
 			"dec1",
 			"dec2",
 			"dec3",
@@ -555,9 +601,14 @@ def get_reimbursement_workflow_actions(docname):
 
 
 @frappe.whitelist()
-def perform_reimbursement_action(docname, action):
+def perform_reimbursement_action(docname, action, extra_data=None):
 	"""
 	Executes the selected workflow action and updates the document state.
+
+	extra_data (optional JSON/dict): when the Other PI acts from the
+	'Pending PI Approval' state they choose which of their projects to charge
+	and the corresponding account head. These are persisted on the document
+	before the transition is applied.
 	"""
 	try:
 		doc = frappe.get_doc("Reimbursement", docname)
@@ -565,23 +616,82 @@ def perform_reimbursement_action(docname, action):
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.get_value("Workflow", {"document_type": "Reimbursement"}, "name")
-		
+
 		if not workflow_name:
 			frappe.throw("Workflow not found for Reimbursement.")
 
 		workflow = frappe.get_doc("Workflow", workflow_name)
 
+		# Only the specifically-assigned PI (or a System Manager) may act on a
+		# form parked in 'Pending PI Approval' — the 'Permanent Employee' role is
+		# shared by all faculty, so restrict by the reimbursement_for_id field.
+		if current_state == "Pending PI Approval":
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			assigned_pi = (doc.reimbursement_for_id or "").lower()
+			if not is_system_manager and assigned_pi != frappe.session.user.lower():
+				frappe.throw("You are not authorised to act on this reimbursement.")
+
 		next_state = None
 		transition = None
-		
+
 		for t in workflow.transitions:
 			if t.state == current_state and t.action == action:
 				next_state = t.next_state
 				transition = t
 				break
-		
+
 		if not next_state:
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
+
+		# --- Other PI: on Approve, the PI charges one of their own projects. ---
+		if current_state == "Pending PI Approval" and action == "Approve":
+			if isinstance(extra_data, str):
+				extra_data = json.loads(extra_data or "{}")
+			extra_data = extra_data or {}
+
+			project_name = (extra_data.get("project_name") or "").strip()
+			account_head = (extra_data.get("account_head") or "").strip()
+
+			if not project_name or not account_head:
+				frappe.throw("Please select a project and account head before approving.")
+
+			# The project must belong to the acting PI.
+			pi_owns = frappe.db.get_value(
+				"Project Registration",
+				project_name,
+				["name", "project_no", "pi_webmail"],
+				as_dict=True,
+			)
+			if not pi_owns or (pi_owns.get("pi_webmail") or "").lower() != frappe.session.user.lower():
+				frappe.throw("Selected project does not belong to you.")
+
+			# The account head must be one of the project's sanctioned heads.
+			valid_heads = {h["value"].lower() for h in get_project_account_heads(project_name)}
+			if account_head.lower() not in valid_heads:
+				frappe.throw("Selected account head is not part of the chosen project.")
+
+			doc.project_name = project_name
+			doc.project_number = extra_data.get("project_number") or pi_owns.get("project_no")
+
+			# Project budget heads are free-text labels (e.g. "Consumable") and may
+			# not exist in the Budget Head master, while Reimbursement.account_head is
+			# a Link -> Budget Head. Resolve to a master record where possible;
+			# otherwise record the label in the free-text other_head field so the
+			# save never fails Link validation.
+			bh_name = None
+			if frappe.db.exists("Budget Head", account_head):
+				bh_name = account_head
+			else:
+				bh_name = frappe.db.get_value("Budget Head", {"budget_head": account_head}, "name")
+
+			if bh_name:
+				doc.account_head = bh_name
+				if doc.meta.has_field("other_head"):
+					doc.other_head = None
+			else:
+				doc.account_head = None
+				if doc.meta.has_field("other_head"):
+					doc.other_head = account_head
 
 		# Update workflow state
 		doc.workflow_state = next_state
@@ -638,21 +748,44 @@ def submit_reimbursement(docname):
 		# Find the transition for "Submit" action from current state
 		# We assume the action name is "Submit" for the initial submission. 
 		# If the user clicks "Submit" on the frontend, we map it to a workflow action.
-		action = "Submit" 
-		
+		action = "Submit"
+
+		# Candidate "Submit" transitions from the current state.
+		candidates = [
+			t for t in workflow.transitions
+			if t.state == current_state and t.action == action
+		]
+
+		user_roles = frappe.get_roles(frappe.session.user)
+		self_other = str(getattr(doc, "self_other", "") or "Self").strip().lower()
+
 		next_state = None
 		transition = None
-		
-		for t in workflow.transitions:
-			if t.state == current_state and t.action == action:
-				next_state = t.next_state
-				transition = t
-				break
-		
+
+		if self_other == "other":
+			# Applying against another PI's project -> route to that PI first.
+			if not doc.reimbursement_for_id:
+				frappe.throw("Please select the PI (Other) before submitting.")
+			for t in candidates:
+				if t.next_state == "Pending PI Approval":
+					next_state, transition = t.next_state, t
+					break
+		else:
+			# Self: pick the transition allowed for the applicant's role,
+			# never the Other-PI route.
+			for t in candidates:
+				if t.next_state == "Pending PI Approval":
+					continue
+				if any(r in user_roles for r in _roles_list(t.allowed)):
+					next_state, transition = t.next_state, t
+					break
+			if not next_state:
+				for t in candidates:
+					if t.next_state != "Pending PI Approval":
+						next_state, transition = t.next_state, t
+						break
+
 		if not next_state:
-			# If "Submit" action isn't found, maybe it's "Approve" or something else?
-			# For now, let's try to find ANY transition from Draft if action is generic
-			# Or just throw error
 			frappe.throw(f"No valid transition found for action '{action}' from state '{current_state}'.")
 
 		# Update workflow state
@@ -686,3 +819,86 @@ def submit_reimbursement(docname):
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Reimbursement Submit Error")
 		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_pi_projects(pi=None):
+	"""
+	Return the list of Project Registration projects for which the given user
+	(default: current session user) is the Principal Investigator (pi_webmail).
+	Used by the 'Other PI' approval step so the PI can choose which of their
+	own projects to charge the reimbursement against.
+	"""
+	if not pi:
+		pi = frappe.session.user
+
+	try:
+		projects = frappe.get_all(
+			"Project Registration",
+			filters={"pi_webmail": pi},
+			fields=["name", "project_title", "project_no", "project_number"],
+			order_by="modified desc",
+			limit_page_length=0,
+		)
+	except Exception:
+		# Fallback if project_number column does not exist
+		projects = frappe.get_all(
+			"Project Registration",
+			filters={"pi_webmail": pi},
+			fields=["name", "project_title", "project_no"],
+			order_by="modified desc",
+			limit_page_length=0,
+		)
+
+	options = []
+	for p in projects:
+		options.append(
+			{
+				"value": p.get("name"),
+				"label": p.get("project_title") or p.get("project_no") or p.get("name"),
+				"project_no": p.get("project_no"),
+				"project_number": p.get("project_number") or p.get("project_no"),
+			}
+		)
+	return options
+
+
+@frappe.whitelist()
+def get_project_account_heads(project_name):
+	"""
+	Return the distinct account heads defined in a project's sanctioned budget
+	breakup (Project Sanctioned Budget child table). The 'Other PI' can only
+	select from these heads when approving a reimbursement against the project.
+	"""
+	project_name = str(project_name or "").strip().strip('"').strip("'")
+	if not project_name:
+		return []
+
+	# A project's budget heads may live in either the sanctioned or the proposed
+	# budget breakup (both use the 'Project Sanctioned Budget' child doctype), so
+	# filter by parent only to capture heads from whichever is populated.
+	try:
+		rows = frappe.get_all(
+			"Project Sanctioned Budget",
+			filters={
+				"parent": project_name,
+				"parenttype": "Project Registration",
+			},
+			fields=["account_head", "is_total_row"],
+			limit_page_length=0,
+		)
+	except Exception:
+		rows = []
+
+	seen = set()
+	options = []
+	for r in rows:
+		head = (r.get("account_head") or "").strip()
+		# Skip blank rows and the grand-total row
+		if not head or r.get("is_total_row"):
+			continue
+		if head.lower() in seen:
+			continue
+		seen.add(head.lower())
+		options.append({"value": head, "label": head})
+	return options

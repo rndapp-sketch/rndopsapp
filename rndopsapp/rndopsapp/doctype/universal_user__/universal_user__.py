@@ -68,6 +68,9 @@ def get_universal_user___fields(doc_name=None):
 	fields = []
 	
 	for f in meta.fields:
+		if f.fieldtype in ["Section Break", "Column Break", "Tab Break", "Button", "Heading"]:
+			continue
+			
 		field_data = {
 			'fieldname': f.fieldname,
 			'label': f.label,
@@ -75,8 +78,15 @@ def get_universal_user___fields(doc_name=None):
 			'options': f.options,
 			'mandatory': f.reqd,
 			'read_only': f.read_only,
+			'default': f.default,
+			'hidden': f.hidden,
+			'description': f.description,
 			'depends_on': f.depends_on,
-			'depends_on_eval': f.depends_on.replace('eval:', '') if f.depends_on and str(f.depends_on).startswith('eval:') else None
+			'mandatory_depends_on': f.mandatory_depends_on,
+			'read_only_depends_on': f.read_only_depends_on,
+			'depends_on_eval': f.depends_on.replace('eval:', '') if f.depends_on and str(f.depends_on).startswith('eval:') else None,
+			'mandatory_depends_on_eval': f.mandatory_depends_on.replace('eval:', '') if f.mandatory_depends_on and str(f.mandatory_depends_on).startswith('eval:') else None,
+			'read_only_depends_on_eval': f.read_only_depends_on.replace('eval:', '') if f.read_only_depends_on and str(f.read_only_depends_on).startswith('eval:') else None,
 		}
 		
 		if f.fieldtype == 'Table':
@@ -86,13 +96,49 @@ def get_universal_user___fields(doc_name=None):
 				'label': cf.label,
 				'fieldtype': cf.fieldtype,
 				'options': cf.options,
+				'mandatory': cf.reqd,
+				'read_only': cf.read_only,
+				'default': cf.default,
+				'hidden': cf.hidden,
+				'description': cf.description,
+				'depends_on': cf.depends_on,
+				'mandatory_depends_on': cf.mandatory_depends_on,
+				'read_only_depends_on': cf.read_only_depends_on,
+				'depends_on_eval': cf.depends_on.replace('eval:', '') if cf.depends_on and str(cf.depends_on).startswith('eval:') else None,
+				'mandatory_depends_on_eval': cf.mandatory_depends_on.replace('eval:', '') if cf.mandatory_depends_on and str(cf.mandatory_depends_on).startswith('eval:') else None,
+				'read_only_depends_on_eval': cf.read_only_depends_on.replace('eval:', '') if cf.read_only_depends_on and str(cf.read_only_depends_on).startswith('eval:') else None,
 				'in_list_view': cf.in_list_view
-			} for cf in child_meta.fields]
+			} for cf in child_meta.fields if cf.fieldtype not in ["Section Break", "Column Break", "Tab Break", "Button", "Heading"]]
 			
 		fields.append(field_data)
 		
 	prefill_data = {}
 	link_options = {}
+
+	def _fetch_link_options(f_list):
+		for field in f_list:
+			if field.get("fieldtype") == "Table" and "child_fields" in field:
+				_fetch_link_options(field["child_fields"])
+			elif field.get("fieldtype") == "Link" and field.get("options"):
+				try:
+					linked_doctype = field["options"]
+					linked_meta = frappe.get_meta(linked_doctype)
+					title_field = linked_meta.get_title_field()
+
+					options_list = frappe.get_all(
+						linked_doctype,
+						fields=["name", title_field],
+						limit=0,
+					)
+
+					link_options[field["fieldname"]] = [
+						{"value": item["name"], "label": item.get(title_field, item["name"])}
+						for item in options_list
+					]
+				except Exception:
+					link_options[field["fieldname"]] = []
+	
+	_fetch_link_options(fields)
 
 	if doc_name:
 		try:

@@ -97,7 +97,8 @@
   "approver_signature",
   "approver_name",
   "approver_date",
-  "edited_endorsement_content"
+  "edited_endorsement_content",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -672,13 +673,19 @@
   {
    "fieldname": "column_break_svle",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-17 12:44:21.581541",
+ "modified": "2026-04-15 13:49:14.785140",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Proposal",
@@ -794,6 +801,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
