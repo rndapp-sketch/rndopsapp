@@ -398,7 +398,7 @@ def submit_employee_id_card(docname):
 
 
 @frappe.whitelist()
-def get_employee_id_card_list(filters=None, limit=100, start=0):
+def get_employee_id_card_list(filters=None, limit=10000, start=0):
 	"""Return list of Employee ID Card documents with basic fields."""
 	from frappe.utils import cint
 

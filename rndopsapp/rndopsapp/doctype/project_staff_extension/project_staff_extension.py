@@ -186,7 +186,23 @@ class ProjectStaffExtension(Document):
 		return compute_new_tenure(self.ex_emp_id, period, increment)
 
 	def auto_create_tenure_record(self):
+		"""Called once, at the moment this extension reaches Approved. Locks in
+		the final new-term dates/salary on this doc immediately (so the applicant
+		and HR can see them right away), but only writes them onto the live
+		Project Staff Details record if the CURRENT term has actually ended.
+		If the current term is still running (e.g. the extension was filed and
+		approved within its application window, ahead of the term's actual end
+		date), the rollover is deferred to apply_pending_project_staff_extensions(),
+		a daily scheduled job that applies it the day the current term ends.
+		"""
+		from frappe.utils import getdate, today
+
 		if not self.ex_emp_id:
+			return
+
+		if self.tenure_row_created:
+			# Already rolled over (idempotency guard — e.g. a duplicate workflow
+			# action replay should never append a second tenure row).
 			return
 
 		if not self.ex_period_staff:
@@ -207,6 +223,38 @@ class ProjectStaffExtension(Document):
 		new_joining_date = self.ex_final_new_joining_date or preview["new_joining_date"]
 		new_term_completion_date = self.ex_final_new_completion_date or preview["new_completion_date"]
 		new_basic_salary = preview["new_basic_salary"]
+
+		# Lock these onto the extension doc regardless of whether the rollover
+		# is applied now or deferred, so they're final from the moment of Approval.
+		self.db_set("ex_current_basic", new_basic_salary)
+		self.db_set("ex_final_new_joining_date", new_joining_date)
+		self.db_set("ex_final_new_completion_date", new_term_completion_date)
+
+		current_term_end = getdate(self.ex_date_of_expiry) if self.ex_date_of_expiry else None
+		if current_term_end and getdate(today()) < current_term_end:
+			# Current term hasn't ended yet — do NOT touch Project Staff Details
+			# now. apply_pending_project_staff_extensions() will apply it on/after
+			# current_term_end.
+			frappe.msgprint(
+				_(
+					"Extension approved. The current term runs until {0}, so the new "
+					"term ({1} to {2}) will be applied to the employee's record "
+					"automatically once the current term ends."
+				).format(frappe.utils.formatdate(current_term_end), frappe.utils.formatdate(new_joining_date), frappe.utils.formatdate(new_term_completion_date)),
+				alert=True,
+				indicator="blue",
+			)
+			return
+
+		self._apply_tenure_to_project_staff_details(new_joining_date, new_term_completion_date, new_basic_salary)
+
+	def _apply_tenure_to_project_staff_details(self, new_joining_date, new_term_completion_date, new_basic_salary):
+		"""Writes the approved new-term dates/salary onto the linked Project
+		Staff Details record. Only call this once the current term has actually
+		ended — see auto_create_tenure_record() and
+		apply_pending_project_staff_extensions()."""
+		if self.tenure_row_created:
+			return
 
 		ps_details_name = frappe.db.get_value("Project Staff Details", {"ps_emp_id": self.ex_emp_id}, "name")
 		parent_doc = frappe.get_doc("Project Staff Details", ps_details_name)
@@ -240,10 +288,42 @@ class ProjectStaffExtension(Document):
 		parent_doc.flags.ignore_permissions = True
 		parent_doc.save()
 
-		# Save the new basic pay & the final dates used back onto this extension doc
-		self.db_set("ex_current_basic", new_basic_salary)
-		self.db_set("ex_final_new_joining_date", new_joining_date)
-		self.db_set("ex_final_new_completion_date", new_term_completion_date)
+		self.db_set("tenure_row_created", 1)
+
+
+def apply_pending_project_staff_extensions():
+	"""Daily scheduled job. Finds Approved Project Staff Extensions whose
+	rollover onto Project Staff Details was deferred (because, at approval
+	time, the current term hadn't ended yet) and applies it now that the
+	current term's end date has arrived. This is what makes
+	auto_create_tenure_record()'s deferral actually take effect later instead
+	of leaving the extension stuck."""
+	from frappe.utils import today
+
+	pending = frappe.get_all(
+		"Project Staff Extension",
+		filters={
+			"workflow_state": "Approved",
+			"tenure_row_created": 0,
+			"ex_date_of_expiry": ["<=", today()],
+			"ex_final_new_joining_date": ["is", "set"],
+			"ex_final_new_completion_date": ["is", "set"],
+		},
+		pluck="name",
+	)
+
+	for name in pending:
+		try:
+			doc = frappe.get_doc("Project Staff Extension", name)
+			doc._apply_tenure_to_project_staff_details(
+				doc.ex_final_new_joining_date,
+				doc.ex_final_new_completion_date,
+				doc.ex_current_basic,
+			)
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(frappe.get_traceback(), "Project Staff Extension Rollover Error")
 
 
 def _safe_float(val):

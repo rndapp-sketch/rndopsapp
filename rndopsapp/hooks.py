@@ -181,6 +181,7 @@ doc_events = {
 		# on_update — most real approval-chain transitions happen post-submit,
 		# so without this entry Email Manager never sees them.
 		"on_update_after_submit": [
+			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
 		],
@@ -191,6 +192,7 @@ doc_events = {
 		# its own event. Same handler, same dedupe, so this is pure
 		# coverage, not a behavior change.
 		"on_submit": [
+			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.external_auth.log_impersonated_action",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
@@ -205,7 +207,8 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
+		"rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts",
+		"rndopsapp.rndopsapp.doctype.project_staff_extension.project_staff_extension.apply_pending_project_staff_extensions",
 	],
 	"cron": {
 		# SCL January credit — Jan 1 at midnight (creates new-year record, credits 15 days)
@@ -215,6 +218,10 @@ scheduler_events = {
 		# SCL July credit — Jul 1 at midnight (adds 15 days, total becomes 30)
 		"0 0 1 7 *": [
 			"rndopsapp.rndopsapp.tasks.scl_credit.credit_july_scl"
+		],
+		# Auto-disable announcements whose End Date has passed
+		"*/15 * * * *": [
+			"rndopsapp.rndopsapp.doctype.announcement_pragati.announcement_pragati.auto_disable_expired_announcements"
 		],
 	},
 }

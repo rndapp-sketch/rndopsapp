@@ -28,6 +28,19 @@ STATE_ALIASES = {
 	("Fund Received", "Rejected"): "PENDING_APPROVAL",
 }
 
+# Hardcoded put-back target list for specific (doctype, state) pairs, used
+# in place of the generic backward walk below. Recruitment Adhoc Contractual
+# can't express "Pending Staff Approval -> Draft" as a real Workflow
+# Transition (Draft's Doc Status is 0/unsubmitted, Pending Staff Approval's
+# is 1/submitted, and Frappe's Workflow doctype hard-blocks any transition
+# from a submitted state to an unsubmitted one) — this is exactly the gap
+# this module's direct-DB-write exists to cover. The generic walk would also
+# offer "Pending Head Approval" as an intermediate hop before reaching
+# "Draft"; staff, RnD should only be offered "Draft" itself.
+PUT_BACK_STATE_OVERRIDES = {
+	("Recruitment Adhoc Contractual", "Pending Staff Approval"): ["Draft"],
+}
+
 
 def _get_active_workflow(doctype):
 	workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
@@ -55,6 +68,10 @@ def get_put_back_document_states(doctype, docname):
 		current_state = frappe.db.get_value(doctype, docname, "workflow_state")
 		if not current_state:
 			return {"status": "success", "current_state": None, "states": []}
+
+		override = PUT_BACK_STATE_OVERRIDES.get((doctype, current_state))
+		if override is not None:
+			return {"status": "success", "current_state": current_state, "states": override}
 
 		transitions = frappe.get_all(
 			"Workflow Transition",

@@ -50,8 +50,8 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-19 11:24:30.321881",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-09-30 10:38:48.154251",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Department_prornd",
  "owner": "Administrator",
@@ -75,6 +75,51 @@
   {
    "read": 1,
    "role": "Guest"
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Independent Researcher",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Inspire Faculty",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Inspired Faculty",
+   "share": 1
   }
  ],
  "quick_entry": 1,

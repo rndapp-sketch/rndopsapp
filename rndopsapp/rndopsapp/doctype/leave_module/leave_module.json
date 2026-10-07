@@ -10,10 +10,15 @@
   "user_information_section",
   "email",
   "username",
+  "employee_name",
+  "employee_id",
   "pi",
   "project_no",
+  "project_title",
+  "project_type",
   "leave_details_section",
   "leave_type",
+  "no_of_days",
   "cl_section",
   "cl_dates_table",
   "el_section",
@@ -55,11 +60,42 @@
    "label": "Username"
   },
   {
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "label": "Staff Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "employee_id",
+   "fieldtype": "Data",
+   "label": "Employee Number",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
    "fetch_from": "email.piheadmentor_user_id",
    "fieldname": "pi",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "PI"
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project Number"
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Small Text",
+   "label": "Project Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_type",
+   "fieldtype": "Data",
+   "label": "Project Type",
+   "read_only": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "leave_details_section",
@@ -73,6 +109,14 @@
    "label": "Nature of Leave",
    "options": "\nCL\nEL\nOn Duty Leave",
    "reqd": 1
+  },
+  {
+   "fieldname": "no_of_days",
+   "fieldtype": "Float",
+   "label": "No. of Days",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "Days applied for: CL counts half days; EL and On Duty count every day from From Date to To Date."
   },
   {
    "depends_on": "eval:doc.leave_type == 'CL'",
@@ -188,18 +232,13 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
-  },
-  {
-   "fieldname": "project_no",
-   "fieldtype": "Data",
-   "label": "Project Number"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-13 21:12:18.773797",
+ "modified": "2026-09-11 13:00:00.000000",
  "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Leave Module",

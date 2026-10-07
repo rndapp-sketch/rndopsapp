@@ -52,6 +52,17 @@ class ProjectStaffDetails(Document):
 		if self.ifsc_code:
 			self.ifsc_code = self.ifsc_code.strip().upper()
 
+		# ps_designation is free-text (hand-typed/bulk-imported), so the same
+		# role ends up spelled many ways ("JRF GATE", "JRF(GATE)", ...). Snap
+		# it to the canonical Designation_prornd spelling whenever it's a
+		# confident match, same resolution _sync_project_staff_to_user already
+		# uses for the User sync — left unchanged if nothing matches closely
+		# enough, rather than guessing.
+		if self.ps_designation:
+			resolved_designation = _resolve_link_value("Designation_prornd", self.ps_designation)
+			if resolved_designation:
+				self.ps_designation = resolved_designation
+
 	# Employee ID is allocated when the staff submits the joining form
 	# (see `submit_project_staff_details`), not at draft-insert time, so
 	# abandoned drafts don't burn numbers in the series.
@@ -323,9 +334,14 @@ def create_project_staff_details_entry(data):
 	doc.reload()
 
 	# A record reaching "Approved" through the real workflow action
-	# (perform_project_staff_details_action) triggers these same two steps —
+	# (perform_project_staff_details_action) triggers these same three steps —
 	# run them here too so a record created straight-to-Approved by this
-	# tool isn't missing its tenure row or Leave Data allocation.
+	# tool isn't missing its tenure row, Leave Data allocation, or User
+	# account. Unlike perform_project_staff_details_action, no Ado_RnD role
+	# check is needed here: this endpoint already ran doc.insert() under the
+	# creator's own normal permissions (no ignore_permissions) rather than
+	# the Ado_RnD-gated workflow Approve action.
+	_sync_project_staff_to_user(doc)
 	_populate_tenure_on_approval(doc)
 	_allocate_leave_data_on_approval(doc)
 
@@ -390,9 +406,113 @@ BULK_IMPORT_REQUIRED_FIELDS = {
 	"ps_joining_date": "Joining Date",
 }
 
+# (fieldname, label, required) for every column the importer understands, in
+# the same order as the downloadable template — used to populate the manual
+# column-mapping dropdowns on the upload page.
+BULK_IMPORT_FIELD_DEFINITIONS = [
+	("pi_id", "PI Id", True),
+	("project_no", "Project Number", True),
+	("scr_id", "SCR Id", False),
+	("ps_department", "Department", True),
+	("ps_designation", "Designation", True),
+	("ps_first_name", "First Name", True),
+	("ps_middle_name", "Middle Name", False),
+	("ps_last_name", "Last Name", True),
+	("ps_gender", "Gender", True),
+	("ps_date_of_birth", "Date of Birth", False),
+	("ps_fathers_name", "Father's Name", False),
+	("ps_blood_group", "Blood Group", False),
+	("ps_maritial_status", "Maritial Status", False),
+	("ps_citizenship", "Citizenship", False),
+	("ps_phone_number", "Phone Number", False),
+	("ps_email_id", "Email Id", False),
+	("erp_mail", "ERP Mail", False),
+	("ps_present_address", "Present Address", False),
+	("ps_permanent_address", "Permanent Address", False),
+	("bank_account_number", "Bank Account Number", False),
+	("ifsc_code", "IFSC Code", False),
+	("ps_pan", "PAN", False),
+	("ps_aadhar_number", "Aadhar Number", False),
+	("ps_joining_date", "Joining Date", True),
+	("ps_term_completion_date", "Term Completion Date", False),
+	("ps_basic_salary", "Basic Salary", False),
+	("ps_hra", "HRA", False),
+	("ps_ma", "Medical Allowance", False),
+	("ps_hostel", "Hostel", False),
+	("ps_ta", "Travel Allowance Needed", False),
+	("ps_ta_amount", "Travel Allowance Amount", False),
+]
+
 
 def _normalize_bulk_import_header(header):
 	return re.sub(r"[^a-z0-9]", "", str(header or "").lower())
+
+
+# Bulk-uploaded CSV/Excel files come from HR/staff and mix date formats
+# (DD-MM-YYYY, DD/MM/YYYY, D-M-YY, ...) rather than the YYYY-MM-DD MySQL
+# expects, which previously failed the whole row with a raw "Incorrect date
+# value" DB error. Tried in order; DD-first formats come before MM-first
+# ones since this data is Indian-staff DOB/joining-date entry.
+BULK_IMPORT_DATE_FIELDS = {"ps_date_of_birth", "ps_joining_date", "ps_term_completion_date"}
+BULK_IMPORT_DATE_FORMATS = [
+	"%Y-%m-%d", "%Y/%m/%d",
+	"%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y",
+	"%d-%m-%y", "%d/%m/%y",
+	"%m-%d-%Y", "%m/%d/%Y",
+]
+
+
+def _normalize_bulk_import_date(value):
+	"""
+	Best-effort parse of a bulk-import date cell into 'YYYY-MM-DD'. Returns
+	the original (stripped) value unchanged if no known format matches, so
+	the row still reaches normal validation/error reporting instead of being
+	silently dropped.
+	"""
+	from datetime import date, datetime
+
+	# Excel date cells (.xlsx/.xls) come back as real datetime/date objects,
+	# not strings — format those directly rather than round-tripping through
+	# str() (which would produce "1994-03-07 00:00:00" and fail every
+	# strptime pattern below).
+	if isinstance(value, datetime):
+		return value.strftime("%Y-%m-%d")
+	if isinstance(value, date):
+		return value.isoformat()
+
+	value = str(value or "").strip()
+	if not value:
+		return value
+
+	for fmt in BULK_IMPORT_DATE_FORMATS:
+		try:
+			return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+		except ValueError:
+			continue
+	return value
+
+
+# `ps_ta` (If Travel Allowance Needed) is a Select field restricted to
+# "", "Yes", "No" — but bulk-uploaded files commonly spell that as 0/1,
+# Y/N, True/False, etc. Wrap those into the values the field actually
+# accepts before insert, instead of letting every non-exact-match row fail
+# with a raw "... should be one of ..." select-field error.
+BULK_IMPORT_YES_NO_FIELDS = {"ps_ta"}
+BULK_IMPORT_YES_VALUES = {"yes", "y", "true", "1"}
+BULK_IMPORT_NO_VALUES = {"no", "n", "false", "0"}
+
+
+def _normalize_bulk_import_yes_no(value):
+	raw = str(value or "").strip()
+	normalized = raw.lower()
+	if normalized in BULK_IMPORT_YES_VALUES:
+		return "Yes"
+	if normalized in BULK_IMPORT_NO_VALUES:
+		return "No"
+	# Unrecognized value (including "") is passed through unchanged so it
+	# still reaches normal validation/error reporting rather than being
+	# silently dropped or guessed at.
+	return raw
 
 
 def _find_duplicate_project_staff_row(row_data, seen_in_file):
@@ -443,26 +563,12 @@ def _find_duplicate_project_staff_row(row_data, seen_in_file):
 	return None
 
 
-@frappe.whitelist(methods=["POST"])
-def bulk_import_project_staff_details():
+def _read_bulk_import_rows(uploaded):
 	"""
-	Bulk-imports Project Staff Details from an uploaded CSV/XLS/XLSX file
-	(multipart/form-data, field name "file" — same as the standard Frappe
-	file upload pattern; binary spreadsheets don't belong in a JSON body).
-
-	The first row is treated as the header row; column headers are matched
-	against `BULK_IMPORT_HEADER_MAP` case/space/punctuation-insensitively, so
-	either the friendly labels used on the `/insert_project_staff` form
-	("PI Id", "First Name", ...) or the raw fieldnames ("pi_id",
-	"ps_first_name", ...) both work. Unrecognized columns are ignored.
-
-	Each row is inserted through the same path as `create_project_staff_details_entry`
-	(no ignore_permissions — runs as the logged-in user), after a best-effort
-	duplicate check (see `_find_duplicate_project_staff_row`). One bad row
-	does not abort the rest of the file: every row gets its own try/except and
-	the response reports success/duplicate/error per row plus totals.
+	Reads an uploaded CSV/XLS/XLSX file into a list of rows (list-of-lists),
+	blank rows stripped. Shared by the header-preview and the actual import
+	endpoint so both parse the file identically.
 	"""
-	uploaded = frappe.request.files.get("file") if frappe.request else None
 	if not uploaded or not uploaded.filename:
 		frappe.throw(_("No file uploaded."))
 
@@ -482,29 +588,81 @@ def bulk_import_project_staff_details():
 	rows = [r for r in rows if r and any(str(c or "").strip() for c in r)]
 	if not rows:
 		frappe.throw(_("The uploaded file is empty."))
+	return rows
 
+
+@frappe.whitelist(methods=["POST"])
+def preview_bulk_import_headers():
+	"""
+	Reads the header row and all data rows of an uploaded CSV/XLS/XLSX file
+	and returns them along with the best-guess field for each column (via
+	`BULK_IMPORT_HEADER_MAP`) and the full list of fields the importer
+	understands. Backs the upload page's two-step preview: first a manual
+	column-mapping UI (instead of relying solely on header-name matching),
+	then an editable grid of every row so mistakes can be fixed by hand
+	before anything is inserted.
+	"""
+	uploaded = frappe.request.files.get("file") if frappe.request else None
+	rows = _read_bulk_import_rows(uploaded)
 	header_row, data_rows = rows[0], rows[1:]
-	col_field = [BULK_IMPORT_HEADER_MAP.get(_normalize_bulk_import_header(h)) for h in header_row]
 
-	if not any(col_field):
-		frappe.throw(
-			_("Could not recognize any column headers in the uploaded file. Please use the provided template.")
-		)
+	headers = [str(h or "").strip() for h in header_row]
+	suggested_mapping = [BULK_IMPORT_HEADER_MAP.get(_normalize_bulk_import_header(h)) for h in headers]
 
+	def stringify_row(row):
+		return [str(c) if c is not None else "" for c in row]
+
+	return {
+		"headers": headers,
+		"suggested_mapping": suggested_mapping,
+		"sample_row": stringify_row(data_rows[0]) if data_rows else [],
+		"data_rows": [stringify_row(r) for r in data_rows],
+		"fields": [
+			{"fieldname": fieldname, "label": label, "required": required}
+			for fieldname, label, required in BULK_IMPORT_FIELD_DEFINITIONS
+		],
+	}
+
+
+def _normalize_bulk_import_field_value(field, value):
+	if value is None:
+		return None
+	if field in BULK_IMPORT_DATE_FIELDS:
+		return _normalize_bulk_import_date(value)
+	if field in BULK_IMPORT_YES_NO_FIELDS:
+		return _normalize_bulk_import_yes_no(value)
+	return value.strip() if isinstance(value, str) else str(value).strip()
+
+
+def _build_bulk_import_row_data(raw_row, col_field):
+	"""Maps one raw file row (list of cells) to a fieldname -> value dict
+	using `col_field` (built from either header-name matching or an explicit
+	column_mapping — see `bulk_import_project_staff_details`)."""
+	row_data = {}
+	for col_idx, field in enumerate(col_field):
+		if not field or col_idx >= len(raw_row):
+			continue
+		value = _normalize_bulk_import_field_value(field, raw_row[col_idx])
+		if value is not None:
+			row_data[field] = value
+	return row_data
+
+
+def _process_bulk_import_rows(rows_data):
+	"""
+	Shared insert pipeline for both bulk-import entry points: takes an
+	iterable of (display_row_number, row_data dict) pairs and, for each,
+	runs the same missing-field check, duplicate check
+	(`_find_duplicate_project_staff_row`) and insert
+	(`create_project_staff_details_entry`) as the rest of this module. One
+	bad row does not abort the batch — every row gets its own try/except and
+	the response reports success/duplicate/error per row plus totals.
+	"""
 	results = []
 	seen_in_file = {"aadhar": set(), "pan": set(), "combo": set()}
 	counts = {"success": 0, "duplicate": 0, "error": 0}
 
-	for idx, raw_row in enumerate(data_rows, start=2):  # 2 = first data row, header is row 1
-		row_data = {}
-		for col_idx, field in enumerate(col_field):
-			if not field or col_idx >= len(raw_row):
-				continue
-			value = raw_row[col_idx]
-			if value is None:
-				continue
-			row_data[field] = value.strip() if isinstance(value, str) else str(value).strip()
-
+	for idx, row_data in rows_data:
 		if not any(row_data.values()):
 			continue  # fully blank row — skip silently, don't count as an error
 
@@ -521,6 +679,9 @@ def bulk_import_project_staff_details():
 					"name": display_name,
 					"status": "error",
 					"message": _("Missing required field(s): {0}").format(", ".join(missing)),
+					# Included so the upload page can offer an inline "fix & retry"
+					# form for this row instead of requiring a whole new file.
+					"row_data": row_data,
 				}
 			)
 			continue
@@ -528,7 +689,15 @@ def bulk_import_project_staff_details():
 		dup_reason = _find_duplicate_project_staff_row(row_data, seen_in_file)
 		if dup_reason:
 			counts["duplicate"] += 1
-			results.append({"row": idx, "name": display_name, "status": "duplicate", "message": dup_reason})
+			results.append(
+				{
+					"row": idx,
+					"name": display_name,
+					"status": "duplicate",
+					"message": dup_reason,
+					"row_data": row_data,
+				}
+			)
 			continue
 
 		try:
@@ -549,9 +718,103 @@ def bulk_import_project_staff_details():
 		except Exception as e:
 			frappe.db.rollback()
 			counts["error"] += 1
-			results.append({"row": idx, "name": display_name, "status": "error", "message": str(e)})
+			results.append(
+				{
+					"row": idx,
+					"name": display_name,
+					"status": "error",
+					"message": str(e),
+					"row_data": row_data,
+				}
+			)
 
 	return {"status": "success", "counts": counts, "results": results}
+
+
+@frappe.whitelist(methods=["POST"])
+def bulk_import_project_staff_details(column_mapping=None):
+	"""
+	Bulk-imports Project Staff Details from an uploaded CSV/XLS/XLSX file
+	(multipart/form-data, field name "file" — same as the standard Frappe
+	file upload pattern; binary spreadsheets don't belong in a JSON body).
+
+	By default the first row is treated as the header row, and column
+	headers are matched against `BULK_IMPORT_HEADER_MAP`
+	case/space/punctuation-insensitively, so either the friendly labels used
+	on the `/insert_project_staff` form ("PI Id", "First Name", ...) or the
+	raw fieldnames ("pi_id", "ps_first_name", ...) both work. Unrecognized
+	columns are ignored.
+
+	`column_mapping`, if given, overrides that auto-detection: a JSON array
+	aligned to the file's columns (same order as its header row), each entry
+	either a Project Staff Details fieldname or null/"" to skip that column.
+	This lets the upload page's manual mapping step force a specific column
+	to a specific field regardless of what its header text says — useful
+	when a file's headers don't match any known alias.
+
+	See `_process_bulk_import_rows` for the shared insert/duplicate-check
+	pipeline this feeds into.
+	"""
+	uploaded = frappe.request.files.get("file") if frappe.request else None
+	rows = _read_bulk_import_rows(uploaded)
+
+	header_row, data_rows = rows[0], rows[1:]
+
+	if column_mapping:
+		if isinstance(column_mapping, str):
+			column_mapping = json.loads(column_mapping)
+		valid_fields = {fieldname for fieldname, _label, _req in BULK_IMPORT_FIELD_DEFINITIONS}
+		col_field = [
+			field if field in valid_fields else None
+			for field in (
+				column_mapping[i] if i < len(column_mapping) else None for i in range(len(header_row))
+			)
+		]
+	else:
+		col_field = [BULK_IMPORT_HEADER_MAP.get(_normalize_bulk_import_header(h)) for h in header_row]
+
+	if not any(col_field):
+		frappe.throw(
+			_("Could not recognize any column headers in the uploaded file. Please use the provided template.")
+		)
+
+	rows_data = (
+		(idx, _build_bulk_import_row_data(raw_row, col_field))
+		for idx, raw_row in enumerate(data_rows, start=2)  # 2 = first data row, header is row 1
+	)
+	return _process_bulk_import_rows(rows_data)
+
+
+@frappe.whitelist(methods=["POST"])
+def bulk_import_project_staff_details_from_rows(rows):
+	"""
+	Imports Project Staff Details from rows the upload page has already
+	parsed and let the user hand-edit in its preview grid, instead of
+	re-uploading and re-parsing the original file. `rows` is a JSON array of
+	fieldname -> value dicts (fieldnames per `BULK_IMPORT_FIELD_DEFINITIONS`,
+	same as `bulk_import_project_staff_details` builds from a file). Runs
+	through the identical missing-field/duplicate/create pipeline — see
+	`_process_bulk_import_rows`.
+	"""
+	if isinstance(rows, str):
+		rows = json.loads(rows)
+	if not rows:
+		frappe.throw(_("No rows to import."))
+
+	valid_fields = {fieldname for fieldname, _label, _req in BULK_IMPORT_FIELD_DEFINITIONS}
+
+	def normalize_row(row):
+		normalized = {}
+		for field, value in (row or {}).items():
+			if field not in valid_fields:
+				continue
+			value = _normalize_bulk_import_field_value(field, value)
+			if value:
+				normalized[field] = value
+		return normalized
+
+	rows_data = ((idx, normalize_row(row)) for idx, row in enumerate(rows, start=1))
+	return _process_bulk_import_rows(rows_data)
 
 
 @frappe.whitelist()
@@ -1068,6 +1331,49 @@ def _allocate_leave_data_on_approval(doc):
 		)
 
 
+_LINK_VALUE_CACHE = {}
+
+
+def _resolve_link_value(doctype, raw_value, cutoff=0.72):
+	"""
+	Resolves free-text (typo'd/case-mismatched/whitespace-mismatched) input
+	against an existing Link-target record's name: exact match
+	case/whitespace-insensitively first, then the closest fuzzy match (via
+	difflib) if it's a strong enough match, else None.
+
+	Project Staff Details' ps_department/ps_designation are plain Data/Text
+	fields hand-typed or bulk-imported over the years, but the User doctype's
+	department_name/designation_name are Link fields to Department_prornd/
+	Designation_prornd — an exact-text mismatch (extra space, "&" vs "and",
+	different casing, ...) would otherwise hard-fail the whole User save.
+	Returns None (field left unset) rather than guessing wrong when nothing
+	is a close enough match.
+	"""
+	raw_value = (raw_value or "").strip()
+	if not raw_value:
+		return None
+
+	if doctype not in _LINK_VALUE_CACHE:
+		_LINK_VALUE_CACHE[doctype] = frappe.get_all(doctype, pluck="name")
+	names = _LINK_VALUE_CACHE[doctype]
+
+	for name in names:
+		if name.strip().lower() == raw_value.lower():
+			return name
+
+	import difflib
+
+	# Case-insensitive on purpose: bulk-imported/hand-typed values are
+	# commonly ALL-CAPS or Title Case against a canonical list that's a mix
+	# of both (e.g. "SRF DIRECT" vs "SRF(Direct)", "RESEARCH ASSOCIATE -1"
+	# vs "Research Associate (1)") — comparing raw case made those fuzzy
+	# ratios collapse to near-zero and fall under cutoff, or (worse) match
+	# an unrelated ALL-CAPS entry instead just because it shared casing.
+	lower_to_name = {name.lower(): name for name in names}
+	close = difflib.get_close_matches(raw_value.lower(), lower_to_name.keys(), n=1, cutoff=cutoff)
+	return lower_to_name[close[0]] if close else None
+
+
 def _sync_project_staff_to_user(doc):
 	"""
 	Creates (or updates) a Frappe User from an approved Project Staff Details doc.
@@ -1077,9 +1383,9 @@ def _sync_project_staff_to_user(doc):
 	  first/middle/last    -> ps_first_name / ps_middle_name / ps_last_name
 	  full_name            -> first + middle + last
 	  employee_id          -> ps_emp_id
-	  department_name      -> ps_department
-	  designation_name     -> ps_designation
-	  piheadmentor_user_id -> pi_id
+	  department_name      -> ps_department, resolved against Department_prornd (see _resolve_link_value)
+	  designation_name     -> ps_designation, resolved against Designation_prornd
+	  piheadmentor_user_id -> pi_id, only if a matching User already exists
 	"""
 	from rndopsapp.rndopsapp.user_api.user_api import save_user_data
 
@@ -1100,6 +1406,8 @@ def _sync_project_staff_to_user(doc):
 			if r not in roles:
 				roles.append(r)
 
+	pi_id = (doc.pi_id or "").strip()
+
 	payload = {
 		"email": erp_mail,
 		"username": erp_mail.split("@", 1)[0],
@@ -1108,9 +1416,9 @@ def _sync_project_staff_to_user(doc):
 		"last_name": doc.ps_last_name,
 		"full_name": full_name,
 		"employee_id": doc.ps_emp_id,
-		"department_name": doc.ps_department,
-		"designation_name": doc.ps_designation,
-		"piheadmentor_user_id": doc.pi_id,
+		"department_name": _resolve_link_value("Department_prornd", doc.ps_department),
+		"designation_name": _resolve_link_value("Designation_prornd", doc.ps_designation),
+		"piheadmentor_user_id": pi_id if pi_id and frappe.db.exists("User", pi_id) else None,
 		"enabled": 1,
 		"roles": roles,
 	}
@@ -1140,6 +1448,178 @@ def _update_single_field(docname, fieldname, value):
 def update_joining_report_number(docname, joining_report_number):
 	"""Update only the ps_jrn (Joining Report Number) field."""
 	return _update_single_field(docname, "ps_jrn", joining_report_number)
+
+
+@frappe.whitelist()
+def backfill_project_staff_users(dry_run=1, suppress_welcome_email=1):
+	"""
+	One-off backfill for the gap fixed in `create_project_staff_details_entry`
+	(that path set workflow_state straight to "Approved" without ever calling
+	`_sync_project_staff_to_user`, so every record created that way — manual
+	form entries and bulk imports alike — never got a Frappe User). Finds
+	every Approved Project Staff Details with a valid erp_mail but no
+	matching User, and runs `_sync_project_staff_to_user` on it.
+
+	dry_run (default 1): only reports which records would get a User created;
+	makes no changes.
+	suppress_welcome_email (default 1): sets flags.no_welcome_mail on the new
+	User so the backfill doesn't blast Frappe's "Send Welcome Email" to
+	every affected staff member at once (they're already active, not new
+	signups) — set to 0 to allow it.
+	"""
+	dry_run = frappe.utils.cint(dry_run)
+	suppress_welcome_email = frappe.utils.cint(suppress_welcome_email)
+
+	candidates = frappe.get_all(
+		"Project Staff Details",
+		filters={"workflow_state": "Approved"},
+		fields=["name", "erp_mail", "ps_first_name", "ps_last_name", "ps_emp_id"],
+	)
+
+	to_create = []
+	for row in candidates:
+		erp_mail = (row.erp_mail or "").strip()
+		if not erp_mail or "@" not in erp_mail:
+			continue
+		if not frappe.db.exists("User", erp_mail):
+			to_create.append(row)
+
+	if dry_run:
+		return {
+			"status": "success",
+			"dry_run": True,
+			"total_approved": len(candidates),
+			"missing_user_count": len(to_create),
+			"missing_user": [
+				{"docname": r.name, "erp_mail": r.erp_mail, "ps_emp_id": r.ps_emp_id} for r in to_create
+			],
+		}
+
+	created, failed = [], []
+	# Frappe's throttle_user_creation() blocks new User inserts past
+	# throttle_user_limit (default 60) in a rolling window — a spam guard
+	# meant for public signup forms. It explicitly exempts frappe.flags.in_import,
+	# which is exactly this case: an administrative backfill, not a signup flood.
+	frappe.flags.in_import = True
+	try:
+		for row in to_create:
+			try:
+				doc = frappe.get_doc("Project Staff Details", row.name)
+				if suppress_welcome_email:
+					frappe.flags.no_welcome_mail = True
+				_sync_project_staff_to_user(doc)
+				frappe.db.commit()
+				created.append({"docname": row.name, "erp_mail": row.erp_mail})
+			except Exception as e:
+				frappe.db.rollback()
+				frappe.log_error(frappe.get_traceback(), f"Project Staff User backfill failed for {row.name}")
+				failed.append({"docname": row.name, "erp_mail": row.erp_mail, "message": str(e)})
+			finally:
+				frappe.flags.no_welcome_mail = False
+	finally:
+		frappe.flags.in_import = False
+
+	return {
+		"status": "success",
+		"dry_run": False,
+		"total_approved": len(candidates),
+		"missing_user_count": len(to_create),
+		"created": created,
+		"failed": failed,
+	}
+
+
+@frappe.whitelist()
+def normalize_project_staff_designations(dry_run=1, cutoff=0.72):
+	"""
+	One-off backfill: `ps_designation` is free-text (hand-typed/bulk-imported
+	over the years), so the same role ends up spelled many ways across
+	records — "JRF GATE", "JRF(GATE)", "JRF (GATE)" — none of which line up
+	with the canonical `Designation_prornd` list that `_sync_project_staff_to_user`
+	already resolves against for the User sync. This backfill does the same
+	resolution (`_resolve_link_value`, exact match case/whitespace-insensitively
+	first, then fuzzy via difflib) directly on `ps_designation` so Desk
+	filters/reports group correctly instead of splintering by spelling.
+
+	Only touches values that resolve to a single, unambiguous, *different*
+	string. Values that don't resolve to anything in Designation_prornd
+	(cutoff not met) are reported under `unresolved`; values whose best
+	fuzzy match ties with another equally-close candidate (e.g. "Research
+	Associate (I)" scoring identically against "...(1)", "...(2)" and
+	"...(3)" — the roman numeral gives no signal for which digit was meant)
+	are reported under `ambiguous` instead of guessed at. Neither list is
+	touched — both need a human to pick the right value.
+
+	dry_run (default 1): reports the mapping and how many records each
+	affects, without writing anything.
+	"""
+	import difflib
+
+	dry_run = frappe.utils.cint(dry_run)
+	cutoff = float(cutoff)
+
+	distinct_values = frappe.get_all(
+		"Project Staff Details",
+		filters={"ps_designation": ["is", "set"]},
+		fields=["ps_designation", "count(name) as cnt"],
+		group_by="ps_designation",
+	)
+
+	canonical_names = frappe.get_all("Designation_prornd", pluck="name")
+	lower_to_name = {name.lower(): name for name in canonical_names}
+
+	changes = []
+	unresolved = []
+	ambiguous = []
+	for row in distinct_values:
+		old_value = row.ps_designation
+
+		# Exact, case/whitespace-insensitive match short-circuits before any
+		# fuzzy scoring, so it can never be flagged ambiguous.
+		exact = lower_to_name.get(old_value.strip().lower())
+		if exact:
+			if exact != old_value:
+				changes.append({"from": old_value, "to": exact, "count": row.cnt})
+			continue
+
+		scored = difflib.get_close_matches(old_value.lower(), lower_to_name.keys(), n=2, cutoff=cutoff)
+		if not scored:
+			unresolved.append({"value": old_value, "count": row.cnt})
+			continue
+
+		if len(scored) > 1:
+			top_ratio = difflib.SequenceMatcher(None, old_value.lower(), scored[0]).ratio()
+			runner_up_ratio = difflib.SequenceMatcher(None, old_value.lower(), scored[1]).ratio()
+			if top_ratio == runner_up_ratio:
+				ambiguous.append(
+					{
+						"value": old_value,
+						"count": row.cnt,
+						"candidates": [lower_to_name[scored[0]], lower_to_name[scored[1]]],
+					}
+				)
+				continue
+
+		changes.append({"from": old_value, "to": lower_to_name[scored[0]], "count": row.cnt})
+
+	if not dry_run:
+		for change in changes:
+			frappe.db.set_value(
+				"Project Staff Details",
+				{"ps_designation": change["from"]},
+				"ps_designation",
+				change["to"],
+			)
+		frappe.db.commit()
+
+	return {
+		"status": "success",
+		"dry_run": bool(dry_run),
+		"changes": changes,
+		"records_affected": sum(c["count"] for c in changes),
+		"unresolved": unresolved,
+		"ambiguous": ambiguous,
+	}
 
 
 @frappe.whitelist()

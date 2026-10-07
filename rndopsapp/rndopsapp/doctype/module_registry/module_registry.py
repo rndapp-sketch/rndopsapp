@@ -542,7 +542,27 @@ def get_pending_application():
 		for r in resignation_records:
 			r["doctype"] = "Project Staff Resignation"
 
-	records = leave_records + extension_records + resignation_records
+	# Project Registration: reaches "Pending Mentor Approval" only for
+	# Independent Researcher / Inspired Faculty applicants. The record now
+	# carries its own `mentor_user_id` (fetched from pi_webmail's
+	# piheadmentor_user_id), so match that directly against the logged-in
+	# user instead of joining through the owner/User table.
+	mentor_records = frappe.get_list(
+		"Project Registration",
+		filters={
+			"workflow_state": "Pending Mentor Approval",
+			"docstatus": 1,
+			"mentor_user_id": current_user,
+		},
+		fields=["name", "project_title", "pi_userid", "applicant_department", "workflow_state", "modified", "owner", "docstatus", "creation"],
+		order_by="modified desc",
+		limit_page_length=10000,
+		ignore_permissions=True,
+	)
+	for r in mentor_records:
+			r["doctype"] = "Project Registration"
+
+	records = leave_records + extension_records + resignation_records + mentor_records
 
 	# doctype -> (other-PI field, state it waits in, applicant-name field)
 	other_pi_sources = {

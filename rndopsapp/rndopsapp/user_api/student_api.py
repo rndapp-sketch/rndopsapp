@@ -36,7 +36,7 @@ STUDENT_EMPCLASS = "5ucn86a636"
 # Frappe User must exist, be enabled, be a System User (the type used by the
 # React frontend) and carry the baseline app role(s).
 STUDENT_USER_TYPE = "System User"
-STUDENT_ROLES = ["All_ProRnd_User", "project staff"]
+STUDENT_ROLES = ["All_ProRnd_User", "Student"]
 
 
 # ---------------------------------------------------------------------------

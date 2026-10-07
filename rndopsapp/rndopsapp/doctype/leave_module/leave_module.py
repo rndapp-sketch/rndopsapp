@@ -7,30 +7,30 @@ import math
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import date_diff
+from frappe.utils import date_diff, flt
 
 
 class LeaveModule(Document):
 	def validate(self):
 		self._set_user_info()
-		self._set_project_no()
+		self._set_staff_details()
 		self._validate_dates()
 		self._validate_leave_type_fields()
 		self._validate_leave_balance()
 
-	def _set_project_no(self):
+	def _set_staff_details(self):
 		"""
-		Stamp the applicant's project number onto the leave application.
+		Stamp who the applicant is, which project they are on, and how many days
+		they asked for.
 
 		Pending Task groups work by project type (Research / Consultancy /
 		Others), resolved by following a document's project number through to
 		Project Registration. Leave applications carried no project number, so
 		every one of them landed in "Others" regardless of the project the
-		applicant is actually on.
+		applicant is actually on. Approvers also had to work out the staff
+		member's name, employee number and the day count themselves.
 		"""
-		if self.project_no:
-			return
-		self.project_no = _resolve_staff_project_no(self.username, self.email)
+		self.update(_staff_detail_updates(self))
 
 	def on_trash(self):
 		"""Return leave balance when a leave application is deleted."""
@@ -184,43 +184,128 @@ def _get_leave_days(doc):
 	return 0
 
 
-def _resolve_staff_project_no(username, email=None):
+def _count_leave_days(doc):
+	"""Days a leave application asks for, as shown to approvers.
+
+	Same as _get_leave_days for EL and CL (which drives the balance), but also
+	counts On Duty Leave from its dates, which never touches a balance."""
+	if doc.leave_type == "On Duty Leave":
+		if doc.from_date and doc.to_date:
+			return date_diff(doc.to_date, doc.from_date) + 1
+		return 0
+	return _get_leave_days(doc)
+
+
+def _resolve_staff_record(username, email=None, project_no=None):
 	"""
-	Find a staff member's project number from their Project Staff Details.
+	Find a staff member's Project Staff Details record.
 
 	erp_mail is stored inconsistently on that doctype — a bare username on some
 	records ("amit_kumar1026") and a full address on others
 	("abanik44@rnd.iitg.ac.in") — so match on the local part either way, and
 	fall back to ps_email_id. Approved records win; the most recent otherwise,
-	since a staff member can have several across extensions.
+	since a staff member can have several across extensions. When the leave
+	already names a project, the record for that project is preferred, so the
+	employee number shown is the one for that appointment.
 	"""
-	local = (username or "").strip()
-	if not local and email:
-		local = str(email).split("@")[0].strip()
-	if not local:
+	# A leave can carry a username that differs from its own address
+	# (nishant_pravin_dubey applying from nishantdubey@rnd.iitg.ac.in), so try
+	# both handles: the username first, then the address's local part.
+	handles = []
+	for value in ((username or "").strip(), str(email or "").split("@")[0].strip()):
+		if value and value not in handles:
+			handles.append(value)
+	if not handles:
 		return None
 
-	full = email or f"{local}@rnd.iitg.ac.in"
+	full = email or f"{handles[0]}@rnd.iitg.ac.in"
 
-	for filters in (
-		{"erp_mail": local, "workflow_state": "Approved"},
-		{"erp_mail": ["like", f"{local}@%"], "workflow_state": "Approved"},
-		{"ps_email_id": full, "workflow_state": "Approved"},
-		{"erp_mail": local},
-		{"erp_mail": ["like", f"{local}@%"]},
-		{"ps_email_id": full},
-	):
+	candidates = []
+	for state in ({"workflow_state": "Approved"}, {}):
+		for handle in handles:
+			candidates.append(dict(state, erp_mail=handle))
+			candidates.append(dict(state, erp_mail=["like", f"{handle}@%"]))
+		candidates.append(dict(state, ps_email_id=full))
+	if project_no:
+		candidates = [dict(f, project_no=project_no) for f in candidates] + candidates
+
+	for filters in candidates:
 		rows = frappe.get_all(
 			"Project Staff Details",
 			filters=filters,
-			fields=["project_no"],
+			fields=["project_no", "ps_emp_id", "ps_first_name", "ps_middle_name", "ps_last_name"],
 			order_by="modified desc",
 			limit=1,
 		)
 		if rows and rows[0].get("project_no"):
-			return rows[0]["project_no"]
+			return rows[0]
 
 	return None
+
+
+def _resolve_staff_project_no(username, email=None):
+	"""Find a staff member's project number from their Project Staff Details."""
+	record = _resolve_staff_record(username, email)
+	return record.project_no if record else None
+
+
+def _staff_detail_updates(doc):
+	"""
+	Values to stamp on a leave application. Staff and project details are only
+	filled where missing — a leave keeps the project it was taken on — while the
+	day count always follows the dates.
+	"""
+	updates = {}
+
+	days = _count_leave_days(doc)
+	if flt(doc.get("no_of_days")) != flt(days):
+		updates["no_of_days"] = days
+
+	if all(doc.get(f) for f in ("project_no", "employee_name", "employee_id", "project_title", "project_type")):
+		return updates
+
+	record = _resolve_staff_record(doc.username, doc.email, doc.get("project_no"))
+	project_no = doc.get("project_no") or (record.project_no if record else None)
+	if project_no and not doc.get("project_no"):
+		updates["project_no"] = project_no
+
+	# A renumbered project strands the old number on leaves already stamped
+	# (26RCLSTSP0742SAMI0001 became 2627R-0500-CLST0742SAMI), and it matches no
+	# Project Registration any more, so the leave can never resolve its type.
+	# Fall back to the number the applicant's Project Staff Details carries now.
+	if project_no and not frappe.db.exists("Project Registration", {"project_no": project_no}):
+		current = record.project_no if record else None
+		if current and current != project_no and frappe.db.exists(
+			"Project Registration", {"project_no": current}
+		):
+			project_no = current
+			updates["project_no"] = current
+
+	if not doc.get("employee_name"):
+		name = ""
+		if record:
+			name = " ".join(
+				p.strip() for p in (record.ps_first_name, record.ps_middle_name, record.ps_last_name) if p and p.strip()
+			)
+		if not name and doc.email:
+			name = frappe.db.get_value("User", doc.email, "full_name") or ""
+		if name:
+			updates["employee_name"] = name
+
+	if not doc.get("employee_id") and record and record.ps_emp_id:
+		updates["employee_id"] = record.ps_emp_id
+
+	if project_no and not (doc.get("project_title") and doc.get("project_type")):
+		project = frappe.db.get_value(
+			"Project Registration", {"project_no": project_no}, ["project_title", "project_type"], as_dict=True
+		)
+		if project:
+			if not doc.get("project_title") and project.project_title:
+				updates["project_title"] = project.project_title
+			if not doc.get("project_type") and project.project_type:
+				updates["project_type"] = project.project_type
+
+	return updates
 
 
 def _resolve_leave_data_name(username, email=None):
@@ -674,6 +759,11 @@ def perform_leave_module_action(docname, action, comment=None):
 
 		if new_docstatus != int(doc.docstatus):
 			update_fields["docstatus"] = new_docstatus
+
+		# Actions write through db.set_value, which skips validate — stamp the
+		# staff/project details here too so an application already in flight
+		# gets them on its next step.
+		update_fields.update(_staff_detail_updates(doc))
 
 		frappe.db.set_value(
 			"Leave Module",

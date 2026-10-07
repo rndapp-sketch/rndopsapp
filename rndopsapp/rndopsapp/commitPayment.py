@@ -2230,6 +2230,14 @@ def set_workflow_state(
         comment = (comment or "").strip()
 
         frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
+        # Raw set_value skips doc hooks, so mirror fields (e.g. Fund Sanction's
+        # visible "Workflow Status") must be kept in sync here by hand.
+        if frappe.get_meta(doctype).has_field("sanction_workflow_status"):
+            frappe.db.set_value(
+                doctype, docname,
+                {"sanction_workflow_status": state, "workflow_status": state},
+                update_modified=False,
+            )
 
         reason_text = f" | Reason: {comment}" if comment else ""
         frappe.get_doc({

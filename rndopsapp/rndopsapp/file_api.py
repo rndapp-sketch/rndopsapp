@@ -64,6 +64,24 @@ def _normalise_key(file_url):
 	return "/".join(parts)
 
 
+def _find_in_document_folder(service, key):
+	"""Another object key with the same file name under "<doctype>/<docname>/", or None."""
+	parts = key.split("/")
+	if len(parts) < 3:
+		return None
+	prefix = "/".join(parts[:2]) + "/"
+	try:
+		matches = sorted(
+			o.object_name
+			for o in service.storage.list_prefix(prefix)
+			if o.object_name.rsplit("/", 1)[-1] == parts[-1]
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "file_api: folder fallback failed")
+		return None
+	return matches[0] if matches else None
+
+
 @frappe.whitelist()
 def get_file(file_url=None, download=0):
 	"""
@@ -77,7 +95,16 @@ def get_file(file_url=None, download=0):
 
 	from rndopsapp.minio import get_rnd_file_service
 
-	result = get_rnd_file_service().get_file(key)
+	service = get_rnd_file_service()
+	result = service.get_file(key)
+	if not result.get("status"):
+		# The folder in a stored/guessed path can be wrong (e.g. ".../attachments/x.pdf"
+		# while the object sits in ".../proposal/x.pdf"). Look for the same file name
+		# elsewhere under the same document folder before giving up.
+		alt_key = _find_in_document_folder(service, key)
+		if alt_key:
+			key = alt_key
+			result = service.get_file(key)
 	if not result.get("status"):
 		frappe.throw(_("File not found"), frappe.DoesNotExistError)
 

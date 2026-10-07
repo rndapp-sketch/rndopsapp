@@ -585,7 +585,8 @@ def get_project_details(docname):
 def get_user_details(user_email):
 	"""
 	Fetches details for a specific user to populate advance form fields.
-	Returns the user document with resolved department name and employee class.
+	Returns the user document merged with its Universal User__ / Universal
+	Registration__ fields, with resolved department name and employee class.
 	"""
 	from frappe import _
 
@@ -594,8 +595,15 @@ def get_user_details(user_email):
 
 	try:
 		user_email = str(user_email).strip('"').strip("'")
-		user_doc = frappe.get_doc("User", user_email)
-		user_dict = user_doc.as_dict()
+
+		# User + Universal User__ + Universal Registration__ flattened into one dict.
+		# Core User values are laid back on top so `name`, `owner`, etc. keep their
+		# User meaning for existing callers; registration-only fields are added.
+		user_dict = _build_user_registration_profile(user_doc_name=user_email)
+		if not user_dict:
+			return None
+		if frappe.db.exists("User", user_email):
+			user_dict.update(frappe.get_doc("User", user_email).as_dict())
 
 		# Resolve department_name ID to actual department name from Department_prornd
 		dept_link = user_dict.get("department_name")
@@ -615,12 +623,92 @@ def get_user_details(user_email):
 			except Exception:
 				pass  # Keep original value if lookup fails
 
+		# Bank details DTO: clean list built from the registration's Bank Details table
+		# (child-row metadata and the confirm-account duplicate are left out).
+		user_dict["bank_details"] = [
+			{
+				"beneficiary_name": row.get("beneficiary_name_u_r"),
+				"account_number": row.get("account_number_u_r"),
+				"ifsc_code": row.get("ifsc_code_u_r"),
+				"bank_name": row.get("bank_name_u_r"),
+				"branch_name": row.get("branch_name_u_r"),
+				"account_type": row.get("account_type_u_r"),
+				"bank_city": row.get("bank_city_u_r"),
+				"bank_state": row.get("bank_state_u_r"),
+				"attachment": row.get("attachment_u_r"),
+				"bank_passbook_front_page": row.get("bank_passbook_front_page_u_r"),
+			}
+			for row in (user_dict.get("bank_details_u_r") or [])
+		]
+
 		return user_dict
 	except frappe.DoesNotExistError:
 		return None
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), _("Error fetching user details"))
 		frappe.throw(_("An error occurred while fetching user details."))
+
+
+@frappe.whitelist()
+def get_all_user_emails(search=None, limit_start=0, limit_page_length=20):
+	"""
+	Combined, de-duplicated email list across core User, Universal User__ and
+	Universal Registration__ (like frappe.client.get_list, but one merged list).
+
+	`search` filters on email/name (substring). `limit_page_length=0` returns
+	everything. Each row: {"email", "full_name", "sources"}; `sources` lists which
+	doctypes the email was found in.
+	"""
+	from frappe import _
+
+	try:
+		limit_start = int(limit_start or 0)
+		limit_page_length = int(limit_page_length or 0)
+		like = f"%{search}%" if search else None
+
+		sources = [
+			("User", "email", "full_name", {"enabled": 1, "name": ["not in", ["Administrator", "Guest"]]}),
+			("Universal User__", "email_u_r", "full_name_u_r", {}),
+			("Universal Registration__", "email_address_u_r", "full_name_u_r", {}),
+		]
+
+		combined = {}
+		for doctype, email_field, name_field, base_filters in sources:
+			meta = frappe.get_meta(doctype)
+			fields = [email_field] + ([name_field] if meta.has_field(name_field) else [])
+			or_filters = None
+			if like:
+				or_filters = [[email_field, "like", like]]
+				if meta.has_field(name_field):
+					or_filters.append([name_field, "like", like])
+
+			rows = frappe.get_list(
+				doctype,
+				filters=base_filters,
+				or_filters=or_filters,
+				fields=fields,
+				limit_page_length=0,
+			)
+			for row in rows:
+				email = (row.get(email_field) or "").strip()
+				if not email:
+					continue
+				entry = combined.setdefault(
+					email.lower(), {"email": email, "full_name": None, "sources": []}
+				)
+				entry["full_name"] = entry["full_name"] or row.get(name_field)
+				if doctype not in entry["sources"]:
+					entry["sources"].append(doctype)
+
+		result = sorted(combined.values(), key=lambda e: e["email"].lower())
+		if limit_page_length:
+			result = result[limit_start : limit_start + limit_page_length]
+		else:
+			result = result[limit_start:]
+		return result
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), _("Error fetching combined user emails"))
+		frappe.throw(_("An error occurred while fetching user emails."))
 
 
 @frappe.whitelist()

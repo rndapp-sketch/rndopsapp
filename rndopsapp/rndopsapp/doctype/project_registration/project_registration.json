@@ -104,6 +104,7 @@
   "pi_userid",
   "department_head",
   "head_approver",
+  "mentor_user_id",
   "column_break_oxoo",
   "is_additional_pi",
   "additional_pi_table",
@@ -632,6 +633,16 @@
    "fieldname": "head_approver",
    "fieldtype": "Link",
    "label": "Head Approver",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Mentor who will approve this application, fetched from the applicant's (PI) assigned Mentor/Head.",
+   "fetch_from": "pi_webmail.piheadmentor_user_id",
+   "fieldname": "mentor_user_id",
+   "fieldtype": "Link",
+   "label": "Mentor User ID",
    "options": "User",
    "read_only": 1
   },
@@ -1286,6 +1297,7 @@
    "label": "Overhead Fund"
   },
   {
+   "default": "0",
    "description": "Set only on auto-created PDF projects. Superseded by Is Overhead Project + Overhead Fund Type, which cover every overhead fund; still written on PDF projects so anything reading it keeps working.",
    "fieldname": "is_pdf_project",
    "fieldtype": "Check",
@@ -1301,6 +1313,7 @@
    "read_only": 1
   },
   {
+   "default": "0",
    "description": "Set only on auto-created overhead fund projects (PDF, DPF, ...). Every overhead branch in the backend tests this flag.",
    "fieldname": "is_overhead_project",
    "fieldtype": "Check",
@@ -1342,7 +1355,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-21 17:37:08.046594",
+ "modified": "2026-09-29 15:34:12.324443",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
@@ -1476,6 +1489,20 @@
    "read": 1,
    "report": 1,
    "role": "Director",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Inspired Faculty",
    "select": 1,
    "share": 1,
    "submit": 1,

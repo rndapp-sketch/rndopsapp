@@ -143,6 +143,22 @@ def resolve_budget_head_id(budget_head) -> Optional[int]:
         found_idx = frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "idx")
         if found_idx:
             return int(found_idx)
+
+        # Exact match failed — the caller may send a truncated/abbreviated label
+        # (e.g. Disbursal of Consultancy staging "Consultancy" for the actual
+        # "Consultancy Fee" record). Fall back to a prefix match, but only trust
+        # it when exactly one Budget Head matches to avoid picking the wrong one.
+        prefix_matches = frappe.get_all(
+            "Budget Head",
+            filters={"budget_head": ["like", f"{budget_head}%"]},
+            fields=["id", "idx"],
+        )
+        if len(prefix_matches) == 1:
+            match = prefix_matches[0]
+            if match.id:
+                return int(match.id)
+            if match.idx:
+                return int(match.idx)
     except Exception:
         pass
 
