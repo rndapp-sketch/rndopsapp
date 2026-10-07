@@ -2130,6 +2130,123 @@ def get_user_designation(email):
 	return {"status": "success", "designation_name": designation or ""}
 
 
+def _format_timeline_value(value):
+	"""Mirror format_content_for_timeline() in version_timeline_content_builder.js —
+	strip HTML, truncate to 40 chars, fall back to a quoted-empty placeholder."""
+	text = frappe.utils.strip_html_tags(str(value)) if value not in (None, "") else ""
+	if not text:
+		return '""'
+	if len(text) > 40:
+		text = text[:40] + "..."
+	return text
+
+
+def _build_version_entries(diff, doctype, meta, version_row, resolve):
+	"""Turn one Version.data diff (changed/added/removed/row_changed, as produced
+	by frappe.core.doctype.version.version.get_diff) into the same set of
+	human-readable timeline entries the desk renders client-side, so
+	get_document_activity's feed matches what the desk timeline shows."""
+	entries = []
+	user = resolve(version_row.owner)
+	timestamp = str(version_row.creation)
+
+	changed = diff.get("changed") or []
+	field_changes = []
+	for item in changed:
+		fieldname, old_value, new_value = item[0], item[1], item[2]
+		if fieldname == "docstatus":
+			if new_value == 1:
+				entries.append(
+					{
+						"type": "workflow",
+						"label": "submitted this document",
+						"user": user,
+						"user_email": version_row.owner,
+						"timestamp": timestamp,
+					}
+				)
+			elif new_value == 2:
+				entries.append(
+					{
+						"type": "workflow",
+						"label": "cancelled this document",
+						"user": user,
+						"user_email": version_row.owner,
+						"timestamp": timestamp,
+					}
+				)
+			continue
+
+		label = meta.get_label(fieldname) or fieldname
+		field_changes.append(
+			f"{label} from {_format_timeline_value(old_value)} to {_format_timeline_value(new_value)}"
+		)
+
+	if field_changes:
+		entries.append(
+			{
+				"type": "edit",
+				"label": f"changed the value of {', '.join(field_changes)}",
+				"user": user,
+				"user_email": version_row.owner,
+				"timestamp": timestamp,
+			}
+		)
+
+	row_changed = diff.get("row_changed") or []
+	row_change_parts = []
+	for row in row_changed:
+		table_fieldname, row_idx = row[0], row[1]
+		row_field_changes = row[3] if len(row) > 3 else []
+		table_field = meta.get_field(table_fieldname)
+		child_doctype = table_field.options if table_field else None
+		child_meta = frappe.get_meta(child_doctype) if child_doctype else None
+		for cp in row_field_changes:
+			cfieldname, cold_value, cnew_value = cp[0], cp[1], cp[2]
+			clabel = (child_meta.get_label(cfieldname) if child_meta else None) or cfieldname
+			row_change_parts.append(
+				f"{clabel} from {_format_timeline_value(cold_value)} to "
+				f"{_format_timeline_value(cnew_value)} in row #{row_idx}"
+			)
+
+	if row_change_parts:
+		entries.append(
+			{
+				"type": "edit",
+				"label": f"changed the values for {', '.join(row_change_parts)}",
+				"user": user,
+				"user_email": version_row.owner,
+				"timestamp": timestamp,
+			}
+		)
+
+	for key, verb in (("added", "added rows for"), ("removed", "removed rows for")):
+		items = diff.get(key) or []
+		if not items:
+			continue
+		seen = set()
+		labels = []
+		for entry in items:
+			table_fieldname = entry[0]
+			table_field = meta.get_field(table_fieldname)
+			label = (table_field.label if table_field else None) or table_fieldname
+			if label not in seen:
+				seen.add(label)
+				labels.append(label)
+		if labels:
+			entries.append(
+				{
+					"type": "edit",
+					"label": f"{verb} {', '.join(labels)}",
+					"user": user,
+					"user_email": version_row.owner,
+					"timestamp": timestamp,
+				}
+			)
+
+	return entries
+
+
 @frappe.whitelist()
 def get_document_activity(doctype, docname):
 	"""
@@ -2172,28 +2289,31 @@ def get_document_activity(doctype, docname):
 		order_by="creation desc",
 	)
 
-	# --- 2. Fetch last Version entry (for "last edited" when no Edit comment exists) ---
-	last_version = None
+	# --- 2. Fetch every Version entry so we can rebuild the full field-change /
+	# submit / row-add timeline the way the desk does (see
+	# version_timeline_content_builder.js) instead of only surfacing the
+	# latest row as a generic "last edited this". ---
 	meta = frappe.get_meta(doctype)
+	versions = []
 	if meta.track_changes:
 		versions = frappe.get_all(
 			"Version",
 			filters={"ref_doctype": doctype, "docname": docname},
-			fields=["owner", "creation"],
-			order_by="creation desc",
-			limit=1,
+			fields=["name", "owner", "creation", "data"],
+			order_by="creation asc",
 		)
-		if versions:
-			last_version = versions[0]
 
 	# --- 3. Document creation row ---
-	doc_row = frappe.db.get_value(doctype, docname, ["owner", "creation"], as_dict=True)
+	doc_row = frappe.db.get_value(
+		doctype, docname, ["owner", "creation", "modified", "modified_by"], as_dict=True
+	)
 
 	# --- 4. Collect all unique owners so we can batch-resolve full names ---
 	all_owners = {c.owner for c in raw_comments}
 	all_owners.add(doc_row.owner)
-	if last_version:
-		all_owners.add(last_version.owner)
+	all_owners.add(doc_row.modified_by)
+	for v in versions:
+		all_owners.add(v.owner)
 
 	name_map = {}
 	if all_owners:
@@ -2226,15 +2346,34 @@ def get_document_activity(doctype, docname):
 			entry["content"] = frappe.utils.strip_html_tags(c.content or "").strip()
 		entries.append(entry)
 
-	# Add "last edited" from Version table only if no Edit comment already covers it
-	if last_version and not has_edit_comment:
+	# Expand every Version row into the same field-change / submit / row-add
+	# entries the desk timeline derives client-side from Version.data (see
+	# get_version_timeline_content in version_timeline_content_builder.js).
+	for v in versions:
+		if not v.data:
+			continue
+		try:
+			diff = json.loads(v.data)
+		except ValueError:
+			continue
+
+		entries.extend(_build_version_entries(diff, doctype, meta, v, resolve))
+
+	# The desk timeline unconditionally shows a "last edited this" entry
+	# sourced from doc.modified/doc.modified_by (see get_modified_message()
+	# in form_timeline.js) — independent of whether that particular save
+	# produced a trackable Version diff (e.g. only a hidden/system field
+	# changed, or track_changes was toggled on after the edit). Mirror that
+	# here rather than relying solely on the Version-derived entries above,
+	# otherwise the most recent editor can be dropped from the feed entirely.
+	if doc_row.modified_by and str(doc_row.modified) != str(doc_row.creation) and not has_edit_comment:
 		entries.append(
 			{
 				"type": "edit",
 				"label": "last edited this",
-				"user": resolve(last_version.owner),
-				"user_email": last_version.owner,
-				"timestamp": str(last_version.creation),
+				"user": resolve(doc_row.modified_by),
+				"user_email": doc_row.modified_by,
+				"timestamp": str(doc_row.modified),
 			}
 		)
 

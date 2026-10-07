@@ -1,0 +1,169 @@
+# Pre-merge validation for rndopsapp.
+#
+# This runs on GitHub's cloud runners, NOT on the Testing server. That is
+# deliberate: Jenkins on 172.17.1.46 has no public IP, so GitHub cannot trigger
+# it on PR events — it only polls branches every 3 minutes, which is after a
+# merge, too late to block one. So the split is:
+#   GitHub Actions = validate BEFORE merge   (this file)
+#   Jenkins        = deploy AFTER merge      (../Jenkinsfile)
+#
+# WHY THIS EXISTS ALONGSIDE ci.yml AND linter.yml
+# Those two are inherited Frappe scaffold and have never passed on this repo —
+# 12 runs across 5 PRs, March to August 2026, all failed. `ci.yml` dies at
+# "Install MariaDB Client", before it reaches any app code; `linter.yml` fails
+# pre-commit against a codebase that has never been linted. Neither can be made
+# a required status check without blocking every merge. They are left in place
+# (someone may fix them) but must NOT be marked required.
+#
+# This file instead checks only things that are green on current code, so it
+# fails on genuinely broken changes and nothing else. Verified 2026-10-01:
+# every Python file compiles, and all 158 non-empty JSON files parse.
+#
+# Note it does NOT run `bench migrate` or the test suite: both need a full
+# Frappe install with MariaDB and redis, which is what ci.yml tries and fails
+# to do. Migration is exercised for real by the Jenkins job on the Testing
+# server immediately after merge.
+
+name: PR check
+
+on:
+  pull_request:
+    branches:
+      - testing-backend
+      - production-backend-live
+
+concurrency:
+  group: pr-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # A syntax error anywhere in the app breaks `bench migrate` and can take
+      # the site down on deploy. This is the cheapest check that catches it.
+      - name: Python syntax
+        run: |
+          python -m compileall -q rndopsapp
+          echo "all Python files compile"
+
+      # Doctype JSON is hand-edited, and a malformed file breaks bench migrate.
+      # Empty files are skipped: rndopsapp/rndopsapp/kafka/test.json is a
+      # committed 0-byte scratch file, not a doctype.
+      - name: Doctype / fixture JSON is parseable
+        run: |
+          fail=0; n=0
+          while IFS= read -r f; do
+            [ -s "$f" ] || continue
+            n=$((n+1))
+            if ! python -c "import json,sys; json.load(open(sys.argv[1]))" "$f" 2>/dev/null; then
+              echo "::error file=$f::invalid JSON"
+              fail=1
+            fi
+          done < <(find rndopsapp -name '*.json' -not -path '*/node_modules/*')
+          echo "checked $n non-empty JSON files"
+          exit $fail
+
+  lint:
+    name: Ruff errors (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # ADVISORY, not required — and not because the rules are wrong. This subset
+    # (E9/F63/F7/F82: syntax, undefined names, f-string mistakes — no
+    # formatting) already finds 6 pre-existing errors as of 2026-10-01, two of
+    # which look like real latent UnboundLocalErrors:
+    #   fund_received.py:356        base64 referenced before assignment
+    #   po_commit_adjustment.py:318 _ referenced before assignment
+    #   project_proposal copy.py:375        undefined user_id      (dead copy)
+    #   project_registration copy.py:430    undefined sanitize_html (dead copy)
+    #   test_project_registration.py:177    undefined random_string (missing import)
+    #   kafka_sync.py:283                   undefined e            (guarded, ugly)
+    # Making it required before those are fixed would block every merge. Fix
+    # them, then drop continue-on-error and add this to branch protection.
+    # (The full rule set in pyproject.toml reports ~3009 — not a candidate.)
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Ruff (errors only, not style)
+        run: |
+          pip install --quiet ruff
+          ruff check --no-cache --select E9,F63,F7,F82 --output-format=github rndopsapp
+
+  size:
+    name: PR size (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Advisory only — never fails the PR, per the agreed "warning, not a block"
+    # policy. It posts a comment so reviewers can push back on large PRs, since
+    # oversized long-lived branches are what caused the merge pain here.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Measure changed lines
+        id: measure
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=0 origin "${{ github.base_ref }}" >/dev/null 2>&1 || true
+
+          # Build output and dumps inflate the count without adding review
+          # burden, so they are excluded.
+          total=$(git diff --numstat "$base"...HEAD -- . \
+                    ':(exclude)rndopsapp/public/frontend/**' \
+                    ':(exclude)**/*.sql' \
+                  | awk '{ a+=$1; d+=$2 } END { print (a+d)+0 }')
+
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "Changed lines (excluding build output and .sql): $total"
+
+      - name: Comment if the PR is large
+        if: steps.measure.outputs.total != '' && fromJSON(steps.measure.outputs.total) > 500
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const total = ${{ steps.measure.outputs.total }};
+            const marker = '<!-- pr-size-advisory -->';
+            const body = `${marker}
+            **Large PR: ~${total} changed lines** (excluding build output and \`.sql\`).
+
+            This is advisory, not a block — it will not stop the merge.
+
+            Smaller PRs are easier to review and conflict far less. If this
+            splits naturally, consider splitting it. If it genuinely doesn't
+            (a generated file, a wide rename), say so and carry on.`;
+
+            // Replace our previous comment instead of stacking a new one per push.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body,
+              });
+            }

@@ -22,6 +22,7 @@
   "ecs_dates",
   "calculations_section",
   "amount_inclusive_gst_capital",
+  "igst_18_on_consultancy_fee",
   "cgst_9",
   "sgst_9",
   "project_balance_after_gst",
@@ -260,12 +261,17 @@
    "label": "Fund Budget Breakup",
    "options": "Project Received Budget",
    "read_only": 1
+  },
+  {
+   "fieldname": "igst_18_on_consultancy_fee",
+   "fieldtype": "Currency",
+   "label": "IGST @18% On Consultancy Fee"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-11 15:24:46.670723",
+ "modified": "2026-09-15 12:03:59.818851",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Research Consultancy Deposit Slip",

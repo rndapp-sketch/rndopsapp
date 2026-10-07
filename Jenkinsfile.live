@@ -1,0 +1,212 @@
+// CD pipeline for rndopsapp → LIVE server (172.16.134.179).
+// Tracked branch: production-backend-live. See JENKINS_CI_CD_PLAN.md §6.
+//
+// WHY A SEPARATE FILE FROM Jenkinsfile
+// `Jenkinsfile` deploys to Testing and hardcodes Testing's paths, site and
+// tmux-free systemd unit on THIS host. Promotion merges testing-backend into
+// production-backend-live, which carries that file along — so a Live job
+// reading plain `Jenkinsfile` would deploy Live using Testing's settings and
+// restart Testing's bench. The Live jobs therefore use scriptPath
+// `Jenkinsfile.live`.
+//
+// HOW IT DIFFERS IN SHAPE
+// Testing's backend job checks out directly into the live bench app via
+// customWorkspace. That is impossible here — the target is a different machine
+// — so this job checks out only to read itself, and every deploy action runs
+// over SSH against .179. Jenkins' own workspace is irrelevant to what ships.
+//
+// SSH KEY: read from disk rather than Jenkins' credential store. The key is
+// mode 600 owned by rndadmin, which is the user Jenkins runs as, so anyone able
+// to run a Jenkins job could read it either way — the credential store would
+// add indirection without changing the posture. Documented, not accidental.
+
+pipeline {
+  agent any
+
+  // No pollSCM. Promotion to Live is a deliberate act: merging
+  // testing-backend -> production-backend-live via a reviewed PR is the
+  // approval gate, and this job is triggered from that. Add a trigger only if
+  // you want a merge to ship to Live with nobody watching.
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+    timeout(time: 30, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '50'))
+  }
+
+  parameters {
+    booleanParam(
+      name: 'DISCARD_REMOTE_CHANGES',
+      defaultValue: false,
+      description: 'Deploy even if the Live checkout has uncommitted tracked changes. ' +
+                   'They will be PERMANENTLY LOST. Leave unticked unless you have ' +
+                   'checked what they are and decided they are disposable.'
+    )
+  }
+
+  environment {
+    SSH_KEY   = '/home/rndadmin/deploy-config/ssh/jenkins_live_deploy'
+    LIVE      = 'orion@172.16.134.179'
+    LIVE_URL  = 'http://172.16.134.179:8000'
+    APP_DIR   = '/home/orion/frappe-dev/prornd/apps/rndopsapp'
+    BENCH_DIR = '/home/orion/frappe-dev/prornd'
+    BENCH     = '/home/orion/.local/bin/bench'
+    SITE      = 'prornd.local'
+    BRANCH    = 'production-backend-live'
+  }
+
+  stages {
+    stage('Preflight') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          SSH="ssh -i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 $LIVE"
+
+          $SSH "test -d '$APP_DIR/.git'" || { echo "FATAL: $APP_DIR is not a git repo on Live"; exit 1; }
+          $SSH "test -x '$BENCH'"        || { echo "FATAL: $BENCH missing on Live"; exit 1; }
+          $SSH "test -d '$BENCH_DIR/sites/$SITE'" || { echo "FATAL: site $SITE not found on Live"; exit 1; }
+
+          echo "Live host: $($SSH 'hostname; uptime -p')"
+
+          # A `git reset --hard` below would silently destroy local edits. Live
+          # had 12 such files when this pipeline was built, so this is a real
+          # risk, not a theoretical one.
+          dirty=$($SSH "cd '$APP_DIR' && git status --porcelain | grep -c '^ M' || true")
+          echo "uncommitted tracked changes on Live: $dirty"
+          if [ "${dirty:-0}" -gt 0 ]; then
+            $SSH "cd '$APP_DIR' && git status --porcelain | grep '^ M'" || true
+            if [ "$DISCARD_REMOTE_CHANGES" != "true" ]; then
+              echo ""
+              echo "FATAL: refusing to deploy over uncommitted work on Live."
+              echo "Either commit it, copy it off, or re-run with DISCARD_REMOTE_CHANGES ticked."
+              exit 1
+            fi
+            echo "WARNING: DISCARD_REMOTE_CHANGES is set — the files above will be lost."
+          fi
+        '''
+      }
+    }
+
+    // Explicit, before migrate touches the schema. bench migrate takes its own
+    // backup, but the newest backup on Live was over two months old when this
+    // was written, so do not rely on that alone.
+    stage('Backup Live database') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          SSH="ssh -i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 $LIVE"
+          $SSH "cd '$BENCH_DIR' && '$BENCH' --site '$SITE' backup" 2>&1 | tail -5
+          echo "newest backups now on Live:"
+          $SSH "ls -t '$BENCH_DIR/sites/$SITE/private/backups' | head -3" | sed 's/^/  /'
+        '''
+      }
+    }
+
+    stage('Deploy code') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          SSH="ssh -i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 $LIVE"
+
+          before=$($SSH "cd '$APP_DIR' && git rev-parse --short HEAD")
+
+          # Fetch only the branch we deploy, then move to exactly its remote
+          # tip. reset --hard rather than pull: no merge commits, no surprises
+          # from a diverged local branch.
+          $SSH "cd '$APP_DIR' && git fetch --no-tags origin '$BRANCH' && git checkout -B '$BRANCH' FETCH_HEAD" 2>&1 | tail -3
+
+          after=$($SSH "cd '$APP_DIR' && git rev-parse --short HEAD")
+          echo "Live moved: $before -> $after"
+          $SSH "cd '$APP_DIR' && git log -1 --format='  %h %an  %s'"
+        '''
+      }
+    }
+
+    stage('Migrate') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          SSH="ssh -i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 $LIVE"
+          $SSH "cd '$BENCH_DIR' && '$BENCH' --site '$SITE' migrate" 2>&1 | tail -25
+        '''
+      }
+    }
+
+    stage('Clear cache') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          SSH="ssh -i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 $LIVE"
+          $SSH "cd '$BENCH_DIR' && '$BENCH' --site '$SITE' clear-cache"
+        '''
+      }
+    }
+
+    // The gunicorn web process auto-reloads on .py changes, but the worker,
+    // scheduler and kafka_consumer do not — they need a real restart.
+    // XDG_RUNTIME_DIR must be exported: a non-login SSH session has no user bus
+    // without it. /run/user/1000 persists only because lingering is enabled
+    // for orion.
+    stage('Restart bench') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          SSH="ssh -i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 $LIVE"
+          $SSH 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user cat frappe-bench.service >/dev/null 2>&1' \
+            || { echo "FATAL: frappe-bench.service not found on Live"; exit 1; }
+          $SSH 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user restart frappe-bench && systemctl --user is-active frappe-bench'
+        '''
+      }
+    }
+
+    stage('Wait for Live') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          for i in $(seq 1 45); do
+            if curl -fsS "$LIVE_URL/api/method/ping" 2>/dev/null | grep -q pong; then
+              echo "OK: Live responded after $((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "FATAL: Live did not answer $LIVE_URL/api/method/ping within 90s"
+          echo "Logs: ssh $LIVE 'export XDG_RUNTIME_DIR=/run/user/\\$(id -u); journalctl --user -u frappe-bench -n 50 --no-pager'"
+          exit 1
+        '''
+      }
+    }
+
+    stage('Smoke test') {
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          ping=$(curl -fsS "$LIVE_URL/api/method/ping")
+          printf '%s' "$ping" | grep -q pong || { echo "FATAL: ping returned: $ping"; exit 1; }
+
+          # /app must redirect rather than 500 — catches a site that boots the
+          # web process but fails on app/doctype import.
+          app=$(curl -s -o /dev/null -w '%{http_code}' "$LIVE_URL/app")
+          case "$app" in
+            2*|3*) ;;
+            *) echo "FATAL: /app returned HTTP $app"; exit 1 ;;
+          esac
+          echo "OK: ping=pong, /app=$app"
+        '''
+      }
+    }
+  }
+
+  post {
+    success { echo "Deployed production-backend-live to 172.16.134.179" }
+    failure {
+      echo "LIVE DEPLOY FAILED — 172.16.134.179 may be mid-restart or down."
+      echo "Check:  ssh orion@172.16.134.179"
+      echo "        export XDG_RUNTIME_DIR=/run/user/\$(id -u)"
+      echo "        systemctl --user status frappe-bench"
+      echo "        journalctl --user -u frappe-bench -n 80 --no-pager"
+      echo "Backups: /home/orion/frappe-dev/prornd/sites/prornd.local/private/backups"
+    }
+  }
+}
