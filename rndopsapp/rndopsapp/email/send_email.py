@@ -2,6 +2,7 @@ import smtplib
 from email.message import EmailMessage
 
 from rndopsapp.rndopsapp.email.email_config import (
+    EMAIL_SENDING_ENABLED,
     FROM_SENDER as _FROM_SENDER,
     PRORNDADMIN_EMAIL_PASSWORD,
     SMTP_HOST as _SMTP_HOST,
@@ -23,6 +24,14 @@ def send_email_with_password(to_address: str, subject: str, description: str, ht
     Returns:
         bool: True if sent successfully, False otherwise
     """
+    if not EMAIL_SENDING_ENABLED:
+        import frappe
+
+        frappe.logger("email").info(
+            f"Email sending disabled (EMAIL_SENDING_ENABLED=False) — skipped '{subject}' to {to_address}"
+        )
+        return True
+
     try:
         msg = EmailMessage()
         msg["Subject"] = subject
