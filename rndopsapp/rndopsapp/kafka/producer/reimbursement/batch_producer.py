@@ -43,6 +43,26 @@ def publish_commit_batch(
         )
         return False
 
+    # Overhead fund projects (PDF, DPF) belong on the overhead topics, not this one —
+    # Accounts has no project for them (see docs/pdf-project-implementation.md §5.4). No
+    # overhead *batch* producer exists yet, so refuse loudly rather than publish rows that
+    # would silently dead-letter. Reached only if a PO commit adjustment is ever raised on
+    # an overhead project.
+    from ..overhead import is_overhead_project
+
+    overhead_rows = [i.projectNumber for i in items if is_overhead_project(getattr(i, "projectNumber", None))]
+    if overhead_rows:
+        message = (
+            f"Batch contains overhead fund project(s) {sorted(set(overhead_rows))}, which must "
+            "go to overhead-commit-batch-events. No overhead batch producer exists yet."
+        )
+        log_producer_event(
+            "ACCOUNT_HEAD_COMMIT_BATCH", doc_name,
+            TOPIC_COMMIT_BATCH, "VALIDATION_FAILED", message,
+        )
+        frappe.log_error(message, "Overhead Commit Batch - Unsupported")
+        return False
+
     try:
         log_producer_event(
             "ACCOUNT_HEAD_COMMIT_BATCH", doc_name,

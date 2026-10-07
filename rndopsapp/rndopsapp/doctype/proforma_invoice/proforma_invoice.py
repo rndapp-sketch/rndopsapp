@@ -28,27 +28,57 @@ class Proforma_Invoice(Document):
 	pass
 
 
+MINIO_FOLDER = "proforma_invoice"
+
+
+def _minio_target(doc):
+	"""(doctype, docname, folder) the invoice PDF is stored under in MinIO.
+
+	Same namespace every other project-linked module (Travel, Disbursal of
+	Honorarium, Direct Purchase, Fund Sanction) uses:
+	    Project_Registration/{Project Registration docname}/proforma_invoice/{file}
+	The docname is resolved from project_no, so the PDF is listed by
+	get_project_files_by_project_no. Falls back to the invoice's own namespace
+	when no Project Registration matches."""
+	project_docname = None
+	if doc.project_no:
+		project_docname = frappe.db.get_value(
+			"Project Registration", {"project_no": doc.project_no}, "name"
+		)
+	if project_docname:
+		return "Project Registration", project_docname, MINIO_FOLDER
+	return "Proforma_Invoice", doc.name, MINIO_FOLDER
+
+
 # ── Internal helpers ────────────────────────────────────────────────────────
 def _generate_pdf(doc, file_name):
-	"""Render the invoice through the Proforma Invoice Letterhead print format and
-	attach it (private) to the document's invoice_attachment field. The signature
-	only renders once workflow_state == 'Approved' (guarded in the print format)."""
+	"""Render the invoice through the Proforma Invoice Letterhead print format,
+	store it (private) in MinIO and point the document's invoice_attachment field
+	at the MinIO file_url. The signature only renders once workflow_state ==
+	'Approved' (guarded in the print format)."""
 	try:
+		from rndopsapp.minio import get_rnd_file_service
+
 		pdf_data = frappe.get_print(
 			"Proforma_Invoice", doc.name,
 			print_format=PRINT_FORMAT, as_pdf=True, no_letterhead=False,
 		)
-		pdf_file = frappe.get_doc({
-			"doctype": "File",
-			"file_name": file_name,
-			"attached_to_doctype": "Proforma_Invoice",
-			"attached_to_name": doc.name,
-			"attached_to_field": "invoice_attachment",
-			"content": pdf_data,
-			"is_private": 1,
-		})
-		pdf_file.insert(ignore_permissions=True)
-		doc.db_set("invoice_attachment", pdf_file.file_url)
+		file_doctype, file_docname, folder = _minio_target(doc)
+		result = get_rnd_file_service().save_file(
+			filename=file_name,
+			content=pdf_data,
+			is_private=True,
+			doctype=file_doctype,
+			docname=file_docname,
+			folder=folder,
+		)
+		if not result.get("status"):
+			frappe.log_error(
+				f"MinIO upload failed for {doc.name}: {result.get('message')}",
+				"Proforma PDF MinIO Upload",
+			)
+			return
+		doc.db_set("invoice_attachment", result["data"]["file_url"])
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), f"Proforma PDF error for {doc.name}")
 
@@ -62,45 +92,10 @@ def _get_user_signature(user):
 	return sig
 
 
-def _get_hos_users():
-	"""Enabled users holding the HoS role. Queried via Has Role because a
-	`{"roles": [role]}` filter on User trips an IndexError in make_filter_tuple."""
-	candidates = frappe.get_all(
-		"Has Role", filters={"role": HOS_ROLE, "parenttype": "User"}, pluck="parent"
-	)
-	return [u for u in set(candidates) if frappe.db.get_value("User", u, "enabled")]
-
-
-def _notify_hos(doc):
-	"""Create a ToDo for every enabled HoS user so the invoice appears in their
-	dashboard 'To Do' list. Dedup-guarded so re-submits don't pile up."""
-	hos_users = _get_hos_users()
-	for user_id in hos_users:
-		if frappe.db.exists("ToDo", {
-			"reference_type": "Proforma_Invoice",
-			"reference_name": doc.name,
-			"allocated_to": user_id,
-			"status": "Open",
-		}):
-			continue
-		frappe.get_doc({
-			"doctype": "ToDo",
-			"description": f"Review Proforma Invoice: {doc.name}",
-			"assigned_by": frappe.session.user,
-			"allocated_to": user_id,
-			"reference_type": "Proforma_Invoice",
-			"reference_name": doc.name,
-			"status": "Open",
-			"priority": "High",
-		}).insert(ignore_permissions=True)
-	if not hos_users:
-		frappe.log_error(
-			f"No enabled '{HOS_ROLE}' users to notify for {doc.name}",
-			"Proforma Invoice",
-		)
-
-
 def _close_hos_todos(doc):
+	"""Close any leftover per-user ToDos from before this doctype switched to
+	role-based visibility for 'Pending HoS Approval' (mirrors ICSS/IGF, which
+	never create per-approver ToDos)."""
 	for todo in frappe.get_all("ToDo", filters={
 		"reference_type": "Proforma_Invoice",
 		"reference_name": doc.name,
@@ -172,7 +167,8 @@ def save_proforma_invoice(project_no, invoice_content, docname=None):
 @frappe.whitelist()
 def submit_proforma_for_approval(docname=None, project_no=None, invoice_content=None, comment=None):
 	"""Move the invoice to 'Pending HoS Approval': persist the latest content,
-	generate an UNSIGNED PDF, and raise a ToDo for the HoS role. An optional
+	generate an UNSIGNED PDF, and make it visible to the HoS role via
+	workflow_state (no per-user ToDo, mirrors ICSS/IGF). An optional
 	comment is recorded on the document timeline."""
 	if not docname:
 		if not project_no:
@@ -195,10 +191,9 @@ def submit_proforma_for_approval(docname=None, project_no=None, invoice_content=
 	doc.flags.ignore_permissions = True
 	doc.save(ignore_permissions=True)
 	# ...then move to Pending via a direct DB write (bypasses the transition gate;
-	# these APIs enforce their own access rules). Persist state + HoS ToDos and
+	# these APIs enforce their own access rules). Persist state + comment and
 	# commit BEFORE the best-effort PDF so a wkhtmltopdf failure can't revert them.
 	doc.db_set("workflow_state", STATE_PENDING)
-	_notify_hos(doc)
 	_add_workflow_comment(doc, "Submitted for HoS Approval", comment)
 	frappe.db.commit()
 

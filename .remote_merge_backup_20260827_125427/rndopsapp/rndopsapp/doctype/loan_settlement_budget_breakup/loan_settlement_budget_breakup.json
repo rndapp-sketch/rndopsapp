@@ -1,0 +1,58 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-12 10:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "account_head",
+  "account_head_id",
+  "loan_amount",
+  "return_amount"
+ ],
+ "fields": [
+  {
+   "fieldname": "account_head",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Account Head",
+   "options": "Budget Head"
+  },
+  {
+   "description": "The Accounts service's own account head id (accountHeadId), as published to Kafka.",
+   "fieldname": "account_head_id",
+   "fieldtype": "Int",
+   "label": "Account Head Id",
+   "read_only": 1
+  },
+  {
+   "description": "Amount of the loan originally drawn against this head.",
+   "fieldname": "loan_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Loan Amount",
+   "read_only": 1
+  },
+  {
+   "description": "Amount being returned against this head in this settlement.",
+   "fieldname": "return_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Return Amount"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-12 10:00:00",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Loan Settlement Budget Breakup",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

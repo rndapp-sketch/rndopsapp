@@ -50,11 +50,33 @@ def get_doctype_workflow_states(doctype: str):
 @frappe.whitelist()
 def list_email_templates():
     _require_system_manager()
-    return frappe.get_all(
+    templates = frappe.get_all(
         "Email Notification Template",
         fields=["name", "template_name", "category", "is_active", "modified"],
         order_by="category asc, template_name asc",
     )
+    for t in templates:
+        t["eligible"], t["eligible_reason"] = _template_eligibility(t["name"])
+    return templates
+
+
+def _template_eligibility(doctype: str):
+    """(eligible, reason) — whether Email Manager can notify for the DocType
+    named like the template: it must exist, have a real table, carry the
+    state field the monitor reads, and have an active Workflow."""
+    from rndopsapp.rndopsapp.email.workflow_monitor import STATE_FIELD_OVERRIDES
+
+    if not frappe.db.exists("DocType", doctype):
+        return False, "No DocType with this name"
+    meta = frappe.get_meta(doctype)
+    if meta.issingle or meta.istable or not frappe.db.table_exists(doctype):
+        return False, "DocType has no database table"
+    state_field = STATE_FIELD_OVERRIDES.get(doctype, "workflow_state")
+    if not meta.has_field(state_field):
+        return False, f"DocType has no {state_field} field"
+    if not frappe.db.exists("Workflow", {"document_type": doctype, "is_active": 1}):
+        return False, "No active Workflow"
+    return True, "Eligible for email notifications"
 
 
 @frappe.whitelist()

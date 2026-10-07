@@ -26,6 +26,25 @@ PROTECTED_FIELDS = {
 
 TABLE_TYPES = {"Table", "Table MultiSelect"}
 SKIP_TYPES = {"Section Break", "Column Break", "Tab Break", "HTML", "Button", "Fold", "Heading"}
+NUMERIC_TYPES = {"Int", "Float", "Currency", "Percent", "Check"}
+
+
+def _fieldtypes(doctype):
+	"""{fieldname: fieldtype} for this doctype's real fields."""
+	meta = frappe.get_meta(doctype)
+	return {df.fieldname: df.fieldtype for df in meta.fields}
+
+
+def _sanitize_value(fieldtype, value):
+	"""
+	Staff can send whatever the client has, blank included - the endpoint
+	isn't meant to validate input, just accept it. MySQL's decimal/int
+	columns reject '' outright (unlike NULL or 0), so that's the one case
+	that needs coercing rather than passed straight through.
+	"""
+	if fieldtype in NUMERIC_TYPES and value in ("", None):
+		return 0
+	return value
 
 
 def ensure_staff_or_manager():
@@ -106,6 +125,7 @@ def _apply_child_table_changes(doctype, docname, child_table_changes, table_fiel
 		if not child_doctype:
 			continue
 		child_valid = _child_valid_fieldnames(child_doctype)
+		child_fieldtypes = _fieldtypes(child_doctype)
 
 		n_updated = n_inserted = n_deleted = 0
 
@@ -117,6 +137,7 @@ def _apply_child_table_changes(doctype, docname, child_table_changes, table_fiel
 			for cfield, cvalue in row_changes.items():
 				if cfield not in child_valid:
 					continue
+				cvalue = _sanitize_value(child_fieldtypes.get(cfield), cvalue)
 				frappe.db.set_value(child_doctype, row_name, cfield, cvalue, update_modified=False)
 			n_updated += 1
 
@@ -134,7 +155,7 @@ def _apply_child_table_changes(doctype, docname, child_table_changes, table_fiel
 				row_doc.idx = max_idx
 				for cfield, cvalue in (new_row or {}).items():
 					if cfield in child_valid:
-						row_doc.set(cfield, cvalue)
+						row_doc.set(cfield, _sanitize_value(child_fieldtypes.get(cfield), cvalue))
 				row_doc.insert(ignore_permissions=True)
 				n_inserted += 1
 
@@ -205,6 +226,7 @@ def update_locked_deposit_slip(doctype, docname, changes=None, child_table_chang
 	try:
 		valid_fieldnames = _valid_fieldnames(doctype)
 		table_fields = _table_fields(doctype)
+		fieldtypes = _fieldtypes(doctype)
 		requested_fields = [f for f in (changes or {}) if f in valid_fieldnames]
 
 		before = {}
@@ -213,7 +235,8 @@ def update_locked_deposit_slip(doctype, docname, changes=None, child_table_chang
 
 		updated_fields = []
 		for field in requested_fields:
-			frappe.db.set_value(doctype, docname, field, changes[field], update_modified=False)
+			value = _sanitize_value(fieldtypes.get(field), changes[field])
+			frappe.db.set_value(doctype, docname, field, value, update_modified=False)
 			updated_fields.append(field)
 
 		child_summary = _apply_child_table_changes(doctype, docname, child_table_changes, table_fields)

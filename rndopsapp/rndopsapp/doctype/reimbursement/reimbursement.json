@@ -61,13 +61,13 @@
    "label": "IFSC Code"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name",
    "fieldname": "project_number",
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Project Number",
    "options": "Project Registration",
-   "read_only": 1,
-   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name"
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name",
@@ -75,8 +75,8 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Account Head",
-   "options": "Budget Head",
-   "mandatory_depends_on": "eval:doc.self_other==\"Self\""
+   "mandatory_depends_on": "eval:doc.self_other==\"Self\"",
+   "options": "Budget Head"
   },
   {
    "fieldname": "comment",
@@ -123,12 +123,12 @@
    "label": "Project and Item Details"
   },
   {
+   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name",
    "fieldname": "project_name",
    "fieldtype": "Link",
    "hidden": 1,
    "label": "Project Name",
-   "options": "Project Registration",
-   "depends_on": "eval:doc.self_other==\"Self\" || doc.project_name"
+   "options": "Project Registration"
   },
   {
    "fieldname": "declarations",
@@ -242,48 +242,48 @@
    "read_only": 1
   },
   {
+   "default": "Self",
    "fieldname": "reimb_applying_for",
    "fieldtype": "Select",
    "label": "Applying for self or other?",
-   "options": "\nSelf\nOther",
-   "default": "Self"
+   "options": "\nSelf\nOther"
   },
   {
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
    "fieldname": "reimb_applying_for_section",
    "fieldtype": "Section Break",
-   "label": "Applying For",
-   "depends_on": "eval:doc.reimb_applying_for==\"Other\""
+   "label": "Applying For"
   },
   {
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
    "fieldname": "reimb_applying_for_mail",
    "fieldtype": "Link",
    "label": "Applying for Webmail ID",
-   "options": "User",
-   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
-   "mandatory_depends_on": "eval:doc.reimb_applying_for==\"Other\""
+   "mandatory_depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "options": "User"
   },
   {
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "fetch_from": "reimb_applying_for_mail.full_name",
    "fieldname": "reimb_applying_for_name",
    "fieldtype": "Data",
    "label": "Applying for Name",
-   "fetch_from": "reimb_applying_for_mail.full_name",
-   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
    "read_only": 1
   },
   {
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "fetch_from": "reimb_applying_for_mail.department_name",
    "fieldname": "reimb_applying_for_department",
    "fieldtype": "Data",
    "label": "Applying For Department / Centre / Section",
-   "fetch_from": "reimb_applying_for_mail.department_name",
-   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
    "read_only": 1
   },
   {
+   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
+   "fetch_from": "reimb_applying_for_mail.designation_name",
    "fieldname": "reimb_applying_for_designation",
    "fieldtype": "Data",
    "label": "Applying For Designation",
-   "fetch_from": "reimb_applying_for_mail.designation_name",
-   "depends_on": "eval:doc.reimb_applying_for==\"Other\"",
    "read_only": 1
   }
  ],
@@ -291,8 +291,8 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-22 11:25:34.461125",
- "modified_by": "Administrator",
+ "modified": "2026-09-24 10:36:26.057734",
+ "modified_by": "prorndadmin@prornd.local",
  "module": "Rndopsapp",
  "name": "Reimbursement",
  "naming_rule": "Expression",
@@ -309,6 +309,30 @@
    "role": "System Manager",
    "share": 1,
    "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "head_approver_1",
+   "share": 1,
    "write": 1
   }
  ],

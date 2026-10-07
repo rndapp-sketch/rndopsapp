@@ -36,6 +36,7 @@ class FundSanction(Document):
 	def sync_sanction_workflow_status(self):
 		if self.workflow_state:
 			self.sanction_workflow_status = self.workflow_state
+			self.workflow_status = self.workflow_state
 
 	def validate(self):
 		self.validate_unique_sanctioned_letter_no()
