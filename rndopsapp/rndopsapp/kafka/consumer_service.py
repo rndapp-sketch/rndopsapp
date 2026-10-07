@@ -6,6 +6,14 @@ import frappe
 from .log_reader import get_kafka_logs
 from rndopsapp.static_config import MATTERMOST_POSTS_URL
 
+# Default is production's log channel; Testing overrides it in the gitignored
+# rndopsapp/local_settings.py so its noise stays out of production.
+_MM_LOG_CHANNEL = "ihmkbbfq9ibzugfpy9rncq5yke"
+try:
+    from rndopsapp.local_settings import MM_LOG_CHANNEL as _MM_LOG_CHANNEL
+except ImportError:
+    pass
+
 # Per-process guards — each Gunicorn worker has its own copy of these
 _restart_notified = False       # send at most one Mattermost ping per worker lifetime
 _last_start_attempt = 0.0       # epoch seconds of the last restart attempt
@@ -82,7 +90,7 @@ def _notify_restart():
 		_req.post(
 			MATTERMOST_POSTS_URL,
 			json={
-				"channel_id": "ihmkbbfq9ibzugfpy9rncq5yke",
+				"channel_id": _MM_LOG_CHANNEL,
 				"message": f":arrows_counterclockwise: **[{ts}] rndopsapp server restarted** — Kafka consumer auto-started.",
 			},
 			headers={

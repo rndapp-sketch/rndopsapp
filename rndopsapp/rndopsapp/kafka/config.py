@@ -3,10 +3,22 @@
 
 # --- KAFKA CLUSTER CONFIGURATION ---
 # 2-Node Fault-Tolerant Cluster
+# Default is production. Per-server overrides live in
+# rndopsapp/local_settings.py, which is gitignored so a deploy cannot overwrite
+# them. This replaces marking this file skip-worktree: that flag protected local
+# edits from `git pull`, but made `git checkout -f` fail with "Entry ... not
+# uptodate. Cannot merge", breaking every CI deploy that touched this file.
+# Everything else here (topics, schema versions, tuning) is shared and belongs
+# in git.
 KAFKA_BOOTSTRAP_SERVERS = [
     '172.16.134.81:9095',
-    '172.16.134.81:9096'
+    '172.16.134.81:9096',
 ]
+
+try:
+    from rndopsapp.local_settings import KAFKA_BOOTSTRAP_SERVERS  # noqa: F811
+except ImportError:
+    pass
 
 # --- TOPIC CONFIGURATION ---
 NUM_PARTITIONS = 2

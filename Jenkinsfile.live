@@ -69,20 +69,44 @@ pipeline {
 
           echo "Live host: $($SSH 'hostname; uptime -p')"
 
-          # A `git reset --hard` below would silently destroy local edits. Live
-          # had 12 such files when this pipeline was built, so this is a real
-          # risk, not a theoretical one.
-          dirty=$($SSH "cd '$APP_DIR' && git status --porcelain | grep -c '^ M' || true")
-          echo "uncommitted tracked changes on Live: $dirty"
-          if [ "${dirty:-0}" -gt 0 ]; then
-            $SSH "cd '$APP_DIR' && git status --porcelain | grep '^ M'" || true
+          # The checkout below would silently destroy local edits. Live had 12
+          # such files when this pipeline was built, so this is a real risk.
+          #
+          # But "dirty" alone is the wrong test. A file edited on Live and then
+          # committed upstream still shows as modified until Live's HEAD moves,
+          # even though the deploy would write back identical bytes. Blocking on
+          # that is a false alarm, and false alarms train people to tick the
+          # override reflexively, which defeats the guard. So compare each
+          # modified file against the commit being deployed, and only block on
+          # ones that genuinely differ.
+          $SSH "cd '$APP_DIR' && git fetch --no-tags -q origin '$BRANCH'"
+
+          report=$($SSH "cd '$APP_DIR' && for f in \\$(git status --porcelain | grep '^ M' | awk '{print \\$2}'); do
+                           if git diff --quiet FETCH_HEAD -- \\"\\$f\\" 2>/dev/null; then
+                             echo \\"SAME \\$f\\"
+                           else
+                             echo \\"DIFF \\$f\\"
+                           fi
+                         done" || true)
+
+          same=$(printf '%s\\n' "$report" | grep -c '^SAME ' || true)
+          diff=$(printf '%s\\n' "$report" | grep -c '^DIFF ' || true)
+          echo "uncommitted on Live: ${same:-0} already identical to $BRANCH, ${diff:-0} genuinely different"
+
+          if [ "${same:-0}" -gt 0 ]; then
+            printf '%s\\n' "$report" | grep '^SAME ' | sed 's/^SAME /  identical, will be rewritten unchanged: /'
+          fi
+
+          if [ "${diff:-0}" -gt 0 ]; then
+            printf '%s\\n' "$report" | grep '^DIFF ' | sed 's/^DIFF /  UNIQUE TO LIVE: /'
             if [ "$DISCARD_REMOTE_CHANGES" != "true" ]; then
               echo ""
-              echo "FATAL: refusing to deploy over uncommitted work on Live."
-              echo "Either commit it, copy it off, or re-run with DISCARD_REMOTE_CHANGES ticked."
+              echo "FATAL: the files above exist only on Live and are not in $BRANCH."
+              echo "Deploying would destroy them. Commit them, copy them off, or"
+              echo "re-run with DISCARD_REMOTE_CHANGES ticked to discard them."
               exit 1
             fi
-            echo "WARNING: DISCARD_REMOTE_CHANGES is set — the files above will be lost."
+            echo "WARNING: DISCARD_REMOTE_CHANGES is set — the files above will be LOST."
           fi
         '''
       }
@@ -112,9 +136,17 @@ pipeline {
           before=$($SSH "cd '$APP_DIR' && git rev-parse --short HEAD")
 
           # Fetch only the branch we deploy, then move to exactly its remote
-          # tip. reset --hard rather than pull: no merge commits, no surprises
-          # from a diverged local branch.
-          $SSH "cd '$APP_DIR' && git fetch --no-tags origin '$BRANCH' && git checkout -B '$BRANCH' FETCH_HEAD" 2>&1 | tail -3
+          # tip. Forced: no merge commits, no surprises from a diverged local
+          # branch.
+          #
+          # The -f matters. Without it git refuses to switch while any tracked
+          # file is modified - and it compares against HEAD, not against the
+          # target, so even a file whose content already equals the target
+          # blocks the switch ("Please commit your changes or stash them").
+          # Preflight above has already decided whether proceeding is safe, so
+          # discarding here is the decision being carried out rather than a new
+          # one. Anything precious was caught by Preflight.
+          $SSH "cd '$APP_DIR' && git fetch --no-tags origin '$BRANCH' && git checkout -f -B '$BRANCH' FETCH_HEAD" 2>&1 | tail -3
 
           after=$($SSH "cd '$APP_DIR' && git rev-parse --short HEAD")
           echo "Live moved: $before -> $after"
