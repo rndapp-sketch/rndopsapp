@@ -144,7 +144,7 @@ pipeline {
     success { echo "Deployed testing-backend to 172.17.1.46" }
     failure {
       echo "Deploy FAILED. The site may be mid-restart or down."
-      echo "Check: journalctl --user -u frappe-bench -n 50 --no-pager  /  tail -50 ${BENCH_DIR}/logs/web.error.log"
+      echo "Check: journalctl --user -u frappe-bench -n 50 --no-pager  /  tail -50 ${env.BENCH_DIR}/logs/web.error.log"
     }
   }
 }
