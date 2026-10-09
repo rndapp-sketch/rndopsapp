@@ -1439,7 +1439,11 @@ def get_minio_file(file_url=None, file_path=None, download=False, **kwargs):
 		frappe.throw("file_url or file_path parameter is required", frappe.ValidationError)
 
 	path_clean = str(path_to_fetch).lstrip("/")
-	is_download = frappe.utils.cint(download) or (1 if str(kwargs.get("download")).lower() in ("true", "1") else 0)
+	# The local-file branch below joins this onto the site directory, so a "files/../"
+	# path would otherwise escape it. No legitimate object key contains these.
+	if any(p in (".", "..") for p in path_clean.split("/")) or "\\" in path_clean or "\x00" in path_clean:
+		frappe.throw("Invalid file path", frappe.ValidationError)
+	is_download =frappe.utils.cint(download) or (1 if str(kwargs.get("download")).lower() in ("true", "1") else 0)
 
 	content = None
 	filename = path_clean.rsplit("/", 1)[-1]

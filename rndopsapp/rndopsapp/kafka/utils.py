@@ -13,7 +13,14 @@ from rndopsapp.static_config import MATTERMOST_POSTS_URL
 # --- MATTERMOST CONFIG ---
 _MM_URL = MATTERMOST_POSTS_URL
 _MM_TOKEN = "Bearer fmjih41b4iymicttnuhinsqime"
+# Default is production's "kafka logs" channel; Testing overrides this in the
+# gitignored rndopsapp/local_settings.py so its noise stays out of production.
 _MM_KAFKA_CHANNEL = "yh7piky97iycjrdytia1hqy99a"  # "kafka logs" channel
+
+try:
+    from rndopsapp.local_settings import MM_KAFKA_CHANNEL as _MM_KAFKA_CHANNEL
+except ImportError:
+    pass
 
 
 def mm_notify(message: str):

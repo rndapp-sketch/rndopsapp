@@ -30,8 +30,14 @@ bench.log
 config.py
 email_config.py
 
+# Personal local dev notes (never commit)
+LOCAL_DEV_NOTES.md
 # Frontend build output, deployed here by the prornd-ui Jenkins pipeline.
 # Untracked on purpose: if these were tracked, this repo's checkout would
 # revert every frontend deploy. See JENKINS_CI_CD_PLAN.md section 4.
 rndopsapp/public/frontend/
 rndopsapp/www/rndopsapp.html
+
+# Per-server endpoint overrides for static_config.py / kafka config.
+# Never commit: each server pins its own and a deploy must not overwrite them.
+local_settings.py

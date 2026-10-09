@@ -310,7 +310,9 @@ def update_e_non_routine_deposit_slip_fields(docname, changes=None, child_table_
 	Restricted to `staff, RnD` / System Manager. See
 	rndopsapp.rndopsapp.deposit_slip_common.update_locked_deposit_slip.
 
-	changes: JSON dict {fieldname: new_value}.
+	changes: JSON dict {fieldname: new_value}. Written as-is, no server-side
+	recalculation - whatever value the frontend sends for a field (including
+	overhead_amount or its driver fields) is what gets saved.
 	child_table_changes: JSON list of
 	    {"fieldname": "ecs_dates" | "credit_distribution" | "additional_project_credits",
 	     "updated": [{"name": <row name>, "changes": {field: value}}, ...],

@@ -71,6 +71,12 @@ class AccountHeadPaymentDTO:
 
     # Module information
     frapAppId: str = ""
+    # This payment row's own docname. `frapAppId` is the application docname — and here it
+    # falls back to the project number when no application id is passed — so it repeats
+    # across every instalment and correction and cannot identify one payment. Accounts
+    # matches on `frapRowId` when present, else falls back to (commit, amount, date),
+    # which conflates two identical instalments on the same day.
+    frapRowId: str = ""
     moduleId: Optional[int] = None
 
     # Optional fields
@@ -97,6 +103,7 @@ class AccountHeadPaymentDTO:
             "bankTransactionNumber": self.bankTransactionNumber,
             "bankTransactionDate": self.bankTransactionDate,
             "frapAppId":self.frapAppId,
+            "frapRowId": self.frapRowId,
             "moduleId": self.moduleId,
             "billAmount": self.billAmount
         }

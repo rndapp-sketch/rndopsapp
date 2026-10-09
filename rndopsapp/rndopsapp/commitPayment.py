@@ -681,6 +681,29 @@ def get_project_available_amounts(project_number):
     if not project_number:
         return {"status": "error", "message": "Project number is required"}
 
+    # An overhead project's money (PDF per employee, DPF per department) lives in the
+    # Accounts service's overhead fund, keyed by fundType + one scope identifier, not in
+    # the project ledger. Branch before anything else so every existing caller of this
+    # function — the module unlock, the balance cards, the commit form — works unchanged.
+    # The scope id is resolved from the project and ownership-checked there; it is never
+    # taken from the caller.
+    # See docs/pdf-project-implementation.md §5.2 and docs/dpf-project-implementation.md.
+    from rndopsapp.rndopsapp.overhead_fund import (
+        get_overhead_summary,
+        resolve_overhead_scope_for_user,
+    )
+
+    overhead = resolve_overhead_scope_for_user(project_number)
+    if overhead:
+        fund_type, scope = overhead
+        try:
+            return get_overhead_summary(fund_type, scope)
+        except Exception as e:
+            frappe.log_error(
+                frappe.get_traceback(), f"{fund_type} Fund - Available Amounts Failed"
+            )
+            return {"status": "error", "message": str(e)}
+
     def _dev_fallback():
         """
         DEV-ONLY fallback. The balance is normally served by an external ledger
@@ -762,15 +785,6 @@ def get_project_available_amounts(project_number):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Get Project Available Amounts Error")
         return _dev_fallback() or {"status": "error", "message": str(e)}
-
-
-@frappe.whitelist(allow_guest=True)
-def get_project_available_amounts_test(project_number):
-    """
-    TESTING ONLY - guest-accessible clone of get_project_available_amounts.
-    Remove before going to production.
-    """
-    return get_project_available_amounts(project_number)
 
 # Define topics for commit and payment (assuming these topics based on user request "same for payment also")
 # Ideally these should be defined in kafka_sync.py constant list, but for now using string literals or importing if added.
@@ -2216,6 +2230,14 @@ def set_workflow_state(
         comment = (comment or "").strip()
 
         frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
+        # Raw set_value skips doc hooks, so mirror fields (e.g. Fund Sanction's
+        # visible "Workflow Status") must be kept in sync here by hand.
+        if frappe.get_meta(doctype).has_field("sanction_workflow_status"):
+            frappe.db.set_value(
+                doctype, docname,
+                {"sanction_workflow_status": state, "workflow_status": state},
+                update_modified=False,
+            )
 
         reason_text = f" | Reason: {comment}" if comment else ""
         frappe.get_doc({
@@ -2344,7 +2366,8 @@ def search_salary_records(query=None, year=None, month=None, status=None, page=1
             "page_size": <int>,
             "results": [ {year_month, year, month, employee_id, employee_name,
                           email, department, designation, basic_salary, hra,
-                          working_days, gross_pay, total_deduction, net_pay,
+                          working_days, gross_pay, id_card_charge,
+                          total_deduction, net_pay,
                           status, project_number, commit_date}, ... ],
             "available_year_months": [<all Salary Staging doc names>],
             "available_statuses": [<distinct status values found>],
@@ -2415,6 +2438,7 @@ def search_salary_records(query=None, year=None, month=None, status=None, page=1
                     "hra": ud.get("hra"),
                     "working_days": ud.get("working_days"),
                     "gross_pay": ud.get("gross_pay"),
+                    "id_card_charge": ud.get("id_card_charge"),
                     "total_deduction": ud.get("total_deduction"),
                     "net_pay": ud.get("net_pay"),
                     "status": rec_status,

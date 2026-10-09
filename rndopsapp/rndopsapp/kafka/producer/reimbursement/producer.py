@@ -386,6 +386,21 @@ def publish_commit(
     Returns:
         bool: True if successful, False otherwise
     """
+    # A PDF (Personal Development Fund) project's money lives in the Accounts service's
+    # overhead fund, keyed by fundType + employeeId — not in the project ledger keyed by
+    # projectNumber + accountHeadId. Publishing a PDF commit here would make Accounts
+    # look for a project that does not exist (and must never exist), so it would fail or
+    # dead-letter. Routed at the producer rather than at each call site because seven
+    # doctypes import publish_commit directly.
+    # See docs/pdf-project-implementation.md §5.4.
+    from ..overhead import is_overhead_project, publish_overhead_commit
+
+    if is_overhead_project(project_name):
+        return publish_overhead_commit(
+            doc, commit_amount, budget_head, project_name, bmr, bill_amount,
+            validate, log_errors, frap_app_id, ref_details, module_id, commit_particular,
+        )
+
     return AccountHeadCommitProducer.publish(
         doc, commit_amount, budget_head, project_name, bmr, bill_amount, validate, log_errors, frap_app_id, ref_details, module_id, commit_particular
     )
@@ -422,6 +437,20 @@ def publish_payment(
     Returns:
         bool: True if successful, False otherwise
     """
+    # Same routing as publish_commit — see the note there.
+    #
+    # submit_payment_data deliberately passes project_name=None and lets the mapper read
+    # doc.project_ref_number, so routing on project_name alone would send every PDF
+    # payment to the account-head topic. Fall back the same way the mapper does.
+    from ..overhead import is_overhead_project, publish_overhead_payment
+
+    routing_project = project_name or getattr(doc, "project_ref_number", None)
+    if is_overhead_project(routing_project):
+        return publish_overhead_payment(
+            doc, routing_project, payment_amount, budget_head, bmr, validate,
+            log_errors, ref_details, frap_app_id, module_name, bill_amount,
+        )
+
     return AccountHeadPaymentProducer.publish(
         doc, project_name, payment_amount, budget_head, bmr, validate, log_errors, ref_details, frap_app_id, module_name, bill_amount
     )

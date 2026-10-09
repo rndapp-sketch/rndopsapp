@@ -104,6 +104,7 @@
   "pi_userid",
   "department_head",
   "head_approver",
+  "mentor_user_id",
   "column_break_oxoo",
   "is_additional_pi",
   "additional_pi_table",
@@ -180,6 +181,12 @@
   "fund_transactions",
   "iitg_bank_account_number",
   "received_amount_breakup",
+  "pdf_section",
+  "is_pdf_project",
+  "pdf_employee_id",
+  "is_overhead_project",
+  "overhead_fund_type",
+  "overhead_scope_id",
   "workflow_state"
  ],
  "fields": [
@@ -276,7 +283,7 @@
    "fieldname": "project_type",
    "fieldtype": "Select",
    "label": "Project Type",
-   "options": "\nResearch\nConsultancy\nOther",
+   "options": "\nResearch\nConsultancy\nOther\nPDF\nDPF",
    "reqd": 1
   },
   {
@@ -626,6 +633,16 @@
    "fieldname": "head_approver",
    "fieldtype": "Link",
    "label": "Head Approver",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Mentor who will approve this application, fetched from the applicant's (PI) assigned Mentor/Head.",
+   "fetch_from": "pi_webmail.piheadmentor_user_id",
+   "fieldname": "mentor_user_id",
+   "fieldtype": "Link",
+   "label": "Mentor User ID",
    "options": "User",
    "read_only": 1
   },
@@ -1273,6 +1290,54 @@
    "label": "Enter Existing Project Number"
   },
   {
+   "collapsible": 1,
+   "depends_on": "eval:doc.is_overhead_project || doc.is_pdf_project",
+   "fieldname": "pdf_section",
+   "fieldtype": "Section Break",
+   "label": "Overhead Fund"
+  },
+  {
+   "default": "0",
+   "description": "Set only on auto-created PDF projects. Superseded by Is Overhead Project + Overhead Fund Type, which cover every overhead fund; still written on PDF projects so anything reading it keeps working.",
+   "fieldname": "is_pdf_project",
+   "fieldtype": "Check",
+   "label": "Is PDF Project",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.is_pdf_project",
+   "description": "The employeeId sent to the Accounts service. Copied from User.employee_id when the project is minted. Superseded by Overhead Scope Id.",
+   "fieldname": "pdf_employee_id",
+   "fieldtype": "Data",
+   "label": "PDF Employee Id",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set only on auto-created overhead fund projects (PDF, DPF, ...). Every overhead branch in the backend tests this flag.",
+   "fieldname": "is_overhead_project",
+   "fieldtype": "Check",
+   "label": "Is Overhead Project",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.is_overhead_project",
+   "description": "Which overhead fund this project stands for. Decides whether the Accounts service is addressed by employeeId or departmentId.",
+   "fieldname": "overhead_fund_type",
+   "fieldtype": "Select",
+   "label": "Overhead Fund Type",
+   "options": "\nPDF\nDPF\nIDF\nSWF\nSTWF",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.is_overhead_project",
+   "description": "The single identifier the Accounts service scopes this fund by: employee_id for PDF, dept_id for DPF. Empty for the institute-wide pools.",
+   "fieldname": "overhead_scope_id",
+   "fieldtype": "Data",
+   "label": "Overhead Scope Id",
+   "read_only": 1
+  },
+  {
    "fieldname": "workflow_state",
    "fieldtype": "Data",
    "label": "Workflow State",
@@ -1290,7 +1355,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-21 17:37:08.046594",
+ "modified": "2026-09-29 15:34:12.324443",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Registration",
@@ -1424,6 +1489,20 @@
    "read": 1,
    "report": 1,
    "role": "Director",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Inspired Faculty",
    "select": 1,
    "share": 1,
    "submit": 1,

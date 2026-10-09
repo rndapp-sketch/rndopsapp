@@ -21,9 +21,12 @@
   "col_1_column",
   "amount_inclusive_of_gst",
   "igst_18_on_consultancy",
-  "amount_after_gst_tds",
+  "cgst_9_of_consultancy_fee",
+  "sgst_9_of_consultancy_fee",
   "income_tax_tds",
-  "gst_tds__2",
+  "amount_after_gst_tds",
+  "other_deductions",
+  "ammount_actually_received_in_bank",
   "total_cost_x",
   "consultancy_charge_y",
   "operational_charge_z",
@@ -45,7 +48,6 @@
   "balance_consultancy_fee",
   "balance_operation_charge",
   "total_gst",
-  "other_deductions",
   "total_amount",
   "fund_received_ref",
   "budget_head_reconciliation_section",
@@ -116,7 +118,8 @@
   {
    "fieldname": "amount_inclusive_of_gst",
    "fieldtype": "Currency",
-   "label": "Amount Inclusive of GST"
+   "label": "Amount Inclusive of GST",
+   "precision": "2"
   },
   {
    "fieldname": "igst_18_on_consultancy",
@@ -127,23 +130,27 @@
    "fieldname": "amount_after_gst_tds",
    "fieldtype": "Currency",
    "hidden": 1,
-   "label": "Amount after GST TDS @ 2%"
+   "label": "GST TDS",
+   "precision": "2"
   },
   {
    "description": "Total Cost X (Balance after GST Deduction from amount received)",
    "fieldname": "total_cost_x",
    "fieldtype": "Currency",
-   "label": "Total Cost X"
+   "label": "Total Cost X",
+   "precision": "2"
   },
   {
    "fieldname": "consultancy_charge_y",
    "fieldtype": "Currency",
-   "label": "Consultancy Charge (Y)"
+   "label": "Consultancy Charge (Y)",
+   "precision": "2"
   },
   {
    "fieldname": "operational_charge_z",
    "fieldtype": "Currency",
-   "label": "Operational Charge (Z)"
+   "label": "Operational Charge (Z)",
+   "precision": "2"
   },
   {
    "fieldname": "column_break_fwob",
@@ -154,27 +161,32 @@
   {
    "fieldname": "overhead_from_y_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Y (10% * Y) Amount"
+   "label": "Overhead from Y (10% * Y) Amount",
+   "precision": "2"
   },
   {
    "fieldname": "overhead_from_z_amount",
    "fieldtype": "Currency",
-   "label": "Overhead from Z (10% * Z) Amount"
+   "label": "Overhead from Z (10% * Z) Amount",
+   "precision": "2"
   },
   {
    "fieldname": "total_overhead_amount",
    "fieldtype": "Currency",
-   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount"
+   "label": "Total Overhead ((10% * Y) + (10% * Z)) Amount",
+   "precision": "2"
   },
   {
    "fieldname": "institute_share_amount",
    "fieldtype": "Currency",
-   "label": "Institute Share (20% * Y) Amount"
+   "label": "Institute Share (20% * Y) Amount",
+   "precision": "2"
   },
   {
    "fieldname": "total_overhead_institute_share",
    "fieldtype": "Currency",
-   "label": "Overhead + Institute Share"
+   "label": "Overhead + Institute Share",
+   "precision": "2"
   },
   {
    "fieldname": "primary_details",
@@ -194,17 +206,20 @@
   {
    "fieldname": "balance_consultancy_fee",
    "fieldtype": "Currency",
-   "label": "Balance Consultancy Fee"
+   "label": "Balance Consultancy Fee",
+   "precision": "2"
   },
   {
    "fieldname": "balance_operation_charge",
    "fieldtype": "Currency",
-   "label": "Balance Operation Charge"
+   "label": "Balance Operation Charge",
+   "precision": "2"
   },
   {
    "fieldname": "total_gst",
    "fieldtype": "Currency",
-   "label": "Total GST"
+   "label": "Total GST",
+   "precision": "2"
   },
   {
    "fieldname": "other_deductions",
@@ -214,7 +229,8 @@
   {
    "fieldname": "total_amount",
    "fieldtype": "Currency",
-   "label": "Total Amount"
+   "label": "Total Amount",
+   "precision": "2"
   },
   {
    "fieldname": "col_1_column",
@@ -226,24 +242,27 @@
    "description": "(IDF %age of Overhead + Institute Share)",
    "fieldname": "idf_amount",
    "fieldtype": "Currency",
-   "label": "IDF Amount"
+   "label": "IDF Amount",
+   "precision": "2"
   },
   {
    "description": "(5% of Overhead + Institute Share)",
    "fieldname": "staff_welfare_amount",
    "fieldtype": "Currency",
-   "label": "(D) Staff welfare Amount"
+   "label": "(D) Staff welfare Amount (5%)",
+   "precision": "2"
   },
   {
    "description": "(5% of Overhead + Institute Share)",
    "fieldname": "student_welfare_amount",
    "fieldtype": "Currency",
-   "label": "(C) Student welfare Amount"
+   "label": "(C) Student welfare Amount (5%)",
+   "precision": "2"
   },
   {
    "fieldname": "idf_percentage",
    "fieldtype": "Float",
-   "label": "(A) IDF % age"
+   "label": "(A) IDF % age (40%)"
   },
   {
    "fieldname": "column_break_umfm",
@@ -256,7 +275,7 @@
   {
    "fieldname": "dpf_credit_distributions",
    "fieldtype": "Table",
-   "label": "(B) DPF Credit Distribution",
+   "label": "(B) DPF Credit Distribution (50%)",
    "options": "DPF Credit Distribution"
   },
   {
@@ -295,20 +314,30 @@
    "read_only": 1
   },
   {
-   "fieldname": "gst_tds__2",
-   "fieldtype": "Currency",
-   "label": "GST TDS @ 2%"
-  },
-  {
    "fieldname": "income_tax_tds",
    "fieldtype": "Currency",
    "label": "Income Tax TDS"
+  },
+  {
+   "fieldname": "ammount_actually_received_in_bank",
+   "fieldtype": "Currency",
+   "label": "Ammount actually received in bank account"
+  },
+  {
+   "fieldname": "cgst_9_of_consultancy_fee",
+   "fieldtype": "Currency",
+   "label": "CGST @9% of Consultancy Fee"
+  },
+  {
+   "fieldname": "sgst_9_of_consultancy_fee",
+   "fieldtype": "Currency",
+   "label": "SGST @9% of Consultancy Fee"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-03 16:20:55.731889",
+ "modified": "2026-09-17 13:03:33.623190",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "D Consultancy Deposit Slip",

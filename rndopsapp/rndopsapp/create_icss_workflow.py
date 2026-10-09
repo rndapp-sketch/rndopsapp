@@ -18,8 +18,10 @@ State/transition design (15 states, 30 transitions):
     - amount <= 1,00,000 → Pending Associate Dean
     Both rows are required.
 
-  Director gate: enforced in perform_icss_action (send_to_director / director_signed_pdf),
-    not as a workflow condition.
+  Director hardcopy flow: Dean ticks "Send to Director" from Pending Dean Approval,
+    which moves the doc to "Pending Director Approval" (update_send_to_director_icss).
+    Staff uploads the signed PDF there; Dean's Approve then unlocks once
+    director_signed_pdf is set (gate enforced in perform_icss_action).
 
   PO Delivered: set by upload_icss_signed_po API — no manual transition row needed.
 
@@ -46,6 +48,7 @@ ICSS_STATES = [
     ("Pending Associate Dean",   "1", "Ado_RnD"),
     ("Approved",                 "1", "Administrator"),
     ("Pending Dean Approval",    "1", "Dean, RnD"),
+    ("Pending Director Approval", "1", "Dean, RnD"),
     ("Pending PO Generation",    "1", "staff, RnD"),
     ("PO Generated",             "1", "staff, RnD"),
     ("PO Delivered",             "1", "Administrator"),
@@ -102,6 +105,13 @@ ICSS_TRANSITIONS = [
     ("Pending Dean Approval", "Approve", "Pending PO Generation", "Dean, RnD"),
     ("Pending Dean Approval", "Reject",  "Rejected",              "Dean, RnD"),
 
+    # ── Pending Director Approval ─────────────────────────────────────────────
+    # Entered via update_send_to_director_icss (Dean ticks "Send to Director"),
+    # not a manual workflow transition. Director-PDF gate enforced in
+    # perform_icss_action, not as a condition here.
+    ("Pending Director Approval", "Approve", "Pending PO Generation", "Dean, RnD"),
+    ("Pending Director Approval", "Reject",  "Rejected",              "Dean, RnD"),
+
     # ── Pending PO Generation ─────────────────────────────────────────────────
     ("Pending PO Generation", "Generate PO", "PO Generated", "staff, RnD"),
 
@@ -109,6 +119,7 @@ ICSS_TRANSITIONS = [
     ("Pending Staff Approval",   "Put Back", "Pending PI Approval",    "staff, RnD"),
     ("Pending HoS Approval",     "Put Back", "Pending Staff Approval", "Hos, RnD (Head of Section, RnD)"),
     ("Pending Dean Approval",    "Put Back", "Pending HoS Approval",   "Dean, RnD"),
+    ("Pending Director Approval", "Put Back", "Pending HoS Approval",  "Dean, RnD"),
     ("Pending Associate Dean",   "Put Back", "Pending HoS Approval",   "Associate Dean, RND"),
 
     # PO Generated → PO Delivered is set by upload_icss_signed_po API only.

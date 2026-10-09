@@ -982,10 +982,10 @@ def perform_travel_action(docname, action, extra_data=None):
 						"reference_name": docname,
 					}, fields=["name", "status", "creation"])
 					frappe.log_error(
+						"Travel Kafka - No Staging Record",
 						f"[Travel Kafka] No PENDING_APPROVAL/FAILED staging records found for {docname}. "
 						f"All staging records for this doc: {all_staging}. "
-						f"Ensure submit_commit_data was called before the staff Forward action.",
-						"Travel Kafka - No Staging Record"
+						f"Ensure submit_commit_data was called before the staff Forward action."
 					)
 				for st in staging_docs:
 					staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
@@ -1013,8 +1013,8 @@ def perform_travel_action(docname, action, extra_data=None):
 							staging_doc.db_set("status", "FAILED")
 							staging_doc.db_set("error_message", "kafka_publish_commit returned False")
 							frappe.log_error(
-								f"[Travel Kafka] kafka_publish_commit returned False for staging {staging_doc.name}",
-								"Travel Kafka - Publish Failed"
+								"Travel Kafka - Publish Failed",
+								f"[Travel Kafka] kafka_publish_commit returned False for staging {staging_doc.name}"
 							)
 					except Exception as e:
 						frappe.log_error(frappe.get_traceback(), f"[Travel Kafka] Exception processing staging {staging_doc.name} for {docname}")
@@ -1064,16 +1064,16 @@ def _deduct_scl_on_approval(doc):
 	employee = doc.webmail_id_travel
 	if not employee:
 		frappe.log_error(
-			f"[SCL] Cannot deduct: webmail_id_travel is empty on Travel {doc.name}",
-			"SCL Deduction Warning"
+			"SCL Deduction Warning",
+			f"[SCL] Cannot deduct: webmail_id_travel is empty on Travel {doc.name}"
 		)
 		return
 
 	days = _calculate_scl_days(doc)
 	if days <= 0:
 		frappe.log_error(
-			f"[SCL] Cannot deduct: leave dates missing or invalid on Travel {doc.name}",
-			"SCL Deduction Warning"
+			"SCL Deduction Warning",
+			f"[SCL] Cannot deduct: leave dates missing or invalid on Travel {doc.name}"
 		)
 		return
 
@@ -1091,9 +1091,9 @@ def _deduct_scl_on_approval(doc):
 	if not success:
 		# Warn in error log; optionally notify approver
 		frappe.log_error(
+			"SCL Insufficient Balance",
 			f"[SCL] Insufficient balance for {employee} in {year}. "
-			f"Requested {days} days but balance is exhausted. Travel: {doc.name}",
-			"SCL Insufficient Balance"
+			f"Requested {days} days but balance is exhausted. Travel: {doc.name}"
 		)
 		# --- Uncomment the line below to HARD BLOCK approval instead of warning ---
 		# frappe.throw(_(f"Insufficient Special Casual Leave balance. Requested {days} days exceeds available balance."))

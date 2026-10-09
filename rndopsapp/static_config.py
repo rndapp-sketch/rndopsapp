@@ -54,3 +54,26 @@ ACADEMIC_API_BASE = "http://172.16.135.27:7078/api/academic/students/by-email"
 
 # Institute email domain used to build the User's login email.
 INSTITUTE_EMAIL_DOMAIN = "iitg.ac.in"
+
+# ------------------------------------------------------- per-server overrides
+# Imported BEFORE the derived values below, so overriding a base (e.g.
+# ACCOUNT_PORTAL_BASE_URL) also corrects everything built from it. Without that
+# ordering, ACCOUNT_PORTAL_API would silently keep pointing at production.
+#
+# local_settings.py is gitignored - the same convention the repo already uses
+# for email_config.py and credentials.json - so each server pins its own
+# endpoints and a deploy can never overwrite them. This replaces
+# `git update-index --skip-worktree` on this file, which protected local edits
+# from `git pull` but made `git checkout -f` fail and broke CI deploys.
+try:
+    from rndopsapp.local_settings import *  # noqa: F401,F403
+except ImportError:
+    pass
+
+# ------------------------------------------------------------ derived values
+MATTERMOST_API_URL = f"{MATTERMOST_BASE_URL}/api/v4"
+MATTERMOST_POSTS_URL = f"{MATTERMOST_API_URL}/posts"
+
+ACCOUNT_PORTAL_API = f"{ACCOUNT_PORTAL_BASE_URL}/api"
+
+MINIO_URL = f"http://{MINIO_ENDPOINT}"

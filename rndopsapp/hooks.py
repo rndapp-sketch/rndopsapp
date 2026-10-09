@@ -120,7 +120,10 @@ app_license = "mit"
 _DU = "rndopsapp.rndopsapp.delegate_user.delegate_user"
 
 permission_query_conditions = {
-	"Project Registration":          f"{_DU}.project_registration_permission_query",
+	# Composed: delegation (expands visibility) AND the overhead restriction (hides other
+	# people's Personal / Departmental Development Fund projects). See overhead_fund for
+	# why they are combined in one callable rather than listed separately.
+	"Project Registration":          "rndopsapp.rndopsapp.overhead_fund.project_registration_permission_query",
 	"Travel":                        f"{_DU}.travel_permission_query",
 	"TA DA Settlement":              f"{_DU}.ta_da_settlement_permission_query",
 	"Temporary Advance":             f"{_DU}.temporary_advance_permission_query",
@@ -178,6 +181,7 @@ doc_events = {
 		# on_update — most real approval-chain transitions happen post-submit,
 		# so without this entry Email Manager never sees them.
 		"on_update_after_submit": [
+			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
 		],
@@ -188,6 +192,7 @@ doc_events = {
 		# its own event. Same handler, same dedupe, so this is pure
 		# coverage, not a behavior change.
 		"on_submit": [
+			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.external_auth.log_impersonated_action",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
@@ -202,7 +207,8 @@ doc_events = {
 
 scheduler_events = {
 	"daily": [
-		"rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts"
+		"rndopsapp.rndopsapp.api.auto_clear_old_mattermost_posts",
+		"rndopsapp.rndopsapp.doctype.project_staff_extension.project_staff_extension.apply_pending_project_staff_extensions",
 	],
 	"cron": {
 		# SCL January credit — Jan 1 at midnight (creates new-year record, credits 15 days)
@@ -212,6 +218,10 @@ scheduler_events = {
 		# SCL July credit — Jul 1 at midnight (adds 15 days, total becomes 30)
 		"0 0 1 7 *": [
 			"rndopsapp.rndopsapp.tasks.scl_credit.credit_july_scl"
+		],
+		# Auto-disable announcements whose End Date has passed
+		"*/15 * * * *": [
+			"rndopsapp.rndopsapp.doctype.announcement_pragati.announcement_pragati.auto_disable_expired_announcements"
 		],
 	},
 }

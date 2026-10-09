@@ -17,7 +17,6 @@ adds latency to the document save request itself.
 import frappe
 
 CACHE_KEY = "email_manager_doctype_map"
-PERMANENT_EMPLOYEE_ROLE = "Permanent Employee"
 
 # Hard ceiling on recipients per notification — one document, one owner,
 # one email. Enforced at both the enqueue gate (_handle) and the publish
@@ -28,6 +27,14 @@ PERMANENT_EMPLOYEE_ROLE = "Permanent Employee"
 # feature broadcast ~11,840 emails before this cap existed. Never raise
 # this without also changing how recipients are computed to justify it.
 MAX_RECIPIENTS = 1
+
+# Doctypes whose monitored state lives in a field other than `workflow_state`.
+# Fund Sanction mirrors workflow_state into sanction_workflow_status (see
+# FundSanction.sync_sanction_workflow_status) and that is the field users see
+# as "Workflow Status".
+STATE_FIELD_OVERRIDES = {
+    "Fund Sanction": "sanction_workflow_status",
+}
 
 
 def on_workflow_state_change(doc, method=None):
@@ -40,15 +47,16 @@ def on_workflow_state_change(doc, method=None):
 
 
 def _handle(doc):
-    if not getattr(doc, "workflow_state", None):
+    state_field = STATE_FIELD_OVERRIDES.get(doc.doctype, "workflow_state")
+    new_state = getattr(doc, state_field, None)
+    if not new_state:
         return
 
     doc_before = doc.get_doc_before_save()
     if not doc_before:
         return
 
-    old_state = getattr(doc_before, "workflow_state", None)
-    new_state = doc.workflow_state
+    old_state = getattr(doc_before, state_field, None)
     if not old_state or old_state == new_state:
         return
 
@@ -194,27 +202,18 @@ def _already_notified(doctype: str, docname: str, new_state: str) -> bool:
 
 def _get_recipients(doc) -> list[str]:
     """
-    The document owner only — and only when that owner actually holds the
-    Permanent Employee role — deliberately NOT "every user holding the
-    Permanent Employee role": that role is held by ~1,184 accounts,
-    basically every regular staff/faculty account, used just to submit
-    their own forms (confirmed live against this site).
-
-    There used to also be an opt-in "notify everyone holding Role X" per
-    Doc Status row (Email Manager Status.role). It was removed on
-    2026-08-31 after an admin pointed it at Permanent Employee itself,
-    broadcasting every Project Registration approval to all 1,184 users —
-    the exact mass-email risk this function's owner-gate was designed to
-    avoid, just reopened through the "opt-in" side door. Recipients are now
-    always exactly the single document owner, or nobody.
+    Exactly one recipient: the document owner, i.e. whoever created/applied
+    the application. No role check (a role gate was brittle) — but never
+    "everyone holding role X": the 2026-08-31 incident broadcast to ~1,184
+    users that way, so recipients stay a single owner or nobody. System
+    accounts (Administrator/Guest) and disabled users are skipped.
     """
-    recipients: list[str] = []
-
-    if doc.owner and doc.owner not in ("Administrator", "Guest"):
-        if PERMANENT_EMPLOYEE_ROLE in frappe.get_roles(doc.owner):
-            recipients.append(doc.owner)
-
-    return recipients
+    owner = doc.owner
+    if not owner or owner in ("Administrator", "Guest"):
+        return []
+    if not frappe.db.get_value("User", owner, "enabled"):
+        return []
+    return [owner]
 
 
 # ---------------------------------------------------------------------------

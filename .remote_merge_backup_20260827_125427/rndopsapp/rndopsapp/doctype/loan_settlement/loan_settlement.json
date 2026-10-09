@@ -1,0 +1,275 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}LNST{#####}",
+ "creation": "2026-08-08 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "loan_details_section",
+  "loan_reference",
+  "ledger_loan_number",
+  "column_break_loan",
+  "project",
+  "project_number",
+  "settlement_section",
+  "settlement_type",
+  "settlement_amount",
+  "column_break_settlement",
+  "settlement_date",
+  "loan_amount_at_request",
+  "outstanding_at_request",
+  "budget_breakup_section",
+  "budget_breakup",
+  "office_use_section",
+  "settlement_mode",
+  "remarks",
+  "reference_section",
+  "fund_received_reference",
+  "requested_by",
+  "column_break_reference",
+  "publish_status",
+  "publish_error",
+  "workflow_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "loan_details_section",
+   "fieldtype": "Section Break",
+   "label": "Loan Details"
+  },
+  {
+   "fieldname": "loan_reference",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Loan Request",
+   "options": "Loan Request",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The Accounts service's own integer loan id (loanNumber). Published as loanNumber.",
+   "fieldname": "ledger_loan_number",
+   "fieldtype": "Int",
+   "label": "Ledger Loan Number",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_loan",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "Project Registration",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project Number",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "settlement_section",
+   "fieldtype": "Section Break",
+   "label": "Settlement"
+  },
+  {
+   "fieldname": "settlement_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Settlement Type",
+   "options": "Full\nPartial",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "settlement_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Settlement Amount",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_settlement",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "settlement_date",
+   "fieldtype": "Date",
+   "label": "Settlement Date",
+   "read_only": 1
+  },
+  {
+   "description": "Loan's total sanctioned amount as reported by the Accounts service when this settlement was requested.",
+   "fieldname": "loan_amount_at_request",
+   "fieldtype": "Currency",
+   "label": "Loan Amount (at request)",
+   "read_only": 1
+  },
+  {
+   "description": "Outstanding balance as reported by the Accounts service when this settlement was requested.",
+   "fieldname": "outstanding_at_request",
+   "fieldtype": "Currency",
+   "label": "Outstanding (at request)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "budget_breakup_section",
+   "fieldtype": "Section Break",
+   "label": "Head-wise Return"
+  },
+  {
+   "description": "Amount being returned against each budget head the loan was drawn against. Must total the Settlement Amount.",
+   "fieldname": "budget_breakup",
+   "fieldtype": "Table",
+   "label": "Head-wise Return",
+   "options": "Loan Settlement Budget Breakup"
+  },
+  {
+   "fieldname": "office_use_section",
+   "fieldtype": "Section Break",
+   "label": "For Office Use (staff, RnD)"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "settlement_mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Settlement Mode",
+   "options": "\nPhysical\nPFMS\nOffline\nOnline"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  },
+  {
+   "fieldname": "reference_section",
+   "fieldtype": "Section Break",
+   "label": "References"
+  },
+  {
+   "description": "Set once the triggering Fund Received document is submitted. Traceability only - not part of the Kafka payload.",
+   "fieldname": "fund_received_reference",
+   "fieldtype": "Link",
+   "label": "Fund Received",
+   "options": "Fund Received",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_reference",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Pending",
+   "description": "Whether this settlement has been published to the Accounts service via Kafka.",
+   "fieldname": "publish_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Publish Status",
+   "options": "Pending\nPublished\nFailed",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "depends_on": "eval:doc.publish_status=='Failed'",
+   "fieldname": "publish_error",
+   "fieldtype": "Small Text",
+   "label": "Publish Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Workflow State",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-08 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Loan Settlement",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

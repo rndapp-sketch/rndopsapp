@@ -1,0 +1,212 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:{YYYY}{MM}{DD}MiSCoM{######}",
+ "creation": "2026-07-08 15:53:18.858337",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_58t3",
+  "amended_from",
+  "section_break_klxk",
+  "project_number",
+  "applicant_webmail",
+  "applicant_department",
+  "applicant_designation",
+  "commit_details_section",
+  "budget_head",
+  "commit_decommit",
+  "module",
+  "commit_amount",
+  "commit_particular",
+  "linked_application",
+  "workflow_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_58t3",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Miscellaneous Commit",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "commit_details_section",
+   "fieldtype": "Section Break",
+   "label": "Commit Details"
+  },
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Link",
+   "label": "Project Number",
+   "options": "Project Registration",
+   "reqd": 1
+  },
+  {
+   "fieldname": "budget_head",
+   "fieldtype": "Link",
+   "label": "Account Head",
+   "options": "Budget Head",
+   "reqd": 1
+  },
+  {
+   "fieldname": "commit_decommit",
+   "fieldtype": "Select",
+   "label": "Commit / De-Commit",
+   "options": "\nCommit\nDe-Commit",
+   "reqd": 1
+  },
+  {
+   "fieldname": "commit_amount",
+   "fieldtype": "Currency",
+   "label": "Amount",
+   "reqd": 1
+  },
+  {
+   "fieldname": "commit_particular",
+   "fieldtype": "Data",
+   "label": "Particular",
+   "reqd": 1
+  },
+  {
+   "fieldname": "linked_application",
+   "fieldtype": "Data",
+   "label": "Linked Application Number , If any ",
+   "mandatory_depends_on": "eval:doc.module==\"Recruitment Adhoc Contractual\""
+  },
+  {
+   "fieldname": "section_break_klxk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "applicant_webmail",
+   "fieldtype": "Data",
+   "label": "Web-Mail Id",
+   "reqd": 1
+  },
+  {
+   "fieldname": "applicant_department",
+   "fieldtype": "Data",
+   "label": "Department",
+   "reqd": 1
+  },
+  {
+   "fieldname": "applicant_designation",
+   "fieldtype": "Data",
+   "label": "Designation",
+   "reqd": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "read_only": 1
+  },
+  {
+   "fieldname": "module",
+   "fieldtype": "Select",
+   "label": "Module",
+   "options": "\nAdvance Settlement\nCancellation Request\nDirect Purchase\nDisbursal of Consultancy\nDisbursal of Honorarium\nFund Received\nFund Sanction\nICSS_PO\nIndent Cum Sanction Sheet\nIndent General Form\nLeave Module\nLoan Request\nP_11 Form\nProject Proposal\nProject Registration\nProject Staff Details\nProject Staff Extension\nRecruitment Adhoc Contractual\nReimbursement\nsanction_sheet\nSelection Committee Report\nTA DA Settlement\nTemporary Advance\nTop Up Fellowship\nTravel",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-07-13 11:50:34.145426",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Miscellaneous Commit",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "All_ProRnd_User",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent Employee",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "select": 1,
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Dean, RnD",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

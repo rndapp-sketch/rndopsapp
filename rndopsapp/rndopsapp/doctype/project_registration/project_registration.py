@@ -302,15 +302,22 @@ def submit_project_registration(docname):
 		current_state = doc.workflow_state
 
 		# --- Find the next transition ---
+		# Must match both the current state AND a role the submitting user
+		# actually holds — otherwise every submitter falls through to the
+		# first "Draft" transition regardless of their role (e.g. an
+		# Independent Researcher/Inspire Faculty being routed to the Head
+		# Approval state instead of Mentor Approval).
+		user_roles = frappe.get_roles(frappe.session.user)
 		next_transition = None
 		for t in workflow_doc.transitions:
-			if t.state == current_state:
+			if t.state == current_state and t.allowed in user_roles:
 				next_transition = t
 				break
 
 		if not next_transition:
 			frappe.throw(
-				f"No transition found from current state '{current_state}' in workflow '{workflow_path}'."
+				f"No transition found from current state '{current_state}' in workflow '{workflow_path}' "
+				f"for your role."
 			)
 
 		next_state = next_transition.next_state
@@ -610,7 +617,13 @@ def handle_dynamic_workflow_action(doctype, docname, action, comment=None, endor
 			doc.save(ignore_permissions=True)
 	
 	# --- Integration with External API (Kafka) ---
-	if not endorsement and doc.workflow_state == "Approved" and doc.docstatus == 1 :
+	# Overhead fund projects are deliberately excluded: the Accounts service already
+	# tracks these funds (fundType + employeeId for PDF, + departmentId for DPF) and has
+	# no project for any of them. Publishing would create a phantom project alongside the
+	# fund they already track.
+	# See docs/pdf-project-implementation.md §3.5 / §5.1 and docs/dpf-project-implementation.md §5.1.
+	if not endorsement and doc.workflow_state == "Approved" and doc.docstatus == 1 \
+			and not doc.get("is_overhead_project") and not doc.get("is_pdf_project"):
 		# print("doc inside: ", doc.as_dict())
 		try:
 			success = publish_project(doc)
@@ -1039,6 +1052,17 @@ def get_project_form_data(docname=None):
 		return {"error": str(e)}
 
 
+def _get_head_approver_1_users():
+	"""Enabled users holding the `head_approver_1` role (the department heads)."""
+	return frappe.db.sql("""
+		SELECT DISTINCT u.name AS user, u.full_name, u.department_name
+		FROM `tabUser` u
+		INNER JOIN `tabHas Role` hr ON hr.parent = u.name AND hr.parenttype = 'User'
+		WHERE hr.role = 'head_approver_1' AND u.enabled = 1
+		ORDER BY u.full_name
+	""", as_dict=True)
+
+
 @frappe.whitelist()
 def get_user_details_for_pi(user_email):
 	"""
@@ -1104,7 +1128,8 @@ def get_user_details_for_pi(user_email):
 					"designation":                 institution.get("designation_u_r"),
 					"applicant_department":        applicant_department,
 					"copi_address":                institution.get("address_institution_u_r"),
-					"copi_contact":                profile.get("mobile_number_u_r")
+					"copi_contact":                profile.get("mobile_number_u_r"),
+					"head_approver_1_users":       _get_head_approver_1_users()
 				}
 		except Exception:
 			pass

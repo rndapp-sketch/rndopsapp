@@ -3,10 +3,22 @@
 
 # --- KAFKA CLUSTER CONFIGURATION ---
 # 2-Node Fault-Tolerant Cluster
+# Default is production. Per-server overrides live in
+# rndopsapp/local_settings.py, which is gitignored so a deploy cannot overwrite
+# them. This replaces marking this file skip-worktree: that flag protected local
+# edits from `git pull`, but made `git checkout -f` fail with "Entry ... not
+# uptodate. Cannot merge", breaking every CI deploy that touched this file.
+# Everything else here (topics, schema versions, tuning) is shared and belongs
+# in git.
 KAFKA_BOOTSTRAP_SERVERS = [
     '172.16.134.81:9095',
-    '172.16.134.81:9096'
+    '172.16.134.81:9096',
 ]
+
+try:
+    from rndopsapp.local_settings import KAFKA_BOOTSTRAP_SERVERS  # noqa: F811
+except ImportError:
+    pass
 
 # --- TOPIC CONFIGURATION ---
 NUM_PARTITIONS = 2
@@ -18,6 +30,15 @@ TOPIC_SANCTION = 'fund-sanction-events'
 TOPIC_FUND_RECEIVED = 'fund-received-events'
 TOPIC_DEPOSIT_SLIP = 'deposit-slip-events'
 TOPIC_LOAN_REQUEST = 'loan-request-event'
+# Overhead funds (PDF / DPF / IDF / SWF / STWF). We publish PDF only.
+TOPIC_OVERHEAD_COMMIT = 'overhead-commit-events'
+TOPIC_OVERHEAD_COMMIT_DLQ = 'overhead-commit-events-dlq'
+TOPIC_OVERHEAD_COMMIT_BATCH = 'overhead-commit-batch-events'
+TOPIC_OVERHEAD_PAYMENT = 'overhead-payment-events'
+TOPIC_OVERHEAD_PAYMENT_DLQ = 'overhead-payment-events-dlq'
+TOPIC_OVERHEAD_PAYMENT_BATCH = 'overhead-payment-batch-events'
+SCHEMA_VERSION_OVERHEAD = '1.0'
+
 TOPIC_LOAN_SETTLEMENT = 'loan-settlement-events'
 TOPIC_LOAN_SETTLEMENT_BATCH = 'loan-settlement-events-batch'
 
@@ -52,6 +73,17 @@ TOPIC_DEPOSIT_SLIP_UPDATE = 'accounts-depositslip-update'
 # amount"). We consume it here purely to surface the failure to the frontend.
 TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ = 'account-head-payment-events-dlq'
 
+# Settlement decisions published by accounts after an officer marks a payment paid,
+# rejects it, or sends it back for rectification. Two streams, one shape: only the id
+# field names differ (overheadPaymentId/overheadCommitId vs transactionPaymentNumber/
+# transactionCommitNumber), which consumer/payment_update normalises.
+#
+# The project stream is NOT settlement-only — it publishes from seven places, including
+# payment creation, so it echoes our own publishes back as PENDING. The overhead stream
+# publishes on the three settle actions only. See consumer/payment_update/mapper.py.
+TOPIC_OVERHEAD_PAYMENT_UPDATE = 'accounts-overheadpayment-update'
+TOPIC_ACCOUNT_HEAD_PAYMENT_UPDATE = 'accounts-accountheadpayment-update'
+
 # All Producer Topics List
 ALL_PRODUCER_TOPICS = [
     TOPIC_PROJECT, TOPIC_PROJECT_DLQ,
@@ -81,6 +113,12 @@ ALL_CONSUMER_TOPICS = [
     TOPIC_ACCOUNTS_FUND_RECEIVED,
     TOPIC_DEPOSIT_SLIP_UPDATE,
     TOPIC_ACCOUNT_HEAD_PAYMENT_DLQ,
+    # Deliberately NOT in NEW_DLQ_CONSUMER_TOPICS: these topics do not exist yet, so
+    # there is no pre-existing backlog to skip. Reading from the beginning is what we
+    # want — if accounts deploys before this consumer does, the settlements published in
+    # between are replayed rather than lost.
+    TOPIC_OVERHEAD_PAYMENT_UPDATE,
+    TOPIC_ACCOUNT_HEAD_PAYMENT_UPDATE,
     *NEW_DLQ_CONSUMER_TOPICS,
 ]
 
