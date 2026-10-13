@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "PSR{YYYY}{MM}{DD}-{####}",
+ "autoname": "PSR.YYYY..MM..DD.-.####",
  "creation": "2025-12-19 12:53:56.155958",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -93,7 +93,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-06 12:48:39.591328",
+ "modified": "2026-10-08 11:21:00.191951",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Staff Resignation",
@@ -122,6 +122,19 @@
    "read": 1,
    "report": 1,
    "role": "All_ProRnd_User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "project staff",
    "share": 1,
    "submit": 1,
    "write": 1

@@ -73,7 +73,8 @@ def _publish_batch_to_kafka(doc, project_number, account_head_id, transactions):
 	Returns True if published successfully.
 	"""
 	ref_details_val = int(flt(doc.ref_details)) if doc.ref_details else None
-	module_id       = get_module_id("Direct Purchase")
+	# Module Registry: "Po Commit Adjustment" (idx 30), distinct from Direct Purchase / dp_po.
+	module_id       = get_module_id("Po Commit Adjustment") or 30
 	module_id_str   = str(module_id) if module_id else None
 
 	settlement_rows = [

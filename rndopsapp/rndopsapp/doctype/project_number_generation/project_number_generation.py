@@ -49,6 +49,15 @@ def _fetch_from_user(pi_email):
     }
 
 
+def _normalize_emp_id(raw):
+    """4-char employee id: numeric ids are zero-padded, alphanumeric ids (e.g. 'IF01') kept as-is.
+    Returns '' when there is no usable id."""
+    eid = str(raw or "").strip().upper()
+    if not eid:
+        return ""
+    return eid.zfill(4)[-4:] if eid.isdigit() else eid
+
+
 def _peek_next_sequence(fin_year):
     """Return the next 4+ digit sequential number for a financial year without consuming it."""
     series_key = f"PROJ-{fin_year}-"
@@ -81,7 +90,7 @@ class ProjectNumberGeneration(Document):
             raw = str(self.dept_initial).strip().upper()[:4]
             self.dept_initial = raw.ljust(4, 'X')
         if self.emp_id:
-            self.emp_id = str(self.emp_id).strip().zfill(4)[-4:]
+            self.emp_id = _normalize_emp_id(self.emp_id)
         if self.emp_initial:
             self.emp_initial = str(self.emp_initial).strip().upper()[:4]
 
@@ -99,8 +108,16 @@ class ProjectNumberGeneration(Document):
             or not self.dept_initial.isalpha()
         ):
             frappe.throw("Department Initials must be exactly 4 uppercase letters")
-        if not self.emp_id or len(self.emp_id) != 4 or not self.emp_id.isdigit():
-            frappe.throw("Employee ID must be 4 digits after zero-padding")
+        if not self.emp_id:
+            frappe.throw(
+                "Employee ID is missing for the PI. Set the Employee ID on the PI's "
+                "User record, then generate the project number again."
+            )
+        if len(self.emp_id) != 4 or not self.emp_id.isalnum():
+            frappe.throw(
+                f"Employee ID '{self.emp_id}' is invalid: it must be 4 letters/digits "
+                "after zero-padding (e.g. 0123 or IF01)."
+            )
         if (
             not self.emp_initial
             or len(self.emp_initial) != 4
@@ -121,7 +138,7 @@ class ProjectNumberGeneration(Document):
         cat = (self.category or "").upper()[:1]
         dept_raw = (self.dept_initial or "").upper()[:4]
         dept = dept_raw.ljust(4, 'X') if dept_raw else "XXXX"
-        eid = str(self.emp_id or "").zfill(4)[-4:]
+        eid = _normalize_emp_id(self.emp_id)
         einit = (self.emp_initial or "").upper()[:4]
 
         series_key = f"PROJ-{fin_year}-"
@@ -215,6 +232,7 @@ def get_project_number_generation_fields(doc_name=None):
     prefill_data = {}
     calculated_project_no = None
     final_project_number = None
+    warnings = []
 
     if doc_name:
         try:
@@ -249,13 +267,19 @@ def get_project_number_generation_fields(doc_name=None):
 
             dept_raw = str(dept_initials or "").upper()[:4]
             dept_formatted = dept_raw.ljust(4, 'X') if dept_raw else "XXXX"
-            eid_formatted = (str(employee_id or "").strip().zfill(4)[-4:]) if (employee_id and str(employee_id).strip()) else "XXXX"
+            # Leave blank (not a fake placeholder) when the PI has no Employee ID, so
+            # save falls back to the User record and otherwise fails with a clear message.
+            eid_formatted = _normalize_emp_id(employee_id)
             einit_formatted = (str(pi_initials or "").upper()[:4]) or "XXXX"
 
             preview_project_name = (
                 f"{fin_year}{category}-{calculated_project_no}"
-                f"-{dept_formatted}{eid_formatted}{einit_formatted}"
+                f"-{dept_formatted}{eid_formatted or 'XXXX'}{einit_formatted}"
             )
+            if not eid_formatted:
+                warnings.append(
+                    f"PI {pi_email or '(unknown)'} has no Employee ID on their User record."
+                )
 
             final_project_number = preview_project_name
             prefill_data = {
@@ -284,6 +308,7 @@ def get_project_number_generation_fields(doc_name=None):
         "calculated_project_no": calculated_project_no,
         "final_project_number": final_project_number,
         "link_options": link_options,
+        "warnings": warnings,
     }
 
 

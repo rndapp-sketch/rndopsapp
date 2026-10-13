@@ -186,6 +186,189 @@ def set_put_back_workflow_state(doctype, docname, state, username, comment=None)
 		return {"status": "error", "message": str(e)}
 
 
+@frappe.whitelist()
+def get_put_back_states_for_role(doctype, role):
+	"""
+	Returns every state that sits below a given ROLE's own approval level in
+	the doctype's workflow — same backward walk as get_put_back_document_states,
+	but anchored to wherever `role` is the "allowed" role on a transition,
+	instead of a specific document's current state.
+
+	e.g. for "staff, RnD" (the approver at "Pending Staff Approval") this
+	returns just ["Draft"]; for "Dean, RnD" (approver further along, at
+	"Pending Dean Approval") it returns every state before that — "Pending
+	Staff Approval", "Pending HoD Approval", "Draft", etc. — since a more
+	senior role's level sits below more of the chain.
+	"""
+	try:
+		workflow = _get_active_workflow(doctype)
+		if not workflow:
+			return {"status": "error", "message": "No workflow found"}
+
+		transitions = frappe.get_all(
+			"Workflow Transition",
+			filters={"parent": workflow},
+			fields=["state", "next_state", "allowed"],
+		)
+
+		# The role's own level(s): every state from which a transition lets
+		# this role act. A role can be the approver at more than one state.
+		role_states = sorted({t.state for t in transitions if t.allowed == role})
+		if not role_states:
+			return {"status": "success", "role": role, "role_states": [], "states": []}
+
+		# Map each state to the state(s) that transition into it, so we can
+		# walk backwards from the role's level(s) to the start of the workflow.
+		predecessors = {}
+		for t in transitions:
+			predecessors.setdefault(t.next_state, []).append(t.state)
+
+		# Automation-only sibling states (see STATE_ALIASES) are never
+		# legitimate predecessors — same exclusion as get_put_back_document_states.
+		aliased_states_for_doctype = {s for (dt, s) in STATE_ALIASES if dt == doctype}
+
+		states = []
+		seen = set(role_states) | aliased_states_for_doctype
+		queue = list(role_states)
+		while queue:
+			state = queue.pop(0)
+			for prev_state in predecessors.get(state) or []:
+				if prev_state in seen:
+					continue
+				states.append(prev_state)
+				seen.add(prev_state)
+				queue.append(prev_state)
+
+		return {"status": "success", "role": role, "role_states": role_states, "states": states}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "get_put_back_states_for_role failed")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
+def get_workflow_history_trace(doctype, docname):
+	"""
+	Returns a chronological trace of every workflow-state hop a document has
+	been through: from_state -> to_state, who did it, and which role they did
+	it under (resolved by intersecting the actor's current roles against the
+	"allowed" role(s) on that exact (state, next_state) Workflow Transition).
+
+	Two sources are merged, since this app writes workflow_state two ways:
+	  - "Workflow Action" rows: created automatically by Frappe's workflow
+	    engine whenever a document with an active workflow is saved/submitted
+	    through the normal doc.save()/doc.submit() path (which is how every
+	    *forward* transition in this app's *_action.py modules happens).
+	  - "Comment" rows with comment_type "Workflow": this is also where
+	    set_put_back_workflow_state's audit trail lands (see its own
+	    docstring) — it writes workflow_state via a direct DB write, which
+	    bypasses doc.save() entirely, so those hops never create a Workflow
+	    Action row and would otherwise be invisible to this trace.
+	"""
+	try:
+		if not frappe.db.exists(doctype, docname):
+			return {"status": "error", "message": "Document not found"}
+
+		workflow = _get_active_workflow(doctype)
+		transitions = []
+		if workflow:
+			transitions = frappe.get_all(
+				"Workflow Transition",
+				filters={"parent": workflow},
+				fields=["state", "next_state", "allowed"],
+			)
+
+		def _roles_for_hop(from_state, to_state, actor):
+			candidates = [
+				t.allowed for t in transitions
+				if t.state == from_state and t.next_state == to_state and t.allowed
+			]
+			actor_roles = set(frappe.get_roles(actor)) if actor else set()
+			matched = next((r for r in candidates if r in actor_roles), None)
+			return matched, sorted(set(candidates))
+
+		# Forward hops: each "Workflow Action" row names the state the
+		# document was WAITING in, and (once Completed) who advanced it out
+		# of that state. Ordered by creation, row[i]'s state -> row[i+1]'s
+		# state is the hop row[i].completed_by performed at row[i].modified.
+		wf_actions = frappe.get_all(
+			"Workflow Action",
+			filters={"reference_doctype": doctype, "reference_name": docname},
+			fields=["workflow_state", "status", "completed_by", "creation", "modified"],
+			order_by="creation asc",
+		)
+
+		steps = []
+		for i in range(len(wf_actions) - 1):
+			cur, nxt = wf_actions[i], wf_actions[i + 1]
+			if cur.status != "Completed" or not cur.completed_by:
+				continue
+			matched_role, candidate_roles = _roles_for_hop(cur.workflow_state, nxt.workflow_state, cur.completed_by)
+			steps.append({
+				"from_state": cur.workflow_state,
+				"to_state": nxt.workflow_state,
+				"performed_by": cur.completed_by,
+				"role": matched_role,
+				"candidate_roles": candidate_roles,
+				"timestamp": cur.modified,
+				"source": "workflow_action",
+			})
+
+		# Put-back hops: set_put_back_workflow_state's Comment audit trail —
+		# "[Put Back] username: <from> → <to> | Reason: <text>". These bypass
+		# doc.save(), so they never appear in Workflow Action above.
+		import re
+		put_back_comments = frappe.get_all(
+			"Comment",
+			filters={
+				"reference_doctype": doctype,
+				"reference_name": docname,
+				"comment_type": "Workflow",
+				"content": ["like", "[Put Back]%"],
+			},
+			fields=["content", "creation"],
+			order_by="creation asc",
+		)
+		pattern = re.compile(r"^\[Put Back\] (.+?): (.+?) → (.+?)(?: \| Reason: (.*))?$")
+		for c in put_back_comments:
+			m = pattern.match(c.content or "")
+			if not m:
+				continue
+			username, from_state, to_state, reason = m.groups()
+			matched_role, candidate_roles = _roles_for_hop(from_state, to_state, username)
+			steps.append({
+				"from_state": from_state,
+				"to_state": to_state,
+				"performed_by": username,
+				"role": matched_role,
+				"candidate_roles": candidate_roles,
+				"timestamp": c.creation,
+				"reason": reason,
+				"source": "put_back",
+			})
+
+		steps.sort(key=lambda s: s["timestamp"])
+
+		# "Started from" — the very first forward hop out of the workflow's
+		# entry state, i.e. who submitted it and under which role.
+		started = steps[0] if steps and steps[0]["source"] == "workflow_action" else None
+
+		current_state = frappe.db.get_value(doctype, docname, "workflow_state")
+
+		return {
+			"status": "success",
+			"doctype": doctype,
+			"docname": docname,
+			"current_state": current_state,
+			"started_from_state": started["from_state"] if started else (wf_actions[0].workflow_state if wf_actions else None),
+			"started_by": started["performed_by"] if started else frappe.db.get_value(doctype, docname, "owner"),
+			"started_role": started["role"] if started else None,
+			"trace": steps,
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "get_workflow_history_trace failed")
+		return {"status": "error", "message": str(e)}
+
+
 @frappe.whitelist(allow_guest=True)
 def get_put_back_document_states_test(doctype, docname):
 	"""TESTING ONLY - guest-accessible clone of get_put_back_document_states. Remove before production."""

@@ -3218,6 +3218,8 @@ def suggest_generated_project_no(identifier):
         return {"status": "error", "message": f"No Project Registration found for '{identifier}'."}
 
     result = get_project_number_generation_fields(doc_name=pr_name)
+    if result.get("warnings"):
+        return {"status": "error", "message": " ".join(result["warnings"])}
     if not result.get("final_project_number"):
         return {
             "status": "error",
