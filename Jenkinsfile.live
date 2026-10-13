@@ -36,6 +36,18 @@ pipeline {
   }
 
   parameters {
+    // One pipeline, many servers. Previously the environment block hardcoded
+    // orion@172.16.134.179 and /home/orion/..., so deploying anywhere else meant
+    // editing this file and promoting it through testing -> production. The
+    // target is now chosen per build instead.
+    //
+    // Deliberately a choice, not free text: a typo in a hostname would point a
+    // production deploy at the wrong machine.
+    choice(
+      name: 'TARGET',
+      choices: ['prod-206', 'live-179'],
+      description: 'Which server to deploy to. prod-206 = 172.16.131.206 (REAL PRODUCTION, pragati.iitg.ac.in). live-179 = 172.16.134.179.'
+    )
     booleanParam(
       name: 'DISCARD_REMOTE_CHANGES',
       defaultValue: false,
@@ -46,17 +58,53 @@ pipeline {
   }
 
   environment {
-    SSH_KEY   = '/home/rndadmin/deploy-config/ssh/jenkins_live_deploy'
-    LIVE      = 'orion@172.16.134.179'
-    LIVE_URL  = 'http://172.16.134.179:8000'
-    APP_DIR   = '/home/orion/frappe-dev/prornd/apps/rndopsapp'
-    BENCH_DIR = '/home/orion/frappe-dev/prornd'
-    BENCH     = '/home/orion/.local/bin/bench'
-    SITE      = 'prornd.local'
-    BRANCH    = 'production-backend-live'
+    // Only the branch is fixed here; everything host-specific comes from the
+    // 'Resolve target' stage below, keyed off the TARGET parameter.
+    BRANCH = 'production-backend-live'
   }
 
   stages {
+    // Turns TARGET into the env vars every later stage uses. Keeping the table
+    // here rather than in each job means the two jobs cannot drift apart, and
+    // adding a third server is one map entry.
+    stage('Resolve target') {
+      steps {
+        script {
+          def targets = [
+            'prod-206': [
+              ssh_key     : '/home/rndadmin/deploy-config/ssh/jenkins_prod_deploy',
+              live        : 'prornd@172.16.131.206',
+              live_url    : 'http://172.16.131.206:8000',
+              app_dir     : '/home/prornd/frappe-dev/prornd/apps/rndopsapp',
+              bench_dir   : '/home/prornd/frappe-dev/prornd',
+              bench       : '/home/prornd/.local/bin/bench',
+              site        : 'prornd.local',
+              restart     : 'tmux',
+              tmux_session: 'frappe',
+            ],
+            'live-179': [
+              ssh_key     : '/home/rndadmin/deploy-config/ssh/jenkins_live_deploy',
+              live        : 'orion@172.16.134.179',
+              live_url    : 'http://172.16.134.179:8000',
+              app_dir     : '/home/orion/frappe-dev/prornd/apps/rndopsapp',
+              bench_dir   : '/home/orion/frappe-dev/prornd',
+              bench       : '/home/orion/.local/bin/bench',
+              site        : 'prornd.local',
+              restart     : 'systemd',
+              tmux_session: '',
+            ],
+          ]
+          def t = targets[params.TARGET]
+          if (!t) { error("unknown TARGET '${params.TARGET}'") }
+          t.each { k, v -> env[k.toUpperCase()] = v }
+          echo "Target: ${params.TARGET}  ->  ${env.LIVE}  (restart via ${env.RESTART})"
+          if (params.TARGET == 'prod-206') {
+            echo "NOTE: this is REAL PRODUCTION, serving users at pragati.iitg.ac.in"
+          }
+        }
+      }
+    }
+
     stage('Preflight') {
       steps {
         sh '''#!/bin/bash
@@ -185,9 +233,38 @@ pipeline {
         sh '''#!/bin/bash
           set -euo pipefail
           SSH="ssh -i $SSH_KEY -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10 $LIVE"
-          $SSH 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user cat frappe-bench.service >/dev/null 2>&1' \
-            || { echo "FATAL: frappe-bench.service not found on Live"; exit 1; }
-          $SSH 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user restart frappe-bench && systemctl --user is-active frappe-bench'
+
+          # gunicorn runs with --reload so it picks up .py changes itself, but the
+          # worker, scheduler and kafka consumer do not - they need a real restart.
+          # How to do that differs per server, hence RESTART.
+          case "$RESTART" in
+            systemd)
+              $SSH 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user cat frappe-bench.service >/dev/null 2>&1' \
+                || { echo "FATAL: frappe-bench.service not found on $LIVE"; exit 1; }
+              $SSH 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user restart frappe-bench && systemctl --user is-active frappe-bench'
+              ;;
+            tmux)
+              # This host runs bench by hand in a tmux session (honcho + Procfile),
+              # with no systemd unit and no lingering. Ctrl-C the session and
+              # restart in place - deliberately matching what is already there
+              # rather than changing how production is supervised. Consequence:
+              # nothing here survives a reboot.
+              $SSH "tmux has-session -t '$TMUX_SESSION' 2>/dev/null" \
+                || { echo "FATAL: tmux session '$TMUX_SESSION' not found on $LIVE"; exit 1; }
+              $SSH "tmux send-keys -t '$TMUX_SESSION' C-c"
+              for i in $(seq 1 30); do
+                $SSH "ss -tln | grep -q ':8000 '" || break
+                sleep 1
+              done
+              if $SSH "ss -tln | grep -q ':8000 '"; then
+                echo "FATAL: port 8000 still held after Ctrl-C to '$TMUX_SESSION'"
+                exit 1
+              fi
+              $SSH "tmux send-keys -t '$TMUX_SESSION' 'cd $BENCH_DIR && bench start' Enter"
+              ;;
+            *)
+              echo "FATAL: unknown RESTART method '$RESTART'"; exit 1 ;;
+          esac
         '''
       }
     }
@@ -234,11 +311,11 @@ pipeline {
     success { echo "Deployed production-backend-live to 172.16.134.179" }
     failure {
       echo "LIVE DEPLOY FAILED — 172.16.134.179 may be mid-restart or down."
-      echo "Check:  ssh orion@172.16.134.179"
+      echo "Check:  ssh ${env.LIVE ?: '<target>'}"
       echo "        export XDG_RUNTIME_DIR=/run/user/\$(id -u)"
       echo "        systemctl --user status frappe-bench"
       echo "        journalctl --user -u frappe-bench -n 80 --no-pager"
-      echo "Backups: /home/orion/frappe-dev/prornd/sites/prornd.local/private/backups"
+      echo "Backups: ${env.BENCH_DIR ?: '<bench>'}/sites/${env.SITE ?: '<site>'}/private/backups"
     }
   }
 }

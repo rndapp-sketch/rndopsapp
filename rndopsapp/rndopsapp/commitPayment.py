@@ -664,6 +664,425 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
 
 
 @frappe.whitelist()
+def get_staff_commit_details(ps_emp_id, project_no):
+    """
+    Trace a Project Staff member back to the ledger commit that funds them:
+
+        Project Staff Details (ps_emp_id + project_no)
+          -> scr_id -> Selection Committee Report (interview_id)
+            -> interview_id -> Recruitment Adhoc Contractual
+              -> ledger commit (frapAppId = RAC name, moduleId = "11", projectNumber = project_no)
+
+    Returns every document in the chain plus all matching ledger commit rows
+    (across all commit statuses) and their summed committed amount.
+    """
+    if not ps_emp_id or not project_no:
+        return {"status": "error", "message": "ps_emp_id and project_no are required"}
+
+    staff_name = frappe.db.get_value(
+        "Project Staff Details",
+        {"ps_emp_id": ps_emp_id, "project_no": project_no},
+        "name",
+    )
+    if not staff_name:
+        return {"status": "error", "message": "No Project Staff Details found for the given Employee ID and Project No"}
+
+    staff_doc = frappe.get_doc("Project Staff Details", staff_name)
+    scr_id = staff_doc.get("scr_id")
+
+    result = {
+        "status": "success",
+        "ps_emp_id": ps_emp_id,
+        "project_no": project_no,
+        "project_title": _get_project_title_by_number(project_no),
+        "project_staff_details": staff_doc.as_dict(),
+        "selection_committee_report": None,
+        "recruitment_adhoc_contractual": None,
+        "ledger_commits": [],
+        "total_committed_amount": 0,
+        "warnings": [],
+    }
+
+    if not scr_id:
+        result["warnings"].append("Project Staff Details has no scr_id")
+        return result
+
+    interview_id = None
+    if frappe.db.exists("Selection Committee Report", scr_id):
+        scr_doc = frappe.get_doc("Selection Committee Report", scr_id)
+        result["selection_committee_report"] = scr_doc.as_dict()
+        interview_id = scr_doc.get("interview_id")
+    else:
+        result["warnings"].append(
+            f"scr_id '{scr_id}' is not a Selection Committee Report (possibly a migrated employee: "
+            f"it may be a Miscellaneous Commit name)"
+        )
+
+    ledger_ref = interview_id
+    ledger_module_filter = "11"
+
+    if interview_id and frappe.db.exists("Recruitment Adhoc Contractual", interview_id):
+        result["recruitment_adhoc_contractual"] = frappe.get_doc(
+            "Recruitment Adhoc Contractual", interview_id
+        ).as_dict()
+    elif interview_id:
+        result["warnings"].append(f"Recruitment Adhoc Contractual '{interview_id}' not found")
+
+    if not ledger_ref:
+        # Migrated employee: scr_id holds a Miscellaneous Commit name
+        if frappe.db.exists("Miscellaneous Commit", scr_id):
+            result["miscellaneous_commit"] = frappe.get_doc("Miscellaneous Commit", scr_id).as_dict()
+            ledger_ref = scr_id
+            ledger_module_filter = None
+        else:
+            return result
+
+    statuses = list(dict.fromkeys(SALARY_COMMIT_STATUSES + VALID_COMMIT_STATUSES))
+    fetched = []
+    with ThreadPoolExecutor(max_workers=len(statuses)) as executor:
+        future_to_status = {executor.submit(_fetch_account_head_commits_by_status, s): s for s in statuses}
+        for future in as_completed(future_to_status):
+            status = future_to_status[future]
+            try:
+                fetched.extend(future.result())
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"Staff Commit Details Ledger Error: {status}")
+                result["warnings"].append(f"Could not fetch ledger commits with status {status}")
+
+    seen = set()
+    for record in fetched:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("frapAppId")) != str(ledger_ref):
+            continue
+        if str(record.get("projectNumber") or "").strip() != str(project_no).strip():
+            continue
+        if ledger_module_filter and str(record.get("moduleId")) != ledger_module_filter:
+            continue
+        key = json.dumps(record, sort_keys=True, default=str)
+        if key in seen:
+            continue
+        seen.add(key)
+        result["ledger_commits"].append(record)
+
+    result["total_committed_amount"] = sum(
+        flt(r.get("commitAmount") or r.get("amount") or 0) for r in result["ledger_commits"]
+    )
+    if not result["ledger_commits"]:
+        result["warnings"].append(f"No ledger commit found for frapAppId={ledger_ref}, projectNumber={project_no}")
+
+    result["staff_share"] = _compute_staff_share(staff_doc, result["recruitment_adhoc_contractual"], result["warnings"])
+    result["salary_payments"] = _get_staff_salary_payments(ps_emp_id, project_no, result["staff_share"])
+    result["ledger_payments"] = _get_staff_ledger_payments(
+        ps_emp_id, project_no, result["ledger_commits"], result["warnings"]
+    )
+    _apply_paid_to_share(result["staff_share"], result["ledger_payments"])
+    result["tenure_history"] = _get_staff_tenure_history(staff_doc, ps_emp_id, project_no)
+    result["leave_details"] = _get_staff_leave_details(staff_doc, ps_emp_id)
+
+    return result
+
+
+def _apply_paid_to_share(staff_share, ledger_payments):
+    """
+    Deduct what the ledger has already paid from the staff share (in place).
+      paid_amount     - ledger payments with a bank transaction
+      pending_amount  - ledger payments raised but not yet paid (still against the commit)
+      remaining_share - share - paid: what is still to be paid out of the commit
+      unraised_share  - share - paid - pending: not yet raised as any payment, i.e. what a
+                        resignation decommitment could release without touching live payments
+    """
+    if not staff_share:
+        return
+    share = flt(staff_share.get("share_amount"))
+    paid = flt(ledger_payments.get("total_paid_amount"))
+    pending = flt(ledger_payments.get("total_payment_amount")) - paid
+    staff_share.update({
+        "paid_amount": paid,
+        "pending_amount": pending,
+        "remaining_share": max(share - paid, 0),
+        "unraised_share": max(share - paid - pending, 0),
+    })
+
+
+def _get_staff_tenure_history(staff_doc, ps_emp_id, project_no):
+    """Joining date, current term and every tenure row (joining/term/salary/increment), plus
+    approved-or-pending extensions, resignations and the career month/gap totals."""
+    tenures = sorted(
+        (
+            {
+                "joining_date": t.get("pstd_joining_date"),
+                "term_completion_date": t.get("pstd_term_completion_date"),
+                "basic_salary": t.get("pstd_basic_salary"),
+                "increment": t.get("pstd_increment"),
+                "hra": t.get("pstd_hra"),
+                "extension_sought": t.get("pstd_extension_sought"),
+                "pi_extension_sought": t.get("pstd_pi_extension_sought"),
+                "staff_extension_sought": t.get("pstd_staff_extension_sought"),
+                "joining_number": t.get("pstd_joining_number"),
+                "scr_id": t.get("pstd_scr_id"),
+            }
+            for t in staff_doc.get("table_ymed") or []
+        ),
+        key=lambda t: str(t["joining_date"] or ""),
+    )
+
+    extensions = frappe.get_all(
+        "Project Staff Extension",
+        filters={"ex_emp_id": ps_emp_id, "ex_proj_no": project_no},
+        fields=[
+            "name", "workflow_state", "ex_doj", "ex_date_of_expiry", "ex_last_ex_date",
+            "ex_no_of_mon_worked", "ex_no_of_days_worked", "ex_period", "ex_period_pi", "ex_period_staff",
+            "ex_current_basic", "increment_by_pi", "increment_by_staff",
+            "ex_computed_new_joining_date", "ex_computed_new_completion_date",
+            "ex_final_new_joining_date", "ex_final_new_completion_date",
+            "tenure_row_created", "creation",
+        ],
+        order_by="creation asc",
+        limit_page_length=0,
+    )
+    resignations = frappe.get_all(
+        "Project Staff Resignation",
+        filters={"applicant_emp_id": ps_emp_id, "applicant_prj_num": project_no},
+        fields=["name", "workflow_state", "resignation_date", "reason", "creation"],
+        order_by="creation asc",
+        limit_page_length=0,
+    )
+
+    return {
+        "joining_date": staff_doc.get("ps_joining_date") or (tenures[0]["joining_date"] if tenures else None),
+        "current_term_completion_date": staff_doc.get("ps_term_completion_date"),
+        "tenures": tenures,
+        "extensions": extensions,
+        "resignations": resignations,
+        **_compute_total_months_and_gaps(staff_doc),
+    }
+
+
+def _get_staff_leave_details(staff_doc, ps_emp_id):
+    """
+    Leave Data holds the CL/EL balance for the employee. Leave Module holds each application
+    (some older ones have no employee_id, so those are matched by login email too);
+    approved applications are totalled per leave type.
+    """
+    leave_data = frappe.db.get_value(
+        "Leave Data", {"emp_id": ps_emp_id},
+        ["name", "emp_username", "emp_class", "department", "el", "cl"], as_dict=True,
+    )
+
+    # Leave applications log in as <Leave Data.emp_username>@rnd.iitg.ac.in
+    emails = [f"{leave_data.emp_username}@rnd.iitg.ac.in"] if leave_data and leave_data.get("emp_username") else []
+    or_filters = [["employee_id", "=", ps_emp_id]]
+    if emails:
+        or_filters.append(["email", "in", emails])
+    applications = frappe.get_all(
+        "Leave Module",
+        or_filters=or_filters,
+        fields=[
+            "name", "leave_type", "no_of_days", "from_date", "to_date", "workflow_state", "docstatus",
+            "project_no", "reason_for_leave", "station_leave_permission", "sl_from_date", "sl_to_date",
+            "address_on_leave", "contact_number", "additional_remarks", "employee_id", "email", "creation",
+        ],
+        order_by="from_date asc",
+        limit_page_length=0,
+    )
+    for app in applications:
+        if app.get("leave_type") == "CL":
+            app["cl_dates"] = frappe.get_all(
+                "CL Date Row", filters={"parent": app["name"], "parenttype": "Leave Module"},
+                fields=["cl_date", "day_type"], order_by="cl_date asc",
+            )
+
+    taken, by_state = {}, {}
+    for app in applications:
+        state = app.get("workflow_state") or "(none)"
+        by_state[state] = by_state.get(state, 0) + 1
+        if state == "Approved":
+            lt = app.get("leave_type") or "(none)"
+            taken[lt] = taken.get(lt, 0) + flt(app.get("no_of_days"))
+
+    special = []
+    if frappe.db.exists("DocType", "Special Leave Balance") and emails:
+        special = frappe.get_all(
+            "Special Leave Balance", filters={"employee": emails[0]},
+            fields=["name", "year", "total_credited", "utilized_balance", "available_balance", "last_credit_date"],
+        )
+
+    return {
+        "leave_balance": leave_data,
+        "approved_days_by_type": taken,
+        "applications_by_state": by_state,
+        "applications": applications,
+        "special_leave_balance": special,
+    }
+
+
+def _get_staff_ledger_payments(ps_emp_id, project_no, ledger_commits, warnings):
+    """
+    Payments the account ledger holds against this staff member's commit(s).
+
+    The ledger keys payments by commit (GET /account-head-payments/commit/{n}), not by
+    person, so every payment under the RAC's commit comes back and is narrowed to this
+    employee by "(<ps_emp_id>)" in paymentParticular (how salary payments are labelled).
+    BMR is not used: one BMR covers a whole batch of employees.
+    A payment counts as paid once the ledger has a bankTransactionNumber for it.
+    """
+    emp_tag = f"({ps_emp_id})"
+    commit_numbers = sorted({c.get("transactionCommitNumber") for c in ledger_commits if c.get("transactionCommitNumber")})
+
+    payments, seen = [], set()
+    for commit_no in commit_numbers:
+        try:
+            response = requests.get(f"{ACCOUNT_HEAD_PAYMENTS_API_URL}/commit/{commit_no}", timeout=15)
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), f"Staff Ledger Payments Error: commit {commit_no}")
+            warnings.append(f"Could not fetch ledger payments for commit {commit_no}")
+            continue
+        if isinstance(data, dict):
+            data = data.get("data") or data.get("results") or []
+        for pay in data:
+            if not isinstance(pay, dict):
+                continue
+            if emp_tag not in str(pay.get("paymentParticular") or ""):
+                continue
+            if str(pay.get("projectNumber") or "").strip() != str(project_no).strip():
+                continue
+            if pay.get("transactionPaymentNumber") in seen:
+                continue
+            seen.add(pay.get("transactionPaymentNumber"))
+            payments.append(pay)
+
+    payments.sort(key=lambda x: (str(x.get("paymentDate") or ""), x.get("transactionPaymentNumber") or 0))
+    paid = [x for x in payments if x.get("bankTransactionNumber")]
+    by_status = {}
+    for x in payments:
+        by_status[x.get("paymentStatus")] = by_status.get(x.get("paymentStatus"), 0) + 1
+
+    return {
+        "payments_count": len(payments),
+        "paid_count": len(paid),
+        "total_payment_amount": sum(flt(x.get("paymentAmount")) for x in payments),
+        "total_paid_amount": sum(flt(x.get("paymentAmount")) for x in paid),
+        "count_by_status": by_status,
+        "payments": payments,
+    }
+
+
+def _parse_salary_records(raw):
+    """Salary Staging.salary_record is a JSON array, or (older docs) one JSON object per line."""
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else [data]
+    except Exception:
+        pass
+    records = []
+    for line in raw.splitlines():
+        try:
+            records.append(json.loads(line.strip()))
+        except Exception:
+            continue
+    return records
+
+
+def _get_staff_salary_payments(ps_emp_id, project_no, staff_share=None):
+    """
+    Month-wise salary payments for one employee on one project, from Salary Staging
+    (one doc per "{year}_{month}"). months_published counts records whose status is
+    PUBLISHED; everything else (PENDING_APPROVAL, PENDING_PUBLISH, FAILED) is listed
+    but not counted as paid.
+    """
+    docs = frappe.get_all(
+        "Salary Staging",
+        filters={"salary_record": ["like", f"%{ps_emp_id}%"]},
+        fields=["name", "salary_record"],
+        limit_page_length=0,
+    )
+
+    rows = []
+    for doc in docs:
+        for r in _parse_salary_records(doc.salary_record):
+            if not isinstance(r, dict):
+                continue
+            ud = r.get("salary_user_details") or {}
+            bd = r.get("salary_backend_details") or {}
+            if str(ud.get("employee_id") or bd.get("ps_emp_id")) != str(ps_emp_id):
+                continue
+            if str(r.get("projectNumber") or r.get("project_no") or bd.get("project_no")).strip() != str(project_no).strip():
+                continue
+            rows.append({
+                "year_month": doc.name,
+                "status": r.get("status"),
+                "payment_status": r.get("payment_status"),
+                "payment_date": r.get("payment_date"),
+                "payment_amount": flt(r.get("payment_amount")),
+                "gross_pay": flt(ud.get("gross_pay")),
+                "net_pay": flt(ud.get("net_pay")),
+                "working_days": ud.get("working_days"),
+                "commit_id": r.get("commit_id") or r.get("transactionCommitNumber"),
+                "bmr": r.get("bmr"),
+                "payment_particular": r.get("payment_particular"),
+            })
+
+    def _sort_key(row):
+        yr, _, mo = row["year_month"].partition("_")
+        return (int(yr) if yr.isdigit() else 0, _SALARY_MONTH_ORDER.get(mo.lower(), 0))
+
+    rows.sort(key=_sort_key)
+    published = [x for x in rows if (x.get("status") or "").upper() == "PUBLISHED"]
+    total_published = sum(x["payment_amount"] for x in published)
+    share = flt((staff_share or {}).get("share_amount"))
+
+    return {
+        "months_published": len(published),
+        "months_total_staged": len(rows),
+        "total_published_amount": total_published,
+        "total_staged_amount": sum(x["payment_amount"] for x in rows),
+        "share_amount": share or None,
+        "balance_of_share": (share - total_published) if share else None,
+        "months": rows,
+    }
+
+
+def _compute_staff_share(staff_doc, rac, warnings):
+    """
+    One staff member's share of the RAC commit: the RAC post row matching the staff's
+    designation, with total monthly cost (upfa_total_amount) x duration (upfa_duration_months).
+    The ledger commit covers every vacancy; this is the amount for a single one.
+    """
+    if not rac:
+        return None
+
+    designation = (staff_doc.get("ps_designation") or "").strip()
+    posts = [p for p in rac.get("upfa_post_details") or [] if (p.get("upfa_designation") or "").strip() == designation]
+    if not posts:
+        warnings.append(f"No post in the Recruitment Adhoc Contractual matches designation '{designation}'")
+        return None
+    if len(posts) > 1:
+        warnings.append(f"{len(posts)} posts match designation '{designation}'; using the first")
+
+    post = posts[0]
+    if (post.get("month_days") or "Month") != "Month":
+        warnings.append(f"Post duration unit is '{post.get('month_days')}', not Month; share not computed")
+        return None
+
+    monthly = flt(post.get("upfa_total_amount"))
+    months = flt(post.get("upfa_duration_months"))
+    return {
+        "designation": designation,
+        "monthly_amount": monthly,
+        "duration_months": months,
+        "share_amount": monthly * months,
+        "vacancies_for_post": post.get("upfa_vacancies"),
+        "post_row": post.get("name"),
+    }
+
+
+@frappe.whitelist()
 def get_project_available_amounts(project_number):
     """
     Fetch available commit and payment amounts for a project from the external ledger API.
@@ -1147,7 +1566,7 @@ def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, bu
         return {"status": "error", "message": str(e)}
 
 
-def check_workflow_and_publish(doc, method=None):
+def check_workflow_and_publish(doc, method=None, staging_names=None, force=False):
     """
     Centralized workflow hook to publish staged commit data when the document reaches
     the trigger_state stored inside each Kafka Commit Staging payload.
@@ -1157,10 +1576,16 @@ def check_workflow_and_publish(doc, method=None):
     its workflow_state matches the trigger_state in that staging row's payload.
     Default trigger_state is "Approved" (backward-compatible with all existing modules).
     ICSS uses trigger_state="Pending PO Generation".
+
+    staging_names: restrict to these Kafka Commit Staging rows (published in creation order).
+    force: publish the selected rows regardless of their trigger_state / idempotency guard
+    (used when the caller names the rows explicitly, e.g. Direct Purchase 'POGenerated').
+    Returns the list of staging names that failed to publish.
     """
+    failed = []
     current_state = doc.get("workflow_state")
     if not current_state:
-        return
+        return failed
 
     print(f"[CHECK_WORKFLOW] doctype={doc.doctype} name={doc.name} current_state={current_state}")
 
@@ -1169,15 +1594,19 @@ def check_workflow_and_publish(doc, method=None):
     print(f"[CHECK_WORKFLOW] prev_state={prev_state}")
 
     # Look for all pending/failed staging docs for this document
-    staging_docs = frappe.get_all("Kafka Commit Staging", filters={
-        "reference_doctype": doc.doctype,
-        "reference_name": doc.name,
-        "status": ["in", ["PENDING_APPROVAL", "FAILED"]]
-    })
+    # When the caller names rows explicitly it has already validated ownership (this lets
+    # legacy rows staged under "<name>-po" be published); otherwise match by reference.
+    staging_filters = {"status": ["in", ["PENDING_APPROVAL", "FAILED"]]}
+    if staging_names:
+        staging_filters["name"] = ["in", list(staging_names)]
+    else:
+        staging_filters["reference_doctype"] = doc.doctype
+        staging_filters["reference_name"] = doc.name
+    staging_docs = frappe.get_all("Kafka Commit Staging", filters=staging_filters, order_by="creation asc")
     print(f"[CHECK_WORKFLOW] Found {len(staging_docs)} staging doc(s) for {doc.doctype}/{doc.name}")
 
     if not staging_docs:
-        return
+        return failed
 
     for st in staging_docs:
         staging_doc = frappe.get_doc("Kafka Commit Staging", st.name)
@@ -1189,12 +1618,12 @@ def check_workflow_and_publish(doc, method=None):
             # Each staging row carries its own trigger_state (default "Approved")
             trigger_state = payload.get("trigger_state") or "Approved"
 
-            if current_state != trigger_state:
+            if not force and current_state != trigger_state:
                 print(f"[CHECK_WORKFLOW] Skipping {staging_doc.name} — state '{current_state}' != trigger '{trigger_state}'")
                 continue
 
             # Idempotency: skip if document was already in trigger_state before this save
-            if doc_before and prev_state == trigger_state:
+            if not force and doc_before and prev_state == trigger_state:
                 print(f"[CHECK_WORKFLOW] Skipping {staging_doc.name} — was already '{trigger_state}' (idempotency guard)")
                 continue
 
@@ -1207,8 +1636,37 @@ def check_workflow_and_publish(doc, method=None):
                         print(f"[CHECK_WORKFLOW] IGF: resolved project_no={project_no} from igf_project_title={igf_project_title}")
                         payload["project_name"] = project_no
 
+            # Link a follow-up commit (e.g. Direct Purchase PO commit) to the first one:
+            # the earlier PUBLISHED row for the same document, staged on a different trigger_state.
+            if trigger_state != "Approved" and not payload.get("ref_details"):
+                for prev in frappe.get_all("Kafka Commit Staging", filters={
+                    "reference_doctype": doc.doctype,
+                    "reference_name": doc.name,
+                    "status": "PUBLISHED",
+                }, fields=["name", "payload"], order_by="creation asc"):
+                    try:
+                        prev_payload = json.loads(prev.payload or "{}")
+                    except Exception:
+                        continue
+                    if (prev_payload.get("trigger_state") or "Approved") != trigger_state:
+                        payload["ref_details"] = prev_payload.get("ref_details") or prev_payload.get("frap_app_id")
+                        payload["parent_staging"] = prev.name
+                        staging_doc.db_set("payload", json.dumps(payload))
+                        print(f"[CHECK_WORKFLOW] Linked {staging_doc.name} to first commit {prev.name}")
+                        break
+
             # Pass moduleId override from payload so ICSS PO re-commit uses module 14
             module_id_override = payload.get("moduleId") or payload.get("module_id")
+
+            # Direct Purchase PO-stage commit (trigger POGenerated, or legacy "<DP>-po" row)
+            # goes out under the dp_po module (Module Registry idx 29), not Direct Purchase (9).
+            if (
+                not module_id_override
+                and doc.doctype == "Direct Purchase"
+                and (trigger_state == "POGenerated" or str(staging_doc.reference_name or "").endswith("-po"))
+            ):
+                from rndopsapp.rndopsapp.kafka.producer.reimbursement.mapper import get_module_id
+                module_id_override = get_module_id("dp_po") or 29
 
             # Publish to Kafka
             success = kafka_publish_commit(
@@ -1240,6 +1698,7 @@ def check_workflow_and_publish(doc, method=None):
             else:
                 staging_doc.db_set("status", "FAILED")
                 staging_doc.db_set("error_message", "kafka_publish_commit returned False")
+                failed.append(staging_doc.name)
                 print(f"[CHECK_WORKFLOW] Staging doc {staging_doc.name} marked FAILED (returned False)")
                 _mm_notify(
                     f":x: **Kafka Commit FAILED**\n"
@@ -1254,6 +1713,9 @@ def check_workflow_and_publish(doc, method=None):
             frappe.log_error(frappe.get_traceback(), "Process Staged Commit Error")
             staging_doc.db_set("status", "FAILED")
             staging_doc.db_set("error_message", str(e))
+            failed.append(staging_doc.name)
+
+    return failed
 
 
 @frappe.whitelist()

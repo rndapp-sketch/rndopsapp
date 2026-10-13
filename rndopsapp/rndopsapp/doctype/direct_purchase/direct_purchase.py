@@ -633,6 +633,41 @@ def get_direct_purchase_workflow_actions(docname):
 # 		frappe.log_error(frappe.get_traceback(), "Direct Purchase Action Error")
 # 		return {"status": "error", "message": str(e)}
 
+def _publish_po_stage_commits(doc, next_state, extra_data):
+	"""
+	Publish the Kafka Commit Staging rows named in extra_data["commit_ids"] (first commit,
+	then PO commit) when the PO is generated. Rows already PUBLISHED are skipped, every id
+	must belong to this document, and any failure aborts the transition.
+	"""
+	data = json.loads(extra_data) if isinstance(extra_data, str) else (extra_data or {})
+	ids = data.get("commit_ids") or []
+	if isinstance(ids, str):
+		ids = [ids]
+	# No explicit ids: falls back to staged rows whose own trigger_state is POGenerated.
+	from rndopsapp.rndopsapp.commitPayment import check_workflow_and_publish
+
+	if ids:
+		rows = frappe.get_all(
+			"Kafka Commit Staging",
+			filters={"name": ["in", ids]},
+			fields=["name", "reference_doctype", "reference_name", "status"],
+		)
+		found = {r.name for r in rows}
+		missing = [i for i in ids if i not in found]
+		# Older PO commits were staged under "<DP>-po"; accept those too.
+		allowed_refs = {doc.name, f"{doc.name}-po"}
+		foreign = [r.name for r in rows if r.reference_doctype != "Direct Purchase" or r.reference_name not in allowed_refs]
+		if missing or foreign:
+			frappe.throw(_("Invalid commit id(s) for this application: {0}").format(", ".join(missing + foreign)))
+
+	doc.workflow_state = next_state  # in-memory only, so the publish hook sees the target state
+	failed = check_workflow_and_publish(doc, staging_names=ids or None, force=bool(ids))
+	if failed:
+		frappe.db.commit()  # keep FAILED markers; state has not been changed yet
+		frappe.throw(_("Kafka publish failed for commit(s) {0}. PO was not generated.").format(", ".join(failed)))
+	frappe.db.commit()  # persist PUBLISHED markers so a later failure cannot cause a double publish
+
+
 @frappe.whitelist()
 def perform_direct_purchase_action(docname, action, extra_data=None):
 	print("------=-==-=-=-=-=-=-=-=-=-=-=-DP-=-=-=-=-=-=-=-=-=-=-=-")
@@ -813,6 +848,12 @@ def perform_direct_purchase_action(docname, action, extra_data=None):
 			print(f"[ERROR] {error_msg}")
 			frappe.throw(error_msg)
 
+		# POGenerated is a submit state (doc_status 1), so this must run before the
+		# submit/else branches below. Publishes the commits named by the frontend BEFORE the
+		# state moves, so a Kafka failure blocks the transition instead of leaving a mismatch.
+		if next_state == "POGenerated":
+			_publish_po_stage_commits(doc, next_state, extra_data)
+
 		doc.workflow_state = next_state
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
 
@@ -830,9 +871,11 @@ def perform_direct_purchase_action(docname, action, extra_data=None):
 			frappe.db.set_value("Direct Purchase", docname, "workflow_state", next_state)
 
 			# Since db.set_value does NOT trigger on_update hooks,
-			# manually call the Kafka publishing hook if state is now 'Approved'
+			# manually call the Kafka publishing hook. Each Kafka Commit Staging row carries its
+			# own trigger_state ('Approved' for the first commit, 'POGenerated' for the PO
+			# commit), and check_workflow_and_publish only publishes rows matching this state.
 			if next_state == "Approved":
-				print("[KAFKA] State is 'Approved' — manually triggering check_workflow_and_publish...")
+				print(f"[KAFKA] State is '{next_state}' — manually triggering check_workflow_and_publish...")
 				from rndopsapp.rndopsapp.commitPayment import check_workflow_and_publish
 				# Reload the doc so it reflects the updated workflow_state
 				doc.reload()
@@ -1050,9 +1093,23 @@ def generate_purchase_order(sanction_sheet_name, dp_docname=None):
 			
 		if dp_docname:
 			# Transition master workflow state to POGenerated
+			prev_state = frappe.db.get_value("Direct Purchase", dp_docname, "workflow_state")
 			frappe.db.set_value("Direct Purchase", dp_docname, "workflow_state", "POGenerated")
 			frappe.db.commit()
-			
+
+			# db.set_value bypasses on_update hooks, so check_workflow_and_publish never fires
+			# naturally. Explicitly call it here (mirrors the 'Approved' trigger in
+			# perform_direct_purchase_action) so the PO-stage Kafka Commit Staging row
+			# (trigger_state="POGenerated") gets published once the PO is generated.
+			print("[KAFKA] State is 'POGenerated' — manually triggering check_workflow_and_publish...")
+			from rndopsapp.rndopsapp.commitPayment import check_workflow_and_publish
+			dp_doc = frappe.get_doc("Direct Purchase", dp_docname)
+			failed = check_workflow_and_publish(dp_doc)
+			if failed:
+				frappe.db.set_value("Direct Purchase", dp_docname, "workflow_state", prev_state)
+				frappe.db.commit()
+				return {"status": "error", "message": f"Kafka publish failed for commit(s) {', '.join(failed)}. PO was not generated."}
+
 		return {
 			"status": "success",
 			"message": f"Direct Purchase marked as POGenerated. Final Authorized PO Value: {final_po_total} (excluding Other Charges)."

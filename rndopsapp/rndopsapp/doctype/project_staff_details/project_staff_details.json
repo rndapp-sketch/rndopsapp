@@ -315,7 +315,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-06 12:50:40.557303",
+ "modified": "2026-10-08 11:23:10.072744",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Staff Details",
@@ -353,6 +353,18 @@
    "read": 1,
    "report": 1,
    "role": "staff, RnD"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Permanent_head",
+   "share": 1,
+   "write": 1
   }
  ],
  "row_format": "Dynamic",

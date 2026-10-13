@@ -64,6 +64,11 @@ SPECIFIC_APPROVER_MAP = {
 	"Indent Cum Sanction Sheet": ("Pending Other PI", "icss_other_pi_id"),
 	"Rate Contract": ("Pending Other PI", "other_pi_email"),
 	"Direct Purchase": ("Pending Other PI", "dp_other_pi_id"),
+	# Independent Researcher / Inspired Faculty applications park at "Pending
+	# Mentor Approval" for the one assigned mentor — "Mentor" is a generic role
+	# held by many users, so without this every mentor saw every such project
+	# (and ones where mentor_user_id isn't set yet were shown to all of them).
+	"Project Registration": ("Pending Mentor Approval", "mentor_user_id"),
 }
 
 # Kept in one place, referenced by name in get_pending_task and reused by
@@ -243,6 +248,13 @@ def get_pending_task(page_name="pending-task"):
 			ado_states = {"Pending Associate Dean", "Pending Associate Dean Approval"}
 			actionable_states &= ado_states
 
+		# Travel's "Pending PI Approval" is not scoped to the project's actual PI
+		# here (unlike "Pending Other PI" / "Pending Head Approval"), so it would
+		# show up for every Permanent Employee / Permanent_head — never surface
+		# it on this generic page.
+		if dt == "Travel":
+			actionable_states.discard("Pending PI Approval")
+
 		if not actionable_states:
 			continue
 
@@ -396,12 +408,10 @@ def get_pending_task(page_name="pending-task"):
 			# Travel: filter "Pending Head Approval" to the correct dept head.
 			# For an Other-PI form the head is re-pointed to the FUNDING PI's
 			# department head (stored on travel_head_approver_id); otherwise it
-			# falls back to the head of the applicant's own department.
-			if (
-				dt == "Travel"
-				and r.get(status_field) == "Pending Head Approval"
-				and not is_system_manager
-			):
+			# falls back to the head of the applicant's own department. Scoped
+			# strictly to the head-approver role even for System Manager — this
+			# state must only ever return to the actual designated approver.
+			if dt == "Travel" and r.get(status_field) == "Pending Head Approval":
 				head_override = (r.get("travel_head_approver_id") or "").strip().lower()
 				if head_override:
 					if head_override != current_user.lower():
