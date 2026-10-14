@@ -8,6 +8,7 @@
 # the acting username and recording every put-back in the Activity Log doctype.
 
 import frappe
+from frappe.utils import cint, now_datetime
 
 # Some workflow states are entered only by automation — a Kafka consumer
 # writing workflow_state straight to the DB, never a Workflow Transition a
@@ -47,6 +48,46 @@ def _get_active_workflow(doctype):
 	if not workflows:
 		workflows = frappe.get_all("Workflow", filters={"document_type": doctype}, pluck="name")
 	return workflows[0] if workflows else None
+
+# Fields that can hold a document's project number, in priority order. The
+# listed put-back doctypes name it differently (project_no, project_number,
+# project_code, travel_project_number, igf_project_code, ...).
+PROJECT_NO_FIELDS = (
+	"project_no",
+	"project_number",
+	"project_code",
+	"travel_project_number",
+	"igf_project_code",
+	"upfa_project_code",
+	"disbursal_project_number",
+)
+
+
+def _resolve_project_no(doctype, docname):
+	"""
+	Best-effort project number for a document: first any of PROJECT_NO_FIELDS
+	that exists on the doctype and is filled, then the project_no of the
+	Project Registration reached through a Link field. Returns None if the
+	document carries no project reference.
+	"""
+	meta = frappe.get_meta(doctype)
+	for fieldname in PROJECT_NO_FIELDS:
+		if meta.has_field(fieldname):
+			value = (frappe.db.get_value(doctype, docname, fieldname) or "").strip()
+			if value:
+				return value
+
+	for df in meta.get_link_fields():
+		if df.options == "Project Registration":
+			project = frappe.db.get_value(doctype, docname, df.fieldname)
+			if project:
+				project_no = frappe.db.get_value("Project Registration", project, "project_no")
+				return (project_no or project).strip()
+	return None
+
+
+def _is_administrator(*users):
+	return any((u or "").strip() == "Administrator" for u in users)
 
 
 @frappe.whitelist()
@@ -154,6 +195,16 @@ def set_put_back_workflow_state(doctype, docname, state, username, comment=None)
 		prev_state = frappe.db.get_value(doctype, docname, "workflow_state") or "Unknown"
 		session_user = frappe.session.user
 
+		# Every put back by anyone except Administrator is registered in Put Back
+		# Registry, where project_no is mandatory — so resolve it up front and
+		# refuse the put back before touching the document if it can't be found.
+		register = not _is_administrator(session_user, username)
+		project_no = None
+		if register:
+			project_no = _resolve_project_no(doctype, docname)
+			if not project_no:
+				return {"status": "error", "message": f"Project No not found on {doctype} {docname}; put back not registered"}
+
 		# Direct DB write — skips doc.save() entirely, so the Workflow Transition's
 		# "allowed" role restriction never gets evaluated.
 		frappe.db.set_value(doctype, docname, "workflow_state", state, update_modified=False)
@@ -170,6 +221,27 @@ def set_put_back_workflow_state(doctype, docname, state, username, comment=None)
 			"content": f"[Put Back] {username}: {prev_state} → {state}{reason_text}",
 		}).insert(ignore_permissions=True)
 
+		if register:
+			owner = frappe.db.get_value(doctype, docname, "owner")
+			owner_info = frappe.db.get_value("User", owner, ["full_name", "email"], as_dict=True) or {}
+			frappe.get_doc({
+				"doctype": "Put Back Registry",
+				"project_no": project_no,
+				"reference_doctype": doctype,
+				"reference_name": docname,
+				"document_owner": owner,
+				"owner_full_name": owner_info.get("full_name"),
+				"owner_email": owner_info.get("email"),
+				"put_back_by": username,
+				"session_user": session_user,
+				"put_back_by_roles": ", ".join(sorted(frappe.get_roles(session_user))),
+				"from_state": prev_state,
+				"to_state": state,
+				"put_back_on": now_datetime(),
+				"reason": comment or None,
+				"is_read": 0,
+			}).insert(ignore_permissions=True)
+
 		frappe.db.commit()
 
 		return {
@@ -183,6 +255,72 @@ def set_put_back_workflow_state(doctype, docname, state, username, comment=None)
 		}
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), "set_put_back_workflow_state failed")
+		return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(methods=["GET"])
+def get_my_put_back_notifications(include_read=0, mark_read=1, limit=50, start=0):
+	"""
+	Put Back Registry rows for forms owned by the logged-in user, newest first.
+
+	- Default: only unread rows, which are marked read as part of the fetch
+	  (mark_read=0 peeks without marking), so a second call returns only put
+	  backs that arrived since.
+	- include_read=1: history — read and unread rows, paginated with
+	  start/limit. Nothing is marked read in this mode.
+
+	`count` is always the number of UNREAD rows (counted before this call
+	marks anything), never the number of rows returned — it drives the bell
+	badge, which must clear once everything has been read.
+
+	frappe.get_all ignores doctype permissions, so the document_owner filter
+	is the only thing keeping users from seeing each other's rows. It is
+	always the session user, never a request argument.
+	"""
+	try:
+		user = frappe.session.user
+		include_read = cint(include_read)
+		mark_read = cint(mark_read)
+		limit = cint(limit) or 50
+		start = cint(start)
+
+		owner_filter = {"document_owner": user}
+		unread_count = frappe.db.count("Put Back Registry", {**owner_filter, "is_read": 0})
+
+		filters = dict(owner_filter) if include_read else {**owner_filter, "is_read": 0}
+		rows = frappe.get_all(
+			"Put Back Registry",
+			filters=filters,
+			fields=[
+				"name", "project_no", "reference_doctype", "reference_name",
+				"document_owner", "owner_full_name", "put_back_by", "put_back_by_roles",
+				"from_state", "to_state", "reason", "put_back_on", "creation",
+				"is_read", "read_on",
+			],
+			order_by="put_back_on desc, creation desc",
+			start=start,
+			page_length=limit + 1,
+		)
+		has_more = len(rows) > limit
+		rows = rows[:limit]
+
+		if rows and mark_read and not include_read:
+			now = now_datetime()
+			for r in rows:
+				frappe.db.set_value(
+					"Put Back Registry", r.name, {"is_read": 1, "read_on": now}, update_modified=False
+				)
+				r.is_read, r.read_on = 1, now
+			frappe.db.commit()
+
+		return {
+			"status": "success",
+			"count": unread_count,
+			"has_more": has_more,
+			"notifications": rows,
+		}
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "get_my_put_back_notifications failed")
 		return {"status": "error", "message": str(e)}
 
 
