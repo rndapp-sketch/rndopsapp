@@ -96,7 +96,21 @@ pipeline {
           ]
           def t = targets[params.TARGET]
           if (!t) { error("unknown TARGET '${params.TARGET}'") }
-          t.each { k, v -> env[k.toUpperCase()] = v }
+          // Assigned one by one, NOT with `t.each { k, v -> env[k.toUpperCase()] = v }`.
+          // That form calls DefaultGroovyMethods.putAt, which Jenkins' script
+          // sandbox rejects outright (RejectedAccessException), and the stage
+          // dies before any later stage can read a single value. Setting
+          // env.NAME directly is whitelisted. Verbose, but it works and it makes
+          // every variable the pipeline relies on visible here.
+          env.SSH_KEY      = t.ssh_key
+          env.LIVE         = t.live
+          env.LIVE_URL     = t.live_url
+          env.APP_DIR      = t.app_dir
+          env.BENCH_DIR    = t.bench_dir
+          env.BENCH        = t.bench
+          env.SITE         = t.site
+          env.RESTART      = t.restart
+          env.TMUX_SESSION = t.tmux_session
           echo "Target: ${params.TARGET}  ->  ${env.LIVE}  (restart via ${env.RESTART})"
           if (params.TARGET == 'prod-206') {
             echo "NOTE: this is REAL PRODUCTION, serving users at pragati.iitg.ac.in"
