@@ -91,7 +91,8 @@ def get_email_template(name: str):
         "content": doc.content,
     }
 
-
+#
+# test
 @frappe.whitelist()
 def save_email_template(
     name: str = None,
