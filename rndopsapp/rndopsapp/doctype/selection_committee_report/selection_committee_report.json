@@ -29,7 +29,6 @@
   "column_break_checklist",
   "chk_original_attendance",
   "chk_printout_scr",
-  "chk_photocopy_docs",
   "send_to_director",
   "director_signed_pdf"
  ],
@@ -156,12 +155,6 @@
    "label": "Printout of Selection Committee Report"
   },
   {
-   "default": "0",
-   "fieldname": "chk_photocopy_docs",
-   "fieldtype": "Check",
-   "label": "Photocopy of candidates relevant document"
-  },
-  {
    "fieldname": "section_break_system",
    "fieldtype": "Section Break",
    "hidden": 1
@@ -207,7 +200,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-03 16:54:29.666306",
+ "modified": "2026-10-15 17:19:20.653472",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Selection Committee Report",

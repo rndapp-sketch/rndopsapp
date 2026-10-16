@@ -1524,6 +1524,17 @@ def perform_icss_action(docname, action, extra_data=None):
                 # Initial submit routing: permanent employees skip PI stage
                 next_state = _resolve_initial_submit_next_state(user_roles)
 
+        elif current_state == "Pending PI Approval" and action == "Forward":
+            # Two unconditional Forward rows leave this state (Other PI / Staff), so the
+            # first-match above would always pick Other PI. Route by the indent itself:
+            # charged to another PI -> that PI; otherwise straight to Staff.
+            if (doc.get("icss_other_pi") or "") == "Other":
+                if not doc.get("icss_other_pi_id"):
+                    frappe.throw(_("Please select the Other PI before forwarding."))
+                next_state = "Pending Other PI"
+            else:
+                next_state = "Pending Staff Approval"
+
         elif current_state == "Pending HoS Approval":
             # Amount-based routing
             next_state = _resolve_hos_next_state(doc)
