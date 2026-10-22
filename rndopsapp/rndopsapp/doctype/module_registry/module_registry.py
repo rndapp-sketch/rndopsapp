@@ -255,6 +255,9 @@ def get_pending_task(page_name="pending-task"):
 		if dt == "Travel":
 			actionable_states.discard("Pending PI Approval")
 
+		# "Pending PI Approval" is never surfaced on the Pending Task page.
+		actionable_states.discard("Pending PI Approval")
+
 		if not actionable_states:
 			continue
 

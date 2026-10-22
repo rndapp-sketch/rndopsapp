@@ -1,0 +1,193 @@
+{
+ "actions": [],
+ "creation": "2026-10-14 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_no",
+  "reference_doctype",
+  "reference_name",
+  "column_break_1",
+  "document_owner",
+  "owner_full_name",
+  "owner_email",
+  "section_putback",
+  "put_back_by",
+  "session_user",
+  "put_back_by_roles",
+  "column_break_2",
+  "from_state",
+  "to_state",
+  "put_back_on",
+  "reason",
+  "section_read",
+  "is_read",
+  "read_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project No",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Application",
+   "options": "DocType",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Application Docname",
+   "options": "reference_doctype",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "document_owner",
+   "fieldtype": "Link",
+   "label": "Form Owner",
+   "options": "User",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "owner_full_name",
+   "fieldtype": "Data",
+   "label": "Owner Full Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "owner_email",
+   "fieldtype": "Data",
+   "label": "Owner Email",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_putback",
+   "fieldtype": "Section Break",
+   "label": "Put Back Details"
+  },
+  {
+   "fieldname": "put_back_by",
+   "fieldtype": "Data",
+   "label": "Put Back By",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "session_user",
+   "fieldtype": "Link",
+   "label": "Session User",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "put_back_by_roles",
+   "fieldtype": "Small Text",
+   "label": "Put Back By Roles",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break",
+   "label": ""
+  },
+  {
+   "fieldname": "from_state",
+   "fieldtype": "Data",
+   "label": "From State",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "to_state",
+   "fieldtype": "Data",
+   "label": "To State",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "put_back_on",
+   "fieldtype": "Datetime",
+   "label": "Put Back On",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_read",
+   "fieldtype": "Section Break",
+   "label": "Notification Status"
+  },
+  {
+   "fieldname": "is_read",
+   "fieldtype": "Check",
+   "label": "Read by Owner",
+   "default": "0",
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "read_on",
+   "fieldtype": "Datetime",
+   "label": "Read On",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Put Back Registry",
+ "naming_rule": "Expression (old style)",
+ "autoname": "PBR-.#####",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

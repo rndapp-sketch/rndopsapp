@@ -13,7 +13,7 @@ from frappe.utils import sanitize_html
 from frappe.utils import flt, nowdate
 from frappe.utils import flt
 from frappe.utils.file_manager import save_file
-from rndopsapp.static_config import MATTERMOST_POSTS_URL, ACCOUNT_PORTAL_PROJECTS
+from rndopsapp.static_config import MATTERMOST_POSTS_URL, MATTERMOST_API_URL, ACCOUNT_PORTAL_PROJECTS
 import base64
 import requests
 from rndopsapp.rndopsapp.kafka.producer import publish_project_registration as publish_project
@@ -183,13 +183,18 @@ def extract_eval_expression(expression):
 # into (connect=2s, read=3s) so a dead/unreachable Mattermost
 # server fails fast and NEVER blocks or affects functionality.
 # ============================================================
-def notify_mattermost(message: str, urgent: bool = False, channel_id: str = "ihmkbbfq9ibzugfpy9rncq5yke") -> None:
+def notify_mattermost(message: str, urgent: bool = False, channel_id: str = "ihmkbbfq9ibzugfpy9rncq5yke", files=None) -> None:
 	"""
 	Sends a message to the configured Mattermost channel.
 	- connect timeout = 2 s : fails fast if server is unreachable
 	- read timeout   = 3 s : fails fast if server is slow
 	All exceptions are silently swallowed — this call must NEVER
 	affect the main application flow under any circumstances.
+
+	`files` is an optional list of (filename, bytes, content_type) uploaded to the
+	channel and attached to the post (Mattermost allows 10 files per post, so any
+	extra are skipped). A file that fails to upload is skipped; the message is
+	still sent.
 	"""
 	try:
 		_url = MATTERMOST_POSTS_URL
@@ -203,6 +208,26 @@ def notify_mattermost(message: str, urgent: bool = False, channel_id: str = "ihm
 			"channel_id": channel_id,
 			"message": str(message),
 		}
+
+		if files:
+			import requests as _freq
+
+			_file_ids = []
+			for _fname, _content, _ctype in list(files)[:10]:
+				try:
+					_resp = _freq.post(
+						f"{MATTERMOST_API_URL}/files",
+						data={"channel_id": channel_id},
+						files={"files": (_fname, _content, _ctype or "application/octet-stream")},
+						headers={"Authorization": _headers["Authorization"]},
+						timeout=(3, 10),
+					)
+					if _resp.ok:
+						_file_ids.extend(f["id"] for f in _resp.json().get("file_infos", []))
+				except Exception:
+					continue
+			if _file_ids:
+				_payload["file_ids"] = _file_ids
 
 		# Add URGENT priority only when requested
 		if urgent:
@@ -229,8 +254,7 @@ def notify_mattermost(message: str, urgent: bool = False, channel_id: str = "ihm
 # ============================================================
 
 
-@frappe.whitelist()
-def submit_project_registration(docname):
+def _submit_project_registration(docname, comment=None):
 	# ============================================================
 	# EDITED BY OJS | 2026-04-21 01:54 IST
 	# START OF EDIT — Wrapped entire function in try/except so ALL
@@ -240,6 +264,14 @@ def submit_project_registration(docname):
 	try:
 		# Fetch the Project Registration document
 		doc = frappe.get_doc("Project Registration", docname)
+
+		# A document put back to Draft keeps docstatus=1 (the put back only rewrites
+		# workflow_state). Reset it to 0 so it can be submitted again under the same
+		# docname instead of being rejected as "already submitted".
+		if doc.docstatus == 1 and doc.workflow_state == "Draft":
+			frappe.db.set_value("Project Registration", docname, "docstatus", 0, update_modified=False)
+			frappe.db.commit()
+			doc = frappe.get_doc("Project Registration", docname)
 
 		# Convert to dict for reference
 		data = doc.as_dict()
@@ -367,6 +399,13 @@ def submit_project_registration(docname):
 		doc.submit()
 		# END MKY
 
+		# Keep the submitter's comment on the document's timeline (same format as
+		# handle_dynamic_workflow_action).
+		comment = (comment or "").strip()
+		if comment:
+			doc.add_comment("Comment", f"<strong>Action: Submit</strong><br>{sanitize_html(comment)}")
+			frappe.db.commit()
+
 		notify_mattermost(
 			f"✅ -=-=-=-=-=-=✅-=-=-=-=-=-✅=-=-=-=-=-=-=-=✅-=-=-=-=-=-✅ \n"
 			f"✅ [submit_project_registration] SUCCESS ✅\n"
@@ -399,6 +438,55 @@ def submit_project_registration(docname):
 	# END OF EDIT — OJS | 2026-04-21 01:54 IST
 	# ============================================================
 
+
+
+@frappe.whitelist()
+def submit_project_registration(
+	docname=None, comment=None, doc=None, doc_data=None, html_content=None, files=None, submit=None
+):
+	"""
+	Single entry point for the registration form's Save/Submit and Final Submit.
+
+	- docname only (Final Submit in the preview modal): submits that document and
+	  stores `comment` on its timeline.
+	- doc / doc_data (JSON string or dict) with an existing docname (or data["name"]):
+	  saves the payload onto that same document via save_project_draft — never a new
+	  docname — then submits it if asked.
+	- doc / doc_data with no existing document: creates it once.
+
+	`submit` defaults to 1 when there is no form payload and 0 when there is one, so
+	the form's Submit button still just saves and the preview modal's Final Submit
+	submits. Pass submit=1 to save and submit in one call.
+
+	Returns {status, message, docname, workflow_state?, department_head?, head_approver?}.
+	"""
+	payload = doc_data if doc_data is not None else doc
+	if isinstance(payload, str):
+		payload = frappe.parse_json(payload)
+	if submit is None:
+		submit = 0 if payload else 1
+	submit = frappe.utils.cint(submit)
+
+	if payload:
+		existing = docname or payload.get("name")
+		if existing and frappe.db.exists("Project Registration", existing):
+			docname = save_project_draft(
+				doc_data=payload, html_content=html_content, files=files, docname=existing
+			).get("docname") or existing
+		else:
+			docname = _create_project_registration(payload, html_content).get("docname")
+
+	if not docname:
+		frappe.throw(_("docname or form data is required"))
+
+	result = {"status": "success", "message": "Project Registration Successful", "docname": docname}
+	if submit:
+		result.update(_submit_project_registration(docname, comment))
+	elif (comment or "").strip():
+		frappe.get_doc("Project Registration", docname).add_comment(
+			"Comment", f"<strong>Action: Save</strong><br>{sanitize_html(comment.strip())}"
+		)
+	return result
 
 
 @frappe.whitelist()
@@ -1252,12 +1340,15 @@ def get_funding_agency_details(agency_name):
 		frappe.throw(_("An error occurred while fetching details for the selected funding agency."))
 
 
-@frappe.whitelist()
-def save_project_data(doc, html_content=None):
+def _create_project_registration(doc, html_content=None):
 	"""
-	Receives a JSON object from the frontend, creates a new Project Registration document,
+	First-time creation path: builds a NEW Project Registration from the form payload,
 	handles child tables, and processes Base64 encoded file attachments.
 	Optionally saves HTML content and converts it to PDF for endorsement.
+
+	Only used when the payload carries no existing docname — see
+	submit_project_registration, which routes existing documents to
+	save_project_draft so a save never forks a new docname.
 	"""
 	upload_events = []
 	new_project = None
@@ -1818,9 +1909,10 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				preserve_existing_on_revert = True
 
 			if doc.docstatus != 0:
-				if doc.workflow_state in revertible_states:
-					# Submitted doc sent back for correction (or Endorsement Approved) —
-					# revert to draft in place to preserve the same docname.
+				if doc.docstatus == 1 and (doc.workflow_state in revertible_states or doc.workflow_state == "Draft"):
+					# Submitted doc sent back for correction (or Endorsement Approved), or
+					# put back to Draft (which leaves docstatus=1) — revert to draft in
+					# place to preserve the same docname.
 					frappe.db.set_value(
 						"Project Registration", doc.name,
 						{"docstatus": 0, "workflow_state": "Draft"},
@@ -1829,13 +1921,12 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 					frappe.db.commit()
 					doc = frappe.get_doc("Project Registration", resolved_docname)
 				else:
-					frappe.logger().warning(
-						f"Document {resolved_docname} is already submitted (docstatus={doc.docstatus}). Creating new draft instead."
+					# Never fork a new docname from a document that is mid-approval.
+					frappe.throw(
+						_("{0} is in '{1}' and can no longer be edited as a draft.").format(
+							resolved_docname, doc.workflow_state
+						)
 					)
-					doc = frappe.new_doc("Project Registration")
-					data.pop("name", None)  # Don't carry over the submitted doc's name
-					existing_workflow_state = None
-					preserve_existing_on_revert = False
 			elif doc.workflow_state == endorsement_approved_state:
 				# docstatus already 0 but state still Endorsement Approved — force back to Draft.
 				frappe.db.set_value(
@@ -2293,6 +2384,21 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 			else:
 				upload_status_block = "   (no file uploads attempted)"
 
+			# Backup copy of every file received in this save, attached to the same post.
+			backup_files = []
+			import mimetypes as _mt
+			for _f in (files_payload if isinstance(files_payload, list) else []):
+				try:
+					_name = _f.get("filename") or _f.get("file_name") or _f.get("name")
+					_b64 = _f.get("content") or _f.get("file_data") or _f.get("data") or ""
+					if not (_name and _b64):
+						continue
+					if _b64.startswith("data:"):
+						_b64 = _b64.split(",", 1)[1]
+					backup_files.append((_name, base64.b64decode(_b64), _mt.guess_type(_name)[0]))
+				except Exception:
+					continue
+
 			notify_mattermost(
 				"```\n"
 				"┌──────────────────────────────────────────────┐\n"
@@ -2304,10 +2410,12 @@ def save_project_draft(doc_data, html_content=None, files=None, docname=None):
 				f" Uploads : {len(upload_events)} attempted / {sum(1 for event in upload_events if event.get('status') == 'success')} successful\n"
 				f" Files ({len(uploaded_file_urls)}):\n"
 				f"{files_block}\n"
+				f" Backup attachments: {len(backup_files)}\n"
 				" Upload Status:\n"
 				f"{upload_status_block}\n"
 				"└──────────────────────────────────────────────┘\n"
-				"```"
+				"```",
+				files=backup_files,
 			)
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "save_project_draft: Mattermost status notification failed (non-fatal)")
