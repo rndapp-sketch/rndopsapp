@@ -126,8 +126,20 @@ def save_p_11_form_data(data):
 			if doc.docstatus != 0:
 				frappe.throw(_("Cannot edit a submitted or cancelled document."))
 		else:
-			doc = frappe.new_doc("P_11 Form")
-			is_new = True
+			# One P_11 Form per source document: reuse the existing draft instead of creating another.
+			existing = None
+			if data.get("amended_from"):
+				existing = frappe.db.get_value(
+					"P_11 Form",
+					{"amended_from": data["amended_from"], "docstatus": 0},
+					"name",
+					order_by="creation asc",
+				)
+			if existing:
+				doc = frappe.get_doc("P_11 Form", existing)
+			else:
+				doc = frappe.new_doc("P_11 Form")
+				is_new = True
 
 		meta = frappe.get_meta("P_11 Form")
 		file_fields = []

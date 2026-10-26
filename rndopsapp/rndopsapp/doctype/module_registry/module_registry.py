@@ -71,6 +71,104 @@ SPECIFIC_APPROVER_MAP = {
 	"Project Registration": ("Pending Mentor Approval", "mentor_user_id"),
 }
 
+# Cancellation Request stages that belong to ONE named person, not to everyone
+# holding the role. Fields on the referenced document that can name that
+# person; a request is visible only to the user found in one of them. (No PI
+# stage: an application pending at its PI is cancelled through Staff.)
+_CANCEL_PERSON_STAGE_FIELDS = {
+	"Pending Other PI": [
+		"travel_other_pi_id", "igf_other_pi_id", "icss_other_pi_id", "other_pi_email", "dp_other_pi_id",
+	],
+	"Pending Mentor Approval": ["mentor_user_id", "pi_mentor_user"],
+}
+
+
+def _cancellation_workflow_roles(state):
+	"""Roles that may act on a Cancellation Request in `state`, read from the one
+	cancellation workflow (never the retired per-doctype cancel_* copies)."""
+	from rndopsapp.rndopsapp.cancellation_workflow import WORKFLOW_NAME
+
+	return set(
+		frappe.get_all(
+			"Workflow Transition",
+			filters={"parent": WORKFLOW_NAME, "state": state},
+			pluck="allowed",
+		)
+	)
+
+
+def _cancellation_named_person_ok(user, ref_dt, ref_doc, state):
+	"""
+	For the PI / Other PI / Mentor stages: True only when `user` is the person
+	recorded on the referenced document. Fails closed — if nobody is recorded,
+	nobody (but a System Manager, handled by the caller) sees it.
+	"""
+	fields = list(_CANCEL_PERSON_STAGE_FIELDS.get(state, []))
+	sa = SPECIFIC_APPROVER_MAP.get(ref_dt)
+	if sa and sa[1] not in fields:
+		fields.append(sa[1])
+	named = {str(ref_doc.get(f) or "").strip().lower() for f in fields}
+	named.discard("")
+	return user.lower() in named
+
+
+def _dept_head_of(dept_value):
+	"""Head user of a Department_prornd given its ID or its name, else None."""
+	v = (dept_value or "").strip()
+	if not v:
+		return None
+	return frappe.db.get_value("Department_prornd", v, "dept_head") or frappe.db.get_value(
+		"Department_prornd", {"dept_name": v}, "dept_head"
+	)
+
+
+def _cancellation_head_user(ref_dt, ref_doc):
+	"""
+	The ONE user who approves a Cancellation Request's Head stage, or None when
+	it cannot be worked out. In order:
+	  1. a head named on the document itself (HEAD_FIELD_MAP / head fields);
+	  2. the head of the department recorded on the document (for Travel, the
+	     initiator's own department — not the funding PI's head the Travel
+	     form itself is re-pointed to);
+	  3. the head of the department of the person it belongs to — the PI
+	     (pi_webmail, ...) else the owner — via User.department_name, then
+	     User.piheadmentor_user_id. This is the route for doctypes such as Top Up
+	     Fellowship that carry no head or department field of their own.
+	"""
+	def _clean(v):
+		return (v or "").strip().lower() or None
+
+	named = ref_doc.get(HEAD_FIELD_MAP.get(ref_dt, "")) if HEAD_FIELD_MAP.get(ref_dt) else None
+	named = named or ref_doc.get("head") or ref_doc.get("head_approver") or ref_doc.get("department_head") or ref_doc.get("dept_head")
+	if _clean(named):
+		return _clean(named)
+
+	dept = ref_doc.get(DEPT_FIELD_MAP.get(ref_dt, "")) or ref_doc.get("applicant_department") or ref_doc.get("department")
+	head = _clean(_dept_head_of(dept))
+	if head:
+		return head
+
+	for person in (
+		ref_doc.get("pi_webmail"),
+		ref_doc.get("pi_id"),
+		ref_doc.get("pi_userid"),
+		ref_doc.get("owner"),
+	):
+		person = (person or "").strip()
+		if not person or not frappe.db.exists("User", person):
+			continue
+		u = frappe.db.get_value("User", person, ["department_name", "piheadmentor_user_id"], as_dict=True)
+		head = _clean(_dept_head_of(u.department_name)) or _clean(u.piheadmentor_user_id)
+		if head:
+			return head
+	return None
+
+
+def _cancellation_head_ok(user, ref_dt, ref_doc):
+	"""True only for the single head returned by _cancellation_head_user (fails closed)."""
+	return _cancellation_head_user(ref_dt, ref_doc) == (user or "").strip().lower()
+
+
 # Kept in one place, referenced by name in get_pending_task and reused by
 # rndopsapp.dashboard.track_application so the two endpoints can't drift apart
 # on "which field names the actual approver on each doctype".
@@ -137,10 +235,12 @@ def get_pending_task(page_name="pending-task"):
 		if dt == "Project Registration":
 			wf_names = ["pending_approval_prjReg"]
 		elif dt == "Cancellation Request":
-			workflows = frappe.get_all(
-				"Workflow", filters={"document_type": "Cancellation Request"}, fields=["name"]
-			)
-			wf_names = [w.name for w in workflows]
+			# The one cancellation workflow only. Reading every Workflow whose
+			# document_type is Cancellation Request also pulled in the retired
+			# cancel_* copies and widened the role match to everyone.
+			from rndopsapp.rndopsapp.cancellation_workflow import WORKFLOW_NAME
+
+			wf_names = [WORKFLOW_NAME]
 		else:
 			wf_name = frappe.get_value("Workflow", {"document_type": dt}, "name")
 			if wf_name:
@@ -222,10 +322,13 @@ def get_pending_task(page_name="pending-task"):
 				wf_doc = frappe.get_doc("Workflow", wfn)
 				status_field = wf_doc.workflow_state_field or status_field
 
-				# A) Check States table (Allow Edit)
-				for state_row in wf_doc.states:
-					if check_roles(state_row.allow_edit):
-						actionable_states.add(state_row.state)
+				# A) Check States table (Allow Edit). Skipped for Cancellation
+				# Request: its Approved/Rejected states are System-Manager-editable
+				# but not awaiting anybody, and every real stage has a transition.
+				if dt != "Cancellation Request":
+					for state_row in wf_doc.states:
+						if check_roles(state_row.allow_edit):
+							actionable_states.add(state_row.state)
 
 				# B) Check Transitions table (Allowed Action)
 				for transition_row in wf_doc.transitions:
@@ -241,6 +344,11 @@ def get_pending_task(page_name="pending-task"):
 		# workflow transitions table already determines whether it is actionable.
 		for excluded in ("Draft", "Endorsement Approved"):
 			actionable_states.discard(excluded)
+
+		if dt == "Cancellation Request":
+			# Approved/Rejected await nobody; the named-person stages are served by
+			# get_pending_application, so they are not repeated here.
+			actionable_states -= {"Approved", "Rejected"} | set(_CANCEL_PERSON_STAGE_FIELDS)
 
 		# Ado_RnD: restrict strictly to Associate-Dean pending states so the
 		# inbox doesn't pick up transitions that merely share the role.
@@ -328,47 +436,19 @@ def get_pending_task(page_name="pending-task"):
 				# it we can't verify who the intended approver is. Fail CLOSED
 				# (skip) rather than show it to everyone the broad role check let in.
 				if not ref_doc:
-					if curr_status in ("Pending Head Approval", "Pending Other PI", "Pending PI Approval"):
+					if curr_status in (
+						"Pending Head Approval",
+						"Pending Other PI",
+						"Pending PI Approval",
+						"Pending Mentor Approval",
+					):
 						continue
 				else:
-					# A) Head Approval filtering for the underlying reference document
-					if curr_status == "Pending Head Approval":
-						# Travel Other-PI: the head step is re-pointed to the
-						# funding PI's department head, so honour that first.
-						travel_head = (ref_doc.get("travel_head_approver_id") or "").strip().lower()
-						if ref_dt == "Travel" and travel_head:
-							if travel_head != current_user.lower():
-								continue
-						elif ref_dt in dept_field_map:
-							if not _heads_this_department(ref_doc.get(dept_field_map[ref_dt])):
-								continue
-						elif ref_dt in head_field_map:
-							h_field = head_field_map[ref_dt]
-							h_email = (ref_doc.get(h_field) or "").strip().lower()
-							if h_email != current_user.lower():
-								continue
-						else:
-							h_email = (
-								ref_doc.get("head")
-								or ref_doc.get("head_approver")
-								or ref_doc.get("department_head")
-								or ref_doc.get("dept_head")
-								or ""
-							).strip().lower()
-							if h_email:
-								if h_email != current_user.lower():
-									continue
-							else:
-								# No head field and no known department field:
-								# fall back to any department-looking value so
-								# the request is not exposed to every head.
-								dept_val = (
-									ref_doc.get("applicant_department")
-									or ref_doc.get("department")
-									or ""
-								)
-								if not _heads_this_department(dept_val):
-									continue
+					# A) Head stage: the single head of this document, not every head.
+					if curr_status == "Pending Head Approval" and not _cancellation_head_ok(
+						current_user, ref_dt, ref_doc
+					):
+						continue
 
 					# B) Specific Approver / Other PI filtering for reference document.
 					# Fail CLOSED: if no approver is recorded on the reference doc,
@@ -381,6 +461,12 @@ def get_pending_task(page_name="pending-task"):
 							appr_email = (ref_doc.get(ref_sa_field) or "").strip().lower()
 							if appr_email != current_user.lower():
 								continue
+
+					# D) Cancellation stages owned by one named person.
+					if curr_status in _CANCEL_PERSON_STAGE_FIELDS and not _cancellation_named_person_ok(
+						current_user, ref_dt, ref_doc, curr_status
+					):
+						continue
 
 					# C) Pending PI Approval filtering for reference document (fail closed, as above).
 					if curr_status == "Pending PI Approval":
@@ -465,11 +551,10 @@ def get_pending_application():
 	  Approval" for Reimbursement) until they pick the funding project/account
 	  head. Without this the designated PI has no inbox for them, since the
 	  Pending Task page is not shown to Permanent Employees.
-	- Cancellation Request, any pending state: "Pending Other PI" / "Pending PI
-	  Approval" is scoped to the specific PI recorded on the referenced
-	  document (same as the Other-PI forms above); every other pending state
-	  (Staff, HoS, Associate Dean, Dean, Head, Director, ...) is scoped to
-	  whoever holds that state's role on the cancellation's own workflow.
+	- Cancellation Request, only where it waits on a named person ("Pending
+	  Other PI" / "Pending Mentor Approval"), scoped to
+	  the person recorded on the referenced document. The role stages (Head,
+	  Staff, HoS, Dean) are on get_pending_task only, so nothing is listed twice.
 	Each record is tagged with "doctype" so callers can tell the sources apart.
 	"""
 
@@ -610,19 +695,11 @@ def get_pending_application():
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"get_pending_application: {dt} lookup failed")
 
-	# Cancellation Request: was showing every pending cancellation to every
-	# user, regardless of state. Scope each one the same way its *own* state
-	# is scoped on the source doctype:
-	#   - "Pending Other PI" / "Pending PI Approval" -> the specific PI/other-PI
-	#     recorded on the referenced document (other_pi_sources above).
-	#   - every other "Pending ..." step (Staff, HoS, Associate Dean, Dean,
-	#     Head, Director, ...) -> whoever holds that state's `allow_edit` role
-	#     on the cancellation's own workflow (cancel_<source_workflow>), same
-	#     as a normal role-gated approval step.
+	# Cancellation Request, named-person stages only. A cancellation waiting at
+	# "Pending Other PI" / "Pending Mentor Approval" belongs to the one person recorded on the referenced document; those
+	# approvers have no Pending Task page, so they get it here. Role stages
+	# (Head / Staff / HoS / Dean) are served by get_pending_task, not repeated here.
 	try:
-		user_roles = frappe.get_roles(current_user)
-		is_system_manager = "System Manager" in user_roles
-
 		cancel_records = frappe.get_list(
 			"Cancellation Request",
 			filters={"docstatus": ["<", 2]},
@@ -635,26 +712,14 @@ def get_pending_application():
 			ignore_permissions=True,
 		)
 
-		_allow_edit_cache = {}
-
-		def _allow_edit_role(source_workflow, state):
-			key = (source_workflow, state)
-			if key not in _allow_edit_cache:
-				role = None
-				if source_workflow:
-					role = frappe.db.get_value(
-						"Workflow Document State",
-						{"parent": f"cancel_{source_workflow}", "state": state},
-						"allow_edit",
-					)
-				_allow_edit_cache[key] = role
-			return _allow_edit_cache[key]
-
 		for r in cancel_records:
 			state = r.get("workflow_state") or ""
-			if "pending" not in state.lower():
-				# Draft / Approved / Rejected / *Generated / *Printed etc. — not
-				# awaiting anyone's action.
+			if state not in _CANCEL_PERSON_STAGE_FIELDS:
+				# Only the named-person stages (Other PI / Mentor) belong on
+				# this endpoint — those approvers do not get the Pending Task
+				# page. Role stages (Head / Staff / HoS / Dean) are served by
+				# get_pending_task, so listing them here too showed every
+				# cancellation twice.
 				continue
 
 			ref_dt = r.get("reference_doctype")
@@ -671,9 +736,13 @@ def get_pending_application():
 					continue
 				r["pi"] = current_user
 				r["username"] = frappe.db.get_value(ref_dt, ref_name, name_field) or r.get("owner")
-			elif not is_system_manager:
-				role = _allow_edit_role(r.get("source_workflow"), state)
-				if not role or role not in user_roles:
+			else:
+				ref_doc = (
+					frappe.db.get_value(ref_dt, ref_name, "*", as_dict=True)
+					if ref_dt and ref_name and frappe.db.exists(ref_dt, ref_name)
+					else None
+				)
+				if not ref_doc or not _cancellation_named_person_ok(current_user, ref_dt, ref_doc, state):
 					continue
 
 			r["doctype"] = "Cancellation Request"

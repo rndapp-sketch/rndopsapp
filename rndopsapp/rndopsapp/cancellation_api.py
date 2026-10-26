@@ -6,7 +6,8 @@ Cancellation API Module
 
 Provides whitelisted API endpoints for:
 1. Fetching all pending applications for the current user ("My Applications" / "Form Application")
-2. Creating cancellation requests that clone the original module's workflow
+2. Creating cancellation requests that run through the independent Cancellation Request Workflow
+   (see cancellation_workflow.py)
 3. Checking cancellation status for a given document
 """
 
@@ -31,47 +32,6 @@ def _is_terminal_state(state):
 	if not state:
 		return False
 	return state.strip().lower() in TERMINAL_STATES
-
-
-# ─── Workflow states a Cancellation Request must always bypass ───
-# A Head already approved the original document to get it into (or past) this
-# state; cancelling it shouldn't route back through that same Head-approval
-# gate a second time, on any doctype that has one.
-CANCELLATION_SKIP_STATES = {"pending head approval"}
-
-# Action names that move a document BACKWARD/OFF the happy path — never
-# follow one of these when looking for what a skipped state "would have"
-# moved on to. Matches the forward-only "Approve"/"Forward" verbs used
-# across this app's workflows (see project_registration.py's own
-# is_head_submitting skip-ahead logic, which this mirrors).
-_NON_FORWARD_ACTIONS = {"reject", "return", "revert"}
-
-
-def _resolve_cancellation_next_state(state_name, source_wf, _seen=None):
-	"""
-	If `state_name` is a state the cancellation workflow always bypasses
-	(CANCELLATION_SKIP_STATES), follow that state's own forward transition
-	in the source workflow (whatever it's called — "Approve", "Forward",
-	etc. differs per doctype, so any transition that isn't a
-	reject/return counts) to find what it would have moved to next, and
-	return that instead — recursively, in case of several skip-states back
-	to back. Any other state is returned unchanged.
-	"""
-	if not state_name:
-		return state_name
-
-	_seen = _seen or set()
-	if state_name.strip().lower() not in CANCELLATION_SKIP_STATES or state_name in _seen:
-		return state_name
-
-	_seen.add(state_name)
-	for transition in source_wf.transitions:
-		if transition.state == state_name and (transition.action or "").strip().lower() not in _NON_FORWARD_ACTIONS:
-			return _resolve_cancellation_next_state(transition.next_state, source_wf, _seen)
-
-	# No forward transition found to skip to — leave as-is rather than
-	# dropping the document's path entirely.
-	return state_name
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -387,25 +347,9 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 				)
 			)
 
-		# Find the workflow for the reference doctype
-		source_workflow = frappe.get_value("Workflow", {"document_type": reference_doctype}, "name")
-
-		# Setup and activate the workflow before insertion so that insert() runs under it
-		if source_workflow:
-			_setup_cancellation_workflow(source_workflow)
-			target_wf = f"cancel_{source_workflow}"
-			if frappe.db.exists("Workflow", target_wf):
-				frappe.db.sql(
-					"""
-					UPDATE `tabWorkflow`
-					SET is_active = (CASE WHEN name = %s THEN 1 ELSE 0 END)
-					WHERE document_type = 'Cancellation Request'
-				""",
-					(target_wf,),
-				)
-				frappe.clear_cache(doctype="Cancellation Request")
-
-		# Create the Cancellation Request
+		# Create the Cancellation Request. Its route (stop_stage / stage_path) is
+		# worked out from the application's state in before_insert, and the
+		# independent cancellation workflow is created there if it is missing.
 		cancel_doc = frappe.new_doc("Cancellation Request")
 		cancel_doc.reference_doctype = reference_doctype
 		cancel_doc.reference_name = reference_name
@@ -413,7 +357,6 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 		cancel_doc.cancellation_reason = cancellation_reason.strip()
 		cancel_doc.requested_by = current_user
 		cancel_doc.request_date = now_datetime()
-		cancel_doc.source_workflow = source_workflow or ""
 		cancel_doc.status = "Pending"
 
 		# Generate short doctype name for auto-naming
@@ -426,31 +369,12 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 		cancel_doc.flags.ignore_permissions = True
 		cancel_doc.insert()
 
-		# If a workflow exists for the reference doctype, we need to set up the
-		# cancellation request's workflow. We do this by creating/reusing a
-		# workflow for "Cancellation Request" that mirrors the source workflow.
-		if source_workflow:
-			_setup_cancellation_workflow(source_workflow)
+		# Move the request out of Draft into the first stage of its path. A failure
+		# here must not be hidden: a request stuck in Draft has no approver.
+		from frappe.model.workflow import apply_workflow
 
-			# Move the cancellation request from "Draft" to the first submitted/pending state
-			try:
-				wf_doc = frappe.get_doc("Workflow", f"cancel_{source_workflow}")
-				action = _get_first_transition_action(wf_doc)
-				if action:
-					from frappe.model.workflow import apply_workflow
-
-					# Since the document was just inserted as Draft, we apply the workflow action
-					# to move it to the first submitted/pending state.
-					cancel_doc.flags.ignore_permissions = True
-					apply_workflow(cancel_doc, action)
-					cancel_doc.reload()
-			except Exception as e:
-				frappe.log_error(
-					frappe.get_traceback(),
-					_("Error moving cancellation request {0} to next state: {1}").format(
-						cancel_doc.name, str(e)
-					),
-				)
+		apply_workflow(cancel_doc, "Submit")
+		cancel_doc.reload()
 
 		frappe.db.commit()
 
@@ -478,188 +402,6 @@ def create_cancellation_request(reference_doctype, reference_name, cancellation_
 		frappe.db.rollback()
 		frappe.log_error(frappe.get_traceback(), "Create Cancellation Request Error")
 		return {"status": "error", "message": str(e)}
-
-
-def _expand_roles(raw):
-	"""
-	Workflow Document State.allow_edit and Workflow Transition.allowed are
-	core Frappe Link -> Role fields, meant to hold exactly one Role name — but
-	this app stores several roles in one string when a state/transition should
-	be editable by more than one role (e.g. "Dean, RnD\nDirector"). Note "Dean,
-	RnD" is itself a single real Role name that happens to contain a comma, so
-	a naive comma-split would wrongly break it into "Dean" and "RnD" — split on
-	newline first, and only comma-split a line that isn't already an exact
-	Role match. Mirrors the same resolution module_registry.py's
-	track_application already does for role strings, kept separate here since
-	that copy is a local closure, not an importable helper.
-
-	Returns the list of real Role names found in `raw` (each once). Frappe's
-	own Workflow doctype already supports several Document State/Transition
-	rows sharing the same state so multiple roles can each get their own,
-	valid, single-Role row — used by _setup_cancellation_workflow below to
-	build a cloned workflow that will actually pass link validation.
-	"""
-	if not raw:
-		return []
-
-	all_role_names = set(frappe.get_all("Role", pluck="name"))
-	raw = str(raw).strip()
-	if raw in all_role_names:
-		return [raw]
-
-	found = []
-	for line in raw.split("\n"):
-		line = line.strip()
-		if not line:
-			continue
-		if line in all_role_names:
-			if line not in found:
-				found.append(line)
-			continue
-		for part in line.split(","):
-			part = part.strip()
-			if part in all_role_names and part not in found:
-				found.append(part)
-
-	return found
-
-
-def _setup_cancellation_workflow(source_workflow_name):
-	"""
-	Set up workflow for the Cancellation Request by creating/reusing a
-	workflow that mirrors the source workflow.
-
-	The cancellation workflow will have the same states and transitions
-	as the original document's workflow, allowing it to go through the
-	same approval chain.
-	"""
-	try:
-		cancel_wf_name = f"cancel_{source_workflow_name}"
-
-		source_wf = frappe.get_doc("Workflow", source_workflow_name)
-
-		# Always rebuild rather than reuse a stale one — the mirroring logic
-		# below (e.g. CANCELLATION_SKIP_STATES) can change over time, and a
-		# cached cancellation workflow from before such a change would keep
-		# routing through a gate (like Head approval) that should now be
-		# bypassed. This only runs when a new Cancellation Request is being
-		# created, so the rebuild cost is negligible.
-		if frappe.db.exists("Workflow", cancel_wf_name):
-			frappe.delete_doc("Workflow", cancel_wf_name, ignore_permissions=True)
-			frappe.clear_cache(doctype="Cancellation Request")
-
-		new_wf = frappe.new_doc("Workflow")
-		new_wf.workflow_name = cancel_wf_name
-		new_wf.document_type = "Cancellation Request"
-		new_wf.is_active = 1
-		new_wf.workflow_state_field = "workflow_state"
-
-		# Copy all states from the source workflow — allow_edit is a
-		# Link -> Role field expecting exactly one role, so a multi-role
-		# source value (e.g. "Dean, RnD\nDirector") is expanded into one
-		# row per role rather than copied verbatim (which would fail link
-		# validation on insert() below). Frappe already treats several
-		# rows sharing the same `state` as "any of these roles may edit",
-		# so this preserves the original multi-role semantics.
-		for state in source_wf.states:
-			roles = _expand_roles(state.allow_edit) or [state.allow_edit]
-			for role in roles:
-				new_wf.append(
-					"states",
-					{
-						"state": state.state,
-						"doc_status": state.doc_status,
-						"allow_edit": role,
-						"is_optional_state": getattr(state, "is_optional_state", 0),
-					},
-				)
-
-		# Copy all transitions from the source workflow
-		for transition in source_wf.transitions:
-			# A transition that starts FROM a state the cancellation flow always
-			# bypasses (CANCELLATION_SKIP_STATES) is unreachable now — every
-			# transition that used to land there has already been rerouted
-			# past it below, so this document will never actually sit in that
-			# state to fire this transition. Drop it rather than copy it.
-			if transition.state and transition.state.strip().lower() in CANCELLATION_SKIP_STATES:
-				continue
-
-			next_state = _resolve_cancellation_next_state(transition.next_state, source_wf)
-			action = transition.action
-			if (
-				source_wf.document_type == "Reimbursement"
-				and transition.state == "Pending Staff Approval"
-				and transition.action in ["Verify (With Hardcopy)", "Approve"]
-			):
-				# Find the terminal approved state name from the source workflow
-				approved_state_name = "Approved"
-				for s in source_wf.states:
-					if s.state and s.state.strip().lower() in [
-						"approved",
-						"sanction approved",
-						"endorsement approved",
-					]:
-						approved_state_name = s.state
-						break
-				next_state = approved_state_name
-				action = "Approve"
-
-			# allowed is a Link -> Role field expecting exactly one role, same
-			# expansion as allow_edit above.
-			for role in (_expand_roles(transition.allowed) or [transition.allowed]):
-				new_wf.append(
-					"transitions",
-					{
-						"state": transition.state,
-						"action": action,
-						"next_state": next_state,
-						"allowed": role,
-						"allow_self_approval": getattr(transition, "allow_self_approval", 1),
-					},
-				)
-
-		new_wf.flags.ignore_permissions = True
-		new_wf.insert()
-
-	except Exception as e:
-		frappe.log_error(
-			frappe.get_traceback(), f"Error setting up cancellation workflow for {source_workflow_name}"
-		)
-		# Even if workflow setup fails, the cancellation request is still created
-		# It just won't have automated workflow transitions
-
-
-def _get_first_submitted_state(workflow_doc):
-	"""
-	Get the first state after Draft in the workflow.
-	This is the state the cancellation should start at (simulating submission).
-	"""
-	# Look for the transition from Draft
-	for transition in workflow_doc.transitions:
-		if transition.state and transition.state.strip().lower() == "draft":
-			return transition.next_state
-
-	# Fallback: return the second state in the states list (first is usually Draft)
-	if len(workflow_doc.states) > 1:
-		return workflow_doc.states[1].state
-
-	# Final fallback
-	return workflow_doc.states[0].state if workflow_doc.states else None
-
-
-def _get_first_transition_action(workflow_doc):
-	"""
-	Get the action name that transitions the document from Draft.
-	"""
-	for transition in workflow_doc.transitions:
-		if transition.state and transition.state.strip().lower() == "draft":
-			return transition.action
-
-	# Fallback: check if there's any transition at all
-	if workflow_doc.transitions:
-		return workflow_doc.transitions[0].action
-
-	return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -733,10 +475,6 @@ def get_cancellation_request_details(cancellation_name):
 	try:
 		cancel_doc = frappe.get_doc("Cancellation Request", cancellation_name)
 
-		# Self-healing: ensure the cancellation workflow is updated/recreated with latest rules
-		if cancel_doc.source_workflow:
-			_setup_cancellation_workflow(cancel_doc.source_workflow)
-
 		# Get reference document details
 		ref_details = {}
 		try:
@@ -793,7 +531,7 @@ def get_cancellation_request_details(cancellation_name):
 				"request_date": cancel_doc.request_date,
 				"status": cancel_doc.status,
 				"workflow_state": getattr(cancel_doc, "workflow_state", None),
-				"source_workflow": cancel_doc.source_workflow,
+				"stop_stage": cancel_doc.stop_stage,
 				"creation": cancel_doc.creation,
 				"modified": cancel_doc.modified,
 			},
@@ -813,28 +551,34 @@ def validate_original_document_not_locked(doc, method=None):
 	Prevent any updates or workflow progression on the original document
 	if there is a pending cancellation request for it.
 	"""
-	if doc.doctype == "Cancellation Request":
+	if doc.doctype == "Cancellation Request" or doc.is_new():
+		return
+
+	# Skip while installing/migrating, and before the doctype's table exists.
+	if frappe.flags.in_install or frappe.flags.in_migrate or frappe.flags.in_patch:
 		return
 
 	try:
-		if frappe.db.exists("DocType", "Cancellation Request"):
-			pending_cancel = frappe.db.exists(
-				"Cancellation Request",
-				{
-					"reference_doctype": doc.doctype,
-					"reference_name": doc.name,
-					"status": "Pending",
-					"docstatus": ["<", 2],
-				},
-			)
-			if pending_cancel:
-				frappe.throw(
-					_(
-						"This application is locked because a cancellation request ({0}) is pending approval."
-					).format(pending_cancel)
-				)
+		pending_cancel = frappe.db.exists(
+			"Cancellation Request",
+			{
+				"reference_doctype": doc.doctype,
+				"reference_name": doc.name,
+				"status": "Pending",
+				"docstatus": ["<", 2],
+			},
+		)
 	except Exception:
-		pass
+		# Cancellation Request table not there yet.
+		return
+
+	# Raised outside the try so the lock is actually enforced.
+	if pending_cancel:
+		frappe.throw(
+			_("This application is locked because a cancellation request ({0}) is pending approval.").format(
+				pending_cancel
+			)
+		)
 
 
 @frappe.whitelist()

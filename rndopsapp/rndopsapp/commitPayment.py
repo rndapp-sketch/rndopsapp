@@ -415,6 +415,71 @@ def get_staff_tenure_summary(ps_emp_ids):
     return result
 
 
+# Resignations that are not live: never filed, rejected or cancelled.
+_RESIGNATION_IGNORED_STATES = ("Draft", "Rejected", "Cancelled")
+
+
+def _get_resignation_map(yyyy_month=None):
+    """
+    {ps_emp_id: info} for every Project Staff Resignation that is in process or
+    completed. When yyyy_month is given, `excluded` is True only if the last
+    working day falls before the 1st of that month — someone leaving on the
+    15th is still paid for days 1-15 (the caller caps the working days using
+    `last_working_date`).
+    """
+    rows = frappe.get_all(
+        "Project Staff Resignation",
+        filters={"docstatus": ["<", 2], "workflow_state": ["not in", _RESIGNATION_IGNORED_STATES]},
+        fields=["name", "applicant_emp_id", "applicant_prj_num", "resignation_date", "workflow_state", "docstatus"],
+        order_by="resignation_date asc",
+    )
+    month_start = _get_month_range(yyyy_month)[0] if yyyy_month else None
+    result = {}
+    for r in rows:
+        emp_id = (r.applicant_emp_id or "").strip()
+        if not emp_id:
+            continue
+        last_day = getdate(r.resignation_date) if r.resignation_date else None
+        info = {
+            "resignation": r.name,
+            "project_no": r.applicant_prj_num,
+            "state": r.workflow_state,
+            "last_working_date": str(last_day) if last_day else None,
+            "completed": r.docstatus == 1 or r.workflow_state == "Approved",
+            "excluded": bool(month_start and last_day and last_day < month_start),
+        }
+        # Keep the earliest resignation if an employee has more than one.
+        result.setdefault(emp_id, info)
+    return result
+
+
+def _resignation_block_message(ps_emp_id, yyyy_month):
+    """Error text when ps_emp_id must not be paid for yyyy_month, else None."""
+    if not ps_emp_id or not yyyy_month:
+        return None
+    try:
+        info = _get_resignation_map(yyyy_month).get(str(ps_emp_id).strip())
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Resignation check failed")
+        return None
+    if info and info["excluded"]:
+        return (
+            f"Employee {ps_emp_id} resigned (last working date {info['last_working_date']}, "
+            f"{info['resignation']}, {info['state']}) and cannot be paid for {yyyy_month}."
+        )
+    return None
+
+
+@frappe.whitelist()
+def get_resigned_or_resigning_staff(yyyy_month=None):
+    """
+    Employees with a resignation in process or completed, keyed by ps_emp_id.
+    With yyyy_month, `excluded` marks those to drop from that month's salary
+    list; the rest keep `last_working_date` for pro-rata day capping.
+    """
+    return _get_resignation_map(yyyy_month)
+
+
 @frappe.whitelist(allow_guest=True)
 def salary_payment_data(ps_emp_id, yyyy_month=None):
     """
@@ -428,6 +493,11 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
         print("[SALARY_PAYMENT_DATA] ERROR: Employee ID is required")
         _mm_notify(":x: **Salary Payment Data Error**\n**Error:** Employee ID is required", channel_id=_MM_SALARY_CHANNEL)
         return [{"status": "error", "message": "Employee ID is required"}]
+
+    block = _resignation_block_message(ps_emp_id, yyyy_month)
+    if block:
+        print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] BLOCKED: {block}")
+        return [{"status": "error", "message": block}]
 
     try:
         if yyyy_month and _salary_staging_has_ps_emp_id(ps_emp_id, yyyy_month):
@@ -2036,6 +2106,11 @@ def submit_payment_data(doctype=None, name=None, project_name=None, payment_amou
             })
             salary_payload.pop("cmd", None)
 
+            _block = _resignation_block_message(_salary_backend.get("ps_emp_id"), salary_year_month)
+            if _block:
+                print(f"[SUBMIT_PAYMENT_DATA] BLOCKED: {_block}")
+                return {"status": "error", "message": _block}
+
             _entry_identity = _salary_payload_identity(salary_payload)
             print(f"[SUBMIT_PAYMENT_DATA] [{salary_year_month}] [{_entry_identity}] Salary payment detected. frapAppId={frapAppId} moduleName={moduleName} doctype={doctype}")
             _mm_notify(
@@ -2618,15 +2693,20 @@ def publish_salary_staging(salary_year_month):
 @frappe.whitelist()
 def get_workflow_states(doctype):
     try:
-        # Prefer active workflow; fall back to any workflow for the doctype
-        workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
-        if not workflows:
-            workflows = frappe.get_all("Workflow", filters={"document_type": doctype}, pluck="name")
-        if not workflows:
+        # Union of states from every workflow on this doctype (active or not)
+        # plus any workflow_state values already present on documents, so legacy
+        # or renamed states are selectable too.
+        workflows = frappe.get_all("Workflow", filters={"document_type": doctype}, pluck="name")
+        states = set()
+        if workflows:
+            states.update(frappe.get_all("Workflow Document State", filters={"parent": ["in", workflows]}, pluck="state"))
+        if frappe.get_meta(doctype).has_field("workflow_state"):
+            states.update(frappe.db.get_all(doctype, pluck="workflow_state", distinct=True))
+        states.discard(None)
+        states.discard("")
+        if not states:
             return {"status": "error", "message": "No workflow found"}
-
-        states = frappe.get_all("Workflow Document State", filters={"parent": workflows[0]}, pluck="state")
-        return {"status": "success", "data": list(set(states))}
+        return {"status": "success", "data": sorted(states)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
