@@ -188,8 +188,10 @@ def publish_overhead_commit(
 		return False
 
 	amount = flt(commit_amount)
-	if amount <= 0:
-		log_producer_event("OVERHEAD_COMMIT", doc.name, TOPIC_OVERHEAD_COMMIT, "VALIDATION_FAILED", "commitAmount must be > 0")
+	# Negative is valid — it signals a de-commit (reversal), same as the project commit
+	# path (AccountHeadCommitValidator). Only a zero amount is meaningless.
+	if amount == 0:
+		log_producer_event("OVERHEAD_COMMIT", doc.name, TOPIC_OVERHEAD_COMMIT, "VALIDATION_FAILED", "commitAmount must not be zero")
 		return False
 
 	# refDetails on the overhead side is a parent overheadCommitId (Long), not the
