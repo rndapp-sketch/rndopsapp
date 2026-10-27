@@ -169,6 +169,8 @@ has_permission = {
 
 doc_events = {
 	"*": {
+		# Locks an application while a Cancellation Request for it is pending.
+		"validate": ["rndopsapp.rndopsapp.cancellation_api.validate_original_document_not_locked"],
 		"on_update": [
 			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",

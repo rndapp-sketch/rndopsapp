@@ -74,7 +74,12 @@ def extract_eval_expression(expression):
 
 
 class Travel(Document):
-	pass
+	def before_validate(self):
+		# Runs before link validation: accept the account head label as well as its Budget Head docname.
+		from rndopsapp.rndopsapp.budget_head_utils import resolve_budget_head
+
+		if self.account_head:
+			self.account_head = resolve_budget_head(self.account_head)
 
 
 @frappe.whitelist()

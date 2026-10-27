@@ -60,8 +60,11 @@ class WorkflowManager:
 	# -------------------------
 	def _get_workflow_doc(self) -> Optional[frappe]:
 		"""Return Workflow doc for this doctype or None."""
-		if self.doc.doctype == "Cancellation Request" and getattr(self.doc, "source_workflow", None):
-			wf_name = f"cancel_{self.doc.source_workflow}"
+		if self.doc.doctype == "Cancellation Request":
+			# Cancellation Request has exactly one workflow; see cancellation_workflow.py.
+			from rndopsapp.rndopsapp.cancellation_workflow import WORKFLOW_NAME
+
+			wf_name = WORKFLOW_NAME
 		else:
 			wf_name = frappe.get_value("Workflow", {"document_type": self.doc.doctype}, "name")
 		if not wf_name:
@@ -71,6 +74,16 @@ class WorkflowManager:
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "WorkflowManager: invalid Workflow doc")
 			return None
+
+	def _transition_applies(self, transition) -> bool:
+		"""
+		Honor the transition's `condition`, as Frappe's own workflow does. The
+		cancellation workflow routes every request through one shared set of
+		transitions and relies on conditions to pick the ones that apply.
+		"""
+		from frappe.model.workflow import is_transition_condition_satisfied
+
+		return is_transition_condition_satisfied(transition, self.doc)
 
 	def _is_system_manager(self) -> bool:
 		return "System Manager" in self.user_roles
@@ -150,7 +163,7 @@ class WorkflowManager:
 
 		actions: List[str] = []
 		for t in getattr(self.workflow, "transitions", []) or []:
-			if getattr(t, "state", None) != self.current_state:
+			if getattr(t, "state", None) != self.current_state or not self._transition_applies(t):
 				continue
 			transition_roles = self._get_transition_roles(t)
 			permitted = (
@@ -173,7 +186,7 @@ class WorkflowManager:
 			return []
 		results = []
 		for t in getattr(self.workflow, "transitions", []) or []:
-			if getattr(t, "state", None) != self.current_state:
+			if getattr(t, "state", None) != self.current_state or not self._transition_applies(t):
 				continue
 			action = getattr(t, "action", None) or getattr(t, "action_name", None)
 			next_state = getattr(t, "next_state", None) or getattr(t, "next_state_name", None)
@@ -186,7 +199,7 @@ class WorkflowManager:
 		if not action or not self.workflow:
 			return None
 		for t in getattr(self.workflow, "transitions", []) or []:
-			if getattr(t, "state", None) != self.current_state:
+			if getattr(t, "state", None) != self.current_state or not self._transition_applies(t):
 				continue
 			action_name = getattr(t, "action", None) or getattr(t, "action_name", None)
 			if action_name == action:
@@ -221,7 +234,11 @@ class WorkflowManager:
 		transition = None
 		for t in getattr(self.workflow, "transitions", []) or []:
 			action_name = getattr(t, "action", None) or getattr(t, "action_name", None)
-			if getattr(t, "state", None) == self.current_state and action_name == action:
+			if (
+				getattr(t, "state", None) == self.current_state
+				and action_name == action
+				and self._transition_applies(t)
+			):
 				transition = t
 				break
 
