@@ -876,6 +876,80 @@ import base64
 import mimetypes
 from rndopsapp.minio import get_rnd_file_service
 
+import time
+import logging
+import functools
+
+_LOGGER_NAME = "universal_registration"
+_MAX_LOG_LEN = 500
+_SENSITIVE_KEYS = ("password", "token", "secret")
+
+
+def _sanitize_for_log(value, key=None):
+	"""Make a value safe and short for logging (hide secrets, collapse base64/file payloads)."""
+	if key and any(s in str(key).lower() for s in _SENSITIVE_KEYS):
+		return "***"
+	if isinstance(value, dict):
+		if value.get("file_data"):
+			return {"file_name": value.get("file_name"), "file_data": "<omitted>"}
+		return {k: _sanitize_for_log(v, k) for k, v in value.items()}
+	if isinstance(value, (list, tuple)):
+		return [_sanitize_for_log(v) for v in value]
+	if isinstance(value, str):
+		if value.startswith("data:"):
+			return f"<data-uri {len(value)} chars>"
+		if len(value) > _MAX_LOG_LEN:
+			return value[:_MAX_LOG_LEN] + f"...<{len(value)} chars>"
+	return value
+
+
+def _log_text(value):
+	text = str(_sanitize_for_log(value))
+	return text if len(text) <= _MAX_LOG_LEN * 2 else text[:_MAX_LOG_LEN * 2] + "...<truncated>"
+
+
+def _insert_error_log(endpoint, user, args, kwargs, details):
+	"""Insert a row into the Error Log doctype; never let logging break the endpoint."""
+	try:
+		frappe.log_error(
+			title=f"Universal Registration Endpoint Error: {endpoint}"[:140],
+			message=f"Endpoint: {endpoint}\nUser: {user}\nArgs: {_log_text(args)}\nKwargs: {_log_text(kwargs)}\n\n{details}",
+		)
+	except Exception:
+		pass
+
+
+def log_endpoint(fn):
+	"""Log every call to a whitelisted endpoint: user, args, outcome and duration.
+
+	Output goes to logs/universal_registration.log, and failures are also inserted into Error Log. Responses that carry
+	status == "error" (these endpoints swallow exceptions) are logged as errors.
+	"""
+	@functools.wraps(fn)
+	def wrapper(*args, **kwargs):
+		logger = frappe.logger(_LOGGER_NAME, allow_site=True, file_count=10)
+		logger.setLevel(logging.INFO)  # frappe defaults to ERROR/WARNING, which would drop START/END lines
+		name = fn.__name__
+		user = frappe.session.user if getattr(frappe.local, "session", None) else "unknown"
+		logger.info(f"[{name}] START user={user} args={_log_text(args)} kwargs={_log_text(kwargs)}")
+		start = time.monotonic()
+		try:
+			result = fn(*args, **kwargs)
+		except Exception:
+			tb = frappe.get_traceback()
+			logger.error(f"[{name}] EXCEPTION after {(time.monotonic() - start) * 1000:.0f}ms user={user}\n{tb}")
+			_insert_error_log(name, user, args, kwargs, tb)
+			raise
+		elapsed = (time.monotonic() - start) * 1000
+		if isinstance(result, dict) and result.get("status") == "error":
+			logger.error(f"[{name}] ERROR after {elapsed:.0f}ms user={user} response={_log_text(result)}")
+			_insert_error_log(name, user, args, kwargs, f"Response: {_log_text(result)}")
+		else:
+			logger.info(f"[{name}] END after {elapsed:.0f}ms user={user} response={_log_text(result)}")
+		return result
+	return wrapper
+
+
 class UniversalRegistration__(Document):
 	pass
 
@@ -1021,6 +1095,7 @@ def map_doctype_fields_to_frontend(data):
 	return mapped_data
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def get_universal_registration___fields(doc_name=None):
 	"""
 	Return Universal Registration field metadata + prefill data.
@@ -1142,6 +1217,7 @@ def get_universal_registration___fields(doc_name=None):
 	}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def save_universal_registration___data(data=None, **kwargs):
 	"""
 	Save Universal Registration data (parent + child tables).
@@ -1319,6 +1395,7 @@ def save_universal_registration___data(data=None, **kwargs):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def get_universal_registration___list(filters=None, limit=None, offset=None):
 	"""
 	Fetch a list of Universal Registration documents with optional filtering.
@@ -1365,6 +1442,7 @@ def get_universal_registration___list(filters=None, limit=None, offset=None):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def get_universal_registration___details(docname):
 	"""
 	Fetch complete details of a Universal Registration document.
@@ -1391,6 +1469,7 @@ def get_universal_registration___details(docname):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
+@log_endpoint
 def update_universal_registration___data(docname, data):
 	"""
 	Update an existing Universal Registration document.
@@ -1527,6 +1606,7 @@ def update_universal_registration___data(docname, data):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
+@log_endpoint
 def delete_universal_registration__(docname):
 	"""
 	Delete a Universal Registration document and its attached files from MinIO.
@@ -1548,6 +1628,7 @@ def delete_universal_registration__(docname):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def get_universal_registration___by_email(email):
 	"""
 	Fetch a Universal Registration document by email address.
@@ -1572,6 +1653,7 @@ def get_universal_registration___by_email(email):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def get_universal_registration___by_phone(phone):
 	"""
 	Fetch a Universal Registration document by phone number.
@@ -1595,6 +1677,7 @@ def get_universal_registration___by_phone(phone):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def search_universal_registration__(search_text):
 	"""
 	Search Universal Registration documents by name, email, or phone.
@@ -1629,6 +1712,7 @@ def search_universal_registration__(search_text):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def get_registration_by_profile_type(profile_type):
 	"""
 	Fetch all registrations of a specific profile type (Individual or Organization).
@@ -1654,6 +1738,7 @@ def get_registration_by_profile_type(profile_type):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def check_email_availability(email=None, exclude_docname=None):
 	"""
 	Real-time email availability check.
@@ -1699,6 +1784,7 @@ def check_email_availability(email=None, exclude_docname=None):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def get_external_profile(search=None):
 	"""
 	Free-form / fuzzy search across full_name_u_r and email_address_u_r.
@@ -1790,6 +1876,7 @@ def get_external_profile(search=None):
 
 
 @frappe.whitelist(allow_guest=True)
+@log_endpoint
 def check_duplicate_registration(email=None, id_numbers=None, exclude_docname=None):
 	"""
 	Check if an email or any ID Number already exists.
