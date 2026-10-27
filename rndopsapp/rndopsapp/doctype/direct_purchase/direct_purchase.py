@@ -27,6 +27,13 @@ def extract_eval_expression(expression):
 
 class DirectPurchase(Document):
 
+	def before_validate(self):
+		# Runs before link validation: accept the account head label as well as its Budget Head docname.
+		from rndopsapp.rndopsapp.budget_head_utils import resolve_budget_head
+
+		if self.account_head:
+			self.account_head = resolve_budget_head(self.account_head)
+
 	def validate(self):
 		"""Server-side mirror of the client script calculations and validations."""
 		self.calculate_totals()
