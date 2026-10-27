@@ -5,30 +5,31 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from rndopsapp.rndopsapp.cancellation_workflow import (
+	encode_path,
+	ensure_cancellation_workflow,
+	resolve_cancellation_path,
+)
+
 
 class CancellationRequest(Document):
-	def before_validate(self):
-		"""Ensure the correct workflow is set as active before validation/saving."""
-		if self.reference_doctype and not self.source_workflow:
-			wf_name = frappe.get_value("Workflow", {"document_type": self.reference_doctype}, "name")
-			self.source_workflow = wf_name or ""
+	def set_route(self):
+		"""
+		Decide how far this cancellation travels, from the state the application
+		is in right now. Stored on the request so the workflow's transition
+		conditions can read it, and so it does not change if the application's
+		state somehow moves later.
+		"""
+		if self.stop_stage and self.stage_path:
+			return
 
-		if self.source_workflow:
-			self.activate_workflow()
+		app_state = frappe.db.get_value(self.reference_doctype, self.reference_name, "workflow_state")
+		stop_stage, path = resolve_cancellation_path(self.reference_doctype, app_state)
+		self.stop_stage = stop_stage
+		self.stage_path = encode_path(path)
 
-	def activate_workflow(self):
-		target_wf = f"cancel_{self.source_workflow}"
-		if frappe.db.exists("Workflow", target_wf):
-			# Set this workflow as active and others for this doctype as inactive
-			frappe.db.sql(
-				"""
-				UPDATE `tabWorkflow`
-				SET is_active = (CASE WHEN name = %s THEN 1 ELSE 0 END)
-				WHERE document_type = 'Cancellation Request'
-			""",
-				(target_wf,),
-			)
-			frappe.clear_cache(doctype="Cancellation Request")
+		# Make sure the independent workflow exists (idempotent).
+		ensure_cancellation_workflow()
 
 	def before_insert(self):
 		"""Set defaults before the document is inserted."""
@@ -40,13 +41,12 @@ class CancellationRequest(Document):
 		if self.reference_doctype and not self.reference_doctype_short:
 			self.reference_doctype_short = self._get_short_name(self.reference_doctype)
 
-		# Store the source workflow name
-		if self.reference_doctype and not self.source_workflow:
-			wf_name = frappe.get_value("Workflow", {"document_type": self.reference_doctype}, "name")
-			self.source_workflow = wf_name or ""
+		self.set_route()
 
 	def validate(self):
 		"""Validate the cancellation request."""
+		self._check_head_is_acting()
+
 		if not self.cancellation_reason or not self.cancellation_reason.strip():
 			frappe.throw(_("Cancellation reason is required."))
 
@@ -80,6 +80,33 @@ class CancellationRequest(Document):
 					)
 				)
 
+	def _check_head_is_acting(self):
+		"""
+		The Head stage belongs to ONE person (the head of the application's
+		department), not to every holder of the Head role. Moving the request
+		out of Pending Head Approval is therefore limited to that head.
+		"""
+		before = self.get_doc_before_save()
+		if not before or before.workflow_state != "Pending Head Approval":
+			return
+		if self.workflow_state == before.workflow_state:
+			return
+
+		user = frappe.session.user
+		if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+			return
+
+		from rndopsapp.rndopsapp.doctype.module_registry.module_registry import (
+			_cancellation_head_ok,
+		)
+
+		ref_doc = frappe.db.get_value(self.reference_doctype, self.reference_name, "*", as_dict=True)
+		if not ref_doc or not _cancellation_head_ok(user, self.reference_doctype, ref_doc):
+			frappe.throw(
+				_("Only the head of the applicant's department can act on this cancellation at Head approval."),
+				frappe.PermissionError,
+			)
+
 	def on_update(self):
 		"""Handle workflow state changes."""
 		# The "Pending Head Approval" skip is applied once, at workflow-clone
@@ -91,6 +118,25 @@ class CancellationRequest(Document):
 		workflow_state = getattr(self, "workflow_state", None)
 		if workflow_state and self._is_approved_state(workflow_state):
 			self._mark_original_as_cancelled()
+		elif workflow_state == "Rejected":
+			self._mark_rejected()
+
+	def _mark_rejected(self):
+		"""
+		A rejected cancellation leaves the original document untouched. Moving
+		status off "Pending" is what releases the lock on the original and
+		lets a new request be filed.
+		"""
+		if self.status == "Rejected":
+			return
+
+		self.db_set("status", "Rejected", update_modified=False)
+		self.add_comment(
+			"Info",
+			_("Cancellation rejected. {0} ({1}) is unchanged.").format(
+				self.reference_name, self.reference_doctype
+			),
+		)
 
 	def on_update_after_submit(self):
 		"""
@@ -229,10 +275,13 @@ class CancellationRequest(Document):
 
 			frappe.db.commit()
 
-		except Exception as e:
+		except Exception:
+			# Do not swallow this: the approval transition must roll back rather
+			# than leave a request at "Approved" with the original still live.
 			frappe.log_error(
 				frappe.get_traceback(), _("Error marking {0} as cancelled").format(self.reference_name)
 			)
+			raise
 
 	def _is_approved_state(self, state):
 		"""Check if the given workflow state is an approved/final state."""

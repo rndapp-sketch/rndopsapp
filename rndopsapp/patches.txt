@@ -15,3 +15,6 @@ rndopsapp.patchs.migrate_email_templates_to_db
 rndopsapp.patchs.migrate_igf_account_head_to_link
 rndopsapp.patchs.backfill_overhead_fund_fields
 rndopsapp.patchs.backfill_leave_module_staff_details
+rndopsapp.patchs.create_cancellation_request_workflow
+rndopsapp.patchs.rebuild_cancellation_request_workflow
+rndopsapp.patchs.backfill_cancellation_request_route

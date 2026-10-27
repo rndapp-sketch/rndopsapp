@@ -17,6 +17,8 @@
         "cancellation_details_section",
         "cancellation_reason",
         "workflow_section",
+        "stop_stage",
+        "stage_path",
         "source_workflow",
         "workflow_state",
         "reference_doctype_short",
@@ -98,11 +100,28 @@
             "collapsible": 1
         },
         {
+            "fieldname": "stop_stage",
+            "fieldtype": "Data",
+            "label": "Final Approval Stage",
+            "read_only": 1,
+            "no_copy": 1,
+            "description": "Last stage of the cancellation chain, from the application's state when the request was filed. Approving here finishes the cancellation."
+        },
+        {
+            "fieldname": "stage_path",
+            "fieldtype": "Data",
+            "label": "Approval Path",
+            "read_only": 1,
+            "no_copy": 1,
+            "hidden": 1,
+            "description": "Stages this request passes through, e.g. |Staff|HoS|. Read by the workflow transition conditions."
+        },
+        {
             "fieldname": "source_workflow",
             "fieldtype": "Data",
-            "label": "Source Workflow",
+            "label": "Source Workflow (legacy)",
             "read_only": 1,
-            "description": "The workflow copied from the original document's doctype"
+            "description": "Only set on requests filed before the independent cancellation workflow."
         },
         {
             "fieldname": "workflow_state",
@@ -134,7 +153,7 @@
     "index_web_pages_for_search": 1,
     "is_submittable": 1,
     "links": [],
-    "modified": "2026-05-29 10:00:00.000000",
+    "modified": "2026-10-25 10:00:00.000000",
     "modified_by": "Administrator",
     "module": "Rndopsapp",
     "name": "Cancellation Request",
