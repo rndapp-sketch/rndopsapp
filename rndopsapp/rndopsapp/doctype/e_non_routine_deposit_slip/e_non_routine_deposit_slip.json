@@ -30,6 +30,7 @@
   "credit_distribution_section",
   "credit_distribution",
   "additional_project_credits",
+  "dpf_credit_distribution_50",
   "totals_section",
   "total_gst",
   "total_budget",
@@ -219,12 +220,18 @@
    "label": "Fund Budget Breakup",
    "options": "Project Received Budget",
    "read_only": 1
+  },
+  {
+   "fieldname": "dpf_credit_distribution_50",
+   "fieldtype": "Table",
+   "label": "DPF Credit Distribution (50%)",
+   "options": "DPF Credit Distribution"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-23 12:29:50.242651",
+ "modified": "2026-10-28 12:09:02.192044",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "E Non Routine Deposit Slip",
