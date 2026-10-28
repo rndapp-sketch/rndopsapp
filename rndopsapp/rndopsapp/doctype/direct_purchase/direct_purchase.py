@@ -989,7 +989,8 @@ def generate_p11_form(docname):
 
 		p11 = frappe.new_doc("P_11 Form")
 		p11.name = dp_doc.name
-		p11.currency = dp_doc.currency if dp_doc.is_foreign == "Yes" and dp_doc.currency else "INR"
+		# Rupee purchases have no currency picked; the Select only accepts the full option text.
+		p11.currency = dp_doc.currency if dp_doc.is_foreign == "Yes" and dp_doc.currency else "INR \u2014 Indian Rupee"
 		p11.total_basic_value = dp_doc.total_estimate
 		p11.grand_total = dp_doc.total_estimate
 
