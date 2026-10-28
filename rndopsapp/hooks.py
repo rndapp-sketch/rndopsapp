@@ -201,8 +201,31 @@ doc_events = {
 		],
 		"on_cancel": ["rndopsapp.external_auth.log_impersonated_action"],
 		"on_trash": ["rndopsapp.external_auth.log_impersonated_action"],
-	}
+	},
 }
+
+# Applications whose account head is picked from a project's budget breakup: the picker
+# returns the head's label ("Overhead") but these doctypes link to Budget Head by docname,
+# which otherwise fails with "Could not find Account Head: Overhead".
+for _budget_head_doctype in (
+	"Direct Purchase",
+	"Travel",
+	"Reimbursement",
+	"Indent General Form",
+	"Indent Cum Sanction Sheet",
+	"Rate Contract",
+	"Recruitment Adhoc Contractual",
+	"Top Up Fellowship",
+	"Disbursal of Honorarium",
+	"Disbursement of Honorarium",
+	"Miscellaneous Commit",
+	"Po Commit Adjustment",
+	"Loan Request",
+	"Loan Settlement",
+):
+	doc_events[_budget_head_doctype] = {
+		"before_validate": ["rndopsapp.rndopsapp.budget_head_utils.resolve_budget_head_links"]
+	}
 
 # Scheduled Tasks
 # ---------------
