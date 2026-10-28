@@ -6,7 +6,13 @@ from frappe.utils.file_manager import save_file
 
 
 class Reimbursement(Document):
-	pass
+	def before_validate(self):
+		# Runs before link validation: the project account-head picker returns labels
+		# ("Overhead"); account_head is a Link to Budget Head, which needs the docname.
+		from rndopsapp.rndopsapp.budget_head_utils import resolve_budget_head
+
+		if self.account_head:
+			self.account_head = resolve_budget_head(self.account_head)
 
 
 def _roles_list(allowed):
