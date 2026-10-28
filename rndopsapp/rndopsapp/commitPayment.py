@@ -3,7 +3,7 @@ import requests
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from frappe.utils import today, flt, getdate, get_first_day, get_last_day
+from frappe.utils import today, flt, getdate, get_first_day, get_last_day, add_months, cint
 from datetime import datetime, timedelta
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
 from rndopsapp.rndopsapp.kafka_sync import publish_message, KAFKA_AVAILABLE
@@ -345,14 +345,33 @@ def _get_salary_gap_for_month(staff_doc, yyyy_month):
     }
 
 
-def _compute_total_months_and_gaps(staff_doc):
+def _elapsed_months_and_days(start, end):
+    """Whole calendar months between start and end (both inclusive, rounded down) and
+    the leftover days: 24 Jul -> 28 Oct is 3 months and 5 days."""
+    limit = end + timedelta(days=1)
+    months = max((end.year - start.year) * 12 + (end.month - start.month) + 1, 0)
+    while months > 0 and getdate(add_months(start, months)) > limit:
+        months -= 1
+    return months, (limit - getdate(add_months(start, months))).days
+
+
+def _compute_total_months_and_gaps(staff_doc, as_of=None):
     """
-    Career totals (not scoped to any one payroll month): cumulative months
-    worked across every Project Staff Tenure Details row, and the total
-    calendar-day gap(s) between consecutive tenures. Mirrors the
-    total_months_worked math in project_staff_extension.compute_new_tenure so
-    the Salary Module's "months worked" agrees with the Extension form's.
+    Career totals (not scoped to any one payroll month): months actually worked
+    across every Project Staff Tenure Details row, and the calendar-day gap(s)
+    between consecutive tenures.
+
+    Only elapsed time counts: each tenure runs from its joining date to
+    min(term completion date, as_of); a tenure that has not started yet is
+    ignored. Months are whole calendar months rounded down; the leftover days of
+    every tenure are added together and converted at 30.437 days a month so that
+    many short extension rows do not each lose a part month.
+
+    Unlike project_staff_extension.compute_new_tenure (which deliberately counts
+    the full planned term, for the extension caps), this is "months worked so
+    far" for the Salary Module's reappointment check.
     """
+    as_of = getdate(as_of or today())
     tenures = [
         t for t in (staff_doc.get("table_ymed") or [])
         if t.get("pstd_joining_date") and t.get("pstd_term_completion_date")
@@ -363,15 +382,24 @@ def _compute_total_months_and_gaps(staff_doc):
     tenures = sorted(tenures, key=lambda t: getdate(t.get("pstd_joining_date")))
 
     total_months = 0
+    leftover_days = 0
     for t in tenures:
-        d1 = getdate(t.get("pstd_joining_date"))
-        d2 = getdate(t.get("pstd_term_completion_date"))
-        days = (d2 - d1).days + 1
-        total_months += round(days / 30.437)
+        start = getdate(t.get("pstd_joining_date"))
+        if start > as_of:
+            continue  # term has not begun yet
+        end = min(getdate(t.get("pstd_term_completion_date")), as_of)
+        if end < start:
+            continue
+        months, days = _elapsed_months_and_days(start, end)
+        total_months += months
+        leftover_days += days
+    total_months += int(leftover_days / 30.437)
 
     gap_days = 0
     gap_ranges = []
     for prev, nxt in zip(tenures, tenures[1:]):
+        if getdate(nxt.get("pstd_joining_date")) > as_of:
+            continue  # the next term has not started, so there is no elapsed gap yet
         gap_start = getdate(prev.get("pstd_term_completion_date")) + timedelta(days=1)
         gap_end = getdate(nxt.get("pstd_joining_date")) - timedelta(days=1)
         if gap_end < gap_start:
@@ -2675,10 +2703,39 @@ def get_account_head_payment_dlq_errors(project_number=None, budget_head=None, r
     return {"status": "success", "data": rows}
 
 
+def _staged_employee_id(record):
+    """ps_emp_id a staged salary record belongs to ("" when it cannot be told)."""
+    backend = _parse_staged_blob(record.get("salary_backend_details"))
+    user = _parse_staged_blob(record.get("salary_user_details"))
+    return str(backend.get("ps_emp_id") or user.get("employee_id") or "").strip()
+
+
+def _existing_salary_payment(project, particular, amount):
+    """Name of an AccountHeadPayment that already carries this salary payment, if any."""
+    if not (project and particular):
+        return None
+    if project and not frappe.db.exists("Project Registration", project):
+        project = frappe.db.get_value("Project Registration", {"project_no": project}, "name") or project
+    return frappe.db.get_value(
+        "AccountHeadPayment",
+        {"project_ref_number": project, "payment_particular": particular, "payment_amount": flt(amount)},
+        "name",
+    )
+
+
 @frappe.whitelist()
-def publish_salary_staging(salary_year_month):
+def publish_salary_staging(salary_year_month, ps_emp_id=None, dry_run=0, force=0):
     """
-    Publish all staged salary records for the given year-month to Kafka.
+    Publish staged salary records for the given year-month to Kafka.
+
+    ps_emp_id: publish only this employee's record(s) of the month. When it is given the
+        call also refuses to re-publish a payment that already exists as an
+        AccountHeadPayment (same project, particulars and amount) — the normal salary
+        page publishes immediately and never marks the staging row, so such rows still
+        look pending. Pass force=1 to publish anyway.
+    dry_run: 1 = only report what would be published (and any duplicates); nothing is
+        created, published or saved.
+    Without ps_emp_id the behaviour is unchanged (whole month, no duplicate check).
 
     Reads the Salary Staging document keyed by salary_year_month, iterates
     every record in the salary_record JSON array, creates an AccountHeadPayment
@@ -2718,10 +2775,41 @@ def publish_salary_staging(salary_year_month):
             return {"status": "error", "message": "salary_record is not valid JSON"}
 
         published = failed = skipped = 0
+        emp_filter = (ps_emp_id or "").strip()
+        dry_run = bool(cint(dry_run))
+        force = bool(cint(force))
+        matched = 0
+        would_publish = []
+        duplicates = []
 
         for idx, record in enumerate(records):
+            if emp_filter:
+                if _staged_employee_id(record) != emp_filter:
+                    continue
+                matched += 1
+
             if record.get("status") == "PUBLISHED":
                 skipped += 1
+                continue
+
+            if emp_filter and not force:
+                dup = _existing_salary_payment(
+                    record.get("project_name") or record.get("projectNumber"),
+                    record.get("payment_particular") or record.get("commitParticular"),
+                    record.get("payment_amount") or record.get("commitAmount"),
+                )
+                if dup:
+                    duplicates.append({"index": idx, "payment_doc": dup,
+                                       "particular": record.get("payment_particular") or record.get("commitParticular")})
+                    continue
+
+            if dry_run:
+                would_publish.append({
+                    "index": idx,
+                    "particular": record.get("payment_particular") or record.get("commitParticular"),
+                    "amount": record.get("payment_amount") or record.get("commitAmount"),
+                    "project": record.get("project_name") or record.get("projectNumber"),
+                })
                 continue
 
             # Pull all fields from the staged record
@@ -2844,6 +2932,17 @@ def publish_salary_staging(salary_year_month):
                     f"**Error:** {str(rec_err)}"
                 )
 
+        if emp_filter and not matched:
+            return {"status": "error", "message": f"No staged record for {emp_filter} in {salary_year_month}"}
+
+        if dry_run:
+            return {
+                "status": "success", "dry_run": True, "employee": emp_filter or None,
+                "matched": matched, "would_publish": would_publish, "duplicates": duplicates,
+                "already_published": skipped,
+                "message": f"dry run: {len(would_publish)} would publish, {len(duplicates)} already exist as AccountHeadPayment, {skipped} already PUBLISHED",
+            }
+
         # Persist updated statuses back to the staging doc
         staging_doc.salary_record = json.dumps(records, default=str)
         staging_doc.save(ignore_permissions=True)
@@ -2851,9 +2950,11 @@ def publish_salary_staging(salary_year_month):
 
         total = len(records)
         summary = f"total={total} published={published} failed={failed} skipped={skipped}"
+        if emp_filter:
+            summary = f"employee={emp_filter} matched={matched} published={published} failed={failed} skipped={skipped} duplicates={len(duplicates)}"
         print(f"[SALARY_PUBLISH] Done: {summary}")
 
-        return {
+        result = {
             "status": "success" if failed == 0 else "partial",
             "published": published,
             "failed": failed,
@@ -2861,6 +2962,9 @@ def publish_salary_staging(salary_year_month):
             "total": total,
             "message": summary,
         }
+        if emp_filter:
+            result.update({"employee": emp_filter, "matched": matched, "duplicates": duplicates})
+        return result
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Publish Salary Staging Error")
