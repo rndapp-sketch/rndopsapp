@@ -1000,6 +1000,55 @@ def _module_registry_doctypes(page_name):
 	)
 
 
+def _scope_recruitment_group(groups):
+	"""
+	Recruitment Adhoc Contractual has no permission-query restriction for
+	head/staff roles, so the registry must scope it itself: keep only records
+	the current user owns, is the named `head` of (HEAD_FIELD_MAP), or whose
+	`upfa_department` they head (same Link-ID-or-name matching as
+	get_pending_task). System Manager sees all.
+	"""
+	dt = "Recruitment Adhoc Contractual"
+	user = frappe.session.user
+	if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+		return groups
+
+	depts = frappe.db.sql(
+		"SELECT name, dept_name FROM `tabDepartment_prornd` WHERE dept_head = %s", user, as_dict=True
+	)
+	dept_values = {d.name for d in depts} | {(d.dept_name or "").strip().lower() for d in depts if d.dept_name}
+
+	out = []
+	for g in groups:
+		if g.get("doctype") != dt:
+			out.append(g)
+			continue
+		names = [r["name"] for r in g.get("records") or [] if r.get("name")]
+		if not names:
+			continue
+		rows = frappe.get_all(
+			dt,
+			filters={"name": ["in", names]},
+			fields=["name", "owner", HEAD_FIELD_MAP[dt], "upfa_department"],
+			ignore_permissions=True,
+		)
+		allowed_names = set()
+		for row in rows:
+			head = (row.get(HEAD_FIELD_MAP[dt]) or "").strip().lower()
+			dept = (row.get("upfa_department") or "").strip()
+			if (
+				row.owner == user
+				or head == user.lower()
+				or dept in dept_values
+				or dept.lower() in dept_values
+			):
+				allowed_names.add(row.name)
+		records = [r for r in g["records"] if r.get("name") in allowed_names]
+		if records:
+			out.append({**g, "records": records, "count": len(records)})
+	return out
+
+
 @frappe.whitelist()
 def get_categorized_task_registry(debug=0, page_name="pending-task"):
 	"""
@@ -1019,8 +1068,76 @@ def get_categorized_task_registry(debug=0, page_name="pending-task"):
 
 	allowed = _module_registry_doctypes(page_name)
 	scoped_results = [g for g in (base.get("results") or []) if g.get("doctype") in allowed]
+	scoped_results = _scope_recruitment_group(scoped_results)
+
+	# A department head's registry covers every Project Registration under a
+	# department they head — applicant OR implementation department — not only the
+	# ones they personally acted on (same scope as get_head_dashboard_data).
+	if "Project Registration" in allowed:
+		head_dept_ids = frappe.get_all(
+			"Department_prornd", filters={"dept_head": frappe.session.user}, pluck="name"
+		)
+		if head_dept_ids:
+			dept_prs = frappe.get_all(
+				"Project Registration",
+				or_filters=[
+					["implementation_department", "in", head_dept_ids],
+					["applicant_department", "in", head_dept_ids],
+				],
+				filters={"docstatus": 1},
+				fields=["name", "project_title", "workflow_state", "creation", "modified", "owner", "docstatus"],
+				order_by="modified desc",
+				limit_page_length=0,
+				ignore_permissions=True,
+			)
+			pr_group = next((g for g in scoped_results if g.get("doctype") == "Project Registration"), None)
+			if pr_group is None:
+				pr_group = {"doctype": "Project Registration", "count": 0, "records": []}
+				scoped_results.append(pr_group)
+			have = {r["name"] for r in pr_group["records"]}
+			for d in dept_prs:
+				if d.name not in have:
+					pr_group["records"].append({
+						"name": d.name,
+						"title": d.project_title or d.name,
+						"status": d.workflow_state,
+						"creation": d.creation,
+						"modified": d.modified,
+						"owner": d.owner,
+						"docstatus": d.docstatus,
+					})
+
+	# Same project definition as get_head_dashboard_data / the Director Dashboard:
+	# unsubmitted (docstatus 0), "Draft" and "Needs Correction*" Project
+	# Registrations aren't counted as projects, so they don't appear here either.
+	for g in scoped_results:
+		if g.get("doctype") == "Project Registration":
+			g["records"] = [
+				r for r in g.get("records") or []
+				if r.get("docstatus") == 1
+				and (r.get("status") or "") != "Draft"
+				and not (r.get("status") or "").startswith("Needs Correction")
+			]
+			g["count"] = len(g["records"])
+	scoped_results = [g for g in scoped_results if g.get("records")]
 
 	grouped = _categorize_task_results(scoped_results)
+
+	# Add the dashboard's sanction-based project_status (submitted / ongoing /
+	# completed) next to the workflow `status`, so both screens can show the
+	# same figure. Fund Sanction (docstatus 1) alone decides; see dashboard.py.
+	pr_rows = [r for b in ("research", "consultancy", "others") for r in grouped[b] if r["doctype"] == "Project Registration"]
+	if pr_rows:
+		names = [r["name"] for r in pr_rows]
+		sanctioned = set(frappe.get_all(
+			"Fund Sanction",
+			filters={"docstatus": 1, "project_proposal": ["in", names]},
+			pluck="project_proposal",
+			ignore_permissions=True,
+		))
+		for r in pr_rows:
+			r["project_status"] = "ongoing" if r["name"] in sanctioned else "submitted"
+
 	grouped["success"] = True
 	return grouped
 
