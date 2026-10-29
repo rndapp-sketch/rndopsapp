@@ -91,12 +91,13 @@ class ProjectStaffDetails(Document):
 	def get_date_of_last_extension(self):
 		"""
 		Calculates the Date of Last Extension based on the child table `table_ymed` (tenure details).
-		Gets the pstd_joining_date from the newest/latest row.
+		Gets the pstd_joining_date from the newest/latest row. Blank when only the
+		initial term exists (first extension — there is no previous extension).
 		"""
 		tenures = self.get("table_ymed") or []
 		valid_tenures = [t for t in tenures if t.pstd_joining_date]
 
-		if not valid_tenures:
+		if len(valid_tenures) < 2:
 			return None
 
 		from frappe.utils import getdate
@@ -1802,6 +1803,10 @@ def get_my_basic_details():
 
 		jd = getdate(j_date)
 		cd = getdate(today())
+		# Count only up to the term completion date once the term has ended.
+		term_end = res.get("ex_date_of_expiry") or res.get("ps_term_completion_date")
+		if term_end and getdate(term_end) < cd:
+			cd = getdate(term_end)
 		if cd >= jd:
 			days_diff = (cd - jd).days + 1
 			months = int(days_diff / 30.437)

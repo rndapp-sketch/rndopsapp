@@ -303,7 +303,7 @@ def apply_pending_project_staff_extensions():
 	pending = frappe.get_all(
 		"Project Staff Extension",
 		filters={
-			"workflow_state": "Approved",
+			"workflow_state": ["in", ["Approved", "Completed"]],
 			"tenure_row_created": 0,
 			"ex_date_of_expiry": ["<=", today()],
 			"ex_final_new_joining_date": ["is", "set"],
@@ -411,6 +411,352 @@ def preview_new_tenure(ex_emp_id, period, increment=None):
 	return compute_new_tenure(ex_emp_id, period, increment)
 
 
+def _get_applicant_staff_details(ext_doc):
+	ps_details_name = frappe.db.get_value("Project Staff Details", {"ps_emp_id": ext_doc.ex_emp_id}, "name")
+	if not ps_details_name:
+		frappe.throw(_("Project Staff Details not found for Employee ID {0}").format(ext_doc.ex_emp_id))
+	return frappe.get_doc("Project Staff Details", ps_details_name)
+
+
+def _serialize_tenures(parent_doc):
+	from frappe.utils import getdate
+
+	tenures = [t for t in (parent_doc.get("table_ymed") or []) if t.pstd_joining_date]
+	tenures.sort(key=lambda t: getdate(t.pstd_joining_date))
+	return [
+		{
+			"name": t.name,
+			"joining_date": str(t.pstd_joining_date) if t.pstd_joining_date else None,
+			"term_completion_date": str(t.pstd_term_completion_date) if t.pstd_term_completion_date else None,
+			"basic_salary": t.pstd_basic_salary,
+		}
+		for t in tenures
+	]
+
+
+def _can_act_on_staff_stage(ext_doc):
+	"""True when the session user may act on this extension at 'Pending Staff
+	Approval' — the same role rule the workflow transitions use."""
+	if (ext_doc.workflow_state or "Draft") != "Pending Staff Approval":
+		return False
+	return _has_staff_stage_role()
+
+
+def _has_staff_stage_role():
+	"""True when the session user holds a role allowed on the 'Pending Staff
+	Approval' workflow transitions (i.e. R&D Staff), or is a System Manager."""
+	user_roles = frappe.get_roles(frappe.session.user)
+	if "System Manager" in user_roles:
+		return True
+	workflow_name = frappe.db.get_value(
+		"Workflow", {"document_type": "Project Staff Extension", "is_active": 1}, "name"
+	)
+	if not workflow_name:
+		return False
+	for t in frappe.get_doc("Workflow", workflow_name).transitions:
+		if t.state != "Pending Staff Approval":
+			continue
+		allowed_roles = t.get("allowed") or []
+		if isinstance(allowed_roles, str):
+			allowed_roles = [allowed_roles]
+		if any(role in user_roles for role in allowed_roles):
+			return True
+	return False
+
+
+@frappe.whitelist()
+def get_applicant_tenures(docname):
+	"""Tenure history (table_ymed of the applicant's Project Staff Details) for an
+	extension document, oldest first. Reviewers need this because their own
+	get_my_basic_details describes themselves, not the applicant."""
+	ext_doc = frappe.get_doc("Project Staff Extension", docname)
+	can_edit = _can_act_on_staff_stage(ext_doc)
+	if ext_doc.owner != frappe.session.user and not can_edit and not ext_doc.has_permission("read"):
+		frappe.throw(_("Not permitted to view this tenure history."), frappe.PermissionError)
+	return {
+		"tenures": _serialize_tenures(_get_applicant_staff_details(ext_doc)),
+		"can_edit": can_edit,
+	}
+
+
+@frappe.whitelist()
+def update_applicant_tenures(docname, tenures):
+	"""Staff-only correction of the joining / completion dates of existing tenure
+	rows. Allowed only while the extension is at 'Pending Staff Approval' and the
+	user may act on that stage; rows are matched by child row name."""
+	from frappe.utils import getdate
+
+	ext_doc = frappe.get_doc("Project Staff Extension", docname)
+	if not _can_act_on_staff_stage(ext_doc):
+		frappe.throw(
+			_("Tenure details can only be edited by R&D Staff at the Staff Approval stage."),
+			frappe.PermissionError,
+		)
+
+	if isinstance(tenures, str):
+		tenures = json.loads(tenures)
+	updates = [row for row in (tenures or []) if row.get("name")]
+
+	parent_doc = _get_applicant_staff_details(ext_doc)
+	rows_by_name = {t.name: t for t in (parent_doc.get("table_ymed") or [])}
+	changed_names = set()
+
+	for idx, upd in enumerate(updates, start=1):
+		row = rows_by_name.get(upd["name"])
+		if not row:
+			frappe.throw(_("Tenure row {0} not found.").format(idx))
+		joining = upd.get("joining_date")
+		completion = upd.get("term_completion_date")
+		if not joining or not completion:
+			frappe.throw(_("Term {0}: both Date of Joining and Term Completion Date are required.").format(idx))
+		if getdate(completion) < getdate(joining):
+			frappe.throw(_("Term {0}: Term Completion Date cannot be before Date of Joining.").format(idx))
+		if getdate(joining) != getdate(row.pstd_joining_date) or (
+			not row.pstd_term_completion_date or getdate(completion) != getdate(row.pstd_term_completion_date)
+		):
+			changed_names.add(row.name)
+		row.pstd_joining_date = joining
+		row.pstd_term_completion_date = completion
+
+	# Terms must not overlap once sorted by joining date.
+	dated = sorted(
+		(t for t in rows_by_name.values() if t.pstd_joining_date and t.pstd_term_completion_date),
+		key=lambda t: getdate(t.pstd_joining_date),
+	)
+	for prev, nxt in zip(dated, dated[1:]):
+		if getdate(nxt.pstd_joining_date) <= getdate(prev.pstd_term_completion_date):
+			frappe.throw(
+				_("Tenure terms overlap: a term starting {0} begins on or before the previous term ends ({1}).").format(
+					nxt.pstd_joining_date, prev.pstd_term_completion_date
+				)
+			)
+
+	if not changed_names:
+		return {"tenures": _serialize_tenures(parent_doc), "can_edit": True}
+
+	# The parent's top-level joining / term-completion dates mirror the LATEST
+	# tenure (auto_create_tenure_record keeps them in sync on approval, and the
+	# Salary Module reads them directly) — so sync them only when the edited row
+	# is the latest term. Edits to earlier terms touch only their own row.
+	latest_changed = bool(dated) and dated[-1].name in changed_names
+	if latest_changed:
+		parent_doc.ps_joining_date = dated[-1].pstd_joining_date
+		parent_doc.ps_term_completion_date = dated[-1].pstd_term_completion_date
+
+	parent_doc.flags.ignore_permissions = True
+	parent_doc.save()
+	# The extension's own current-term dates follow the latest term too.
+	if latest_changed:
+		ext_doc.db_set(
+			{
+				"ex_doj": dated[-1].pstd_joining_date,
+				"ex_date_of_expiry": dated[-1].pstd_term_completion_date,
+			},
+			update_modified=False,
+		)
+	ext_doc.add_comment("Info", sanitize_html(_("Tenure details corrected by {0}.").format(frappe.session.user)))
+	frappe.db.commit()
+	return {
+		"tenures": _serialize_tenures(parent_doc),
+		"can_edit": True,
+		"ex_doj": str(ext_doc.ex_doj or ""),
+		"ex_date_of_expiry": str(ext_doc.ex_date_of_expiry or ""),
+	}
+
+
+# ── Extension / Re-engagement office order ────────────────────────────────────
+# Issued by R&D Staff from the Task Registry once an extension is Approved. The
+# staff edits the generated order and prints it; the edited copy and who printed
+# it (and when) are recorded on the extension.
+ORDER_TYPE_EXTENSION = "Extension"
+ORDER_TYPE_REENGAGEMENT = "Re-engagement"
+# Workflow: Approved --(Print Ext.Order, staff, RnD)--> Completed. The transition is
+# applied by save_extension_order on the first print, never from the Actions menu.
+STATE_APPROVED = "Approved"
+STATE_COMPLETED = "Completed"
+ORDER_PRINT_STATES = (STATE_APPROVED, STATE_COMPLETED)
+
+
+def _get_order_doc(docname):
+	ext_doc = frappe.get_doc("Project Staff Extension", docname)
+	if not _has_staff_stage_role():
+		frappe.throw(_("Only R&D Staff can issue extension orders."), frappe.PermissionError)
+	if (ext_doc.workflow_state or "") not in ORDER_PRINT_STATES:
+		frappe.throw(_("An order can be issued only after the extension is Approved."))
+	return ext_doc
+
+
+def _order_print_action():
+	"""Name of the Approved -> Completed transition in the active workflow."""
+	workflow_name = frappe.db.get_value(
+		"Workflow", {"document_type": "Project Staff Extension", "is_active": 1}, "name"
+	)
+	if not workflow_name:
+		return None
+	return frappe.db.get_value(
+		"Workflow Transition",
+		{"parent": workflow_name, "state": STATE_APPROVED, "next_state": STATE_COMPLETED},
+		"action",
+	)
+
+
+def _extension_order_context(ext_doc):
+	"""Everything the order letter needs. Re-engagement when the months completed
+	BEFORE this new term is a multiple of 11 (same rule as the legacy checkGap and
+	compute_new_tenure's 3-working-day gap); otherwise an extension."""
+	from frappe.utils import getdate
+
+	psd = _get_applicant_staff_details(ext_doc)
+	new_joining = ext_doc.ex_final_new_joining_date or ext_doc.ex_computed_new_joining_date
+	new_completion = ext_doc.ex_final_new_completion_date or ext_doc.ex_computed_new_completion_date
+
+	# Terms before this extension's new term — the new term's own row may or may
+	# not exist yet (it is appended on approval / by the scheduler).
+	prior = sorted(
+		(
+			t for t in (psd.get("table_ymed") or [])
+			if t.pstd_joining_date and t.pstd_term_completion_date
+			and (not new_joining or getdate(t.pstd_joining_date) < getdate(new_joining))
+		),
+		key=lambda t: getdate(t.pstd_joining_date),
+	)
+	total_months = sum(
+		round(((getdate(t.pstd_term_completion_date) - getdate(t.pstd_joining_date)).days + 1) / 30.437)
+		for t in prior
+	)
+	is_reengagement = total_months > 0 and total_months % 11 == 0
+
+	increment = _safe_float(ext_doc.increment_by_staff or ext_doc.increment_by_pi)
+	new_row = next(
+		(
+			t for t in (psd.get("table_ymed") or [])
+			if new_joining and t.pstd_joining_date and getdate(t.pstd_joining_date) == getdate(new_joining)
+		),
+		None,
+	)
+	if new_row and new_row.pstd_basic_salary:
+		new_basic = _safe_float(new_row.pstd_basic_salary)
+	else:
+		prev_basic = _safe_float((prior[-1].pstd_basic_salary if prior else None) or psd.ps_basic_salary)
+		new_basic = prev_basic + increment
+
+	project_no = ext_doc.ex_proj_no or psd.project_no
+	pr = (
+		frappe.db.get_value(
+			"Project Registration", {"project_no": project_no},
+			["project_title", "principal_investigator_name", "pi_userid", "pi_webmail"], as_dict=True,
+		)
+		if project_no else None
+	) or {}
+	pi_user = pr.get("pi_userid") or pr.get("pi_webmail")
+	pi_name = (
+		pr.get("principal_investigator_name")
+		or (frappe.db.get_value("User", pi_user, "full_name") if pi_user else None)
+		or pi_user
+		or ""
+	)
+	department = (
+		frappe.db.get_value("Department_prornd", psd.ps_department, "dept_name") if psd.ps_department else None
+	) or ext_doc.department or psd.ps_department or ""
+
+	def _num(v):
+		return int(v) if float(v).is_integer() else round(v, 2)
+
+	order_no = ext_doc.get("ex_order_no") or ""
+
+	return {
+		"order_type": ORDER_TYPE_REENGAGEMENT if is_reengagement else ORDER_TYPE_EXTENSION,
+		"total_months_completed": total_months,
+		"order_no": order_no,
+		# Prefix only — ex_order_no already holds the full "<project no>/<number>".
+		"ref": f"{project_no or ''}/",
+		"staff_name": ext_doc.ex_name or " ".join(
+			p for p in (psd.ps_first_name, psd.ps_middle_name, psd.ps_last_name) if p
+		),
+		"emp_id": ext_doc.ex_emp_id,
+		"gender": psd.ps_gender or "",
+		"designation": ext_doc.ex_designation or psd.ps_designation or "",
+		"project_no": project_no or "",
+		"project_title": pr.get("project_title") or ext_doc.ex_proj_name or "",
+		"pi_name": pi_name,
+		"department": department,
+		"from_date": str(new_joining) if new_joining else "",
+		"to_date": str(new_completion) if new_completion else "",
+		"basic": _num(new_basic),
+		"increment": _num(increment),
+		"hra": psd.ps_hra or "",
+		"medical": psd.ps_ma or "",
+	}
+
+
+@frappe.whitelist()
+def get_extension_order(docname):
+	"""Data for the order editor: the generated context, plus the staff's last
+	saved (edited) copy of the order if any."""
+	ext_doc = _get_order_doc(docname)
+	return {
+		"context": _extension_order_context(ext_doc),
+		"order_html": ext_doc.get("ex_order_html") or "",
+		"order_no": ext_doc.get("ex_order_no") or "",
+		"order_printed": bool(ext_doc.get("ex_order_printed")),
+		"workflow_state": ext_doc.workflow_state,
+	}
+
+
+@frappe.whitelist()
+def save_extension_order(docname, order_html, order_type=None, mark_printed=0, order_no=None):
+	"""Store the staff-edited order and its order number. With mark_printed=1 it
+	is also recorded as printed (by whom and when); an order number is required
+	for that and must be unique across extensions. The first print of an Approved
+	extension moves it to Completed (the workflow's Print Ext.Order step)."""
+	from frappe.utils import cint, now_datetime
+
+	ext_doc = _get_order_doc(docname)
+	values = {"ex_order_html": sanitize_html(order_html or "")}
+	if order_type in (ORDER_TYPE_EXTENSION, ORDER_TYPE_REENGAGEMENT):
+		values["ex_order_type"] = order_type
+
+	if order_no is not None:
+		order_no = order_no.strip()
+		if order_no and frappe.db.exists(
+			"Project Staff Extension", {"ex_order_no": order_no, "name": ("!=", ext_doc.name)}
+		):
+			frappe.throw(_("Order Number {0} is already used by another extension.").format(order_no))
+		values["ex_order_no"] = order_no
+	if cint(mark_printed) and not values.get("ex_order_no", ext_doc.get("ex_order_no")):
+		frappe.throw(_("Enter the Extension Order Number before printing the order."))
+	completing = cint(mark_printed) and ext_doc.workflow_state == STATE_APPROVED
+	if cint(mark_printed):
+		values.update({
+			"ex_order_printed": 1,
+			"ex_order_printed_on": now_datetime(),
+			"ex_order_printed_by": frappe.session.user,
+		})
+	if completing:
+		# Already submitted (Approved and Completed are both doc_status 1), so only
+		# the state changes.
+		values["workflow_state"] = STATE_COMPLETED
+	ext_doc.db_set(values)
+	if completing:
+		ext_doc.add_comment(
+			"Workflow",
+			sanitize_html(f"[{_order_print_action() or 'Print Ext.Order'}] {_('Extension order printed.')}"),
+		)
+	if cint(mark_printed):
+		ext_doc.add_comment(
+			"Info", sanitize_html(_("{0} order printed by {1}.").format(
+				values.get("ex_order_type") or ext_doc.get("ex_order_type") or ORDER_TYPE_EXTENSION,
+				frappe.session.user,
+			))
+		)
+	frappe.db.commit()
+	return {
+		"status": "success",
+		"order_printed": bool(cint(mark_printed)),
+		"workflow_state": ext_doc.workflow_state,
+	}
+
+
 @frappe.whitelist()
 def get_project_staff_extension_fields(doc_name=None):
 	"""
@@ -458,7 +804,15 @@ def get_project_staff_extension_fields(doc_name=None):
 			field["read_only_depends_on"] = "eval:doc.workflow_state != 'Pending Staff Approval' || !doc._isRnDStaff"
 			field["read_only_depends_on_eval"] = "doc.workflow_state != 'Pending Staff Approval' || !doc._isRnDStaff"
 
-		# 5. Conditional field: ex_no_of_days_worked
+		# 5. Order number: set by R&D Staff when issuing the order (save_extension_order)
+		elif fn == "ex_order_no":
+			field["depends_on"] = "eval:['Approved', 'Completed'].includes(doc.workflow_state)"
+			field["depends_on_eval"] = "['Approved', 'Completed'].includes(doc.workflow_state)"
+			field["read_only"] = True
+			field["read_only_depends_on"] = None
+			field["read_only_depends_on_eval"] = None
+
+		# 6. Conditional field: ex_no_of_days_worked
 		if fn == "ex_no_of_days_worked":
 			field["depends_on"] = "eval:!doc.ex_no_of_mon_worked || doc.ex_no_of_mon_worked == '0' || parseInt(doc.ex_no_of_mon_worked) < 1"
 			field["depends_on_eval"] = "!doc.ex_no_of_mon_worked || doc.ex_no_of_mon_worked == '0' || parseInt(doc.ex_no_of_mon_worked) < 1"
@@ -655,6 +1009,9 @@ def get_project_staff_extension_workflow_actions(docname):
 		for transition in workflow.get("transitions", []):
 			if transition.state != current_state:
 				continue
+			# Approved -> Completed is applied by printing the extension order.
+			if current_state == STATE_APPROVED:
+				continue
 			allowed_roles = transition.get("allowed") or []
 			if isinstance(allowed_roles, str):
 				allowed_roles = [allowed_roles]
@@ -686,6 +1043,8 @@ def perform_project_staff_extension_action(docname, action, comment=""):
 		doc.flags.ignore_permissions = True
 		current_state = doc.workflow_state or "Draft"
 		user_roles = frappe.get_roles(frappe.session.user)
+		if current_state == STATE_APPROVED:
+			frappe.throw(_("Generate and print the extension order to complete this extension."))
 
 		workflow_name = frappe.db.get_value(
 			"Workflow",
@@ -720,10 +1079,9 @@ def perform_project_staff_extension_action(docname, action, comment=""):
 				# the workflow keeps the doc at doc_status 0 past Draft.
 				doc.validate_applicant_eligibility()
 			else:
+				# The PI's suggested period is not capped; only the staff-allowed one is.
 				total_months, _term = doc.get_service_context()
-				if current_state == "Pending PI Approval":
-					doc.validate_period_cap(doc.ex_period_pi, total_months, _("suggested by PI"))
-				elif current_state == "Pending Staff Approval":
+				if current_state == "Pending Staff Approval":
 					doc.validate_period_cap(doc.ex_period_staff, total_months, _("allowed by Staff"))
 
 		# Record comment
