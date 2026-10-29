@@ -350,6 +350,11 @@ def get_pending_task(page_name="pending-task"):
 			# get_pending_application, so they are not repeated here.
 			actionable_states -= {"Approved", "Rejected"} | set(_CANCEL_PERSON_STAGE_FIELDS)
 
+		if dt == "Project Staff Extension":
+			# Approved awaits R&D Staff's extension order (Print Ext.Order); Completed
+			# is staff-editable in the workflow but awaits nobody.
+			actionable_states.discard("Completed")
+
 		# Ado_RnD: restrict strictly to Associate-Dean pending states so the
 		# inbox doesn't pick up transitions that merely share the role.
 		if "Ado_RnD" in user_roles and not is_system_manager:
