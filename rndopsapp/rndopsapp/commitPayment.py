@@ -3,7 +3,7 @@ import requests
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from frappe.utils import today, flt, getdate, get_first_day, get_last_day
+from frappe.utils import today, flt, getdate, get_first_day, get_last_day, add_months, cint
 from datetime import datetime, timedelta
 from rndopsapp.rndopsapp.transaction_dto import AccountHeadCommitDTO, AccountHeadPaymentDTO
 from rndopsapp.rndopsapp.kafka_sync import publish_message, KAFKA_AVAILABLE
@@ -345,14 +345,33 @@ def _get_salary_gap_for_month(staff_doc, yyyy_month):
     }
 
 
-def _compute_total_months_and_gaps(staff_doc):
+def _elapsed_months_and_days(start, end):
+    """Whole calendar months between start and end (both inclusive, rounded down) and
+    the leftover days: 24 Jul -> 28 Oct is 3 months and 5 days."""
+    limit = end + timedelta(days=1)
+    months = max((end.year - start.year) * 12 + (end.month - start.month) + 1, 0)
+    while months > 0 and getdate(add_months(start, months)) > limit:
+        months -= 1
+    return months, (limit - getdate(add_months(start, months))).days
+
+
+def _compute_total_months_and_gaps(staff_doc, as_of=None):
     """
-    Career totals (not scoped to any one payroll month): cumulative months
-    worked across every Project Staff Tenure Details row, and the total
-    calendar-day gap(s) between consecutive tenures. Mirrors the
-    total_months_worked math in project_staff_extension.compute_new_tenure so
-    the Salary Module's "months worked" agrees with the Extension form's.
+    Career totals (not scoped to any one payroll month): months actually worked
+    across every Project Staff Tenure Details row, and the calendar-day gap(s)
+    between consecutive tenures.
+
+    Only elapsed time counts: each tenure runs from its joining date to
+    min(term completion date, as_of); a tenure that has not started yet is
+    ignored. Months are whole calendar months rounded down; the leftover days of
+    every tenure are added together and converted at 30.437 days a month so that
+    many short extension rows do not each lose a part month.
+
+    Unlike project_staff_extension.compute_new_tenure (which deliberately counts
+    the full planned term, for the extension caps), this is "months worked so
+    far" for the Salary Module's reappointment check.
     """
+    as_of = getdate(as_of or today())
     tenures = [
         t for t in (staff_doc.get("table_ymed") or [])
         if t.get("pstd_joining_date") and t.get("pstd_term_completion_date")
@@ -363,15 +382,24 @@ def _compute_total_months_and_gaps(staff_doc):
     tenures = sorted(tenures, key=lambda t: getdate(t.get("pstd_joining_date")))
 
     total_months = 0
+    leftover_days = 0
     for t in tenures:
-        d1 = getdate(t.get("pstd_joining_date"))
-        d2 = getdate(t.get("pstd_term_completion_date"))
-        days = (d2 - d1).days + 1
-        total_months += round(days / 30.437)
+        start = getdate(t.get("pstd_joining_date"))
+        if start > as_of:
+            continue  # term has not begun yet
+        end = min(getdate(t.get("pstd_term_completion_date")), as_of)
+        if end < start:
+            continue
+        months, days = _elapsed_months_and_days(start, end)
+        total_months += months
+        leftover_days += days
+    total_months += int(leftover_days / 30.437)
 
     gap_days = 0
     gap_ranges = []
     for prev, nxt in zip(tenures, tenures[1:]):
+        if getdate(nxt.get("pstd_joining_date")) > as_of:
+            continue  # the next term has not started, so there is no elapsed gap yet
         gap_start = getdate(prev.get("pstd_term_completion_date")) + timedelta(days=1)
         gap_end = getdate(nxt.get("pstd_joining_date")) - timedelta(days=1)
         if gap_end < gap_start:
@@ -478,6 +506,184 @@ def get_resigned_or_resigning_staff(yyyy_month=None):
     list; the rest keep `last_working_date` for pro-rata day capping.
     """
     return _get_resignation_map(yyyy_month)
+
+
+_SALARY_HISTORY_ROLES = {"System Manager", "staff, RnD"}
+_SALARY_SELF_ROLE = "project staff"
+
+
+def _parse_staged_blob(value):
+    """salary_user_details / salary_backend_details are stored as JSON or as a Python-repr dict string."""
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        try:
+            import ast
+            parsed = ast.literal_eval(value)
+        except Exception:
+            return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _is_real_email(value):
+    """Placeholders such as 'NA', '-' or blank are common in staff/salary email fields and must never act as a match key."""
+    value = (value or "").strip()
+    return "@" in value and "." in value.split("@")[-1]
+
+
+def _resolve_salary_search(search):
+    """
+    Turn a username (User email), employee id, email or name into
+    ({ps_emp_id...}, {email...}, [Project Staff Details names]).
+    """
+    search = (search or "").strip()
+    emp_ids, emails, staff_names = set(), set(), set()
+    if not search:
+        return emp_ids, emails, staff_names
+
+    emp_ids.add(search)
+    user = frappe.db.get_value("User", search, ["name", "employee_id", "email"], as_dict=True) or \
+        frappe.db.get_value("User", {"email": search}, ["name", "employee_id", "email"], as_dict=True)
+    if user:
+        emails.update({(user.name or "").lower(), (user.email or "").lower()})
+        if user.employee_id:
+            emp_ids.add(user.employee_id.strip())
+
+    like = f"%{search}%"
+    for r in frappe.db.sql(
+        """select name, ps_emp_id, ps_email_id, erp_mail from `tabProject Staff Details`
+           where ps_emp_id = %(s)s or ps_email_id = %(s)s or erp_mail = %(s)s
+              or concat_ws(' ', ps_first_name, ps_middle_name, ps_last_name) like %(like)s
+              or ps_emp_id in %(ids)s or ps_email_id in %(mails)s or erp_mail in %(mails)s""",
+        {"s": search, "like": like, "ids": tuple(emp_ids) or ("",), "mails": tuple(emails) or ("",)},
+        as_dict=True,
+    ):
+        staff_names.add(r.name)
+        if r.ps_emp_id:
+            emp_ids.add(r.ps_emp_id.strip())
+        emails.update({e.strip().lower() for e in (r.ps_email_id, r.erp_mail) if _is_real_email(e)})
+    emails = {e for e in emails if _is_real_email(e)}
+    return emp_ids, emails, staff_names
+
+
+@frappe.whitelist()
+def get_salary_history(search=None):
+    """
+    Every salary record staged so far for one person.
+
+    `search` may be a username (User email), employee id (ps_emp_id), email or
+    name. Returns the person's Salary Staging records month by month plus their
+    Project Staff Details (with the tenure table).
+    """
+    roles = set(frappe.get_roles())
+    self_only = False
+    if not (_SALARY_HISTORY_ROLES & roles):
+        if _SALARY_SELF_ROLE not in roles:
+            frappe.throw("Not permitted", frappe.PermissionError)
+        # Project staff may only read their own salary history: the identity comes
+        # from the logged-in user, never from `search`.
+        self_only = True
+        own_emp_id = (frappe.db.get_value("User", frappe.session.user, "employee_id") or "").strip()
+        if not own_emp_id:
+            frappe.throw("Your user has no Employee ID, so your salary history cannot be located.", frappe.PermissionError)
+        allowed = {own_emp_id.lower(), frappe.session.user.lower()}
+        if (search or "").strip() and search.strip().lower() not in allowed:
+            frappe.throw("You can only view your own salary history.", frappe.PermissionError)
+        search = own_emp_id
+
+    if not (search or "").strip():
+        return {"status": "error", "message": "search (username or employee id) is required"}
+
+    if self_only:
+        # Exact employee id only — no email/name matching that could pull in someone else's records.
+        emp_ids = {search}
+        emails = set()
+        staff_names = set(frappe.get_all("Project Staff Details", filters={"ps_emp_id": search}, pluck="name"))
+    else:
+        emp_ids, emails, staff_names = _resolve_salary_search(search)
+    name_needle = search.strip().lower()
+
+    months = []
+    for row in frappe.get_all("Salary Staging", fields=["name", "salary_record"], limit_page_length=0):
+        try:
+            records = json.loads(row.salary_record) if row.salary_record else []
+        except Exception:
+            continue
+        if isinstance(records, dict):
+            records = [records]
+
+        matched = []
+        for rec in records:
+            if not isinstance(rec, dict):
+                continue
+            backend = _parse_staged_blob(rec.get("salary_backend_details"))
+            user = _parse_staged_blob(rec.get("salary_user_details"))
+            rec_emp = str(backend.get("ps_emp_id") or user.get("employee_id") or "").strip()
+            rec_email = str(user.get("email_id") or "").strip().lower()
+            if rec_emp in emp_ids:
+                matched_by = "employee_id"
+            elif not self_only and _is_real_email(rec_email) and rec_email in emails:
+                matched_by = "email"
+            elif not self_only and not emp_ids - {search.strip()} and name_needle in str(user.get("first_name") or "").lower():
+                matched_by = "name"
+            else:
+                continue
+            matched.append({
+                **rec,
+                "salary_backend_details": backend,
+                "salary_user_details": user,
+                "matched_by": matched_by,
+                "staged_employee_id": rec_emp,
+                # True when the record was staged under an employee id other than the ones searched.
+                "staged_under_different_employee": rec_emp not in emp_ids,
+            })
+        if matched:
+            months.append({
+                "salary_year_month": row.name,
+                "records": matched,
+                "month_total": sum(flt(r.get("payment_amount") or r.get("commitAmount")) for r in matched),
+            })
+
+    def _month_key(m):
+        try:
+            return _get_month_range(m["salary_year_month"])[0]
+        except Exception:
+            return getdate("1900-01-01")
+
+    months.sort(key=_month_key)
+
+    staff = []
+    for name in sorted(staff_names):
+        staff.append(frappe.get_doc("Project Staff Details", name).as_dict())
+
+    # Extension requests, matched on the employee ids of the staff records found
+    # (plus whatever was searched), oldest first.
+    ext_ids = {e for e in emp_ids} | {d.get("ps_emp_id") for d in staff if d.get("ps_emp_id")}
+    extension_history = [
+        frappe.get_doc("Project Staff Extension", n).as_dict()
+        for n in frappe.get_all(
+            "Project Staff Extension",
+            filters={"ex_emp_id": ["in", list(ext_ids) or [""]]},
+            order_by="creation asc",
+            pluck="name",
+        )
+    ]
+
+    return {
+        "status": "success",
+        "search": search,
+        "matched_employee_ids": sorted(emp_ids),
+        "project_staff_details": staff,
+        "extension_history": extension_history,
+        "salary_history": months,
+        "total_months": len(months),
+        "total_records": sum(len(m["records"]) for m in months),
+        "total_amount": sum(m["month_total"] for m in months),
+    }
 
 
 @frappe.whitelist(allow_guest=True)
@@ -1556,15 +1762,20 @@ def get_commit_staging_status(reference_name, statuses=None, required_payload_ke
 
 
 @frappe.whitelist()
-def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None, moduleId=None, trigger_state=None):
+def submit_commit_data(doctype, frapAppId, name, project_name, commit_amount, budget_head, bmr=None, bill_amount=None, refDetails=None, commitParticular=None, moduleId=None, trigger_state=None, commit_type=None):
     """
     Submit commit data by staging it in Kafka Commit Staging.
     Published to Kafka when workflow reaches trigger_state (default: 'Approved').
 
     moduleId: optional int override sent to Kafka (e.g. 14 for ICSS PO re-commit)
     trigger_state: workflow state that fires publishing (e.g. 'Pending PO Generation' for ICSS)
+    commit_type: "De-Commit" stores the amount as a negative number (e.g. -30999) whatever sign the
+        caller sent. A Project Staff Resignation only ever releases money, so its rows are always
+        stored negative.
     """
     resolved_trigger_state = trigger_state or "Approved"
+    if str(commit_type or "").strip().lower().replace("_", "-") in ("de-commit", "decommit") or doctype == "Project Staff Resignation":
+        commit_amount = -abs(flt(commit_amount))
     print(f"[COMMIT_STAGING] submit_commit_data called: doctype={doctype} name={name} frapAppId={frapAppId} project_name={project_name} commit_amount={commit_amount} budget_head={budget_head} bmr={bmr} bill_amount={bill_amount} refDetails={refDetails} commitParticular={commitParticular} moduleId={moduleId} trigger_state={resolved_trigger_state}")
     try:
         # Basic validation
@@ -2492,10 +2703,39 @@ def get_account_head_payment_dlq_errors(project_number=None, budget_head=None, r
     return {"status": "success", "data": rows}
 
 
+def _staged_employee_id(record):
+    """ps_emp_id a staged salary record belongs to ("" when it cannot be told)."""
+    backend = _parse_staged_blob(record.get("salary_backend_details"))
+    user = _parse_staged_blob(record.get("salary_user_details"))
+    return str(backend.get("ps_emp_id") or user.get("employee_id") or "").strip()
+
+
+def _existing_salary_payment(project, particular, amount):
+    """Name of an AccountHeadPayment that already carries this salary payment, if any."""
+    if not (project and particular):
+        return None
+    if project and not frappe.db.exists("Project Registration", project):
+        project = frappe.db.get_value("Project Registration", {"project_no": project}, "name") or project
+    return frappe.db.get_value(
+        "AccountHeadPayment",
+        {"project_ref_number": project, "payment_particular": particular, "payment_amount": flt(amount)},
+        "name",
+    )
+
+
 @frappe.whitelist()
-def publish_salary_staging(salary_year_month):
+def publish_salary_staging(salary_year_month, ps_emp_id=None, dry_run=0, force=0):
     """
-    Publish all staged salary records for the given year-month to Kafka.
+    Publish staged salary records for the given year-month to Kafka.
+
+    ps_emp_id: publish only this employee's record(s) of the month. When it is given the
+        call also refuses to re-publish a payment that already exists as an
+        AccountHeadPayment (same project, particulars and amount) — the normal salary
+        page publishes immediately and never marks the staging row, so such rows still
+        look pending. Pass force=1 to publish anyway.
+    dry_run: 1 = only report what would be published (and any duplicates); nothing is
+        created, published or saved.
+    Without ps_emp_id the behaviour is unchanged (whole month, no duplicate check).
 
     Reads the Salary Staging document keyed by salary_year_month, iterates
     every record in the salary_record JSON array, creates an AccountHeadPayment
@@ -2535,10 +2775,41 @@ def publish_salary_staging(salary_year_month):
             return {"status": "error", "message": "salary_record is not valid JSON"}
 
         published = failed = skipped = 0
+        emp_filter = (ps_emp_id or "").strip()
+        dry_run = bool(cint(dry_run))
+        force = bool(cint(force))
+        matched = 0
+        would_publish = []
+        duplicates = []
 
         for idx, record in enumerate(records):
+            if emp_filter:
+                if _staged_employee_id(record) != emp_filter:
+                    continue
+                matched += 1
+
             if record.get("status") == "PUBLISHED":
                 skipped += 1
+                continue
+
+            if emp_filter and not force:
+                dup = _existing_salary_payment(
+                    record.get("project_name") or record.get("projectNumber"),
+                    record.get("payment_particular") or record.get("commitParticular"),
+                    record.get("payment_amount") or record.get("commitAmount"),
+                )
+                if dup:
+                    duplicates.append({"index": idx, "payment_doc": dup,
+                                       "particular": record.get("payment_particular") or record.get("commitParticular")})
+                    continue
+
+            if dry_run:
+                would_publish.append({
+                    "index": idx,
+                    "particular": record.get("payment_particular") or record.get("commitParticular"),
+                    "amount": record.get("payment_amount") or record.get("commitAmount"),
+                    "project": record.get("project_name") or record.get("projectNumber"),
+                })
                 continue
 
             # Pull all fields from the staged record
@@ -2661,6 +2932,17 @@ def publish_salary_staging(salary_year_month):
                     f"**Error:** {str(rec_err)}"
                 )
 
+        if emp_filter and not matched:
+            return {"status": "error", "message": f"No staged record for {emp_filter} in {salary_year_month}"}
+
+        if dry_run:
+            return {
+                "status": "success", "dry_run": True, "employee": emp_filter or None,
+                "matched": matched, "would_publish": would_publish, "duplicates": duplicates,
+                "already_published": skipped,
+                "message": f"dry run: {len(would_publish)} would publish, {len(duplicates)} already exist as AccountHeadPayment, {skipped} already PUBLISHED",
+            }
+
         # Persist updated statuses back to the staging doc
         staging_doc.salary_record = json.dumps(records, default=str)
         staging_doc.save(ignore_permissions=True)
@@ -2668,9 +2950,11 @@ def publish_salary_staging(salary_year_month):
 
         total = len(records)
         summary = f"total={total} published={published} failed={failed} skipped={skipped}"
+        if emp_filter:
+            summary = f"employee={emp_filter} matched={matched} published={published} failed={failed} skipped={skipped} duplicates={len(duplicates)}"
         print(f"[SALARY_PUBLISH] Done: {summary}")
 
-        return {
+        result = {
             "status": "success" if failed == 0 else "partial",
             "published": published,
             "failed": failed,
@@ -2678,6 +2962,9 @@ def publish_salary_staging(salary_year_month):
             "total": total,
             "message": summary,
         }
+        if emp_filter:
+            result.update({"employee": emp_filter, "matched": matched, "duplicates": duplicates})
+        return result
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Publish Salary Staging Error")
