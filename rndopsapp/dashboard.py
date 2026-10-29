@@ -161,28 +161,59 @@ def get_head_dashboard_data(user_email, department):
             pr.prj_start_date,
             pr.prj_end_date,
             pr.creation,
+            pr.funding_agen,
+            IFNULL(NULLIF(fa.funding_agency_name, ''), NULLIF(pr.funding_agen, '')) AS funding_agency_name,
+            pr.project_no,
+            -- Fund Sanction is the single source of truth (same as the Director Dashboard):
+            -- a submitted sanction => 'ongoing' (the UI's "Ongoing (Sanction approved)"),
+            -- none => 'submitted'. End date does not change the status, so
+            -- total = submitted + ongoing always; see `ended` for passed end dates.
             CASE
-                WHEN pr.prj_end_date IS NOT NULL AND pr.prj_end_date < %s THEN 'completed'
-                WHEN (pr.prj_end_date IS NULL OR pr.prj_end_date >= %s)
-                 AND EXISTS (SELECT 1 FROM `tabFund Sanction` fs WHERE fs.project_proposal = pr.name AND fs.docstatus = 1)
+                WHEN EXISTS (SELECT 1 FROM `tabFund Sanction` fs WHERE fs.project_proposal = pr.name AND fs.docstatus = 1)
                  THEN 'ongoing'
                 ELSE 'submitted'
             END AS status
         FROM `tabProject Registration` pr
+        LEFT JOIN `tabfundingagency_` fa ON fa.name = pr.funding_agen
         WHERE pr.docstatus = 1
           AND pr.workflow_state != 'Draft'
           AND pr.workflow_state NOT LIKE 'Needs Correction%%'
-          AND pr.implementation_department = %s
+          AND (pr.implementation_department = %s OR pr.applicant_department = %s)
         ORDER BY pr.creation DESC
-    """, (today, today, department_id), as_dict=True)
+    """, (department_id, department_id), as_dict=True)
 
     submitted_projects = [p for p in all_projects if p.status == 'submitted']
     ongoing_projects  = [p for p in all_projects if p.status == 'ongoing']
     completed_projects = [p for p in all_projects if p.status == 'completed']
     all_project_ids   = [p.project_id for p in all_projects]
 
-    research_count    = sum(1 for p in all_projects if p.get("project_type") == "Research")
-    consultancy_count = sum(1 for p in all_projects if p.get("project_type") == "Consultancy")
+    def _type_bucket(t):
+        return t if t in ("Research", "Consultancy") else "Others"
+
+    for p in all_projects:
+        p["type_bucket"] = _type_bucket(p.get("project_type"))
+
+    research_count    = sum(1 for p in all_projects if p.type_bucket == "Research")
+    consultancy_count = sum(1 for p in all_projects if p.type_bucket == "Consultancy")
+    others_count      = sum(1 for p in all_projects if p.type_bucket == "Others")
+
+    # Per-type x per-status matrix so the frontend never has to recount.
+    # total = submitted + ongoing + completed for every row, by construction.
+    by_type = {}
+    for bucket in ("Research", "Consultancy", "Others"):
+        rows = [p for p in all_projects if p.type_bucket == bucket]
+        by_type[bucket] = {
+            "total": len(rows),
+            "submitted": sum(1 for p in rows if p.status == "submitted"),
+            "ongoing": sum(1 for p in rows if p.status == "ongoing"),
+            "completed": 0,
+        }
+
+    from collections import Counter
+    funding_counts = Counter(p.funding_agency_name or "Missing Funding Agency Name" for p in all_projects)
+    data["funding_source_breakdown"] = [
+        {"name": n, "count": c} for n, c in funding_counts.most_common()
+    ]
 
     total_staff = 0
     if all_project_ids:
@@ -199,8 +230,30 @@ def get_head_dashboard_data(user_email, department):
         "completed_projects": len(completed_projects),
         "research_projects": research_count,
         "consultancy_projects": consultancy_count,
+        "others_projects": others_count,
+        "by_type": by_type,
+        "total_pis": len({p.pi_webmail or p.principal_investigator_name for p in all_projects}),
         "total_staff": total_staff
     }
+
+    # Sanctioned amount per project (sum of submitted Fund Sanctions) — used for the
+    # per-project amount and the ongoing-only fund allocation below.
+    sanctioned_by_project = {}
+    if all_project_ids:
+        ph = ", ".join(["%s"] * len(all_project_ids))
+        for r in frappe.db.sql(f"""
+            SELECT project_proposal, IFNULL(SUM(total_sanctioned_amount), 0) AS amt
+            FROM `tabFund Sanction`
+            WHERE docstatus = 1 AND project_proposal IN ({ph})
+            GROUP BY project_proposal
+        """, tuple(all_project_ids), as_dict=True):
+            sanctioned_by_project[r.project_proposal] = float(r.amt or 0)
+
+    ongoing_allocation = {"total": 0.0, "Research": 0.0, "Consultancy": 0.0, "Others": 0.0}
+    for p in ongoing_projects:
+        amt = sanctioned_by_project.get(p.project_id, 0.0)
+        ongoing_allocation["total"] += amt
+        ongoing_allocation[p.type_bucket] += amt
 
     # 3. PI-wise Project Breakdown
     pi_map = {}
@@ -215,8 +268,16 @@ def get_head_dashboard_data(user_email, department):
         pi_map[key]["projects"].append({
             "project_id": p.project_id,
             "project_title": p.project_title,
-            "project_type": p.project_type,
+            # PDF / DPF / Other all count as "Other" (same as the task registry's
+            # Others bucket); the DB value is kept in project_type_raw.
+            "project_type": p.project_type if p.type_bucket != "Others" else "Other",
+            "project_type_raw": p.project_type,
+            "type_bucket": p.type_bucket,
+            "project_no": p.project_no,
+            "funding_agency": p.funding_agency_name,
+            "sanctioned_amount": sanctioned_by_project.get(p.project_id, 0.0),
             "status": p.status,
+            "ended": bool(p.prj_end_date and p.prj_end_date < frappe.utils.getdate(today)),
             "prj_start_date": str(p.prj_start_date) if p.prj_start_date else None,
             "prj_end_date": str(p.prj_end_date) if p.prj_end_date else None,
             "creation": str(p.creation) if p.creation else None
@@ -253,6 +314,21 @@ def get_head_dashboard_data(user_email, department):
             data["fund_analytics"] = {}
     else:
         data["fund_analytics"] = {}
+    # "Utilized" on the dashboard = Fund Received (Approved / Fund Received states)
+    # against this department's sanctioned (ongoing) projects.
+    ongoing_ids = [p.project_id for p in ongoing_projects]
+    ongoing_received = 0.0
+    if ongoing_ids:
+        ph = ", ".join(["%s"] * len(ongoing_ids))
+        ongoing_received = float(frappe.db.sql(f"""
+            SELECT IFNULL(SUM(fund_received_amt), 0) FROM `tabFund Received`
+            WHERE docstatus < 2 AND workflow_state IN ('Approved', 'Fund Received')
+              AND prjreg_title IN ({ph})
+        """, tuple(ongoing_ids))[0][0] or 0)
+    ongoing_allocation["received"] = ongoing_received
+    ongoing_allocation["remaining"] = ongoing_allocation["total"] - ongoing_received
+    # Ongoing-only allocation (excludes completed projects' sanctions in total_allocation above).
+    data["fund_analytics"]["ongoing_allocation"] = ongoing_allocation
 
     # 5. Proposal Analytics — Project Proposals from this department (all docstatus)
     proposal_rows = frappe.db.sql("""
