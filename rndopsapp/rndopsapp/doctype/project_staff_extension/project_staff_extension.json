@@ -32,7 +32,13 @@
   "ex_final_new_completion_date",
   "ex_current_basic",
   "workflow_state",
-  "tenure_row_created"
+  "tenure_row_created",
+  "ex_order_type",
+  "ex_order_html",
+  "ex_order_printed",
+  "ex_order_printed_on",
+  "ex_order_printed_by",
+  "ex_order_no"
  ],
  "fields": [
   {
@@ -139,6 +145,7 @@
   {
    "fieldname": "ex_scr_id",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "New Selection Committee Report ID"
   },
   {
@@ -191,13 +198,60 @@
    "hidden": 1,
    "label": "Tenure Row Created",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_order_type",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Order Type",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_order_html",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Order Content",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "ex_order_printed",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Order Printed",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_order_printed_on",
+   "fieldtype": "Datetime",
+   "hidden": 1,
+   "label": "Order Printed On",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "ex_order_printed_by",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Order Printed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ex_order_no",
+   "fieldtype": "Data",
+   "label": "Extension Order Number"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-13 12:15:17.679677",
+ "modified": "2026-10-28 15:48:17.515443",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Project Staff Extension",
