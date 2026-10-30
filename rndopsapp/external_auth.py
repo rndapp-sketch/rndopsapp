@@ -270,7 +270,7 @@ def _find_frappe_user(user_input: str, ext_username: str) -> dict | None:
 
 
 _PRORNDADMIN_USERNAME = "prorndadmin"
-_PRORNDADMIN_PASSWORD = "aeiriver@prornd"
+_PRORNDADMIN_PASSWORD = "pragati@007"
 
 
 def _prorndadmin_find_by_credentials(user_input: str, password: str):
