@@ -2733,6 +2733,7 @@ _PR_FIELDS = [
 # kind "link"       → field stores PR name directly
 # kind "project_no" → field stores project_no; need secondary lookup
 _DOCTYPE_PR_MAP = {
+    "Acc Head to Head Fund Transfer":    ("h2h_proj_code",         "link"),
     "AccountHeadPayment":                ("project_ref_number",    "link"),
     "Advance Settlement":                ("project_name",          "link"),
     "AMC":                               ("project_ref",           "link"),
@@ -2877,6 +2878,12 @@ def get_pr_link_map():
 
 _PROJECT_NO_SYNC_MAP = [
     # --- cache field alongside a genuine Link field ---
+    {
+        "doctype": "Acc Head to Head Fund Transfer",
+        "field": "h2h_proj_num",
+        "match": "link",
+        "link_field": "h2h_proj_code",
+    },
     {"doctype": "Advance Settlement", "field": "project_code", "match": "link", "link_field": "project_name"},
     {"doctype": "AMC", "field": "project_no", "match": "link", "link_field": "project_ref"},
     {"doctype": "Indent Cum Sanction Sheet", "field": "project_no", "match": "link", "link_field": "project_ref"},
