@@ -1005,55 +1005,6 @@ def _module_registry_doctypes(page_name):
 	)
 
 
-def _scope_recruitment_group(groups):
-	"""
-	Recruitment Adhoc Contractual has no permission-query restriction for
-	head/staff roles, so the registry must scope it itself: keep only records
-	the current user owns, is the named `head` of (HEAD_FIELD_MAP), or whose
-	`upfa_department` they head (same Link-ID-or-name matching as
-	get_pending_task). System Manager sees all.
-	"""
-	dt = "Recruitment Adhoc Contractual"
-	user = frappe.session.user
-	if user == "Administrator" or "System Manager" in frappe.get_roles(user):
-		return groups
-
-	depts = frappe.db.sql(
-		"SELECT name, dept_name FROM `tabDepartment_prornd` WHERE dept_head = %s", user, as_dict=True
-	)
-	dept_values = {d.name for d in depts} | {(d.dept_name or "").strip().lower() for d in depts if d.dept_name}
-
-	out = []
-	for g in groups:
-		if g.get("doctype") != dt:
-			out.append(g)
-			continue
-		names = [r["name"] for r in g.get("records") or [] if r.get("name")]
-		if not names:
-			continue
-		rows = frappe.get_all(
-			dt,
-			filters={"name": ["in", names]},
-			fields=["name", "owner", HEAD_FIELD_MAP[dt], "upfa_department"],
-			ignore_permissions=True,
-		)
-		allowed_names = set()
-		for row in rows:
-			head = (row.get(HEAD_FIELD_MAP[dt]) or "").strip().lower()
-			dept = (row.get("upfa_department") or "").strip()
-			if (
-				row.owner == user
-				or head == user.lower()
-				or dept in dept_values
-				or dept.lower() in dept_values
-			):
-				allowed_names.add(row.name)
-		records = [r for r in g["records"] if r.get("name") in allowed_names]
-		if records:
-			out.append({**g, "records": records, "count": len(records)})
-	return out
-
-
 @frappe.whitelist()
 def get_categorized_task_registry(debug=0, page_name="pending-task"):
 	"""
@@ -1073,7 +1024,6 @@ def get_categorized_task_registry(debug=0, page_name="pending-task"):
 
 	allowed = _module_registry_doctypes(page_name)
 	scoped_results = [g for g in (base.get("results") or []) if g.get("doctype") in allowed]
-	scoped_results = _scope_recruitment_group(scoped_results)
 
 	# A department head's registry covers every Project Registration under a
 	# department they head — applicant OR implementation department — not only the
