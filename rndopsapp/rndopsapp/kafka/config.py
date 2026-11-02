@@ -42,6 +42,9 @@ SCHEMA_VERSION_OVERHEAD = '1.0'
 TOPIC_LOAN_SETTLEMENT = 'loan-settlement-events'
 TOPIC_LOAN_SETTLEMENT_BATCH = 'loan-settlement-events-batch'
 
+# Approved Acc Head to Head Fund Transfers — see kafka/producer/fund_head_transfer.
+TOPIC_FUND_HEAD_TRANSFER = 'fund-head-transfer-events'
+
 # account-head-commit-events is published from commitPayment.py (not this
 # kafka/producer/ package tree) via commitPayment.kafka_publish_commit, but
 # the topic name is defined here so both the producer side and the DLQ
@@ -56,6 +59,7 @@ TOPIC_DEPOSIT_SLIP_DLQ = 'deposit-slip-events-dlq'
 TOPIC_LOAN_REQUEST_DLQ = 'loan-request-event-dlq'
 TOPIC_LOAN_SETTLEMENT_DLQ = 'loan-settlement-events-dlq'
 TOPIC_LOAN_SETTLEMENT_BATCH_DLQ = 'loan-settlement-events-batch-dlq'
+TOPIC_FUND_HEAD_TRANSFER_DLQ = 'fund-head-transfer-events-dlq'
 
 # DLQ published by the external ledger microservice's AccountHeadCommit
 # Consumer when it can't process an account-head-commit-events message.
@@ -93,6 +97,7 @@ ALL_PRODUCER_TOPICS = [
     TOPIC_LOAN_REQUEST, TOPIC_LOAN_REQUEST_DLQ,
     TOPIC_LOAN_SETTLEMENT, TOPIC_LOAN_SETTLEMENT_DLQ,
     TOPIC_LOAN_SETTLEMENT_BATCH, TOPIC_LOAN_SETTLEMENT_BATCH_DLQ,
+    TOPIC_FUND_HEAD_TRANSFER, TOPIC_FUND_HEAD_TRANSFER_DLQ,
 ]
 
 # DLQ topics whose consumer must start from the *current end* of the topic
@@ -129,6 +134,7 @@ SCHEMA_VERSION_FUND_RECEIVED = '1.0'
 SCHEMA_VERSION_DEPOSIT_SLIP = '1.0'
 SCHEMA_VERSION_LOAN_REQUEST = '1.0'
 SCHEMA_VERSION_LOAN_SETTLEMENT = '1.0'
+SCHEMA_VERSION_FUND_HEAD_TRANSFER = '1.0'
 
 # --- PRODUCER RETRY CONFIGURATION ---
 PRODUCER_MAX_RETRIES = 3
