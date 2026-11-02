@@ -22,8 +22,10 @@ def get_budget_head():
 
 @frappe.whitelist()
 def get_budget_heads_by_project(project_no):
-	"""Return the unique budget heads used in the Fund Sanction(s) of a project
-	and in the Fund Received entries linked to those sanctions."""
+	"""Return the unique budget heads used in the Fund Sanction(s) of a project,
+	in the Fund Received entries linked to those sanctions, and in the Fund Breakup
+	of the project's Loan Request(s). Heads that appear in a Loan Request also carry
+	`loan_amount`, the total requested for that head across those loans."""
 	if not project_no:
 		frappe.throw("project_no is required")
 
@@ -41,28 +43,61 @@ def get_budget_heads_by_project(project_no):
 		],
 		pluck="name",
 	)
-	if not sanctions:
-		return []
 
-	received = frappe.get_all(
-		"Fund Received",
-		filters={"sanction_ref_no": ["in", sanctions], "docstatus": ["<", 2]},
+	raw_heads = []
+	if sanctions:
+		received = frappe.get_all(
+			"Fund Received",
+			filters={"sanction_ref_no": ["in", sanctions], "docstatus": ["<", 2]},
+			pluck="name",
+		)
+
+		raw_heads = frappe.get_all(
+			"Project Sanctioned Budget",
+			filters={"parent": ["in", sanctions], "parenttype": "Fund Sanction"},
+			pluck="account_head",
+		)
+		raw_heads += frappe.get_all(
+			"Project Received Budget",
+			filters={
+				"parent": ["in", sanctions + received],
+				"parenttype": ["in", ["Fund Sanction", "Fund Received"]],
+			},
+			pluck="account_head",
+		)
+
+	# Loan Request keeps the human-readable project number in `project_number` (Data)
+	# and the Project Registration name in `project_name` (Link); match on either.
+	# Draft / rejected / cancelled loans don't count.
+	project_nos = {project_no} | set(
+		frappe.get_all(
+			"Project Registration", filters={"name": ["in", project_ids]}, pluck="project_no"
+		)
+	)
+	loans = frappe.get_all(
+		"Loan Request",
+		filters=[
+			["docstatus", "<", 2],
+			["workflow_state", "not in", ["Draft", "Rejected", "Cancelled"]],
+		],
+		or_filters=[
+			["project_number", "in", [n for n in project_nos if n]],
+			["project_name", "in", project_ids],
+		],
 		pluck="name",
 	)
+	loan_amount_by_head = {}
+	if loans:
+		for row in frappe.get_all(
+			"Loan Amount Accounthead Breakup",
+			filters={"parent": ["in", loans], "parenttype": "Loan Request"},
+			fields=["budget_head", "account_head_amount"],
+		):
+			head = (row.budget_head or "").strip()
+			if head:
+				loan_amount_by_head[head] = loan_amount_by_head.get(head, 0) + (row.account_head_amount or 0)
+		raw_heads += list(loan_amount_by_head)
 
-	raw_heads = frappe.get_all(
-		"Project Sanctioned Budget",
-		filters={"parent": ["in", sanctions], "parenttype": "Fund Sanction"},
-		pluck="account_head",
-	)
-	raw_heads += frappe.get_all(
-		"Project Received Budget",
-		filters={
-			"parent": ["in", sanctions + received],
-			"parenttype": ["in", ["Fund Sanction", "Fund Received"]],
-		},
-		pluck="account_head",
-	)
 	raw_heads = {h.strip() for h in raw_heads if h and h.strip()}
 	if not raw_heads:
 		return []
@@ -86,7 +121,12 @@ def get_budget_heads_by_project(project_no):
 	)
 	unknown = sorted(raw_heads - matched)
 
-	return records + [{"name": h, "id": None, "budget_head": h} for h in unknown]
+	result = records + [{"name": h, "id": None, "budget_head": h} for h in unknown]
+	if loan_amount_by_head:
+		for r in result:
+			if r["name"] in loan_amount_by_head:
+				r["loan_amount"] = loan_amount_by_head[r["name"]]
+	return result
 
 
 @frappe.whitelist(allow_guest=True)

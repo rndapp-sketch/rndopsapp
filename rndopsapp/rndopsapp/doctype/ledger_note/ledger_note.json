@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-02 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_no",
+  "transaction_id",
+  "reference_summary",
+  "content"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Project No",
+   "options": "Project Registration",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Ledger transaction ID (TID). Empty for a general project note.",
+   "fieldname": "transaction_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Transaction ID",
+   "search_index": 1
+  },
+  {
+   "description": "Snapshot of the ledger row when the note was written, e.g. 11/08/2026 · particulars · ₹amount",
+   "fieldname": "reference_summary",
+   "fieldtype": "Small Text",
+   "label": "Reference Summary"
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Text Editor",
+   "label": "Content"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Ledger Note",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "export": 1, "read": 1, "report": 1, "role": "staff, RnD", "write": 1},
+  {"read": 1, "report": 1, "role": "All_ProRnd_User"},
+  {"read": 1, "report": 1, "role": "Director"},
+  {"read": 1, "report": 1, "role": "Dean, RnD"},
+  {"read": 1, "report": 1, "role": "Hos, RnD (Head of Section, RnD)"},
+  {"read": 1, "report": 1, "role": "head_approver_1"},
+  {"read": 1, "report": 1, "role": "Ado_RnD"},
+  {"read": 1, "report": 1, "role": "Permanent Employee"},
+  {"read": 1, "report": 1, "role": "project staff"},
+  {"read": 1, "report": 1, "role": "System Manager"}
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

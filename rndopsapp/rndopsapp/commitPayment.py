@@ -1883,6 +1883,9 @@ def check_workflow_and_publish(doc, method=None, staging_names=None, force=False
     else:
         staging_filters["reference_doctype"] = doc.doctype
         staging_filters["reference_name"] = doc.name
+        if doc.doctype == "Direct Purchase":
+            # Legacy PO-stage commits were staged under "<DP>-po".
+            staging_filters["reference_name"] = ["in", [doc.name, f"{doc.name}-po"]]
     staging_docs = frappe.get_all("Kafka Commit Staging", filters=staging_filters, order_by="creation asc")
     print(f"[CHECK_WORKFLOW] Found {len(staging_docs)} staging doc(s) for {doc.doctype}/{doc.name}")
 
@@ -1898,6 +1901,13 @@ def check_workflow_and_publish(doc, method=None, staging_names=None, force=False
 
             # Each staging row carries its own trigger_state (default "Approved")
             trigger_state = payload.get("trigger_state") or "Approved"
+
+            # Legacy Direct Purchase PO commits were staged under "<DP>-po" with the default
+            # "Approved" trigger, which the document had already passed by the time the PO
+            # was generated, so they never fired. A "-po" row is always the PO-stage commit:
+            # publish it when the Direct Purchase reaches POGenerated.
+            if doc.doctype == "Direct Purchase" and str(staging_doc.reference_name or "").endswith("-po"):
+                trigger_state = "POGenerated"
 
             if not force and current_state != trigger_state:
                 print(f"[CHECK_WORKFLOW] Skipping {staging_doc.name} — state '{current_state}' != trigger '{trigger_state}'")
