@@ -10,6 +10,7 @@ from rndopsapp.rndopsapp.cancellation_workflow import (
 	ensure_cancellation_workflow,
 	resolve_cancellation_path,
 )
+from rndopsapp.static_config import ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS
 
 
 class CancellationRequest(Document):
@@ -223,7 +224,7 @@ class CancellationRequest(Document):
 						project_number = resolved_proj
 
 				if project_number:
-					api_url = "http://172.16.134.81:18080/api/account-head-commit/status/by-project-frap"
+					api_url = ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS
 					headers = {"Content-Type": "application/json"}
 					body = {
 						"projectNumber": str(project_number),
