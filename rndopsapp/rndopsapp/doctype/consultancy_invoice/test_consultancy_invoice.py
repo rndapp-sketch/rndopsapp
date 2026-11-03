@@ -6,9 +6,9 @@ import re
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from rndopsapp.rndopsapp.doctype.consultancy_invoice.consultancy_invoice import invoice_suffix
-from rndopsapp.rndopsapp.consultancy_invoice_api import (
+from rndopsapp.rndopsapp.doctype.consultancy_invoice.consultancy_invoice import (
 	get_con_invoice,
+	invoice_suffix,
 	save_con_invoice,
 )
 
