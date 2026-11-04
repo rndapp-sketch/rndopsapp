@@ -3,6 +3,7 @@
 
 import os
 import logging
+import threading
 from datetime import datetime
 from typing import Optional
 from logging.handlers import RotatingFileHandler
@@ -27,6 +28,35 @@ DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 # --- LOG ROTATION SETTINGS ---
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 BACKUP_COUNT = 5  # Keep 5 backup files
+
+
+
+# --- PER-MESSAGE CAPTURE -------------------------------------------------------
+# While the consumer processes one message, everything its handler reports through
+# log_consumer_event / log_error is also kept here (per thread), so the consumer can store
+# the handler's own account of what happened - including why it failed, which handlers
+# otherwise only write to the log files and answer with a bare False.
+
+_capture = threading.local()
+
+
+def start_capture():
+    """Begin recording this thread's consumer events and errors."""
+    _capture.events = []
+
+
+def stop_capture() -> list:
+    """Stop recording and return what was recorded: dicts with kind, type, status, doc, message."""
+    events = getattr(_capture, "events", None)
+    _capture.events = None
+    return events or []
+
+
+def capture_note(kind: str, type: str, status: str, doc: Optional[str], message: str):
+    """Record one event if a capture is running on this thread. Never raises."""
+    events = getattr(_capture, "events", None)
+    if events is not None and len(events) < 200:
+        events.append({"kind": kind, "type": type, "status": status, "doc": doc, "message": message})
 
 
 class KafkaLogger:
@@ -207,6 +237,8 @@ def log_consumer_event(
     if extra:
         log_msg += f" | extra={extra}"
 
+    capture_note("event", event_type, status, doc_name, message or "")
+
     if status in ['FAILED', 'ERROR']:
         logger.error(log_msg)
         KafkaLogger.get_error_logger().error(log_msg)
@@ -225,6 +257,7 @@ def log_error(message: str, error_type: str = "KAFKA_ERROR", exc_info: bool = Fa
         error_type: Type of error for categorization
         exc_info: Whether to include exception info
     """
+    capture_note("error", error_type, "ERROR", None, message)
     logger = KafkaLogger.get_error_logger()
     logger.error(f"[{error_type}] {message}", exc_info=exc_info)
 
