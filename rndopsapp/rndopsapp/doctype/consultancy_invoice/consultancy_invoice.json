@@ -1,0 +1,110 @@
+{
+ "actions": [],
+ "autoname": "CINV.YY.-.#####",
+ "creation": "2026-11-03 10:32:32.663160",
+ "description": "Records and manages consultancy invoices, billing details, and payment information.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "invoice_details_section",
+  "project_no",
+  "fund_received_ref",
+  "invoice_no"
+ ],
+ "fields": [
+  {
+   "fieldname": "invoice_details_section",
+   "fieldtype": "Section Break",
+   "label": "Invoice Details"
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Project Number",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "fund_received_ref",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Fund Received Ref",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Invoice number entered by the user. The document name is generated: INVO-YYYY-MM-DD-AAA001",
+   "fieldname": "invoice_no",
+   "fieldtype": "Table",
+   "label": "Invoice Number",
+   "options": "invoice_number",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-03 11:30:12.973388",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Consultancy Invoice",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "report": 1,
+   "role": "staff, RnD",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "All"
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "MISC_IISI",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "ACC_IISI",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

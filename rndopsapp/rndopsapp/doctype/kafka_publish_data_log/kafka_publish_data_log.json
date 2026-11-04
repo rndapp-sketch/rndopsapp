@@ -1,0 +1,159 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-04 00:00:00.000000",
+ "description": "A copy of every message published to Kafka (the exact payload sent), keyed by project number.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_number",
+  "topic",
+  "event_type",
+  "status",
+  "column_break_1",
+  "reference_name",
+  "kafka_key",
+  "source",
+  "section_break_delivery",
+  "attempts",
+  "partition",
+  "offset",
+  "sent_to_dlq",
+  "error_message",
+  "section_break_payload",
+  "payload"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project Number",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "topic",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Topic",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "SUCCESS\nFAILED",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Name of the document the message was published for.",
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Reference Name",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "Kafka partition key (normally the project number).",
+   "fieldname": "kafka_key",
+   "fieldtype": "Data",
+   "label": "Kafka Key",
+   "read_only": 1
+  },
+  {
+   "description": "Which publisher sent it: kafka.utils or kafka_sync.",
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Source",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_delivery",
+   "fieldtype": "Section Break",
+   "label": "Delivery"
+  },
+  {
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "label": "Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "partition",
+   "fieldtype": "Int",
+   "label": "Partition",
+   "read_only": 1
+  },
+  {
+   "fieldname": "offset",
+   "fieldtype": "Data",
+   "label": "Offset",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set when every attempt failed and the message was sent to the dead-letter topic.",
+   "fieldname": "sent_to_dlq",
+   "fieldtype": "Check",
+   "label": "Sent to DLQ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_payload",
+   "fieldtype": "Section Break",
+   "label": "Payload"
+  },
+  {
+   "fieldname": "payload",
+   "fieldtype": "Code",
+   "label": "Payload",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Kafka Publish Data Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
