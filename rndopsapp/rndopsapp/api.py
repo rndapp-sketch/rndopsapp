@@ -2894,6 +2894,7 @@ _PROJECT_NO_SYNC_MAP = [
         "link_field": "igf_project_title",
     },
     {"doctype": "Loan Request", "field": "project_number", "match": "link", "link_field": "project_name"},
+    {"doctype": "UC Request", "field": "project_no", "match": "link", "link_field": "project_id"},
     {"doctype": "Project Extension", "field": "prj_num", "match": "link", "link_field": "project_ref"},
     {"doctype": "proprietary_purchase", "field": "project_no", "match": "link", "link_field": "project_ref"},
     {"doctype": "Rate Contract", "field": "project_no", "match": "link", "link_field": "project_ref"},

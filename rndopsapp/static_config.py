@@ -16,19 +16,7 @@ MATTERMOST_POSTS_URL = f"{MATTERMOST_API_URL}/posts"
 
 # Account Portal Configuration
 ACCOUNT_PORTAL_BASE_URL = "http://172.16.134.81:18080"
-ACCOUNT_PORTAL_API = f"{ACCOUNT_PORTAL_BASE_URL}/api"
-
-# Account Portal Endpoints
-ACCOUNT_PORTAL_SANCTION_DETAILS = f"{ACCOUNT_PORTAL_API}/sanction-details/addSanctionDetails"
-ACCOUNT_PORTAL_COMMIT_PAYMENT = f"{ACCOUNT_PORTAL_API}/commit-payment-transactions"
-ACCOUNT_PORTAL_ACCOUNT_HEAD_PAYMENTS = f"{ACCOUNT_PORTAL_API}/account-head-payments"
-ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT = f"{ACCOUNT_PORTAL_API}/account-head-commit"
-ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS = f"{ACCOUNT_PORTAL_API}/account-head-commit/status/by-project-frap"
-ACCOUNT_PORTAL_ACCOUNT_HEAD_REF_DETAILS = f"{ACCOUNT_PORTAL_API}/account-head-commit/ref-details"
-ACCOUNT_PORTAL_PROJECTS = f"{ACCOUNT_PORTAL_API}/projects"
-ACCOUNT_PORTAL_PROJECTS_CHANGE_NUMBER = f"{ACCOUNT_PORTAL_API}/projects"  # Used with {project_no}/change-project-number path
-ACCOUNT_PORTAL_FUND_RECEIVED = f"{ACCOUNT_PORTAL_API}/fund-received/addFundReceived"
-ACCOUNT_PORTAL_ACCOUNT_HEADS = f"{ACCOUNT_PORTAL_API}/account-heads/createAccountHead"
+# ACCOUNT_PORTAL_API and its endpoints are derived below, after the overrides.
 
 # Minio Configuration
 MINIO_ENDPOINT = "172.16.134.179:9000"
@@ -75,5 +63,17 @@ MATTERMOST_API_URL = f"{MATTERMOST_BASE_URL}/api/v4"
 MATTERMOST_POSTS_URL = f"{MATTERMOST_API_URL}/posts"
 
 ACCOUNT_PORTAL_API = f"{ACCOUNT_PORTAL_BASE_URL}/api"
+
+# Account Portal Endpoints
+ACCOUNT_PORTAL_SANCTION_DETAILS = f"{ACCOUNT_PORTAL_API}/sanction-details/addSanctionDetails"
+ACCOUNT_PORTAL_COMMIT_PAYMENT = f"{ACCOUNT_PORTAL_API}/commit-payment-transactions"
+ACCOUNT_PORTAL_ACCOUNT_HEAD_PAYMENTS = f"{ACCOUNT_PORTAL_API}/account-head-payments"
+ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT = f"{ACCOUNT_PORTAL_API}/account-head-commit"
+ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT_STATUS = f"{ACCOUNT_PORTAL_API}/account-head-commit/status/by-project-frap"
+ACCOUNT_PORTAL_ACCOUNT_HEAD_REF_DETAILS = f"{ACCOUNT_PORTAL_API}/account-head-commit/ref-details"
+ACCOUNT_PORTAL_PROJECTS = f"{ACCOUNT_PORTAL_API}/projects"
+ACCOUNT_PORTAL_PROJECTS_CHANGE_NUMBER = f"{ACCOUNT_PORTAL_API}/projects"  # Used with {project_no}/change-project-number path
+ACCOUNT_PORTAL_FUND_RECEIVED = f"{ACCOUNT_PORTAL_API}/fund-received/addFundReceived"
+ACCOUNT_PORTAL_ACCOUNT_HEADS = f"{ACCOUNT_PORTAL_API}/account-heads/createAccountHead"
 
 MINIO_URL = f"http://{MINIO_ENDPOINT}"

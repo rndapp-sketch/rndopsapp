@@ -9,6 +9,21 @@
   "amended_from",
   "uc_request",
   "project_id",
+  "project_no",
+  "project_title",
+  "column_break_uc_pi",
+  "principal_investigator_name",
+  "pi_webmail",
+  "implementation_department",
+  "project_details_section",
+  "funding_agency",
+  "funding_agency_name",
+  "funding_agency_scheme",
+  "sanctioned_letter_no",
+  "column_break_uc_dates",
+  "sanctioned_letter_date",
+  "prj_start_date",
+  "prj_end_date",
   "application_details_section",
   "pi_name",
   "uc_type",
@@ -17,7 +32,17 @@
   "prev_uc",
   "uc_format",
   "uc_comment",
-  "uc_comment_if_any"
+  "uc_comment_if_any",
+  "rnd_office_section",
+  "staff_prepared_uc",
+  "staff_remarks",
+  "verification_section",
+  "pi_verified_by",
+  "pi_verified_on",
+  "hos_printed_on",
+  "column_break_uc_reg",
+  "registrar_signed_uc",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -43,7 +68,101 @@
    "fieldname": "project_id",
    "fieldtype": "Link",
    "label": "Select Project",
-   "options": "Project Registration"
+   "options": "Project Registration",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "project_no",
+   "fieldtype": "Data",
+   "label": "Project No.",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_title",
+   "fieldtype": "Small Text",
+   "label": "Project Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_uc_pi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "principal_investigator_name",
+   "fieldtype": "Data",
+   "label": "Principal Investigator",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pi_webmail",
+   "fieldtype": "Link",
+   "label": "PI Webmail",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "implementation_department",
+   "fieldtype": "Link",
+   "label": "Department / Centre",
+   "options": "Department_prornd",
+   "read_only": 1
+  },
+  {
+   "fieldname": "project_details_section",
+   "fieldtype": "Section Break",
+   "label": "Project Details"
+  },
+  {
+   "fieldname": "funding_agency",
+   "fieldtype": "Link",
+   "label": "Funding Agency ID",
+   "options": "fundingagency_",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "funding_agency_name",
+   "fieldtype": "Data",
+   "label": "Funding Agency",
+   "read_only": 1
+  },
+  {
+   "fieldname": "funding_agency_scheme",
+   "fieldtype": "Small Text",
+   "label": "Research Scheme",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sanctioned_letter_no",
+   "fieldtype": "Data",
+   "label": "Sanctioned Letter No.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_uc_dates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sanctioned_letter_date",
+   "fieldtype": "Date",
+   "label": "Date of Sanctioned Letter",
+   "read_only": 1
+  },
+  {
+   "fieldname": "prj_start_date",
+   "fieldtype": "Date",
+   "label": "Project Start Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "prj_end_date",
+   "fieldtype": "Date",
+   "label": "Project End Date",
+   "read_only": 1
   },
   {
    "fieldname": "application_details_section",
@@ -60,12 +179,15 @@
    "fieldtype": "Select",
    "label": "Select UC Type",
    "options": "\nRevised UC\nIntermediate UC\nFinal UC\nAudited UC",
-   "sort_options": 1
+   "sort_options": 1,
+   "reqd": 1,
+   "in_list_view": 1
   },
   {
    "fieldname": "total_sanction_amount",
    "fieldtype": "Float",
-   "label": "Total Sanctioned Amount"
+   "label": "Total Sanctioned Amount",
+   "read_only": 1
   },
   {
    "fieldname": "uc_upload",
@@ -91,13 +213,77 @@
    "fieldname": "uc_comment_if_any",
    "fieldtype": "Small Text",
    "label": "Comment, If any"
+  },
+  {
+   "fieldname": "rnd_office_section",
+   "fieldtype": "Section Break",
+   "label": "R&D Office"
+  },
+  {
+   "fieldname": "staff_prepared_uc",
+   "fieldtype": "Attach",
+   "label": "UC Prepared by R&D Office",
+   "no_copy": 1
+  },
+  {
+   "fieldname": "staff_remarks",
+   "fieldtype": "Small Text",
+   "label": "R&D Office Remarks",
+   "no_copy": 1
+  },
+  {
+   "fieldname": "verification_section",
+   "fieldtype": "Section Break",
+   "label": "Verification"
+  },
+  {
+   "fieldname": "pi_verified_by",
+   "fieldtype": "Link",
+   "label": "Verified by PI",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "pi_verified_on",
+   "fieldtype": "Datetime",
+   "label": "Verified by PI On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "hos_printed_on",
+   "fieldtype": "Datetime",
+   "label": "Sent to Registrar On",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_uc_reg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "registrar_signed_uc",
+   "fieldtype": "Attach",
+   "label": "Registrar Verified UC (Signed Copy)",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "workflow_state",
+   "fieldtype": "Data",
+   "label": "Workflow State",
+   "hidden": 1,
+   "no_copy": 1,
+   "allow_on_submit": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-16 11:19:32.627146",
+ "modified": "2026-11-01 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "UC Request",
@@ -115,11 +301,79 @@
    "share": 1,
    "submit": 1,
    "write": 1
+  },
+  {
+   "role": "All_ProRnd_User",
+   "read": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "export": 1,
+   "share": 1,
+   "create": 1,
+   "write": 1,
+   "submit": 1,
+   "delete": 1,
+   "select": 1
+  },
+  {
+   "role": "Permanent Employee",
+   "read": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "export": 1,
+   "share": 1,
+   "create": 1,
+   "write": 1,
+   "submit": 1,
+   "delete": 1,
+   "select": 1
+  },
+  {
+   "role": "staff, RnD",
+   "read": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "export": 1,
+   "share": 1,
+   "write": 1,
+   "submit": 1,
+   "select": 1
+  },
+  {
+   "role": "Hos, RnD (Head of Section, RnD)",
+   "read": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "export": 1,
+   "share": 1,
+   "write": 1,
+   "submit": 1,
+   "select": 1
+  },
+  {
+   "role": "Dean, RnD",
+   "read": 1,
+   "print": 1,
+   "email": 1,
+   "report": 1,
+   "export": 1,
+   "share": 1,
+   "write": 1,
+   "submit": 1,
+   "select": 1
   }
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "autoname": "format:{YYYY}{MM}{DD}UC{#####}",
+ "naming_rule": "Expression",
+ "title_field": "project_no",
+ "track_changes": 1
 }
