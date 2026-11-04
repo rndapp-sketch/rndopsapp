@@ -79,6 +79,18 @@ def _deactivate_other_workflows():
             frappe.db.set_value("Workflow", wf_name, "is_active", 0)
 
 
+def _add_to_pending_task_registry():
+    """List transfers on the Pending Tasks page (and its module filter), like other forms."""
+    for page in ("pending-task",):
+        if not frappe.db.exists("Module Registry", page):
+            continue
+        registry = frappe.get_doc("Module Registry", page)
+        if any(row.doctype_name == DOCTYPE for row in registry.doctype_name):
+            continue
+        registry.append("doctype_name", {"doctype_name": DOCTYPE, "mod_vis": 1})
+        registry.save(ignore_permissions=True)
+
+
 def execute():
     """Create or fully replace the H2H Fund Transfer workflow."""
 
@@ -125,6 +137,7 @@ def execute():
         })
 
     wf.insert(ignore_permissions=True)
+    _add_to_pending_task_registry()
     frappe.db.commit()
 
     print(

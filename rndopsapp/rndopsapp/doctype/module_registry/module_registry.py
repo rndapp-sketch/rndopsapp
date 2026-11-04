@@ -69,6 +69,8 @@ SPECIFIC_APPROVER_MAP = {
 	# held by many users, so without this every mentor saw every such project
 	# (and ones where mentor_user_id isn't set yet were shown to all of them).
 	"Project Registration": ("Pending Mentor Approval", "mentor_user_id"),
+	# UC Request comes back to the project's own PI to verify and print.
+	"UC Request": ("Pending PI Verification", "pi_webmail"),
 }
 
 # Cancellation Request stages that belong to ONE named person, not to everyone

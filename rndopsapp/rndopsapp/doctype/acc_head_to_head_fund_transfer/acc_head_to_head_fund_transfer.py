@@ -4,13 +4,28 @@
 import json
 
 import frappe
+import requests
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, money_in_words
+from frappe.utils import flt, money_in_words, now_datetime
+
+from rndopsapp.static_config import ACCOUNT_PORTAL_COMMIT_PAYMENT
 
 DOCTYPE = "Acc Head to Head Fund Transfer"
 WORKFLOW_NAME = "h2h_workflow"
 DEFAULT_STATE = "Draft"
+APPROVED_STATE = "Approved"
+REJECTED_STATE = "Rejected"
+
+SANCTION_APPROVED_STATE = "Sanction Approved"
+SANCTION_YEAR_FIELDS = (
+	"first_year_budget",
+	"second_year_budget",
+	"third_year_budget",
+	"fourth_year_budget",
+	"fifth_year_budget",
+	"sixth_year_budget",
+)
 
 # Fields the frontend is allowed to write through save_acc_head_to_head_fund_transfer_data.
 # Read-only/derived fields (name, department, project number/title, amount in words) are
@@ -96,6 +111,229 @@ def _resolve_label(doctype, docname, label_field):
 def _budget_head_label(head):
 	"""Budget Head names are opaque ids; the readable text lives in `budget_head`."""
 	return _resolve_label("Budget Head", head, "budget_head")
+
+
+def _head_available_balance(project_number, head):
+	"""What a head has left to commit, as the Accounts ledger reports it: the running
+	commitableBalance on the head's latest ledger entry. Raises when the ledger can't be
+	read — an unknown balance must never pass as enough."""
+	from rndopsapp.rndopsapp.kafka.utils import get_budget_head_id
+
+	head_id = get_budget_head_id(head)
+	if not head_id:
+		frappe.throw(_("Budget head {0} has no ledger id.").format(_budget_head_label(head)))
+
+	response = requests.get(
+		ACCOUNT_PORTAL_COMMIT_PAYMENT,
+		params={"projectNumber": project_number, "accountHeadId": head_id},
+		timeout=10,
+	)
+	response.raise_for_status()
+	rows = response.json()
+	if not isinstance(rows, list):
+		raise ValueError((rows or {}).get("error") or "Unexpected ledger response")
+	if not rows:
+		return 0.0
+
+	def _order(row):
+		return (str(row.get("recordTime") or row.get("transactionDate") or ""), row.get("transactionId") or 0)
+
+	return flt(max(rows, key=_order).get("commitableBalance"))
+
+
+def _check_within_available(doc):
+	"""Only what the source head has left after commitments can be moved — never more."""
+	from rndopsapp.rndopsapp.overhead_fund import is_overhead_project
+
+	if is_overhead_project(doc.h2h_proj_num):
+		frappe.throw(_("An overhead fund has a single head, so there is nothing to transfer between."))
+
+	try:
+		available = _head_available_balance(doc.h2h_proj_num, doc.h2h_transfer_from)
+	except frappe.ValidationError:
+		raise
+	except Exception as e:
+		frappe.log_error(frappe.get_traceback(), "H2H Fund Transfer Balance Check Error")
+		frappe.throw(
+			_("Could not read the available balance of {0} from the Accounts service ({1}). Please try again shortly.").format(
+				_budget_head_label(doc.h2h_transfer_from), e
+			)
+		)
+
+	if flt(doc.h2h_amount) > available + 0.009:
+		frappe.throw(
+			_("Amount {0} exceeds the available balance of {1} ({2}).").format(
+				frappe.format_value(flt(doc.h2h_amount), {"fieldtype": "Currency"}),
+				_budget_head_label(doc.h2h_transfer_from),
+				frappe.format_value(available, {"fieldtype": "Currency"}),
+			)
+		)
+
+
+def _head_sanction_summary(project_name, exclude=None):
+	"""Per Budget Head docname: what is sanctioned, and how much of it is already taken.
+
+	  sanctioned        approved Fund Sanction breakups (year columns summed — the
+	                    total column is not reliably filled in)
+	  received          Fund Received breakups already sent to Accounts
+	  transferred_in    Approved transfers into the head
+	  transferred_out   Approved transfers out of it
+	  pending_in        transfers into it still in the approval chain — counted so two
+	                    requests in flight cannot each fit and together overshoot
+	  room              sanctioned - (received + transferred_in - transferred_out + pending_in)
+
+	Sanction and receipt rows store heads as label, docname or numeric id, so every one
+	goes through resolve_budget_head_name() before being added up. `exclude` is the
+	transfer being checked, so it never counts against itself.
+	"""
+	from rndopsapp.rndopsapp.kafka.producer.fund_head_transfer.mapper import (
+		PUBLISHED_FUND_RECEIVED_STATES,
+	)
+	from rndopsapp.rndopsapp.kafka.utils import resolve_budget_head_name
+
+	resolved = {}
+
+	def _head(value):
+		if value not in resolved:
+			resolved[value] = resolve_budget_head_name(value)
+		return resolved[value]
+
+	summary = {}
+
+	def _row(head):
+		return summary.setdefault(head, {
+			"sanctioned": 0.0,
+			"received": 0.0,
+			"transferred_in": 0.0,
+			"transferred_out": 0.0,
+			"pending_in": 0.0,
+		})
+
+	sanctions = frappe.get_all(
+		"Fund Sanction",
+		filters={"project_proposal": project_name, "sanction_workflow_status": SANCTION_APPROVED_STATE},
+		pluck="name",
+	)
+	if sanctions:
+		for row in frappe.get_all(
+			"Project Sanctioned Budget",
+			filters={"parent": ["in", sanctions], "parenttype": "Fund Sanction"},
+			fields=["account_head", "is_total_row", "total_proposal_of_heads", *SANCTION_YEAR_FIELDS],
+		):
+			head = _head(row.account_head)
+			if not head or row.is_total_row:
+				continue
+			by_year = sum(flt(row.get(f)) for f in SANCTION_YEAR_FIELDS)
+			_row(head)["sanctioned"] += by_year or flt(row.total_proposal_of_heads)
+
+	receipts = frappe.get_all(
+		"Fund Received",
+		filters={
+			"prjreg_title": project_name,
+			"workflow_state": ["in", PUBLISHED_FUND_RECEIVED_STATES],
+			"docstatus": ["!=", 2],
+		},
+		pluck="name",
+	)
+	if receipts:
+		for row in frappe.get_all(
+			"Project Received Budget",
+			filters={"parent": ["in", receipts], "parenttype": "Fund Received"},
+			fields=["account_head", "amount_received"],
+		):
+			head = _head(row.account_head)
+			if head:
+				_row(head)["received"] += flt(row.amount_received)
+
+	filters = {
+		"h2h_proj_code": project_name,
+		"workflow_state": ["not in", [DEFAULT_STATE, REJECTED_STATE]],
+		"docstatus": ["!=", 2],
+	}
+	if exclude:
+		filters["name"] = ["!=", exclude]
+	for t in frappe.get_all(
+		DOCTYPE, filters=filters, fields=["h2h_transfer_from", "h2h_transfer_to", "h2h_amount", "workflow_state"]
+	):
+		amount = flt(t.h2h_amount)
+		to_head, from_head = _head(t.h2h_transfer_to), _head(t.h2h_transfer_from)
+		if t.workflow_state == APPROVED_STATE:
+			if to_head:
+				_row(to_head)["transferred_in"] += amount
+			if from_head:
+				_row(from_head)["transferred_out"] += amount
+		elif to_head:
+			_row(to_head)["pending_in"] += amount
+
+	for row in summary.values():
+		used = row["received"] + row["transferred_in"] - row["transferred_out"] + row["pending_in"]
+		row["room"] = flt(row["sanctioned"] - used, 2)
+
+	return summary
+
+
+def _check_within_sanction(doc):
+	"""The receiving head may never end up holding more than it was sanctioned."""
+	from rndopsapp.rndopsapp.kafka.utils import resolve_budget_head_name
+
+	to_head = resolve_budget_head_name(doc.h2h_transfer_to)
+	label = _budget_head_label(doc.h2h_transfer_to)
+	row = _head_sanction_summary(doc.h2h_proj_code, exclude=doc.name).get(to_head)
+
+	if not row or row["sanctioned"] <= 0:
+		frappe.throw(_("{0} has no approved sanction on this project, so nothing can be transferred into it.").format(label))
+
+	if flt(doc.h2h_amount) > row["room"] + 0.009:
+		currency = {"fieldtype": "Currency"}
+		frappe.throw(
+			_("{0} can receive at most {1}: sanctioned {2}, already received {3}{4}. Amount requested: {5}.").format(
+				label,
+				frappe.format_value(max(row["room"], 0), currency),
+				frappe.format_value(row["sanctioned"], currency),
+				frappe.format_value(row["received"] + row["transferred_in"] - row["transferred_out"], currency),
+				_(", pending transfers in {0}").format(frappe.format_value(row["pending_in"], currency))
+				if row["pending_in"] else "",
+				frappe.format_value(flt(doc.h2h_amount), currency),
+			)
+		)
+
+
+def _check_publishable(doc):
+	"""Refuse approval of a transfer the Accounts service could not accept, rather than
+	approving it here and having it never reach the ledger."""
+	from rndopsapp.rndopsapp.kafka.producer.fund_head_transfer import (
+		FundHeadTransferMapper,
+		FundHeadTransferValidator,
+	)
+
+	errors = FundHeadTransferValidator.validate(
+		FundHeadTransferMapper.map_to_dto(doc), raise_exception=False
+	)
+	if errors:
+		frappe.throw(_("This transfer cannot be sent to Accounts:") + "<br>" + "<br>".join(errors))
+
+
+def _publish_transfer(doc):
+	"""Publish an approved transfer. Never raises: the approval has already been committed,
+	and a Kafka failure must not look like it was undone. The outcome is left as a comment
+	on the document so it is visible, and can be retried with
+	retry_publish_acc_head_to_head_fund_transfer."""
+	try:
+		from rndopsapp.rndopsapp.kafka.producer.fund_head_transfer import publish_fund_head_transfer
+
+		published = publish_fund_head_transfer(doc, transferred_at=now_datetime())
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "H2H Fund Transfer Kafka Publish Error")
+		published = False
+
+	doc.add_comment(
+		"Info",
+		_("Sent to Accounts (fund-head-transfer-events).")
+		if published
+		else _("Could not be sent to Accounts. Use Retry to send it again."),
+	)
+	frappe.db.commit()
+	return published
 
 
 def _active_workflow():
@@ -537,6 +775,14 @@ def perform_acc_head_to_head_fund_transfer_action(docname, action):
 				)
 			)
 
+		# Money only leaves a head with enough in it: checked when the request leaves Draft
+		# and again at approval, since commitments made in between can use it up.
+		if current_state == DEFAULT_STATE or next_state == APPROVED_STATE:
+			_check_within_available(doc)
+			_check_within_sanction(doc)
+		if next_state == APPROVED_STATE:
+			_check_publishable(doc)
+
 		next_state_row = next((s for s in workflow.states if s.state == next_state), None)
 		new_docstatus = int(next_state_row.doc_status or 0) if next_state_row else 0
 
@@ -559,13 +805,18 @@ def perform_acc_head_to_head_fund_transfer_action(docname, action):
 		doc.add_comment("Workflow", _(next_state))
 		frappe.db.commit()
 
-		return {
+		result = {
 			"status": "success",
 			"message": _("Action '{0}' completed. New State: {1}").format(action, next_state),
 			"docname": docname,
 			"workflow_state": next_state,
 			"next_actions": get_acc_head_to_head_fund_transfer_workflow_actions(docname),
 		}
+		if next_state == APPROVED_STATE:
+			result["kafka_published"] = _publish_transfer(doc)
+			if not result["kafka_published"]:
+				result["message"] += _(" — but it could not be sent to Accounts yet. Use Retry.")
+		return result
 
 	except Exception as e:
 		frappe.db.rollback()
@@ -582,7 +833,10 @@ def submit_acc_head_to_head_fund_transfer(docname):
 	a document silently pushed past the approval chain."""
 	try:
 		doc = frappe.get_doc(DOCTYPE, docname)
-		if doc.docstatus == 1:
+		# A request submitted while no workflow was configured is docstatus 1 but still
+		# in Draft — it has never entered the approval chain, so let the workflow take it
+		# (the transition sets docstatus from the next state) instead of stopping here.
+		if doc.docstatus == 1 and (doc.workflow_state or DEFAULT_STATE) != DEFAULT_STATE:
 			return {"status": "success", "message": _("Already submitted."), "docname": docname}
 
 		actions = get_acc_head_to_head_fund_transfer_workflow_actions(docname)
@@ -621,3 +875,32 @@ def get_amount_in_words(amount, currency=None):
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "H2H Fund Transfer amount_in_words Error")
 		return ""
+
+
+@frappe.whitelist()
+def get_transfer_head_sanction_summary(project_code, docname=None):
+	"""_head_sanction_summary for the form, keyed by Budget Head docname."""
+	if not frappe.has_permission(DOCTYPE, "read"):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+	project = _resolve_project(project_code)
+	if not project:
+		frappe.throw(_("Project Registration not found."))
+	return _head_sanction_summary(project["name"], exclude=docname)
+
+
+@frappe.whitelist()
+def retry_publish_acc_head_to_head_fund_transfer(docname):
+	"""Send an Approved transfer to Accounts again, after a failed publish."""
+	if not ({"System Manager", "staff, RnD"} & set(frappe.get_roles())):
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
+
+	doc = frappe.get_doc(DOCTYPE, docname)
+	if doc.workflow_state != APPROVED_STATE:
+		return {"status": "error", "message": _("Only an Approved transfer can be sent to Accounts.")}
+
+	published = _publish_transfer(doc)
+	return {
+		"status": "success" if published else "error",
+		"kafka_published": published,
+		"message": _("Sent to Accounts.") if published else _("Could not be sent to Accounts. Check the Error Log."),
+	}

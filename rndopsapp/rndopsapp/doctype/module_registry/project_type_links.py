@@ -31,6 +31,10 @@ DOCTYPE_PR_LINKS = {
 	"Project Registration": {"primary": (SELF, None)},
 
 	# Direct Link DocTypes (field stores PR `name`)
+	"Acc Head to Head Fund Transfer": {
+		"primary": (PR_NAME, "h2h_proj_code"),
+		"fallback": (PR_PROJECT_NO, "h2h_proj_num"),
+	},
 	"Account Head Payment": {"primary": (PR_NAME, "project_ref_number")},
 	"Advance Settlement": {
 		"primary": (PR_NAME, "project_name"),
