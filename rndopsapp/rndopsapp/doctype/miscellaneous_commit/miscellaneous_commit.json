@@ -20,6 +20,7 @@
   "commit_amount",
   "commit_particular",
   "linked_application",
+  "ref_details",
   "workflow_state"
  ],
  "fields": [
@@ -81,6 +82,12 @@
    "fieldtype": "Data",
    "label": "Linked Application Number , If any ",
    "mandatory_depends_on": "eval:doc.module==\"Recruitment Adhoc Contractual\""
+  },
+  {
+   "description": "Sent as ref_details in the Kafka commit payload. Defaults to the Linked Application Number if left blank.",
+   "fieldname": "ref_details",
+   "fieldtype": "Data",
+   "label": "Reference Details"
   },
   {
    "fieldname": "section_break_klxk",
