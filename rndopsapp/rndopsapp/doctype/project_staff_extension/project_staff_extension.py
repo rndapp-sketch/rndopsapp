@@ -757,6 +757,48 @@ def save_extension_order(docname, order_html, order_type=None, mark_printed=0, o
 	}
 
 
+# Roles that review extensions and may read the issued order (R&D Staff is covered by
+# _has_staff_stage_role).
+ORDER_VIEWER_ROLES = {
+	"Ado_RnD",
+	"Hos, RnD (Head of Section, RnD)",
+	"Dean, RnD",
+	"Director",
+}
+
+
+def _can_view_issued_order(ext_doc):
+	"""Reviewers, the applicant (owner) and the project's PI may read an issued order."""
+	user = frappe.session.user
+	if _has_staff_stage_role() or ORDER_VIEWER_ROLES & set(frappe.get_roles(user)):
+		return True
+	if ext_doc.owner == user or frappe.has_permission("Project Staff Extension", "read", ext_doc):
+		return True
+	if ext_doc.ex_proj_no:
+		pi = frappe.db.get_value(
+			"Project Registration", {"project_no": ext_doc.ex_proj_no}, ["pi_userid", "pi_webmail"], as_dict=True
+		) or {}
+		if user in (pi.get("pi_userid"), pi.get("pi_webmail")):
+			return True
+	return False
+
+
+@frappe.whitelist()
+def get_issued_extension_order(docname):
+	"""Read-only copy of the order as R&D Staff printed it, for the form's
+	"View Extension/Re-engagement Order" button. Empty until it has been printed."""
+	ext_doc = frappe.get_doc("Project Staff Extension", docname)
+	if not _can_view_issued_order(ext_doc):
+		frappe.throw(_("You are not permitted to view this order."), frappe.PermissionError)
+	issued = bool(ext_doc.get("ex_order_printed")) and bool(ext_doc.get("ex_order_html"))
+	return {
+		"issued": issued,
+		"order_type": (ext_doc.get("ex_order_type") or ORDER_TYPE_EXTENSION) if issued else "",
+		"order_no": (ext_doc.get("ex_order_no") or "") if issued else "",
+		"order_html": ext_doc.get("ex_order_html") if issued else "",
+	}
+
+
 @frappe.whitelist()
 def get_project_staff_extension_fields(doc_name=None):
 	"""
