@@ -55,12 +55,12 @@ def extract_eval_expression(expression):
 	"""
 	if not expression:
 		return None
-	
+
 	expression = str(expression).strip()
-	
+
 	if expression.startswith("eval:"):
 		return expression[5:].strip()  # Remove 'eval:' prefix
-	
+
 	return expression
 
 @frappe.whitelist()
@@ -134,7 +134,7 @@ def get_disbursal_of_honorarium_fields(doc_name=None):
 			current_user = frappe.session.user
 			if current_user and current_user not in ["Administrator", "Guest"]:
 				prefill_data["webmail_id"] = current_user
-				
+
 				# Try to fetch details from user record
 				user_doc = frappe.get_doc("User", current_user)
 				prefill_data["name_of_applicant"] = user_doc.full_name
@@ -155,7 +155,7 @@ def get_disbursal_of_honorarium_fields(doc_name=None):
 		link_options["webmail_id"] = users
 	except Exception:
 		pass
-		
+
 	# account_head is a Select, options already in metadata
 	# amended_from
 	try:
@@ -206,7 +206,7 @@ def save_disbursal_of_honorarium_data(data, files=None):
 			doc = frappe.get_doc("Disbursal of Honorarium", data.get("name"))
 		else:
 			doc = frappe.new_doc("Disbursal of Honorarium")
-		
+
 		# Auto-resolve Project Name (Link: Project Registration) which expects 'name' (primary key)
 		if data.get("project_name") and not frappe.db.exists("Project Registration", data["project_name"]):
 			# Frontend might send 'testing full cycle' (project_title), look it up
@@ -215,7 +215,7 @@ def save_disbursal_of_honorarium_data(data, files=None):
 				data["project_name"] = pr.name
 				# Update project_no to the correct project_no
 				data["project_no"] = pr.project_no
-		
+
 		# In case project_name was already the primary key, but project_no is still the title
 		elif data.get("project_name") and data.get("project_no") and data["project_name"] == data["project_no"]:
 			pr_no = frappe.db.get_value("Project Registration", data["project_name"], "project_no")
@@ -326,12 +326,12 @@ def save_disbursal_of_honorarium_data(data, files=None):
 				except Exception as fe:
 					frappe.log_error(frappe.get_traceback(), f"File upload error for {f.get('filename')}")
 					continue
-		
+
 		# Handle Child Table: table_weoy (Honorarium Table)
 		items_data = data.get("table_weoy", [])
 		if isinstance(items_data, str):
 			items_data = json.loads(items_data)
-			
+
 		if items_data:
 			doc.set("table_weoy", []) # Clear existing
 			for item in items_data:
@@ -443,12 +443,12 @@ def perform_disbursal_of_honorarium_action(docname, action):
 
 		# Fetch the workflow for this doctype
 		workflow_name = frappe.get_value("Workflow", {"document_type": "Disbursal of Honorarium"}, "name")
-		
+
 		if not workflow_name:
 			frappe.throw("Workflow not found for Disbursal of Honorarium.")
 
 		workflow = frappe.get_doc("Workflow", workflow_name)
-		
+
 		next_state = None
 
 		for t in workflow.transitions:
