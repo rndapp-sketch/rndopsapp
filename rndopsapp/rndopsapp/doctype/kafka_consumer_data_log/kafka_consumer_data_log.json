@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-04 00:00:00.000000",
+ "description": "A copy of every message the app consumed from Kafka: processed, skipped, or failed, and why.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project_number",
+  "topic",
+  "event_type",
+  "status",
+  "column_break_1",
+  "reference_name",
+  "handler",
+  "is_dlq",
+  "section_break_delivery",
+  "partition",
+  "offset",
+  "duration_ms",
+  "section_break_failure",
+  "error_type",
+  "failure_reason",
+  "processing_log",
+  "section_break_payload",
+  "payload"
+ ],
+ "fields": [
+  {
+   "fieldname": "project_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project Number",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "topic",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Topic",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "SUCCESS\nFAILED\nSKIPPED",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "SKIPPED: the handler accepted the message but did nothing with it (for example the document was not found)."
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The document the handler worked on, as the handler reported it.",
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Reference Name",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "handler",
+   "fieldtype": "Data",
+   "label": "Handler",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The message came from a dead-letter topic (the ledger rejected something we sent).",
+   "fieldname": "is_dlq",
+   "fieldtype": "Check",
+   "label": "From DLQ Topic",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_delivery",
+   "fieldtype": "Section Break",
+   "label": "Delivery"
+  },
+  {
+   "fieldname": "partition",
+   "fieldtype": "Int",
+   "label": "Partition",
+   "read_only": 1
+  },
+  {
+   "fieldname": "offset",
+   "fieldtype": "Data",
+   "label": "Offset",
+   "read_only": 1
+  },
+  {
+   "fieldname": "duration_ms",
+   "fieldtype": "Int",
+   "label": "Processing Time (ms)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_failure",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "description": "EXCEPTION, HANDLER_FAILED, NO_HANDLER, SKIPPED or the error code the handler reported.",
+   "fieldname": "error_type",
+   "fieldtype": "Data",
+   "label": "Error Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure / Skip Reason",
+   "read_only": 1
+  },
+  {
+   "description": "Everything the handler reported while processing this message.",
+   "fieldname": "processing_log",
+   "fieldtype": "Code",
+   "label": "Processing Log",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_payload",
+   "fieldtype": "Section Break",
+   "label": "Message"
+  },
+  {
+   "fieldname": "payload",
+   "fieldtype": "Code",
+   "label": "Payload",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Kafka Consumer Data Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

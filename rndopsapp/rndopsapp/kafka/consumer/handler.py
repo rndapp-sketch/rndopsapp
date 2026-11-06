@@ -2,6 +2,7 @@
 # Kafka Consumer Master Handler - Routes messages to topic-specific handlers
 
 import frappe
+from ..logs.logger import capture_note
 from .fund_received import handle_fund_received_update
 from .deposit_slip import handle_deposit_slip_update
 from .payment_dlq import handle_account_head_payment_dlq_error
@@ -59,6 +60,7 @@ def process_message(topic: str, message_payload: dict) -> bool:
         try:
             return handler(message_payload)
         except Exception as e:
+            capture_note("error", "HANDLER_EXCEPTION", "ERROR", None, f"{type(e).__name__}: {e}")
             frappe.log_error(
                 f"Error in handler for topic {topic}: {str(e)}",
                 "Kafka Consumer Handler Execution Error"
@@ -66,6 +68,7 @@ def process_message(topic: str, message_payload: dict) -> bool:
             return False
     else:
         # This shouldn't happen if topics are correctly subscribed
+        capture_note("error", "NO_HANDLER", "ERROR", None, f"No handler found for topic: {topic}")
         frappe.log_error(
             f"No handler found for topic: {topic}",
             "Kafka Consumer Unknown Topic"

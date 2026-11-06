@@ -129,6 +129,10 @@ def publish_message(
     producer = get_producer()
     if not producer:
         log_producer_event("PUBLISH", doc_name, topic, "FAILED", "Producer not available")
+        log_publish_data(
+            topic, payload, doc_name, key, "FAILED", "kafka.utils",
+            attempts=0, error="Producer not available",
+        )
         return False
 
     # Prepare the key
@@ -151,6 +155,12 @@ def publish_message(
                 "SUCCESS",
                 f"Partition: {record_metadata.partition} | Offset: {record_metadata.offset}"
             )
+            log_publish_data(
+                topic, payload, doc_name, key, "SUCCESS", "kafka.utils",
+                attempts=attempt + 1,
+                partition=record_metadata.partition,
+                offset=record_metadata.offset,
+            )
             return True
 
         except Exception as e:
@@ -168,6 +178,7 @@ def publish_message(
                     break
 
     # All retries failed - send to DLQ
+    sent_to_dlq = False
     if dlq_topic:
         try:
             producer = get_producer()
@@ -188,6 +199,7 @@ def publish_message(
                     "SUCCESS",
                     f"Sent to DLQ after {PRODUCER_MAX_RETRIES} attempts"
                 )
+                sent_to_dlq = True
         except Exception as dlq_error:
             log_error(
                 f"CRITICAL: Failed to send to DLQ {dlq_topic}: {str(dlq_error)}",
@@ -195,6 +207,10 @@ def publish_message(
             )
 
     log_producer_event("PUBLISH", doc_name, topic, "FAILED", str(last_error))
+    log_publish_data(
+        topic, payload, doc_name, key, "FAILED", "kafka.utils",
+        attempts=PRODUCER_MAX_RETRIES, error=str(last_error), sent_to_dlq=sent_to_dlq,
+    )
     return False
 
 
@@ -233,6 +249,221 @@ def record_publish_state(
             f"Failed to record publish state for {reference_doctype} {reference_name}: {e}",
             "PUBLISH_STATE_LOG_ERROR",
         )
+
+
+# --- PUBLISH DATA LOG ---
+
+# Keys under which the DTOs / payloads carry the project number (all DTOs use projectNumber
+# inside "data"; the others are for older payloads built by hand).
+_PROJECT_NUMBER_KEYS = ("projectNumber", "projectNo", "project_number", "project_no", "project_name")
+
+
+def extract_project_number(payload: Any, key: Optional[str] = None) -> Optional[str]:
+    """Project number of a published message: the first projectNumber-style value found in the
+    payload (the "data" envelope first), else the Kafka partition key, which callers set to
+    the project number for ordering."""
+
+    def search(obj, depth):
+        if depth > 3:
+            return None
+        if isinstance(obj, dict):
+            for k in _PROJECT_NUMBER_KEYS:
+                value = obj.get(k)
+                if isinstance(value, (str, int)) and str(value).strip():
+                    return str(value).strip()
+            nested = obj.get("data")
+            ordered = ([nested] if isinstance(nested, (dict, list)) else []) + [
+                v for k, v in obj.items() if k != "data" and isinstance(v, (dict, list))
+            ]
+            for value in ordered:
+                found = search(value, depth + 1)
+                if found:
+                    return found
+        elif isinstance(obj, list):
+            for value in obj[:20]:
+                found = search(value, depth + 1)
+                if found:
+                    return found
+        return None
+
+    found = search(payload, 0)
+    if found:
+        return found
+    return str(key).strip() if key not in (None, "") else None
+
+
+def log_publish_data(
+    topic: str,
+    payload: Any,
+    doc_name: Optional[str],
+    key: Optional[str],
+    status: str,
+    source: str,
+    attempts: int = 1,
+    partition: Optional[int] = None,
+    offset: Optional[int] = None,
+    error: Optional[str] = None,
+    sent_to_dlq: bool = False,
+) -> None:
+    """Save a copy of what was handed to Kafka as a "Kafka Publish Data Log" row: the exact
+    payload, topic, key, project number, and whether it was delivered (SUCCESS) or every
+    attempt failed (FAILED).
+
+    Called by both publish_message() implementations. Never raises: logging must not break a
+    publish. The row is written straight to the table (no document hooks) so the app-wide
+    "*" doc events don't fire for it, and it joins the caller's transaction like
+    record_publish_state does.
+    """
+    try:
+        doc = frappe.get_doc(
+            {
+                "doctype": "Kafka Publish Data Log",
+                "project_number": extract_project_number(payload, key),
+                "topic": topic,
+                "event_type": payload.get("eventType") if isinstance(payload, dict) else None,
+                "status": status,
+                "reference_name": doc_name,
+                "kafka_key": str(key) if key not in (None, "") else None,
+                "source": source,
+                "attempts": attempts,
+                "partition": partition,
+                "offset": str(offset) if offset is not None else None,
+                "sent_to_dlq": 1 if sent_to_dlq else 0,
+                "error_message": (error or None) and str(error)[:1000],
+                "payload": json.dumps(payload, default=str, indent=1),
+            }
+        )
+        doc.name = frappe.generate_hash(length=10)
+        doc.set_user_and_timestamp()
+        doc.db_insert()
+    except Exception as e:
+        log_error(
+            f"Failed to log published message for {doc_name} on {topic}: {e}",
+            "PUBLISH_DATA_LOG_ERROR",
+        )
+
+
+# --- CONSUME DATA LOG ---
+
+CONSUME_REASON_LIMIT = 1500
+CONSUME_LOG_LIMIT = 8000
+
+
+def _own_db_connection():
+    """A second, short-lived database connection for the current site, independent of
+    frappe.db and whatever transaction the handler has open."""
+    from frappe.database import get_db
+
+    conf = frappe.local.conf
+    return get_db(
+        socket=conf.db_socket,
+        host=conf.db_host,
+        port=conf.db_port,
+        user=conf.db_name,
+        password=conf.db_password,
+        cur_db_name=conf.db_name,
+    )
+
+
+def consume_failure_reason(events: list, exception: Optional[BaseException] = None):
+    """(error_type, reason) for a message that failed: the exception, else what the handler
+    itself reported (failed events / errors), else an honest "no reason reported"."""
+    if exception is not None:
+        return "EXCEPTION", f"{type(exception).__name__}: {exception}"[:CONSUME_REASON_LIMIT]
+
+    reasons, types = [], []
+    for e in events:
+        failed = e["kind"] == "error" or e["status"] in ("FAILED", "ERROR")
+        if failed and e["message"] and e["type"] != "CONSUME" and e["message"] not in reasons:
+            reasons.append(e["message"])
+            if e["kind"] == "error" and e["type"] not in types:
+                types.append(e["type"])
+    if reasons:
+        return (types[0] if types else "HANDLER_FAILED"), "; ".join(reasons)[:CONSUME_REASON_LIMIT]
+    return "HANDLER_FAILED", "The handler returned False without reporting a reason."
+
+
+def log_consume_data(
+    topic: str,
+    payload: Any,
+    success: bool,
+    partition: Optional[int] = None,
+    offset: Optional[int] = None,
+    events: Optional[list] = None,
+    exception: Optional[BaseException] = None,
+    handler: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    error_type: Optional[str] = None,
+    failure_reason: Optional[str] = None,
+) -> None:
+    """Save a copy of a consumed message as a "Kafka Consumer Data Log" row: the payload,
+    whether it was processed, the reason when not, and what the handler reported meanwhile.
+
+    Written through its own connection and committed there, so the row survives whatever the
+    handler did with its transaction (commit, rollback, or left open with partial work) and
+    saving it never commits that work. Never raises: logging must not break consuming.
+    """
+    events = events or []
+    db = None
+    try:
+        # A handler can accept a message (return True, so Kafka moves on) yet have done
+        # nothing with it, e.g. "Document not found". That is SKIPPED, not a plain success.
+        skipped = [e for e in events if e["status"] == "SKIPPED" and e["type"] != "CONSUME"]
+        status = "SUCCESS" if success else "FAILED"
+        if success and skipped:
+            status = "SKIPPED"
+            error_type = "SKIPPED"
+            failure_reason = "; ".join(
+                f"{e['doc'] + ': ' if e['doc'] and e['doc'] != 'N/A' else ''}{e['message']}" for e in skipped if e["message"]
+            )[:CONSUME_REASON_LIMIT] or "The handler skipped this message."
+        elif not success and not failure_reason:
+            error_type, failure_reason = consume_failure_reason(events, exception)
+
+        reference_name = next((e["doc"] for e in events if e["doc"] and e["doc"] != "N/A"), None)
+        process_log = "\n".join(
+            f"[{e['status']}] {e['type']}" + (f" doc={e['doc']}" if e["doc"] else "") + (f" | {e['message']}" if e["message"] else "")
+            for e in events
+        )
+        now = frappe.utils.now()
+        row = {
+            "name": frappe.generate_hash(length=10),
+            "creation": now,
+            "modified": now,
+            "modified_by": "Administrator",
+            "owner": "Administrator",
+            "project_number": extract_project_number(payload),
+            "topic": topic,
+            "event_type": payload.get("eventType") if isinstance(payload, dict) else None,
+            "status": status,
+            "reference_name": reference_name,
+            "handler": handler,
+            "is_dlq": 1 if str(topic).endswith("-dlq") else 0,
+            # Int columns are NOT NULL in Frappe, so an unknown value is stored as 0
+            "partition": partition if partition is not None else 0,
+            "offset": str(offset) if offset is not None else None,
+            "duration_ms": duration_ms if duration_ms is not None else 0,
+            "error_type": error_type if status != "SUCCESS" else None,
+            "failure_reason": failure_reason if status != "SUCCESS" else None,
+            "processing_log": process_log[:CONSUME_LOG_LIMIT] or None,
+            "payload": json.dumps(payload, default=str, indent=1),
+        }
+        columns = ", ".join(f"`{c}`" for c in row)
+        placeholders = ", ".join(f"%({c})s" for c in row)
+
+        db = _own_db_connection()
+        db.sql(f"INSERT INTO `tabKafka Consumer Data Log` ({columns}) VALUES ({placeholders})", row)
+        db.commit()
+    except Exception as e:
+        log_error(
+            f"Failed to log consumed message on {topic} (partition {partition}, offset {offset}): {e}",
+            "CONSUME_DATA_LOG_ERROR",
+        )
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
 
 
 # --- DATE UTILITIES ---

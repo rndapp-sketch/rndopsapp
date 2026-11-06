@@ -6,6 +6,7 @@ from typing import Optional
 
 from .dto import FundReceivedDlqEventDTO
 from ..dlq_common import find_publish_state_log, revert_workflow_state, log_dlq_event
+from ..fund_received.mapper import FundReceivedConsumerMapper
 from ...config import TOPIC_FUND_RECEIVED, TOPIC_FUND_RECEIVED_DLQ
 
 REFERENCE_DOCTYPE = "Fund Received"
@@ -34,8 +35,29 @@ class FundReceivedDlqMapper:
             state_log = find_publish_state_log(REFERENCE_DOCTYPE, reference_name, TOPIC_FUND_RECEIVED)
             if state_log and state_log[0].previous_workflow_state:
                 previous_state = state_log[0].previous_workflow_state
-                revert_workflow_state(REFERENCE_DOCTYPE, reference_name, previous_state, state_log[0].name)
-                reverted = True
+
+                # The DLQ can be processed long after the failed publish (hours,
+                # in practice — see the consumer's heartbeat-restart churn), so
+                # the document may have legitimately moved forward in the
+                # meantime via a later, successfully-processed inbound update.
+                # Reusing the main consumer's priority table (never move the
+                # workflow backward) stops this revert from clobbering that
+                # forward progress — same guard class as
+                # FundReceivedConsumerMapper.apply_updates, just applied here too.
+                current_state = frappe.db.get_value(REFERENCE_DOCTYPE, reference_name, 'workflow_state') or ''
+                state_priority = FundReceivedConsumerMapper._STATE_PRIORITY
+                current_priority = state_priority.get(current_state, 0)
+                previous_priority = state_priority.get(previous_state, 0)
+
+                if current_priority <= previous_priority:
+                    revert_workflow_state(REFERENCE_DOCTYPE, reference_name, previous_state, state_log[0].name)
+                    reverted = True
+                else:
+                    frappe.logger().warning(
+                        f"[FundReceivedDlqMapper] Skipped revert for {reference_name}: "
+                        f"current='{current_state}' (priority {current_priority}) is already ahead of "
+                        f"revert target='{previous_state}' (priority {previous_priority})."
+                    )
 
         log_dlq_event(
             source_topic=TOPIC_FUND_RECEIVED_DLQ,

@@ -16,7 +16,9 @@ from ..config import (
     CONSUMER_RETRY_DELAY_SECONDS,
 )
 from ..logs import log_consumer_event, log_error, log_info, log_warning
-from .handler import process_message
+from .handler import process_message, TOPIC_HANDLERS
+from ..logs.logger import start_capture, stop_capture
+from ..utils import log_consume_data
 
 # Check if Kafka depends are available
 try:
@@ -174,12 +176,31 @@ def ensure_frappe_site_init():
 
 
 def process_message_with_context(topic, message_value, partition, offset):
-    """Wrapper to process message with proper Frappe context and logging."""
+    """Wrapper to process message with proper Frappe context and logging.
+
+    Every message is also saved as a "Kafka Consumer Data Log" row (payload, SUCCESS/FAILED,
+    and the reason it failed, taken from what the handler reported while it ran)."""
+    started = time.monotonic()
     try:
         if not ensure_frappe_site_init():
             return False
 
-        success = process_message(topic, message_value)
+        start_capture()
+        success, exception = False, None
+        try:
+            success = process_message(topic, message_value)
+        except Exception as e:
+            exception = e
+        events = stop_capture()
+
+        if exception is not None:
+            raise exception
+
+        log_consume_data(
+            topic, message_value, bool(success), partition, offset, events=events,
+            handler=getattr(TOPIC_HANDLERS.get(topic), "__name__", None),
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
 
         if success:
              log_consumer_event("CONSUME", "N/A", topic, "SUCCESS",
@@ -197,6 +218,11 @@ def process_message_with_context(topic, message_value, partition, offset):
             frappe.db.rollback()
         except:
             pass
+        log_consume_data(
+            topic, message_value, False, partition, offset, events=locals().get("events"),
+            exception=e, handler=getattr(TOPIC_HANDLERS.get(topic), "__name__", None),
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
         return False
 
 

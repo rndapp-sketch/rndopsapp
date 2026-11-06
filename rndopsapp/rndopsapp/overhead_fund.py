@@ -73,6 +73,11 @@ OVERHEAD_PRIVILEGED_ROLES = (
 
 PAYABLE_COMMIT_STATUSES = ("COMMITTED", "PARTIALLY_PAID", "OVERPAYMENT")
 
+# Mirrors Accounts' chain sum (getTotalCommittedAmountByRefOrTransactionExcludingModules):
+# released commits and purchase-order adjust modules never count towards a chain's total.
+CHAIN_EXCLUDED_STATUSES = ("CANCELLED", "REJECTED")
+CHAIN_EXCLUDED_MODULE_IDS = ("15", "30")  # PURCHASE_ORDER_ADJUST, PURCHASE_ORDER_COMMIT_ADJUST
+
 
 # ---------------------------------------------------------------------------
 # The fund registry — the one place a fund type's scoping is described
@@ -776,11 +781,11 @@ def get_overhead_commits(statuses=None):
 		if not isinstance(rows, list):
 			return []
 
+		# Every COMMIT row is kept, not just the payable ones: a settlement's parent is
+		# RE_COMMITTED, and its amount is still needed for the chain total below.
 		out = []
 		for row in rows:
 			if row.get("transactionType") != "COMMIT":
-				continue
-			if (row.get("status") or "").upper() not in wanted:
 				continue
 			out.append({
 				# transactionId IS the overheadCommitId a payment must reference.
@@ -803,10 +808,57 @@ def get_overhead_commits(statuses=None):
 	with ThreadPoolExecutor(max_workers=8) as executor:
 		results = list(executor.map(_commits_for, projects))
 
-	commits = [c for group in results for c in group]
-	attach_module_ids(commits)
+	all_commits = [c for group in results for c in group]
+	# Before the chain sum, which needs moduleId to leave purchase-order adjusts out.
+	attach_module_ids(all_commits)
+	_apply_chain_totals(all_commits)
+
+	commits = [c for c in all_commits if (c.get("status") or "").upper() in wanted]
 	commits.sort(key=lambda c: c.get("commitDate") or "", reverse=True)
 	return {"status": "success", "data": commits}
+
+
+def _apply_chain_totals(commits):
+	"""
+	Show a COMMITTED commit's amount as its whole chain's total, as the project side does.
+
+	A TA/DA or advance settlement is stored by Accounts as a delta against its parent (a
+	5,500 bill on a 6,500 travel commit stores -1,000), and the parent stays counted as
+	RE_COMMITTED. The project endpoint /account-head-commit/by-status/COMMITTED hides this by
+	returning the chain sum (resolveCommitAmountForCommittedStatus); the overhead log has no
+	such endpoint, so the same sum is made here. Other statuses keep their stored amount,
+	again matching the project side.
+
+	The chain root is the commit's refDetails, or the commit itself when it has none, and the
+	sum covers every commit whose own id or refDetails is that root — within one fund.
+	"""
+	def _key(value):
+		return str(value).strip() if value not in (None, "") else None
+
+	totals = {}
+	for c in commits:
+		if (c.get("status") or "").upper() in CHAIN_EXCLUDED_STATUSES:
+			continue
+		if str(c.get("moduleId") or "") in CHAIN_EXCLUDED_MODULE_IDS:
+			continue
+		amount = flt(c.get("commitAmount"))
+		own = _key(c.get("transactionCommitNumber"))
+		ref = _key(c.get("refDetails"))
+		for root in {own, ref} - {None}:
+			key = (c["projectNumber"], root)
+			totals[key] = totals.get(key, 0.0) + amount
+
+	for c in commits:
+		if (c.get("status") or "").upper() != "COMMITTED":
+			continue
+		if str(c.get("moduleId") or "") in CHAIN_EXCLUDED_MODULE_IDS:
+			continue
+		root = _key(c.get("refDetails")) or _key(c.get("transactionCommitNumber"))
+		if root is None:
+			continue
+		total = totals.get((c["projectNumber"], root))
+		if total is not None:
+			c["commitAmount"] = flt(total)
 
 
 @frappe.whitelist()

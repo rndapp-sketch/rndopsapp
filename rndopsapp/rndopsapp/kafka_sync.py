@@ -232,9 +232,15 @@ def publish_message(topic, payload, doc_name, dlq_topic=None, key=None):
         key: The partitioning key (use Project Number) to ensure message ordering
     """
     global _producer
+    from rndopsapp.rndopsapp.kafka.utils import log_publish_data
+
     producer = get_producer()
     if not producer:
         frappe.log_error(f"Kafka Producer not available for {doc_name}", "Kafka Error")
+        log_publish_data(
+            topic, payload, doc_name, key, "FAILED", "kafka_sync",
+            attempts=0, error="Producer not available",
+        )
         return False
 
     # 1. Prepare the Key
@@ -242,6 +248,7 @@ def publish_message(topic, payload, doc_name, dlq_topic=None, key=None):
     kafka_key = str(key).encode('utf-8') if key else None
 
     # 2. Attempt Publication with Retries
+    last_error = None
     for attempt in range(MAX_RETRIES):
         try:
             # send() is asynchronous; it returns a future
@@ -255,9 +262,16 @@ def publish_message(topic, payload, doc_name, dlq_topic=None, key=None):
                 f"Partition: {record_metadata.partition} | "
                 f"Offset: {record_metadata.offset}"
             )
+            log_publish_data(
+                topic, payload, doc_name, key, "SUCCESS", "kafka_sync",
+                attempts=attempt + 1,
+                partition=record_metadata.partition,
+                offset=record_metadata.offset,
+            )
             return True
             
         except Exception as e:
+            last_error = e
             error_details = f"Attempt {attempt + 1}/{MAX_RETRIES} failed for {topic}: {str(e)}"
             frappe.log_error(error_details, "Kafka Publish Error")
             
@@ -272,6 +286,7 @@ def publish_message(topic, payload, doc_name, dlq_topic=None, key=None):
                     break
     
     # 3. Handle Failure: Send to Dead Letter Queue (DLQ)
+    sent_to_dlq = False
     if dlq_topic:
         try:
             producer = get_producer() # Attempt one last grab of the producer
@@ -287,9 +302,14 @@ def publish_message(topic, payload, doc_name, dlq_topic=None, key=None):
                 future = producer.send(dlq_topic, key=kafka_key, value=dlq_payload)
                 future.get(timeout=10)
                 frappe.logger().warning(f"Kafka: Sent {doc_name} to DLQ {dlq_topic} after {MAX_RETRIES} attempts")
+                sent_to_dlq = True
         except Exception as dlq_error:
             frappe.log_error(f"CRITICAL: Failed to send to DLQ {dlq_topic}: {str(dlq_error)}", "Kafka DLQ Error")
-    
+
+    log_publish_data(
+        topic, payload, doc_name, key, "FAILED", "kafka_sync",
+        attempts=MAX_RETRIES, error=str(last_error) if last_error else "Unknown Error", sent_to_dlq=sent_to_dlq,
+    )
     return False
 
 
