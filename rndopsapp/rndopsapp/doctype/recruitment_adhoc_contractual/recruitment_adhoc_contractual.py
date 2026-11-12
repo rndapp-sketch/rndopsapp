@@ -462,6 +462,12 @@ def perform_recruitment_adhoc_contractual_action(docname, action, updated_data=N
         # END OF EDIT — OJS | 2026-04-23 18:21 IST
         # ============================================================
 
+        # The db.set_value path above leaves no Version / Workflow Action trail and
+        # modified_by is overwritten by the next approver, so without this Workflow
+        # comment the acting user (e.g. R&D Staff) loses the document from their
+        # Task Registry (get_task_registry, method 4) once anyone acts after them.
+        doc.add_comment("Workflow", frappe._(next_state))
+
         frappe.db.commit()
         print(f"--- [END] perform_recruitment_adhoc_contractual_action SUCCESS ---\n")
 
