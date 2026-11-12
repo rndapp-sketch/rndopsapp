@@ -109,8 +109,7 @@
   {
    "fieldname": "upfa_project_duration",
    "fieldtype": "Data",
-   "label": "Project Duration",
-   "read_only": 1
+   "label": "Project Duration"
   },
   {
    "fieldname": "upfa_financial_section",
@@ -276,7 +275,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-09-03 12:13:40.465483",
+ "modified": "2026-11-10 12:11:13.199793",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "Recruitment Adhoc Contractual",
