@@ -20,7 +20,16 @@ def extract_eval_expression(expression):
 
 class P_11Form(Document):
 	def validate(self):
-		pass
+		self.validate_quotation_is_pdf()
+
+	def validate_quotation_is_pdf(self):
+		"""The quotation upload (attachment_if_any) must be a PDF. Only checked when
+		the file is new/changed, so older documents with another file type still save."""
+		url = (self.attachment_if_any or "").strip()
+		if not url or not self.has_value_changed("attachment_if_any"):
+			return
+		if not url.split("?")[0].lower().endswith(".pdf"):
+			frappe.throw(_("Quotation Upload must be a PDF file (.pdf)."), title=_("Invalid file type"))
 
 # =============================================================================
 # API ENDPOINTS for P_11 Form

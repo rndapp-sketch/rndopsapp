@@ -23,6 +23,7 @@
   "other_charges",
   "grand_total",
   "declaration",
+  "declaration_satisfied",
   "attachment_if_any"
  ],
  "fields": [
@@ -43,12 +44,13 @@
   },
   {
    "fieldname": "the_purchase_committe_recommends_purchase_of_the_items_from_ms",
-   "fieldtype": "Data",
-   "label": "The Purchase committe recommends purchase of the items from M/s"
+   "fieldtype": "Long Text",
+   "label": "The Purchase committe recommends purchase of the items from M/s ( provide vendor name, address, email and contact No)"
   },
   {
    "fieldname": "quotation_recieved_for_purchase_of_the__items_from_ms",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Quotation recieved for purchase of the  items from M/s"
   },
   {
@@ -103,6 +105,12 @@
    "label": "Certified that we the undersigned, members of the purchase committee are jointly."
   },
   {
+   "default": "0",
+   "fieldname": "declaration_satisfied",
+   "fieldtype": "Check",
+   "label": "I am personally satisfied that these goods purchased are of the quality specification, from a reliable supplier, at a reasonable price."
+  },
+  {
    "allow_on_submit": 1,
    "fieldname": "project_no",
    "fieldtype": "Data",
@@ -121,17 +129,18 @@
    "read_only": 1
   },
   {
+   "description": "Upload the quotation as a PDF file (.pdf only).",
    "fieldname": "attachment_if_any",
    "fieldtype": "Attach",
-   "label": "Attachment if any"
+   "label": "Quotation Upload (.pdf)"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-16 18:32:49.009736",
- "modified_by": "prorndadmin@prornd.local",
+ "modified": "2026-11-06 15:49:00.316368",
+ "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "P_11 Form",
  "naming_rule": "Expression (old style)",

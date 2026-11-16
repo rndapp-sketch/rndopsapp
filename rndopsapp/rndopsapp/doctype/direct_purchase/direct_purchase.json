@@ -74,9 +74,10 @@
    "label": "File Upload Section"
   },
   {
+   "description": "Upload the technical specification only. Do not upload a quotation here.",
    "fieldname": "upload_detailed_specification",
    "fieldtype": "Attach",
-   "label": "Upload Detailed Specification"
+   "label": "Upload Technical Specification Only"
   },
   {
    "fieldname": "total_estimate",
