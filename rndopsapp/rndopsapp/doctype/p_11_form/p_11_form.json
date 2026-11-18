@@ -102,13 +102,15 @@
    "default": "0",
    "fieldname": "declaration",
    "fieldtype": "Check",
-   "label": "Certified that we the undersigned, members of the purchase committee are jointly."
+   "label": "Purchase Committee Certificate",
+   "description": "Certified that we, members of the purchase committee are jointly and individually satisfied that the goods recommended for purchase are of the requisite specification and quality, priced at the prevailing market rate and the supplier recommended is reliable and competent to supply the goods in question, and it is not debarred by Department of Commerce or Ministry/ Department concerned"
   },
   {
    "default": "0",
    "fieldname": "declaration_satisfied",
    "fieldtype": "Check",
-   "label": "I am personally satisfied that these goods purchased are of the quality specification, from a reliable supplier, at a reasonable price."
+   "label": "Personal Satisfaction Certificate",
+   "description": "I,, am personally satisfied that these goods purchased are of the requisite quality and specification and have been purchased from a reliable supplier at a reasonable price."
   },
   {
    "allow_on_submit": 1,
