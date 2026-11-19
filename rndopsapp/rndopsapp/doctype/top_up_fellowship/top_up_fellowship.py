@@ -105,20 +105,39 @@ class TopUpFellowship(Document):
 					)
 				)
 
-			cap = monthly_cap_for(row.stipend_or_scholarship)
+			# total_amount_per_month holds the Grand Total for the whole period
+			# (hours x rate x months), so the cap scales with the months in the period.
+			months = _months_in_period(row.period_from, row.period_to)
+			per_month_cap = monthly_cap_for(row.stipend_or_scholarship)
+			cap = per_month_cap * months
 			amount = _parse_amount(row.total_amount_per_month)
 			if amount > cap:
 				frappe.throw(
 					_(
-						"Row #{0}: Total Amount per Month ({1}) exceeds the cap of {2} for a student "
-						"who {3} a stipend/scholarship."
+						"Row #{0}: Grand Total Amount ({1}) exceeds the cap of {2} ({3} per month x {4} "
+						"month(s)) for a student who {5} a stipend/scholarship."
 					).format(
 						row.idx,
 						amount,
 						cap,
+						per_month_cap,
+						months,
 						"has" if row.stipend_or_scholarship == "Yes" else "does not have",
 					)
 				)
+
+
+def _months_in_period(period_from, period_to):
+	"""Calendar months covered by the period, inclusive (01-Jan..31-Mar = 3).
+	Falls back to 1 when dates are missing/invalid so the cap never drops to 0."""
+	try:
+		start = frappe.utils.getdate(period_from)
+		end = frappe.utils.getdate(period_to)
+		if not start or not end or end < start:
+			return 1
+		return (end.year - start.year) * 12 + (end.month - start.month) + 1
+	except Exception:
+		return 1
 
 
 def extract_eval_expression(expression):
