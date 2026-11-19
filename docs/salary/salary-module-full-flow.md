@@ -343,11 +343,22 @@ Runs **once per selected employee**, one at a time.
      [`commitPayment.py:173-182`](commitPayment.py#L173)) — stops immediately.
   2. **Tenure resolution** — queries `Project Staff Details` for this `ps_emp_id`,
      walks each record's `table_ymed` child table (joining date, term completion
-     date, basic salary), keeps only tenures whose `pstd_term_completion_date` is
-     still in the future, and among valid tenures picks the one with the latest
-     `(joining_date, term_completion_date)`. A fallback treats the parent doc's
-     `ps_joining_date`/`ps_term_completion_date`/`ps_basic_salary` as a tenure when
-     `table_ymed` is empty.
+     date, basic salary) and keeps a tenure as follows:
+     - **`yyyy_month` given** — the tenure is chosen by the *requested month*, not by
+       today's date: it is kept only if its joining and completion dates overlap that
+       month (`_get_month_range` + `_tenure_overlap_days`). If several overlap, the
+       one with the **largest overlap** wins, with the latest joining date as
+       tie-break. This is what lets an earlier tenure still be paid after it has
+       ended (e.g. `2026TS0231`, 2025-09-11 → 2026-08-07, works for `2026_july`
+       but still fails for `2026_november`).
+     - **`yyyy_month` not given** — unchanged: keeps tenures whose
+       `pstd_term_completion_date` has not passed, picking the latest
+       `(joining_date, term_completion_date)`.
+
+     A fallback treats the parent doc's `ps_joining_date`/`ps_term_completion_date`/
+     `ps_basic_salary` as a tenure when no `table_ymed` row qualifies, using the
+     same month-overlap rule. The error *"No active tenure found for the given
+     Employee ID"* is returned only when no tenure overlaps the month.
   3. **Recruitment linkage** — from the winning tenure's `scr_id`, looks up
      `Selection Committee Report.interview_id`. That `interview_id` **is** the
      `Recruitment Adhoc Contractual` document name (`frapAppId`). If it doesn't
@@ -365,19 +376,44 @@ Runs **once per selected employee**, one at a time.
      `moduleId == "11"` **and** `frapAppId == recruitment_doc_name` **and**
      `projectNumber == project_no`. Each surviving row is enriched with
      `projectTitle` (`_get_project_title_by_number`,
-     [`commitPayment.py:53-64`](commitPayment.py#L53)).
+     [`commitPayment.py:53-64`](commitPayment.py#L53)) and tagged
+     `commit_status` / `commit_payable: true` / `commit_amount_source: "ledger"`.
+  6. **Committed amount is always returned.** If step 5 finds no *payable* commit
+     (an earlier tenure's commit is often already `SETTLED` or `RE_COMMITTED`):
+     1. the other statuses (`NON_PAYABLE_COMMIT_STATUSES` = `SETTLED`,
+        `RE_COMMITTED`, `PENDING`) are read and matched the same way. A match is
+        returned with `commit_payable: false` — **for information only**;
+     2. if the ledger has no row at all, the application's own stored amount is
+        returned (`commit_amount_source: "application_stored"`,
+        `commit_payable: false`): for a Recruitment Adhoc Contractual, the latest
+        positive commit staged in `Kafka Commit Staging` (published ones
+        preferred); for a Miscellaneous Commit, its `commit_amount`. Such a row has
+        no `transactionCommitNumber`.
+
+     The extra reads run only when no payable commit exists, so the normal path
+     makes the same ledger calls as before. A failing non-payable status is logged
+     and skipped — it never breaks the response.
+
+     **New response keys** (existing keys unchanged):
+
+     | Key | Meaning |
+     |---|---|
+     | `commit_status` | Ledger status of the commit (`COMMITTED`, `SETTLED`, …), or the stored status for an application-stored amount |
+     | `commit_payable` | `true` only when a salary payment can still be raised against it. `false` rows must **not** offer a payment — otherwise a settled commit invites a duplicate payment |
+     | `commit_amount_source` | `"ledger"` or `"application_stored"` |
 
 - **Backend returns one of four shapes:**
 
   | Response | Meaning |
   |---|---|
-  | `[{projectNumber, accountHeadId, moduleId, frapAppId, transactionCommitNumber, commitDate, ...}]` | Commit found (RAC-sourced, or Miscellaneous-Commit-sourced — see Step 4a) |
+  | `[{projectNumber, accountHeadId, moduleId, frapAppId, transactionCommitNumber, commitDate, ..., commit_status, commit_payable, commit_amount_source}]` | Commit found (RAC-sourced, or Miscellaneous-Commit-sourced — see Step 4a). Check `commit_payable`: `false` means a settled / re-committed / stored amount shown for information only |
   | `[{status: "Pending Approval in Account Portal", message: "Salary already initiated"}]` | Already staged this month |
   | `[{status: "error", message: "..."}]` | Hard failure (no tenure, no employee, no Recruitment record **and** no approved Miscellaneous Commit fallback — see Step 4a) |
   | `[]` | Nothing matched |
 
 - **Frontend does with each:**
-  - Commit found → builds the commit payload (§3.3), marks the employee **payable**.
+  - Commit found with `commit_payable: true` → builds the commit payload (§3.3), marks the employee **payable**.
+  - Commit found with `commit_payable: false` → shows the amount but must **not** offer a payment against it.
   - Already staged → marks them **Skipped**.
   - Error → marks them **Error**, shows the message.
   - Empty `[]` → does **not** give up — falls through to Step 4b.
@@ -406,13 +442,17 @@ always resolves to either a match or an explicit error, never a bare `[]`.
    project_no` (not `moduleId == "11"`, since a Miscellaneous Commit's `moduleId`
    on the ledger comes from the `Miscellaneous Commit` doctype's own Module
    Registry mapping, not a hardcoded 11).
-5. **Match found on the ledger** → returns `[<row>]`, tagged with `source:
+5. **Match found on the ledger** (payable status) → returns `[<row>]`, tagged with `source:
    "miscellaneous_commit"` and `linked_miscellaneous_commit: <name>` — same shape
    as any other commit-found response, so the frontend needs no changes to
    consume it. Fires an `:information_source:` **Salary Payment Data — Migrated
    Employee Fallback** Mattermost notification.
-6. **No approved Miscellaneous Commit exists, or one exists but the ledger
-   hasn't ingested it yet** (same `PENDING`-style lag as §10.1) → returns
+6. **Candidate found but its ledger row is not payable** (e.g. `SETTLED` /
+   `RE_COMMITTED`) → returns that row with `commit_payable: false`. If the ledger
+   has no row at all yet, returns the Miscellaneous Commit's own `commit_amount`
+   (`commit_amount_source: "application_stored"`, `commit_payable: false`) and still
+   fires the `:x:` **Chosen Commit Not On Ledger** notification.
+7. **No approved Miscellaneous Commit exists at all** (or it has no amount) → returns
    `[{"status": "error", "message": "No Recruitment/Selection Committee record
    found for employee '<ps_emp_id>', and no approved Miscellaneous Commit exists
    for project '<project_no>'. Salary payment cannot proceed."}]`. Fires an `:x:`
