@@ -81,6 +81,39 @@ class Travel(Document):
 		if self.account_head:
 			self.account_head = resolve_budget_head(self.account_head)
 
+	def validate(self):
+		self.validate_no_advance_on_pfms_project()
+
+	def validate_no_advance_on_pfms_project(self):
+		"""
+		A PFMS project cannot fund a travel advance.
+
+		Checked only when the travel is new or its advance / project changes — including the
+		Other PI step, where the project is assigned — so travels already in flight on a PFMS
+		project with an advance keep moving through the workflow untouched.
+		"""
+		if (self.travel_financial_assistance or "").strip() != "Yes":
+			return
+		if not self.is_new() and not any(
+			self.has_value_changed(f)
+			for f in ("travel_financial_assistance", "travel_project_title", "travel_project_number")
+		):
+			return
+
+		project = self.travel_project_title or self.travel_project_number
+		if not project:
+			return
+		is_pfms = frappe.db.get_value(
+			"Project Registration",
+			project if frappe.db.exists("Project Registration", project) else {"project_no": project},
+			"is_the_account_type_pfms",
+		)
+		if is_pfms == "Yes":
+			frappe.throw(
+				_("Advance is not allowed for PFMS projects. Set 'Do you need Advance?' to No or choose a non-PFMS project."),
+				title=_("Advance Not Allowed"),
+			)
+
 
 @frappe.whitelist()
 def get_travel_fields(doc_name=None):

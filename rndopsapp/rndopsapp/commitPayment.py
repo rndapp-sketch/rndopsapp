@@ -54,6 +54,9 @@ ACCOUNT_HEAD_COMMIT_API_URL = ACCOUNT_PORTAL_ACCOUNT_HEAD_COMMIT
 # Valid commit statuses
 VALID_COMMIT_STATUSES = ["SETTLED", "PARTIALLY_PAID", "OVERPAYMENT", "PENDING"]
 SALARY_COMMIT_STATUSES = ["COMMITTED", "PARTIALLY_PAID", "OVERPAYMENT"]
+# Other ledger statuses an employee's commit can be in (e.g. an earlier tenure's commit
+# that is already settled). Their amount is returned for information only — never payable.
+NON_PAYABLE_COMMIT_STATUSES = ["SETTLED", "RE_COMMITTED", "PENDING"]
 
 
 def _get_project_title_by_number(project_number):
@@ -88,6 +91,90 @@ def _fetch_account_head_commits_by_status(status):
                 return value
 
     return []
+
+
+def _fetch_non_payable_commit_records(log_label):
+    """
+    Ledger commits in the non-payable statuses (SETTLED, RE_COMMITTED, ...) as a flat
+    list of dicts. A status that fails to load is logged and skipped — these records
+    are informational, so they must never break the salary response.
+    """
+    records = []
+    with ThreadPoolExecutor(max_workers=len(NON_PAYABLE_COMMIT_STATUSES)) as executor:
+        future_to_status = {
+            executor.submit(_fetch_account_head_commits_by_status, status): status
+            for status in NON_PAYABLE_COMMIT_STATUSES
+        }
+        for future in as_completed(future_to_status):
+            status = future_to_status[future]
+            try:
+                records.extend(r for r in future.result() if isinstance(r, dict))
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"{log_label}: non-payable commit fetch failed ({status})")
+    return records
+
+
+def _annotate_commit_record(record, payable):
+    """
+    Add the new keys only (existing keys untouched):
+      commit_status          the ledger status of this commit (e.g. COMMITTED, SETTLED)
+      commit_payable         True only for a commit a salary payment can still be raised against
+      commit_amount_source   "ledger" for a ledger row
+    A non-payable (e.g. SETTLED) commit is informational — the UI must not offer a payment on it.
+    """
+    record["commit_status"] = record.get("status")
+    record["commit_payable"] = bool(payable)
+    record["commit_amount_source"] = "ledger"
+    return record
+
+
+def _get_stored_application_commit(reference_doctype, reference_name, misc_commit=None):
+    """
+    The committed amount the application itself holds, for when the ledger returns no
+    commit row for the employee. Returns (amount, status) or (None, None).
+
+    - Miscellaneous Commit: its own commit_amount (status = workflow_state).
+    - Anything else (Recruitment Adhoc Contractual): the latest positive commit staged
+      in Kafka Commit Staging for that document (status = staging status).
+    """
+    if misc_commit is not None:
+        amount = flt(misc_commit.get("commit_amount"))
+        return (amount, misc_commit.get("workflow_state") or "Approved") if amount else (None, None)
+
+    rows = frappe.get_all(
+        "Kafka Commit Staging",
+        filters={"reference_doctype": reference_doctype, "reference_name": reference_name},
+        fields=["status", "payload"],
+        order_by="creation desc",
+        limit_page_length=0,
+        ignore_permissions=True,
+    )
+    # Prefer a commit that was actually published, newest first; else any staged one.
+    rows.sort(key=lambda r: 0 if r.get("status") == "PUBLISHED" else 1)
+    for row in rows:
+        try:
+            payload = json.loads(row.get("payload") or "{}")
+        except Exception:
+            continue
+        amount = flt(payload.get("commit_amount"))
+        module_id = payload.get("moduleId")
+        if amount > 0 and (module_id is None or str(module_id) == "11"):
+            return amount, row.get("status")
+    return None, None
+
+
+def _stored_commit_record(project_no, frap_app_id, amount, status, module_id="11"):
+    """Synthetic record shaped like a ledger row, flagged as not coming from the ledger."""
+    return {
+        "projectNumber": project_no,
+        "projectTitle": _get_project_title_by_number(project_no),
+        "moduleId": module_id,
+        "frapAppId": frap_app_id,
+        "commitAmount": amount,
+        "commit_status": status,
+        "commit_payable": False,
+        "commit_amount_source": "application_stored",
+    }
 
 
 def _find_migrated_employee_commit(project_no, ps_emp_id, scr_id=None):
@@ -192,9 +279,26 @@ def _find_migrated_employee_commit(project_no, ps_emp_id, scr_id=None):
         matched["projectTitle"] = _get_project_title_by_number(matched.get("projectNumber"))
         matched["source"] = "miscellaneous_commit"
         matched["linked_miscellaneous_commit"] = chosen.name
+        _annotate_commit_record(matched, payable=True)
         print(
             f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] Matched ledger commit for Miscellaneous Commit "
             f"{chosen.name}: transactionCommitNumber={matched.get('transactionCommitNumber')}"
+        )
+        return [matched]
+
+    # No payable ledger row. Its commit may already be SETTLED / RE_COMMITTED (e.g. an earlier
+    # tenure) — return that amount for information, flagged non-payable.
+    for record in _fetch_non_payable_commit_records("Migrated Employee Fallback"):
+        if str(record.get("frapAppId")) != chosen.name or str(record.get("projectNumber") or "").strip() != str(project_no or "").strip():
+            continue
+        matched = dict(record)
+        matched["projectTitle"] = _get_project_title_by_number(matched.get("projectNumber"))
+        matched["source"] = "miscellaneous_commit"
+        matched["linked_miscellaneous_commit"] = chosen.name
+        _annotate_commit_record(matched, payable=False)
+        print(
+            f"[MIGRATED_EMPLOYEE_FALLBACK] [{ps_emp_id}] Matched NON-PAYABLE ledger commit for "
+            f"{chosen.name}: status={matched.get('commit_status')} (informational only)"
         )
         return [matched]
 
@@ -219,6 +323,16 @@ def _find_migrated_employee_commit(project_no, ps_emp_id, scr_id=None):
             ),
         },
     )
+    # Still return the commit amount the Miscellaneous Commit itself holds, so the field is
+    # always present (flagged as not from the ledger and not payable).
+    stored_amount, stored_status = _get_stored_application_commit(
+        "Miscellaneous Commit", chosen.name, misc_commit=chosen
+    )
+    if stored_amount:
+        stored = _stored_commit_record(project_no, chosen.name, stored_amount, stored_status, module_id=None)
+        stored["source"] = "miscellaneous_commit"
+        stored["linked_miscellaneous_commit"] = chosen.name
+        return [stored]
     return None
 
 
@@ -686,6 +800,24 @@ def get_salary_history(search=None):
     }
 
 
+def _tenure_overlap_days(joining_date, term_completion_date, current_date, month_range):
+    """
+    Days of overlap between a tenure and the requested month, or None if it should be skipped.
+
+    With a month (month_range = (start, end)): the tenure is kept only if its joining and
+    completion dates overlap that month; the returned value is the number of overlapping days
+    (used to prefer the best-fitting tenure). A missing joining date is treated as open-ended.
+    Without a month: today's behaviour — keep a tenure that has not ended yet (returns 0).
+    """
+    if not month_range:
+        return 0 if current_date <= term_completion_date else None
+
+    month_start, month_end = month_range
+    joining = getdate(joining_date) if joining_date else month_start
+    overlap = (min(term_completion_date, month_end) - max(joining, month_start)).days + 1
+    return overlap if overlap >= 1 else None
+
+
 @frappe.whitelist(allow_guest=True)
 def salary_payment_data(ps_emp_id, yyyy_month=None):
     """
@@ -737,6 +869,9 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
             }]
 
         current_date = getdate(today())
+        # Select the tenure by the requested month when given (an earlier tenure may already be
+        # over today); without yyyy_month keep selecting by today's date.
+        month_range = _get_month_range(yyyy_month) if yyyy_month else None
         valid_records = []
 
         for staff_record in staff_records:
@@ -749,15 +884,17 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                     continue
 
                 term_completion_date = getdate(term_completion_date)
-                if current_date > term_completion_date:
+                joining_date = tenure.get("pstd_joining_date")
+                overlap_days = _tenure_overlap_days(joining_date, term_completion_date, current_date, month_range)
+                if overlap_days is None:
                     continue
 
-                joining_date = tenure.get("pstd_joining_date")
                 basic_salary = flt(tenure.get("pstd_basic_salary"))
                 valid_tenures.append({
                     "joining_date": joining_date,
                     "term_completion_date": term_completion_date,
                     "basic_salary": basic_salary,
+                    "overlap_days": overlap_days,
                 })
 
             # Fallback: some Project Staff Details records keep the current tenure on the
@@ -767,19 +904,26 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
                 top_level_completion = staff_doc.get("ps_term_completion_date")
                 if top_level_completion:
                     top_level_completion = getdate(top_level_completion)
-                    if current_date <= top_level_completion:
+                    overlap_days = _tenure_overlap_days(
+                        staff_doc.get("ps_joining_date"), top_level_completion, current_date, month_range
+                    )
+                    if overlap_days is not None:
                         valid_tenures.append({
                             "joining_date": staff_doc.get("ps_joining_date"),
                             "term_completion_date": top_level_completion,
                             "basic_salary": flt(staff_doc.get("ps_basic_salary")),
+                            "overlap_days": overlap_days,
                         })
 
             if not valid_tenures:
                 continue
 
+            # Largest overlap with the requested month wins (all 0 without a month, so this
+            # reduces to the original latest-joining-date choice); latest joining date breaks ties.
             latest_tenure = max(
                 valid_tenures,
                 key=lambda row: (
+                    row.get("overlap_days", 0),
                     getdate(row.get("joining_date")) if row.get("joining_date") else getdate("1900-01-01"),
                     getdate(row.get("term_completion_date")),
                 ),
@@ -807,6 +951,7 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
         latest_record = max(
             valid_records,
             key=lambda row: (
+                row["latest_tenure"].get("overlap_days", 0),
                 getdate(row["latest_tenure"].get("joining_date"))
                 if row["latest_tenure"].get("joining_date")
                 else getdate("1900-01-01"),
@@ -894,30 +1039,55 @@ def salary_payment_data(ps_emp_id, yyyy_month=None):
         filtered_records = []
         project_title_by_number = {}
 
-        for record in merged_commit_records:
-            if not isinstance(record, dict):
-                continue
+        def _collect_matching(records, payable):
+            collected = []
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
 
-            project_number = record.get("projectNumber")
-            if (
-                str(record.get("moduleId")) != "11"
-                or str(record.get("frapAppId")) != str(recruitment_doc_name)
-                or str(project_number) != str(project_no)
-            ):
-                continue
+                project_number = record.get("projectNumber")
+                if (
+                    str(record.get("moduleId")) != "11"
+                    or str(record.get("frapAppId")) != str(recruitment_doc_name)
+                    or str(project_number) != str(project_no)
+                ):
+                    continue
 
-            if project_number not in project_title_by_number:
-                project_title_by_number[project_number] = _get_project_title_by_number(project_number)
+                if project_number not in project_title_by_number:
+                    project_title_by_number[project_number] = _get_project_title_by_number(project_number)
 
-            filtered_record = {"projectNumber": project_number}
-            filtered_record["projectTitle"] = project_title_by_number.get(project_number)
-            filtered_record.update({
-                key: value
-                for key, value in record.items()
-                if key != "projectNumber"
-            })
-            filtered_record["salary_gap"] = salary_gap
-            filtered_records.append(filtered_record)
+                filtered_record = {"projectNumber": project_number}
+                filtered_record["projectTitle"] = project_title_by_number.get(project_number)
+                filtered_record.update({
+                    key: value
+                    for key, value in record.items()
+                    if key != "projectNumber"
+                })
+                filtered_record["salary_gap"] = salary_gap
+                _annotate_commit_record(filtered_record, payable=payable)
+                collected.append(filtered_record)
+            return collected
+
+        filtered_records = _collect_matching(merged_commit_records, payable=True)
+
+        if not filtered_records:
+            # No payable commit. An earlier tenure's commit is often already SETTLED /
+            # RE_COMMITTED — return it for information (commit_payable=False, so the UI
+            # must not offer another payment against it).
+            filtered_records = _collect_matching(
+                _fetch_non_payable_commit_records("Salary Payment Data"), payable=False
+            )
+
+        if not filtered_records:
+            # Not on the ledger at all: fall back to the amount the application itself stored,
+            # so commitAmount is always present.
+            stored_amount, stored_status = _get_stored_application_commit(
+                "Recruitment Adhoc Contractual", recruitment_doc_name
+            )
+            if stored_amount:
+                stored = _stored_commit_record(project_no, recruitment_doc_name, stored_amount, stored_status)
+                stored["salary_gap"] = salary_gap
+                filtered_records = [stored]
 
         print(f"[SALARY_PAYMENT_DATA] [{ps_emp_id}] Returning {len(filtered_records)} filtered record(s)")
         _mm_notify_salary_json(
