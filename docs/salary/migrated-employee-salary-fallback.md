@@ -450,6 +450,29 @@ field this design needs (`module`, `linked_application`, `commit_decommit`,
 
 ---
 
+### 8.1 Follow-up — non-payable and stored commit amounts
+
+`_find_migrated_employee_commit` now also covers a Miscellaneous Commit whose ledger
+row is no longer payable or not on the ledger yet. Previously those cases returned
+`None` (an error to the caller). Order of resolution:
+
+1. ledger row in `COMMITTED` / `PARTIALLY_PAID` / `OVERPAYMENT` → returned as before,
+   plus `commit_status`, `commit_payable: true`, `commit_amount_source: "ledger"`;
+2. ledger row in `SETTLED` / `RE_COMMITTED` / `PENDING` → returned with
+   `commit_payable: false` (information only);
+3. no ledger row → the Miscellaneous Commit's own `commit_amount`
+   (`commit_amount_source: "application_stored"`, `commit_payable: false`, no
+   `transactionCommitNumber`); the "Chosen Commit Not On Ledger" notification is
+   still sent.
+
+Only when the Miscellaneous Commit has no amount at all does it still return `None`.
+Callers must check `commit_payable` before offering a payment. Helpers:
+`_fetch_non_payable_commit_records`, `_annotate_commit_record`,
+`_get_stored_application_commit`, `_stored_commit_record`. No `bench migrate`
+required.
+
+---
+
 ## 9. Non-Goals
 
 - Not fixing the external ledger's `PENDING`-status behavior (§6, point 5).

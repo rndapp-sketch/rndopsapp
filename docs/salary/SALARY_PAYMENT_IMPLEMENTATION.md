@@ -413,10 +413,22 @@ SALARY_COMMIT_STATUSES = ["COMMITTED", "PARTIALLY_PAID", "OVERPAYMENT"]
         "projectTitle": "string",
         "moduleId": "11",
         "frapAppId": "string",
+        "commitAmount": 0.0,
         # ... additional commit API fields
+        "commit_status": "COMMITTED",        # ledger status (or stored status)
+        "commit_payable": True,              # False = informational only, do not pay
+        "commit_amount_source": "ledger",    # or "application_stored"
     }
 ]
 ```
+
+`commitAmount` is always present when a record is returned. The tenure is selected
+by the requested `yyyy_month` (overlap with that month; today's date when no month
+is given). When no payable commit exists, a `SETTLED` / `RE_COMMITTED` / `PENDING`
+commit is returned with `commit_payable: False`, and failing that the application's
+stored committed amount (`commit_amount_source: "application_stored"`, no
+`transactionCommitNumber`). See
+[`salary-module-full-flow.md`](salary-module-full-flow.md) Step 4.
 
 ### 6.2 `submit_payment_data` Returns
 
