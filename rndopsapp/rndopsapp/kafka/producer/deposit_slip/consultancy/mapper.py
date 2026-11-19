@@ -188,6 +188,34 @@ class ConsultancyDepositSlipMapper:
 
         return project_number
 
+    # GST amount fields differ by deposit-slip doctype, e.g. D Consultancy uses
+    # cgst_9_of_consultancy_fee / sgst_9_of_consultancy_fee / igst_18_on_consultancy,
+    # Research Consultancy uses igst_18_on_consultancy_fee, E Non Routine / T Testing use
+    # cgst_9 / sgst_9 / igst_18. Read every variant so none is silently treated as 0.
+    _CGST_FIELDS = ('cgst_9', 'cgst_9_of_consultancy_fee')
+    _SGST_FIELDS = ('sgst_9', 'sgst_9_of_consultancy_fee')
+    _IGST_FIELDS = ('igst_18', 'igst_18_on_consultancy', 'igst_18_on_consultancy_fee')
+
+    @staticmethod
+    def _first_amount(doc, fieldnames) -> float:
+        """First non-zero amount among the given field names (0.0 if none are set)."""
+        for fieldname in fieldnames:
+            value = flt(getattr(doc, fieldname, 0))
+            if value:
+                return value
+        return 0.0
+
+    @staticmethod
+    def _get_gst_amounts(doc):
+        """Return (cgst_amount, sgst_amount, igst_amount, total_gst) for the document."""
+        mapper = ConsultancyDepositSlipMapper
+        return (
+            mapper._first_amount(doc, mapper._CGST_FIELDS),
+            mapper._first_amount(doc, mapper._SGST_FIELDS),
+            mapper._first_amount(doc, mapper._IGST_FIELDS),
+            flt(getattr(doc, 'total_gst', 0)),
+        )
+
     @staticmethod
     def get_gst_type(doc) -> str:
         """
@@ -199,10 +227,7 @@ class ConsultancyDepositSlipMapper:
         Returns:
             str: "NOGST", "CGST_SGST", or "IGST"
         """
-        cgst_amount = flt(getattr(doc, 'cgst_9', 0))
-        sgst_amount = flt(getattr(doc, 'sgst_9', 0))
-        igst_amount = flt(getattr(doc, 'igst_18', 0) or getattr(doc, 'igst_18_on_consultancy', 0))
-        total_gst = flt(getattr(doc, 'total_gst', 0))
+        cgst_amount, sgst_amount, igst_amount, total_gst = ConsultancyDepositSlipMapper._get_gst_amounts(doc)
 
         if total_gst > 0 or cgst_amount > 0 or sgst_amount > 0 or igst_amount > 0:
             if cgst_amount > 0 or sgst_amount > 0:
@@ -226,10 +251,13 @@ class ConsultancyDepositSlipMapper:
         if gst_type == "NOGST":
             return None
 
-        cgst_amount = flt(getattr(doc, 'cgst_9', 0))
-        sgst_amount = flt(getattr(doc, 'sgst_9', 0))
-        igst_amount = flt(getattr(doc, 'igst_18', 0) or getattr(doc, 'igst_18_on_consultancy', 0))
-        total_gst = flt(getattr(doc, 'total_gst', 0))
+        cgst_amount, sgst_amount, igst_amount, total_gst = ConsultancyDepositSlipMapper._get_gst_amounts(doc)
+
+        # The type is IGST only when there is no CGST/SGST, so the whole GST is IGST. If the
+        # document has a Total GST but no separately stored IGST figure, use the total rather
+        # than send IGST with no amount (the validator rejects that).
+        if gst_type == "IGST" and igst_amount <= 0 and total_gst > 0:
+            igst_amount = total_gst
 
         cgst_percentage = None
         sgst_percentage = None
