@@ -423,13 +423,19 @@ def save_reimbursement_data(data):
 		if isinstance(items_data, str):
 			items_data = json.loads(items_data)
 
+		pending_uploads = []
 		if items_data:
 			doc.set("table_bosk", [])
 			for item in items_data:
 				# Handle file upload for 'uploads' field
 				if item.get("uploads") and isinstance(item["uploads"], dict):
 					file_data = item["uploads"]
-					if file_data.get("file_name") and file_data.get("file_data"):
+					if file_data.get("file_name") and file_data.get("file_data") and doc.is_new():
+						# New doc has no name yet (File.attached_to_name would be None),
+						# so attach the file after the first save.
+						pending_uploads.append((len(doc.get("table_bosk")), file_data))
+						item["uploads"] = None
+					elif file_data.get("file_name") and file_data.get("file_data"):
 						try:
 							saved_file = save_file(
 								file_data["file_name"],
@@ -453,6 +459,27 @@ def save_reimbursement_data(data):
 		# Save
 		doc.flags.ignore_permissions = True
 		doc.save()
+
+		for row_idx, file_data in pending_uploads:
+			try:
+				saved_file = save_file(
+					file_data["file_name"],
+					file_data["file_data"],
+					doc.doctype,
+					doc.name,
+					decode=True,
+					is_private=0,
+					df="uploads",
+				)
+				frappe.db.set_value(
+					doc.get("table_bosk")[row_idx].doctype,
+					doc.get("table_bosk")[row_idx].name,
+					"uploads",
+					saved_file.file_url,
+				)
+			except Exception as e:
+				frappe.log_error(f"Error saving file: {str(e)}", "Reimbursement File Upload")
+
 		frappe.db.commit()
 
 		return {"status": "success", "docname": doc.name}
