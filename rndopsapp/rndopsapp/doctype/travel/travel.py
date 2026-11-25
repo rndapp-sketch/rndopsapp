@@ -92,11 +92,20 @@ class Travel(Document):
 		Other PI step, where the project is assigned — so travels already in flight on a PFMS
 		project with an advance keep moving through the workflow untouched.
 		"""
+		# Financial assistance alone is allowed on PFMS; only an advance is not. "Do you need
+		# Advance?" is only asked when financial assistance is Yes, so both must be Yes.
 		if (self.travel_financial_assistance or "").strip() != "Yes":
+			return
+		if (self.do_you_need_advance or "").strip() != "Yes":
 			return
 		if not self.is_new() and not any(
 			self.has_value_changed(f)
-			for f in ("travel_financial_assistance", "travel_project_title", "travel_project_number")
+			for f in (
+				"travel_financial_assistance",
+				"do_you_need_advance",
+				"travel_project_title",
+				"travel_project_number",
+			)
 		):
 			return
 
@@ -322,6 +331,11 @@ def get_travel_fields(doc_name=None):
 		"client_scripts": client_scripts,
 		"child_table_meta": child_table_meta,
 		"scl_balance": _get_raw_scl_balance(scl_target_user),
+		# Whose form this is decides which sections apply: for an existing travel the
+		# person who raised it, not whoever is viewing it (e.g. the approving PI).
+		"applicant_is_project_staff": _is_project_staff_applicant(
+			(related_data.get("owner") if doc_name else None) or current_user
+		),
 	}
 
 
@@ -598,6 +612,42 @@ def _clear_other_pi_assignment(doc):
 		frappe.log_error(frappe.get_traceback(), "Travel Other-PI unassign failed")
 
 
+# Same precedence as the frontend dashboard redirect: these roles outrank
+# "project staff", so their holders apply against their own projects as usual.
+_OUTRANKING_PROJECT_STAFF_ROLES = ("Permanent Employee", "Student", "staff, RnD")
+
+
+def _is_project_staff_applicant(user):
+	"""True when `user` applies as project staff (project / head are left to their PI,
+	and the faculty-only sections — SCL, additional responsibility, class arrangement —
+	do not apply)."""
+	if not user or user == "Guest":
+		return False
+	roles = frappe.get_roles(user)
+	return "project staff" in roles and not any(r in roles for r in _OUTRANKING_PROJECT_STAFF_ROLES)
+
+
+def _project_staff_pi(doc):
+	"""PI of a project-staff applicant: the piheadmentor_user_id on their User record.
+
+	Project staff leave the project and account head to their PI, so the travel
+	reaches the PI at 'Pending PI Approval' with no project on it. Returns None
+	for any other applicant, or when no PI is recorded.
+	"""
+	owner = doc.get("owner")
+	if not _is_project_staff_applicant(owner):
+		return None
+	return (frappe.db.get_value("User", owner, "piheadmentor_user_id") or "").strip() or None
+
+
+def _is_staff_pi_step(doc, state=None):
+	"""A project-staff travel waiting for its PI to choose project + account head.
+	Returns that PI, or None."""
+	if (state or doc.workflow_state) != "Pending PI Approval" or doc.get("travel_project_number"):
+		return None
+	return _project_staff_pi(doc)
+
+
 def _resolve_dept_head(user_id):
 	"""Return the department head (HoD user) for a given user's department.
 
@@ -682,6 +732,17 @@ def submit_travel(docname):
 		# Other-PI flow: the travel is charged to a project owned by a different
 		# PI, so route it to that PI (Pending Other PI) instead of the normal chain.
 		is_other_pi = (doc.get("travel_other_pi") or "").strip() == "Other"
+
+		# Project staff: the workflow sends them to 'Pending PI Approval'. With no
+		# project chosen, the PI is the one on the applicant's User record
+		# (piheadmentor_user_id); record it so the PI's inbox and project picker find it.
+		staff_pi = None
+		if not doc.get("travel_project_number"):
+			staff_pi = _project_staff_pi(doc)
+		if staff_pi:
+			is_other_pi = False
+			doc.travel_other_pi_id = staff_pi
+
 		if is_other_pi and not doc.get("travel_other_pi_id"):
 			frappe.throw(_("Please select the Other PI before submitting."))
 
@@ -713,6 +774,13 @@ def submit_travel(docname):
 		# Charged to another PI's project — hand the form to that PI.
 		if next_state.state == "Pending Other PI":
 			_assign_travel_to_other_pi(doc)
+		elif staff_pi and next_state.state == "Pending PI Approval":
+			_assign_travel_to_user(
+				doc,
+				staff_pi,
+				_("Travel application from your project staff awaiting your approval "
+				  "(select the project and account head)."),
+			)
 
 		return {
 			"status": "success",
@@ -865,6 +933,13 @@ def perform_travel_action(docname, action, extra_data=None):
 			if not is_system_manager and assigned_pi != (frappe.session.user or "").lower():
 				frappe.throw(_("You are not authorised to act on this travel application."))
 
+		# Same for a project-staff travel waiting on the staff member's own PI.
+		staff_pi = _is_staff_pi_step(doc, current_state)
+		if staff_pi:
+			is_system_manager = "System Manager" in frappe.get_roles(frappe.session.user)
+			if not is_system_manager and staff_pi.lower() != (frappe.session.user or "").lower():
+				frappe.throw(_("You are not authorised to act on this travel application — it is with the applicant's PI."))
+
 		# When the travel was charged to another PI's project, the Head-approval
 		# step is re-pointed to that FUNDING PI's department head (set at the
 		# Other-PI forward). Only they (or a System Manager) may act — the
@@ -923,7 +998,8 @@ def perform_travel_action(docname, action, extra_data=None):
 
 		# Other-PI approval: the PI charges the travel to one of THEIR OWN projects
 		# and picks that project's account head. Validate ownership + head, then persist.
-		if current_state == "Pending Other PI" and action in ("Forward", "Approve"):
+		# The project staff's PI does the same at 'Pending PI Approval'.
+		if (current_state == "Pending Other PI" or staff_pi) and action in ("Forward", "Approve"):
 			from rndopsapp.rndopsapp.doctype.reimbursement.reimbursement import (
 				get_pi_projects,
 				get_project_account_heads,
@@ -964,7 +1040,7 @@ def perform_travel_action(docname, action, extra_data=None):
 			# Re-point the HoD step to the FUNDING PI's department head — the
 			# charge now sits on the Other PI's project, so their dept HoD (not
 			# the applicant's) approves. Falls back gracefully if unresolved.
-			doc.travel_head_approver_id = _resolve_dept_head(doc.get("travel_other_pi_id"))
+			doc.travel_head_approver_id = _resolve_dept_head(staff_pi or doc.get("travel_other_pi_id"))
 
 		# Update workflow state
 		doc.workflow_state = next_state
@@ -981,7 +1057,7 @@ def perform_travel_action(docname, action, extra_data=None):
 
 		# The Other PI has acted (Forward/Put Back) — release their assignment
 		# and hand the form to the funding PI's department head.
-		if current_state == "Pending Other PI":
+		if current_state == "Pending Other PI" or staff_pi:
 			_clear_other_pi_assignment(doc)
 			if next_state == "Pending Head Approval" and doc.get("travel_head_approver_id"):
 				_assign_travel_to_user(
