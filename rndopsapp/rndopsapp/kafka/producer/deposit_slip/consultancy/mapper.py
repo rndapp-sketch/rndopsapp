@@ -298,6 +298,34 @@ class ConsultancyDepositSlipMapper:
         return ecs_dates
 
     @staticmethod
+    def get_credit_rows(doc) -> dict:
+        """
+        Read the generic `credit_distribution` child table (used by E Non Routine and
+        Other Event slips) as {"IDF"|"DPF"|"STWF"|"SWF": (percentage, amount)}.
+        Rows are matched on their label, e.g. "IDF", "Student Welfare Fund".
+        """
+        rows = {}
+        for row in (getattr(doc, "credit_distribution", None) or []):
+            label = (getattr(row, "label", "") or "").strip().upper()
+            if not label:
+                continue
+            if "STUDENT" in label:
+                key = "STWF"
+            elif "STAFF" in label or "SWF" in label:
+                key = "SWF"
+            elif label.startswith("IDF") or "INFRASTRUCTURE" in label:
+                key = "IDF"
+            elif label.startswith("DPF") or "DEPARTMENT" in label:
+                key = "DPF"
+            else:
+                continue
+            rows[key] = (
+                flt(getattr(row, "percentage_of_overhead", 0)),
+                flt(getattr(row, "amount", 0)),
+            )
+        return rows
+
+    @staticmethod
     def map_credit_distribution(doc) -> tuple:
         """
         Map credit distribution from child tables to PDF and DPF lists.
@@ -334,23 +362,37 @@ class ConsultancyDepositSlipMapper:
                 ))
         
         # 2. Map DPF Credit Distribution
-        # Check for new table `dpf_credit_distributions`
-        if hasattr(doc, "dpf_credit_distributions") and doc.dpf_credit_distributions:
-            for row in doc.dpf_credit_distributions:
+        # D slips use `dpf_credit_distributions`; E Non Routine uses `dpf_credit_distribution_50`.
+        for table in ("dpf_credit_distributions", "dpf_credit_distribution_50"):
+            for row in (getattr(doc, table, None) or []):
                 dept_name = getattr(row, 'select_dpf_dept_center_school', None)
                 dept_id = get_department_id(dept_name)
-                
+
                 dpf_list.append(CreditDistributionDpfDTO(
                     departmentId=int(dept_id) if dept_id else None,
                     dpfPercentage=flt(getattr(row, 'dpf_percentage', 0)),
                     dpfAmount=flt(getattr(row, 'dpf_amount', 0))
                 ))
 
-        # Fallback to old generic table if new tables are missing (for backward compatibility)
-        if not pdf_list and not dpf_list and hasattr(doc, "credit_distribution") and doc.credit_distribution:
-             # Basic fallback or just ignore based on request for "major changes"
-             # I will keeping this part removed to strictly follow the new structure as user implied.
-             pass
+        # No per-department rows: send the DPF share from the generic credit_distribution table.
+        if not dpf_list:
+            dpf_pct, dpf_amt = ConsultancyDepositSlipMapper.get_credit_rows(doc).get("DPF", (0, 0))
+            if dpf_amt:
+                # The slip has no department of its own: use the project's implementation
+                # department (fall back to the applicant department).
+                dept_id = None
+                project = getattr(doc, "project_title", None)
+                if project:
+                    dept_name = (
+                        frappe.db.get_value("Project Registration", project, "implementation_department")
+                        or frappe.db.get_value("Project Registration", project, "applicant_department")
+                    )
+                    dept_id = get_department_id(dept_name)
+                dpf_list.append(CreditDistributionDpfDTO(
+                    departmentId=dept_id,
+                    dpfPercentage=dpf_pct or 50.0,
+                    dpfAmount=dpf_amt
+                ))
 
         return pdf_list, dpf_list
 
@@ -459,18 +501,21 @@ class ConsultancyDepositSlipMapper:
         # Map credit distributions
         pdf_list, dpf_list = cls.map_credit_distribution(doc)
 
-        # Map credit distribution amounts
-        swf_amount = flt(getattr(doc, 'staff_welfare_amount', 0) or getattr(doc, 'staff_welfare_t_testing_fund', 0))
-        swf_percentage = 5.0
+        # Map credit distribution amounts. Direct fields first (D / T slips), then the
+        # generic credit_distribution rows (E Non Routine / Other Event slips).
+        credit_rows = cls.get_credit_rows(doc)
 
-        stwf_amount = flt(getattr(doc, 'student_welfare_amount', 0) or getattr(doc, 'student_welfare_t_testing_fund', 0))
-        stwf_percentage = 5.0
+        swf_amount = flt(getattr(doc, 'staff_welfare_amount', 0) or getattr(doc, 'staff_welfare_t_testing_fund', 0)) or credit_rows.get("SWF", (0, 0))[1]
+        swf_percentage = credit_rows.get("SWF", (5.0, 0))[0] or 5.0
 
-        idf_amount = flt(getattr(doc, 'idf_amount', 0) or getattr(doc, 'idf_t_testing_fee', 0))
-        idf_percentage = 40.0
+        stwf_amount = flt(getattr(doc, 'student_welfare_amount', 0) or getattr(doc, 'student_welfare_t_testing_fund', 0)) or credit_rows.get("STWF", (0, 0))[1]
+        stwf_percentage = credit_rows.get("STWF", (5.0, 0))[0] or 5.0
 
-        dpf_amount = flt(getattr(doc, 'dpf_amount', 0) or getattr(doc, 'dpf_t_testing_fee', 0))
-        dpf_percentage = 50.0
+        idf_amount = flt(getattr(doc, 'idf_amount', 0) or getattr(doc, 'idf_t_testing_fee', 0)) or credit_rows.get("IDF", (0, 0))[1]
+        idf_percentage = credit_rows.get("IDF", (40.0, 0))[0] or 40.0
+
+        dpf_amount = flt(getattr(doc, 'dpf_amount', 0) or getattr(doc, 'dpf_t_testing_fee', 0)) or credit_rows.get("DPF", (0, 0))[1]
+        dpf_percentage = credit_rows.get("DPF", (50.0, 0))[0] or 50.0
 
         # Get amount field based on doctype
         amount_received = flt(
