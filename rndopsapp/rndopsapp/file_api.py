@@ -120,3 +120,75 @@ def get_file(file_url=None, download=0):
 	frappe.response["content_type"] = content_type
 	frappe.response["type"] = "download"
 	frappe.response["display_content_as"] = "inline" if inline else "attachment"
+
+
+def _safe_segment(value, label):
+	"""One object-key path segment (a doctype, document name or folder), or throw."""
+	raw = str(value or "").strip().strip("/")
+	if not raw or "/" in raw or "\\" in raw or "\x00" in raw or raw in (".", ".."):
+		frappe.throw(_("Invalid {0}").format(label), frappe.ValidationError)
+	return raw
+
+
+@frappe.whitelist()
+def list_files(docname, doctype="Project Registration", folder=None):
+	"""
+	List the MinIO files stored for a document, so the caller does not have to know
+	the file names or folders in advance.
+
+	    GET /api/method/rndopsapp.rndopsapp.file_api.list_files?docname=<project>[&folder=fund_received]
+
+	Files are stored as "<Doctype_with_underscores>/<docname>/<folder>/<file>". Project and
+	Fund Received attachments both sit under the Project Registration folder of the project
+	(Fund Received uses the folders "fund_received" / "fundreceived").
+
+	Args:
+		docname: the document name, e.g. the project's Project Registration name.
+		doctype: defaults to "Project Registration".
+		folder: optional - only list this folder (e.g. "fund_received").
+
+	Returns {"docname", "doctype", "total", "folders": {folder: count}, "files": [...]}.
+	Each file has `file_url`, which can be passed straight to get_file. Same access rule as
+	get_file: any logged-in user.
+	"""
+	doctype_dir = _safe_segment(doctype, "doctype").replace(" ", "_")
+	doc_dir = _safe_segment(docname, "docname")
+	prefix = f"{doctype_dir}/{doc_dir}/"
+	if folder:
+		prefix += _safe_segment(folder, "folder").lower() + "/"
+
+	from rndopsapp.minio import get_rnd_file_service
+
+	try:
+		objects = get_rnd_file_service().storage.list_prefix(prefix)
+	except Exception:
+		frappe.log_error(title="file_api: list_files failed", message=frappe.get_traceback())
+		frappe.throw(_("Could not list files. Please try again later."))
+
+	files = []
+	folders = {}
+	for obj in objects:
+		key = obj.object_name
+		if key.endswith("/"):
+			continue
+		rest = key[len(f"{doctype_dir}/{doc_dir}/"):].split("/")
+		file_name = rest[-1]
+		folder_name = "/".join(rest[:-1])
+		folders[folder_name] = folders.get(folder_name, 0) + 1
+		files.append({
+			"file_name": file_name,
+			"folder": folder_name,
+			"file_url": "/" + key,
+			"size": obj.size,
+			"content_type": mimetypes.guess_type(file_name)[0] or "application/octet-stream",
+			"last_modified": obj.last_modified.isoformat() if obj.last_modified else None,
+		})
+
+	files.sort(key=lambda f: (f["folder"], f["file_name"].lower()))
+	return {
+		"docname": doc_dir,
+		"doctype": doctype,
+		"total": len(files),
+		"folders": folders,
+		"files": files,
+	}

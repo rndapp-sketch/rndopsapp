@@ -899,13 +899,38 @@ def get_pi_projects(pi=None):
 @frappe.whitelist()
 def get_project_account_heads(project_name):
 	"""
-	Return the distinct account heads defined in a project's sanctioned budget
-	breakup (Project Sanctioned Budget child table). The 'Other PI' can only
-	select from these heads when approving a reimbursement against the project.
+	Return the account heads a PI can charge on a project at an approval step
+	(Other PI / project staff's PI). Used for the dropdown and to validate the
+	choice, so both always agree. Values are head labels (e.g. "Overhead").
+
+	- Overhead fund (is_overhead_project: PDF / DPF / IDF / SWF / STWF): a single
+	  pool, so the only head is "Overhead" — these funds carry no budget breakup.
+	- Otherwise the distinct heads of the project's own budget breakup (Project
+	  Sanctioned Budget rows on the Project Registration), plus the heads actually
+	  sanctioned / received / loaned against it (Budget Head's
+	  get_budget_heads_by_project), which projects without a breakup rely on.
+	- Neither: every Budget Head, as the application forms fall back to.
 	"""
 	project_name = str(project_name or "").strip().strip('"').strip("'")
 	if not project_name:
 		return []
+
+	project = frappe.db.get_value(
+		"Project Registration",
+		project_name,
+		["name", "project_no", "is_overhead_project"],
+		as_dict=True,
+	) or frappe.db.get_value(
+		"Project Registration",
+		{"project_no": project_name},
+		["name", "project_no", "is_overhead_project"],
+		as_dict=True,
+	)
+	if project and project.get("is_overhead_project"):
+		overhead = frappe.db.get_value("Budget Head", {"budget_head": "Overhead"}, "budget_head") or "Overhead"
+		return [{"value": overhead, "label": overhead}]
+
+	heads = []
 
 	# A project's budget heads may live in either the sanctioned or the proposed
 	# budget breakup (both use the 'Project Sanctioned Budget' child doctype), so
@@ -914,7 +939,7 @@ def get_project_account_heads(project_name):
 		rows = frappe.get_all(
 			"Project Sanctioned Budget",
 			filters={
-				"parent": project_name,
+				"parent": project.name if project else project_name,
 				"parenttype": "Project Registration",
 			},
 			fields=["account_head", "is_total_row"],
@@ -922,15 +947,28 @@ def get_project_account_heads(project_name):
 		)
 	except Exception:
 		rows = []
+	# Skip the grand-total row
+	heads += [r.get("account_head") for r in rows if not r.get("is_total_row")]
+
+	# Heads from the project's Fund Sanction / Fund Received / Loan Request records.
+	if project and project.get("project_no"):
+		try:
+			from rndopsapp.rndopsapp.doctype.budget_head.budget_head import get_budget_heads_by_project
+
+			heads += [h.get("budget_head") for h in get_budget_heads_by_project(project.project_no)]
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "get_project_account_heads: budget head lookup failed")
+
+	# Nothing sanctioned or budgeted yet: offer every Budget Head, the same fallback
+	# the application forms use, rather than an empty list the PI cannot pass.
+	if not any((h or "").strip() for h in heads):
+		heads = frappe.get_all("Budget Head", pluck="budget_head", order_by="budget_head asc")
 
 	seen = set()
 	options = []
-	for r in rows:
-		head = (r.get("account_head") or "").strip()
-		# Skip blank rows and the grand-total row
-		if not head or r.get("is_total_row"):
-			continue
-		if head.lower() in seen:
+	for head in heads:
+		head = (head or "").strip()
+		if not head or head.lower() in seen:
 			continue
 		seen.add(head.lower())
 		options.append({"value": head, "label": head})

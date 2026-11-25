@@ -5,7 +5,7 @@ import requests
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, sanitize_html
+from frappe.utils import add_to_date, get_datetime, now_datetime, sanitize_html
 from frappe.utils.file_manager import save_file
 from rndopsapp.static_config import (
 	ACCOUNT_PORTAL_BASE_URL,
@@ -338,6 +338,29 @@ def add_project_comment(doctype, docname, content):
 
 	try:
 		doc = frappe.get_doc(doctype, docname)
+
+		# A put back already records its reason as a "[Put Back] ..." comment; the screen then
+		# posts the same reason again as a plain comment. Skip that duplicate.
+		reason = content.strip()
+		if reason.startswith("[Put Back]"):
+			reason = reason[len("[Put Back]"):].strip()
+		recent_put_back = frappe.get_all(
+			"Comment",
+			filters={
+				"reference_doctype": doctype,
+				"reference_name": docname,
+				"comment_type": "Comment",
+				"owner": frappe.session.user,
+				"content": ["like", "[Put Back]%"],
+				"creation": [">", add_to_date(now_datetime(), seconds=-120)],
+			},
+			fields=["content", "owner", "creation", "comment_type"],
+			order_by="creation desc",
+			limit=1,
+		)
+		if recent_put_back and recent_put_back[0].content[len("[Put Back]"):].strip() == reason:
+			return recent_put_back[0]
+
 		comment = doc.add_comment("Comment", sanitize_html(content))
 
 		# Return the created comment with proper structure
