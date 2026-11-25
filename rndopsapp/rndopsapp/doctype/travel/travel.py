@@ -92,11 +92,20 @@ class Travel(Document):
 		Other PI step, where the project is assigned — so travels already in flight on a PFMS
 		project with an advance keep moving through the workflow untouched.
 		"""
+		# Financial assistance alone is allowed on PFMS; only an advance is not. "Do you need
+		# Advance?" is only asked when financial assistance is Yes, so both must be Yes.
 		if (self.travel_financial_assistance or "").strip() != "Yes":
+			return
+		if (self.do_you_need_advance or "").strip() != "Yes":
 			return
 		if not self.is_new() and not any(
 			self.has_value_changed(f)
-			for f in ("travel_financial_assistance", "travel_project_title", "travel_project_number")
+			for f in (
+				"travel_financial_assistance",
+				"do_you_need_advance",
+				"travel_project_title",
+				"travel_project_number",
+			)
 		):
 			return
 
