@@ -43,6 +43,9 @@ PUT_BACK_STATE_OVERRIDES = {
 }
 
 
+PUT_BACK_TAG = "[Put Back] "
+
+
 def _get_active_workflow(doctype):
 	workflows = frappe.get_all("Workflow", filters={"document_type": doctype, "is_active": 1}, pluck="name")
 	if not workflows:
@@ -222,6 +225,18 @@ def set_put_back_workflow_state(doctype, docname, state, username, comment=None)
 			"reference_name": docname,
 			"content": f"[Put Back] {username}: {prev_state} → {state}{reason_text}",
 		}).insert(ignore_permissions=True)
+
+		# The comment list shows "Comment"-type entries (Workflow-type ones only appear in the
+		# Activity tab), so add the reason there too, tagged "[Put Back]" like the Fund Received
+		# put backs, instead of leaving the screen to post an untagged copy of the reason.
+		if comment:
+			frappe.get_doc({
+				"doctype": "Comment",
+				"comment_type": "Comment",
+				"reference_doctype": doctype,
+				"reference_name": docname,
+				"content": f"{PUT_BACK_TAG}{comment}",
+			}).insert(ignore_permissions=True)
 
 		if register:
 			owner = frappe.db.get_value(doctype, docname, "owner")
