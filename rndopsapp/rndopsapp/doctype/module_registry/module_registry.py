@@ -558,6 +558,9 @@ def get_pending_application():
 	  Approval" for Reimbursement) until they pick the funding project/account
 	  head. Without this the designated PI has no inbox for them, since the
 	  Pending Task page is not shown to Permanent Employees.
+	- Project staff applications (same five doctypes) at "Pending PI Approval",
+	  matched by the owner's User.piheadmentor_user_id == current user, tagged
+	  "project_staff": 1.
 	- Cancellation Request, only where it waits on a named person ("Pending
 	  Other PI" / "Pending Mentor Approval"), scoped to
 	  the person recorded on the referenced document. The role stages (Head,
@@ -701,6 +704,47 @@ def get_pending_application():
 				records.append(r)
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), f"get_pending_application: {dt} lookup failed")
+
+	# Project staff applications: the workflow sends a project-staff applicant's form
+	# to "Pending PI Approval", and the staff member leaves the project / account head
+	# for their PI to choose. The PI is the piheadmentor_user_id on the applicant's
+	# User record (pi_owner_emails above), so match on the owner rather than on any
+	# field the form had to fill in.
+	staff_owner_emails = (
+		frappe.get_all(
+			"Has Role",
+			filters={"parenttype": "User", "parent": ["in", pi_owner_emails], "role": "project staff"},
+			pluck="parent",
+		)
+		if pi_owner_emails
+		else []
+	)
+	if staff_owner_emails:
+		listed = {(r.get("doctype"), r.get("name")) for r in records}
+		for dt, (_pi_field, _state, name_field) in other_pi_sources.items():
+			try:
+				meta = frappe.get_meta(dt)
+				fields = ["name", "workflow_state", "modified", "owner", "docstatus", "creation"]
+				if meta.has_field(name_field):
+					fields.append(name_field)
+				rows = frappe.get_list(
+					dt,
+					filters={"owner": ["in", staff_owner_emails], "workflow_state": "Pending PI Approval"},
+					fields=fields,
+					order_by="modified desc",
+					limit_page_length=10000,
+					ignore_permissions=True,
+				)
+				for r in rows:
+					if (dt, r.get("name")) in listed:
+						continue
+					r["doctype"] = dt
+					r["pi"] = current_user
+					r["username"] = r.get(name_field) or r.get("owner")
+					r["project_staff"] = 1
+					records.append(r)
+			except Exception:
+				frappe.log_error(frappe.get_traceback(), f"get_pending_application: {dt} project staff lookup failed")
 
 	# Cancellation Request, named-person stages only. A cancellation waiting at
 	# "Pending Other PI" / "Pending Mentor Approval" belongs to the one person recorded on the referenced document; those
