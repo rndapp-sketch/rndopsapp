@@ -60,6 +60,8 @@ PROJECT_NO_FIELDS = (
 	"igf_project_code",
 	"upfa_project_code",
 	"disbursal_project_number",
+	"ex_proj_no",  # Project Staff Extension
+	"applicant_prj_num",  # Project Staff Resignation
 )
 
 
