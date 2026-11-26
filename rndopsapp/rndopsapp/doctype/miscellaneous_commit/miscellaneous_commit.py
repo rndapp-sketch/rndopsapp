@@ -2,16 +2,155 @@
 # For license information, please see license.txt
 
 import json
+import re
 
 import frappe
+import requests
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt
 
 DOCTYPE = "Miscellaneous Commit"
+
+# Accounts stores refDetails as an Integer, so only a TID that fits one may be sent.
+_MAX_TID = 2147483647
+_LEDGER_TIMEOUT = 30
 
 
 class MiscellaneousCommit(Document):
 	pass
+
+
+# ---------------------------------------------------------------------------
+# refDetails: "Linked Application Number" -> ledger TID
+# ---------------------------------------------------------------------------
+# The linked application number is free text (an App ID, often with a note after it),
+# but Accounts only consumes an integer refDetails. So it is looked up in the ledger:
+# the linked application's COMMIT row on this project + budget head gives the TID.
+# Nothing found -> refDetails is sent empty. Ledger unreachable -> the action is blocked,
+# so an existing link is never silently dropped.
+
+def _as_tid(value):
+	"""`value` as a TID string when it already is one (a positive integer Accounts can hold)."""
+	text = str(value or "").strip()
+	if text.isdigit() and 0 < int(text) <= _MAX_TID:
+		return text
+	return None
+
+
+def _candidate_app_ids(text):
+	"""The whole value, then its first word: "2026082706000200(OLD APPLICATION)" -> "2026082706000200"."""
+	text = str(text or "").strip()
+	if not text:
+		return []
+	first = re.split(r"[\s(),;:]+", text)[0]
+	return [c for c in dict.fromkeys([text, first]) if c]
+
+
+def _ledger_rows(project_no, budget_head):
+	"""
+	Transactions for this project's budget head, or for its overhead fund (PDF/DPF, a single
+	pool with no budget-head dimension). Throws when the Accounts service can't be read.
+	"""
+	from rndopsapp.rndopsapp.overhead_fund import fetch_overhead_logs, resolve_overhead_fund
+	from rndopsapp.static_config import ACCOUNT_PORTAL_COMMIT_PAYMENT
+
+	unreachable = _(
+		"Couldn't read the ledger from the Accounts service to resolve the Linked Application "
+		"Number. Please try again shortly."
+	)
+
+	overhead = resolve_overhead_fund(project_no)
+	if overhead:
+		fund_type, scope, _row = overhead
+		try:
+			rows = fetch_overhead_logs(fund_type, scope)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Miscellaneous Commit - Overhead Ledger Read")
+			frappe.throw(unreachable)
+		if isinstance(rows, dict):
+			# The endpoint answers 200 with {"error": ...} on bad input.
+			frappe.throw(unreachable)
+		return rows or []
+
+	head_id = frappe.db.get_value("Budget Head", budget_head, "id") if budget_head else None
+	if head_id is None and budget_head:
+		head_id = frappe.db.get_value("Budget Head", {"budget_head": budget_head}, "id")
+	if head_id is None:
+		# No ledger id for this head, so nothing can be matched on it.
+		return []
+
+	try:
+		response = requests.get(
+			ACCOUNT_PORTAL_COMMIT_PAYMENT,
+			params={"projectNumber": project_no, "accountHeadId": head_id},
+			timeout=_LEDGER_TIMEOUT,
+		)
+		response.raise_for_status()
+		rows = response.json()
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Miscellaneous Commit - Ledger Read")
+		frappe.throw(unreachable)
+	return rows if isinstance(rows, list) else []
+
+
+def resolve_linked_tid(project_no, budget_head, linked_application=None, ref_details=None):
+	"""
+	The TID to send as refDetails, or None.
+
+	A numeric TID already typed into Reference Details is used as is. Otherwise Reference
+	Details, then the Linked Application Number, are matched against the ledger's App ID
+	(whole value first, then its first word), taking that application's earliest COMMIT row
+	on this budget head.
+	"""
+	tid = _as_tid(ref_details)
+	if tid:
+		return tid
+
+	candidates = list(dict.fromkeys(
+		_candidate_app_ids(ref_details) + _candidate_app_ids(linked_application)
+	))
+	if not candidates:
+		return None
+
+	rows = _ledger_rows(project_no, budget_head)
+	for app_id in candidates:
+		commits = [
+			r for r in rows
+			if str(r.get("frapAppId") or "").strip() == app_id
+			and str(r.get("transactionType") or "").strip().upper() in ("COMMIT", "COMMITMENT")
+			and flt(r.get("commitAmount")) > 0
+			and _as_tid(r.get("transactionId"))
+		]
+		if commits:
+			earliest = min(commits, key=lambda r: int(r.get("transactionId")))
+			return str(earliest.get("transactionId"))
+	return None
+
+
+def _refresh_staged_ref_details(doc, project_no):
+	"""
+	Just before approval publishes the staged commit: if it carries no TID yet (the linked
+	application may have been committed after this was submitted), look it up again.
+	A non-TID value left in the payload is cleared so Accounts can still consume it.
+	"""
+	staged = frappe.get_all(
+		"Kafka Commit Staging",
+		filters={"reference_doctype": DOCTYPE, "reference_name": doc.name, "status": "PENDING_APPROVAL"},
+		fields=["name", "payload"],
+	)
+	for row in staged:
+		try:
+			payload = json.loads(row.payload or "{}")
+		except ValueError:
+			continue
+		if _as_tid(payload.get("ref_details")):
+			continue
+		tid = resolve_linked_tid(project_no, doc.budget_head, doc.linked_application, doc.ref_details)
+		payload["ref_details"] = tid
+		frappe.db.set_value("Kafka Commit Staging", row.name, "payload", json.dumps(payload))
+		if tid:
+			doc.ref_details = tid
 
 
 @frappe.whitelist()
@@ -266,6 +405,11 @@ def perform_miscellaneous_commit_action(docname, action):
 			signed_amount = flt(doc.commit_amount)
 			signed_amount = -abs(signed_amount) if doc.commit_decommit == "De-Commit" else abs(signed_amount)
 			resolved_module_id = get_module_id(doc.module) if doc.module else None
+			# Accounts only consumes an integer refDetails: send the linked application's
+			# ledger TID, or nothing. Throws (blocking Submit) if the ledger can't be read.
+			resolved_ref = resolve_linked_tid(project_no, doc.budget_head, doc.linked_application, doc.ref_details)
+			if resolved_ref:
+				doc.ref_details = resolved_ref
 			submit_commit_data(
 				doctype=DOCTYPE,
 				frapAppId=doc.name,
@@ -273,11 +417,17 @@ def perform_miscellaneous_commit_action(docname, action):
 				project_name=project_no,
 				commit_amount=signed_amount,
 				budget_head=doc.budget_head,
-				refDetails=(doc.ref_details or doc.linked_application or None),
+				refDetails=resolved_ref,
 				commitParticular=doc.commit_particular,
 				moduleId=resolved_module_id,
 				trigger_state="Approved",
 			)
+
+		# Approval publishes the staged commit (trigger_state "Approved"): re-resolve a TID
+		# that wasn't in the ledger yet when this was submitted.
+		if next_state == "Approved":
+			project_no = frappe.db.get_value("Project Registration", doc.project_number, "project_no") or doc.project_number
+			_refresh_staged_ref_details(doc, project_no)
 
 		state_doc = next((s for s in workflow.states if s.state == next_state), None)
 
