@@ -3439,8 +3439,29 @@ def _build_user_registration_profile(user_doc_name=None, registration_doc_name=N
 	return merged
 
 
+def _fill_profile_identity(profile):
+	"""
+	Make sure a merged profile carries `email` and `full_name` (the keys the forms read),
+	even for a Universal Registration__ with no User account or no email. A registration
+	without email_address_u_r gets the owner's email as `email` and `email_missing: 1`.
+	"""
+	registration_email = (profile.get("email_address_u_r") or "").strip()
+	if not profile.get("email"):
+		profile["email"] = registration_email or _owner_email(profile.get("owner"))
+	if not registration_email and profile.get("profile_type_u_r") is not None:
+		profile["email_missing"] = 1
+	if not profile.get("full_name"):
+		profile["full_name"] = profile.get("full_name_u_r") or profile.get("name")
+
+
+def _owner_email(owner):
+	if not owner:
+		return None
+	return frappe.db.get_value("User", owner, "email") or owner
+
+
 @frappe.whitelist(allow_guest=True)
-def get_user_registration_profile(user=None, email=None, search=None):
+def get_user_registration_profile(user=None, email=None, search=None, include_all_profile_types=0):
 	"""
 	Combined User + Universal Registration__ profile(s). Any of the three
 	underlying records (User, Universal User__, Universal Registration__) may
@@ -3455,6 +3476,23 @@ def get_user_registration_profile(user=None, email=None, search=None):
 	With `search`: returns a list of flat profiles for every person whose User
 	(full_name/email/name) or Universal Registration__ (full_name_u_r/
 	email_address_u_r/org_name_u_r/mobile_number_u_r) record matches the text.
+	That search is not limited to a profile type; it only matches on those fields (not on
+	the document name) and returns at most 50 User and 50 Universal Registration__ matches.
+
+	`include_all_profile_types` (default 0, only used together with `search`):
+	  - 0 / missing: exactly the behaviour described above. Nothing changes for existing
+	    callers (Honorarium, Consultancy, ...).
+	  - 1: the result above, followed by up to 20 further Universal Registration__ records
+	    of ANY profile_type_u_r whose full_name_u_r, email_address_u_r or document name
+	    (e.g. "UNIREG-00234" or "00234") contains the text, case-insensitive. Records
+	    already in the result are not repeated. Every profile in the result then also
+	    carries `email`, `full_name`, `name` and `profile_type_u_r`; a registration with no
+	    email_address_u_r is still returned, with the owner's email as `email` and
+	    `email_missing: 1`.
+	  Records are read server-side with frappe.get_all (no per-user read permission check),
+	  like the existing search. Status rules are unchanged: no docstatus or status filter
+	  is added, so a registration is returned exactly when the existing search would return
+	  it; deleted registrations no longer exist and so never appear.
 	"""
 	from frappe import _
 
@@ -3495,6 +3533,27 @@ def get_user_registration_profile(user=None, email=None, search=None):
 				profile = _build_user_registration_profile(registration_doc_name=reg_name)
 				if profile:
 					profiles.setdefault(profile.get("name") or reg_name, profile)
+
+			if frappe.utils.cint(include_all_profile_types):
+				extra_names = frappe.get_all(
+					"Universal Registration__",
+					or_filters=[
+						["full_name_u_r", "like", like],
+						["email_address_u_r", "like", like],
+						["name", "like", like],
+					],
+					pluck="name",
+					limit=20,
+				)
+				for reg_name in extra_names:
+					if reg_name in profiles:
+						continue
+					profile = _build_user_registration_profile(registration_doc_name=reg_name)
+					if profile:
+						profiles.setdefault(profile.get("name") or reg_name, profile)
+
+				for profile in profiles.values():
+					_fill_profile_identity(profile)
 
 			return list(profiles.values())
 		except Exception:

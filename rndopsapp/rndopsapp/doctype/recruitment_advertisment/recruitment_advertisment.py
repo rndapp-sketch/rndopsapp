@@ -147,6 +147,19 @@ def get_recruitment_advertisments(recruitment_adhoc_contractuals):
 # Project numbers look like "2627R-0274-CHEM0540GKRI": the letter after the 4-digit year
 # is the project kind (R = Research, C = Consultancy, anything else = Others).
 _TYPE_SQL = "CASE SUBSTRING(r.upfa_project_code, 5, 1) WHEN 'R' THEN 'Research' WHEN 'C' THEN 'Consultancy' ELSE 'Others' END"
+# Recruitments approved before this date are not part of the advertisement list.
+ADVERTISEMENT_FROM_DATE = "2026-11-24"
+
+# Approval time: the workflow "Approved" comment, then a Workflow Action row, else last modified
+# (same order as _approved_on).
+_APPROVED_ON_SQL = """COALESCE(
+	(SELECT MAX(c.creation) FROM `tabComment` c
+	 WHERE c.reference_doctype = 'Recruitment Adhoc Contractual' AND c.reference_name = r.name
+	   AND c.comment_type = 'Workflow' AND c.content = 'Approved'),
+	(SELECT MAX(w.modified) FROM `tabWorkflow Action` w
+	 WHERE w.reference_doctype = 'Recruitment Adhoc Contractual' AND w.reference_name = r.name
+	   AND w.workflow_state = 'Approved'),
+	r.modified)"""
 _TYPES = {"research": "Research", "consultancy": "Consultancy", "others": "Others", "other": "Others"}
 
 
@@ -187,7 +200,8 @@ def _approved_on(names):
 def list_approved_recruitments(published="0", type=None, project_no=None, page=1, page_length=50):
 	"""
 	Approved Recruitment Adhoc Contractual records with their advertisement status, one page
-	at a time (50 per page by default).
+	at a time (50 per page by default). Recruitments approved before 24/11/2026
+	(ADVERTISEMENT_FROM_DATE) are left out.
 
 	Args:
 		published: "0"/"No" (default) -> only not yet published; "1"/"Yes" -> only published;
@@ -209,8 +223,11 @@ def list_approved_recruitments(published="0", type=None, project_no=None, page=1
 	page_length = min(max(int(page_length or 50), 1), 100)
 
 	published_sql = "EXISTS (SELECT 1 FROM `tabRecruitment Advertisment` a WHERE a.recruitment_adhoc_contractual = r.name AND a.publish = 'Yes')"
-	base = "FROM `tabRecruitment Adhoc Contractual` r WHERE r.workflow_state = %(approved)s"
-	values = {"approved": APPROVED_STATE}
+	base = (
+		"FROM `tabRecruitment Adhoc Contractual` r WHERE r.workflow_state = %(approved)s "
+		f"AND {_APPROVED_ON_SQL} >= %(from_date)s"
+	)
+	values = {"approved": APPROVED_STATE, "from_date": ADVERTISEMENT_FROM_DATE}
 
 	# Summary: pending (approved, not yet published) by type, plus how many are published.
 	counts = {"Research": 0, "Consultancy": 0, "Others": 0}
