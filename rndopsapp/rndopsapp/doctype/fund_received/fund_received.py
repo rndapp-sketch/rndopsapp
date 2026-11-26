@@ -1816,6 +1816,32 @@ def create_deposit_slip_from_data(data_json, fund_received_doc, deposit_slip_typ
 		raise e
 
 
+def _discard_unlinked_settlements(settlement_names):
+	"""
+	Remove Loan Settlements created earlier in a submit that then failed.
+
+	Only ever touches docs that are still unlinked, unpublished drafts, so it cannot erase
+	a settlement that reached a Fund Received or the Accounts service.
+	"""
+	if not settlement_names:
+		return
+	frappe.db.rollback()
+	for name in settlement_names:
+		try:
+			row = frappe.db.get_value(
+				"Loan Settlement",
+				name,
+				["fund_received_reference", "publish_status", "docstatus"],
+				as_dict=True,
+			)
+			if not row or row.fund_received_reference or row.publish_status == "Published" or row.docstatus != 0:
+				continue
+			frappe.delete_doc("Loan Settlement", name, force=True, ignore_permissions=True)
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Fund Received - Discard Loan Settlement")
+	frappe.db.commit()
+
+
 @frappe.whitelist()
 def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=None, project_reg=None, project_no=None):
 	"""
@@ -1830,12 +1856,28 @@ def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=No
 	# when staff, RnD processes them.
 	# See docs/loan-settlement-implementation.md.
 	loan_settlement_refs = []
+	# Inline settlements (v2): the form sends the planned settlements themselves, not the
+	# names of pre-created docs. They are created here, after the receipt's own checks pass.
+	# See docs/misc/loan-settlement-inline-implementation.md §3.6 / §4.2.
+	inline_settlements = []
+	settlement_project = None
 	if doc_data:
 		try:
 			parsed = json.loads(doc_data) if isinstance(doc_data, str) else doc_data
-			if isinstance(parsed, dict) and parsed.get("loan_settlement_refs"):
-				loan_settlement_refs = parsed.pop("loan_settlement_refs") or []
-				doc_data = json.dumps(parsed)
+			if isinstance(parsed, dict):
+				changed = False
+				if parsed.get("loan_settlement_refs"):
+					loan_settlement_refs = parsed.pop("loan_settlement_refs") or []
+					changed = True
+				for key in ("loan_settlements", "selected_loans", "allocation_method"):
+					if key in parsed:
+						value = parsed.pop(key)
+						if key == "loan_settlements":
+							inline_settlements = value or []
+						changed = True
+				settlement_project = project_no or parsed.get("prjreg_title") or project_reg or prjreg_title
+				if changed:
+					doc_data = json.dumps(parsed)
 		except Exception:
 			frappe.log_error(frappe.get_traceback(), "Fund Received - Loan Settlement Refs Parse")
 
@@ -1844,22 +1886,43 @@ def submit_fund_received(docname=None, save=None, doc_data=None, prjreg_title=No
 	if doc_data and save in [True, "true", "True", "1", 1]:
 		_validate_amount_totals(doc_data)
 
-	if loan_settlement_refs and doc_data:
-		_validate_against_loan_settlements(doc_data, loan_settlement_refs)
+	# Create the inline settlements. save_loan_settlement_requests re-reads every loan from
+	# the Accounts service (Full re-derived, Partial checked against outstanding and the
+	# loan's own heads) and throws on any mismatch, so nothing has been written if it fails.
+	# It commits, so if anything later in this submit fails, the settlements it created are
+	# removed again (_discard_unlinked_settlements) and no orphan is left behind.
+	created_settlements = []
+	if inline_settlements:
+		from rndopsapp.rndopsapp.doctype.loan_settlement.loan_settlement import (
+			save_loan_settlement_requests,
+		)
 
-	if save in [True, "true", "True", "1", 1]:
-		if not doc_data:
-			frappe.throw("doc_data is required when save=True")
-		res = save_fund_received(doc_data, prjreg_title, project_reg)
-		if isinstance(res, dict) and res.get("status") == "success":
-			docname = res.get("docname")
-		else:
-			return res
+		if not settlement_project:
+			frappe.throw(_("Project is required to settle loans from this receipt."))
+		created_settlements = save_loan_settlement_requests(settlement_project, inline_settlements).get("data") or []
+		loan_settlement_refs = list(loan_settlement_refs) + list(created_settlements)
 
-	if not docname:
-		frappe.throw("Document name is required to submit.")
+	try:
+		if loan_settlement_refs and doc_data:
+			_validate_against_loan_settlements(doc_data, loan_settlement_refs)
 
-	result = perform_fund_received_action(docname, "Submit")
+		if save in [True, "true", "True", "1", 1]:
+			if not doc_data:
+				frappe.throw("doc_data is required when save=True")
+			res = save_fund_received(doc_data, prjreg_title, project_reg)
+			if isinstance(res, dict) and res.get("status") == "success":
+				docname = res.get("docname")
+			else:
+				_discard_unlinked_settlements(created_settlements)
+				return res
+
+		if not docname:
+			frappe.throw("Document name is required to submit.")
+
+		result = perform_fund_received_action(docname, "Submit")
+	except Exception:
+		_discard_unlinked_settlements(created_settlements)
+		raise
 
 	# Link the settlements to this now-real Fund Received. Isolated in its own
 	# try/except so it can never affect the submission or its Kafka publish.
