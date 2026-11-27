@@ -87,10 +87,10 @@ def _publish_batch_to_kafka(doc, project_number, account_head_id, transactions):
 	po_total = flt(doc.po_total_value)
 
 	if doc.other_expenses == "Yes" and settlement_rows:
-		for idx, row in enumerate(settlement_rows):
+		for row in settlement_rows:
 			row_account_head_id = frappe.db.get_value("Budget Head", row.account_head, "id")
 			items.append(AccountHeadCommitBatchItemDTO(
-				transactionCommitNumber=      idx + 1,
+				transactionCommitNumber=      None,
 				projectNumber=                project_number,
 				accountHeadId=                row_account_head_id,
 				transactionReceivedRefNumber= ref_details_val,
@@ -117,7 +117,7 @@ def _publish_batch_to_kafka(doc, project_number, account_head_id, transactions):
 			ref_commit_amount = po_total
 
 		items.append(AccountHeadCommitBatchItemDTO(
-			transactionCommitNumber=      1,
+			transactionCommitNumber=      None,
 			projectNumber=                project_number,
 			accountHeadId=                account_head_id,
 			transactionReceivedRefNumber= ref_details_val,
