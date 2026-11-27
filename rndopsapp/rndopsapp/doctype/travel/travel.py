@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import date_diff, getdate
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def _resolve_travel_project_docname(doc):
@@ -909,6 +910,7 @@ def get_travel_project_account_heads(project_name):
 
 
 @frappe.whitelist()
+@guarded_action("Travel")
 def perform_travel_action(docname, action, extra_data=None):
 	"""
 	Executes the selected workflow action and updates the document state.

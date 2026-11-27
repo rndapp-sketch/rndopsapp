@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def extract_eval_expression(expression):
@@ -339,6 +340,7 @@ def get_t_testing_deposit_slip_workflow_actions(doc_name):
 
 
 @frappe.whitelist()
+@guarded_action("T Testing Deposit Slip")
 def perform_t_testing_deposit_slip_workflow_action(docname, action):
 	"""Perform a workflow action on a T Testing Deposit Slip document."""
 	try:

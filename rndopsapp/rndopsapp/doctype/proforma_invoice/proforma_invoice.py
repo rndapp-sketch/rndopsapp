@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 from frappe.utils.html_utils import sanitize_html
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def _add_workflow_comment(doc, action, comment):
@@ -203,6 +204,7 @@ def submit_proforma_for_approval(docname=None, project_no=None, invoice_content=
 
 
 @frappe.whitelist()
+@guarded_action("Proforma_Invoice")
 def process_proforma_action(docname, action, comment=None):
 	"""HoS decision. action = 'Approve' | 'Reject'. An optional comment is
 	recorded on the document timeline.

@@ -8,6 +8,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, now_datetime
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 DOCTYPE = "UC Request"
 STAFF_ROLE = "staff, RnD"
@@ -241,6 +242,7 @@ def get_uc_request_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("UC Request")
 def perform_uc_request_action(docname, action):
 	try:
 		doc = frappe.get_doc(DOCTYPE, docname)

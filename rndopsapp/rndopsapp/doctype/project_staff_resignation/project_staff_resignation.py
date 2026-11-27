@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils.html_utils import sanitize_html
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def extract_eval_expression(expression):
@@ -276,6 +277,7 @@ def get_project_staff_resignation_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Project Staff Resignation")
 def perform_project_staff_resignation_action(docname, action, comment=""):
 	"""
 	Executes a workflow action on a Project Staff Resignation document.

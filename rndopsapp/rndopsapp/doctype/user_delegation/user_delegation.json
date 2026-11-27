@@ -18,6 +18,7 @@
   "section_break_scope",
   "project_names",
   "applications",
+  "allowed_doctypes",
   "section_break_revoke",
   "revoked_at",
   "revoked_by",
@@ -60,7 +61,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Delegation Type",
-   "options": "View Only\nView and Edit\nWorkflow Action",
+   "options": "View Only\nView and Edit\nWorkflow Action\nSpecific Application",
    "reqd": 1
   },
   {
@@ -104,6 +105,12 @@
    "description": "JSON array of {\"doctype\": ..., \"name\": ...} pairs"
   },
   {
+   "fieldname": "allowed_doctypes",
+   "fieldtype": "Long Text",
+   "label": "Allowed Application Types (JSON)",
+   "description": "Specific Application only: JSON array of doctypes the delegate may create"
+  },
+  {
    "fieldname": "section_break_revoke",
    "fieldtype": "Section Break",
    "label": "Revocation"
@@ -133,7 +140,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-01-01 00:00:00.000000",
+ "modified": "2026-11-27 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Rndopsapp",
  "name": "User Delegation",

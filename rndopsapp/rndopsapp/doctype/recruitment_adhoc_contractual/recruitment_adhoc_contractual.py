@@ -5,6 +5,7 @@ import frappe
 import json
 from frappe.model.document import Document
 from frappe.model.workflow import get_transitions
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 class RecruitmentAdhocContractual(Document):
 	pass
@@ -295,6 +296,7 @@ def get_recruitment_adhoc_contractual_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Recruitment Adhoc Contractual")
 def perform_recruitment_adhoc_contractual_action(docname, action, updated_data=None):
     print("------=-==-=-=-=-=-=-=-=-=-=-=-RAC-=-=-=-=-=-=-=-=-=-=-=-")
     """

@@ -9,6 +9,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils.html_utils import sanitize_html
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 # ── Extension eligibility policy (IIT-G) ──────────────────────────────────────
@@ -1073,6 +1074,7 @@ def get_project_staff_extension_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Project Staff Extension")
 def perform_project_staff_extension_action(docname, action, comment=""):
 	"""
 	Executes a workflow action on a Project Staff Extension document.

@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def extract_eval_expression(expression):
@@ -355,6 +356,7 @@ def get_rate_contract_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Rate Contract")
 def perform_rate_contract_action(docname, action, extra_data=None):
 	"""
 	Execute a workflow action on a Rate Contract (states stay docstatus 0).

@@ -7,6 +7,7 @@ import os
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def _student_field_order_from_json():
@@ -617,6 +618,7 @@ def get_top_up_fellowship_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Top Up Fellowship")
 def perform_top_up_fellowship_action(docname, action):
 	"""Execute a workflow transition. Writes workflow_state + docstatus directly
 	to bypass validate_workflow (API callers lack desk roles so the standard
@@ -988,6 +990,7 @@ def get_available_back_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Top Up Fellowship", default_action="Put Back")
 def put_back(docname, target, comment=None):
 	"""Apply a put-back action. Validates role + from-state + target."""
 	if target not in PUT_BACK_TARGETS:

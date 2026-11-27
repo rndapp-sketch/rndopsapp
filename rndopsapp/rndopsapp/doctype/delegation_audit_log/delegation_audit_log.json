@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-27 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "actual_user",
+  "delegator_user",
+  "delegation",
+  "application_doctype",
+  "application_name",
+  "project_name",
+  "status",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "actual_user",
+   "label": "Actual User",
+   "fieldtype": "Link",
+   "read_only": 1,
+   "options": "User",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "delegator_user",
+   "label": "Delegator User",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "delegation",
+   "label": "Delegation",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "application_doctype",
+   "label": "Application Type",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "application_name",
+   "label": "Application",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "project_name",
+   "label": "Project",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "label": "Status",
+   "fieldtype": "Select",
+   "read_only": 1,
+   "options": "Success\nFailed",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "error",
+   "label": "Error",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-27 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Delegation Audit Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

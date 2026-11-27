@@ -8,6 +8,7 @@ from frappe.model.document import Document
 from frappe.model.workflow import get_transitions
 from rndopsapp.minio import get_rnd_file_service
 from rndopsapp.rndopsapp.recruitment_api.recruitment_api import get_profile as _recruitment_get_profile
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 class SelectionCommitteeReport(Document):
@@ -476,6 +477,7 @@ def get_selection_committee_report_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Selection Committee Report")
 def perform_selection_committee_report_action(docname, action):
 	"""
 	Perform a workflow action on the document.

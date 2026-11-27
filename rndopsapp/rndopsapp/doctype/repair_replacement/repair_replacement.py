@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 # =============================================================================
@@ -355,6 +356,7 @@ def get_repair_replacement_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("repair_replacement")
 def perform_repair_replacement_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

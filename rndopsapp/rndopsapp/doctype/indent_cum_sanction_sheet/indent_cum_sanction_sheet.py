@@ -13,6 +13,7 @@ from frappe.utils import flt
 from rndopsapp.minio import get_rnd_file_service
 from rndopsapp.file_handler import get_file_category_for_doctype
 from rndopsapp.rndopsapp.doctype.project_registration.project_registration import notify_mattermost
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 # =============================================================================
 # CONSTANTS
@@ -1443,6 +1444,7 @@ def get_icss_project_account_heads(project_name):
 
 
 @frappe.whitelist()
+@guarded_action("Indent Cum Sanction Sheet")
 def perform_icss_action(docname, action, extra_data=None):
     """
     Execute a workflow action on an ICSS document.
@@ -1711,6 +1713,7 @@ def get_available_icss_put_back_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Indent Cum Sanction Sheet", default_action="Put Back")
 def put_back_icss(docname, target, reason=None):
     """
     Apply a backward state movement (put-back) on an ICSS document.

@@ -21,6 +21,7 @@ from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation im
 	validate_overhead_gst_budget_heads_for_payload,
 )
 from rndopsapp.static_config import ACCOUNT_PORTAL_FUND_RECEIVED
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 class FundReceived(Document):
@@ -924,6 +925,7 @@ def _process_linked_loan_settlements(docname, loan_settlements=None):
 
 
 @frappe.whitelist()
+@guarded_action("Fund Received")
 def perform_fund_received_action(docname, action, deposit_slip_data=None, deposit_slip_type=None, loan_settlements=None):
 	"""
 	Executes the selected workflow action and updates the document state.

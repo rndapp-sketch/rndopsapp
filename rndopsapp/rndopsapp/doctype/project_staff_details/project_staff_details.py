@@ -16,6 +16,7 @@ from frappe.model.workflow import apply_workflow, get_transitions
 from frappe.utils import getdate
 from frappe.utils.csvutils import read_csv_content
 from frappe.utils.xlsxutils import read_xls_file_from_attached_file, read_xlsx_file_from_attached_file
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def _extract_eval(expression):
@@ -1152,6 +1153,7 @@ def get_project_staff_details_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Project Staff Details")
 def perform_project_staff_details_action(docname, action):
 	"""
 	Applies a workflow action (Submit / Forward / Approve / Reject / Put Back ...)

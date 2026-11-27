@@ -7,6 +7,7 @@ from frappe.model.document import Document
 from frappe.utils import flt
 from frappe.utils.file_manager import save_file
 from frappe import _
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 class DisbursalofConsultancy(Document):
 	def validate(self):
@@ -378,6 +379,7 @@ def save_disbursal_of_consultancy_data(data):
 		return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
+@guarded_action("Disbursal of Consultancy")
 def perform_disbursal_of_consultancy_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

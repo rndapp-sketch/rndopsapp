@@ -9,6 +9,7 @@ import frappe
 from frappe.model.document import Document
 from frappe import _
 from frappe.utils import money_in_words
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 @frappe.whitelist()
 def get_amount_in_words(amount, currency=None):
@@ -657,6 +658,7 @@ def get_temporary_advance_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Temporary Advance")
 def perform_temporary_advance_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

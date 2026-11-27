@@ -1,9 +1,39 @@
 import requests
 import frappe
 from frappe import _
-from rndopsapp.static_config import EXTERNAL_AUTH_URL
+from rndopsapp.static_config import EXTERNAL_AUTH_URL, INSTITUTE_EMAIL_DOMAIN
 
 EXTERNAL_AUTH_TIMEOUT = 10  # seconds
+
+
+class RegistrationRequiredError(frappe.ValidationError):
+	"""Credentials are correct, but there is no Frappe User for them yet."""
+
+	http_status_code = 403
+
+
+def _require_registration(user_input: str, username: str):
+	"""
+	Fail a correct login that has no Frappe User, telling the client it can register.
+	Call only after the password has been verified.
+
+	Returns without raising for a non-institute domain, which cannot be registered.
+	"""
+	_local, at, domain = user_input.strip().lower().partition("@")
+	if at and domain != INSTITUTE_EMAIL_DOMAIN:
+		return
+
+	frappe.local.response.update(
+		{
+			"external_auth": True,
+			"registration_required": True,
+			"email": f"{username.strip().lower()}@{INSTITUTE_EMAIL_DOMAIN}",
+		}
+	)
+	frappe.throw(
+		_("Your institute credentials are verified, but you are not registered yet. Please register."),
+		RegistrationRequiredError,
+	)
 
 
 def quiet_guest_permission_tracebacks():
@@ -273,6 +303,30 @@ _PRORNDADMIN_USERNAME = "prorndadmin"
 _PRORNDADMIN_PASSWORD = "pragati@007"
 
 
+# Test account for permanent staff registration and login. It exists in neither the
+# external auth service nor (until registered) Frappe. Active only on sites with
+# "allow_test_login": 1 in site_config.json; never enable that on production.
+# Its password is "test_login_password" in the same file, never in the code.
+TEST_LOGIN_EMAIL = "test_user@iitg.ac.in"
+
+
+def is_test_login(user_input: str) -> bool:
+	"""True if user_input names the test account and this site allows it."""
+	if not frappe.utils.cint(frappe.conf.get("allow_test_login")):
+		return False
+	# Full email or bare username only, so test_user@<other domain> does not match.
+	return (user_input or "").strip().lower() in (TEST_LOGIN_EMAIL, TEST_LOGIN_EMAIL.split("@")[0])
+
+
+def check_test_login_password(password: str) -> bool:
+	import hmac
+
+	expected = frappe.conf.get("test_login_password")
+	if not expected:
+		return False
+	return hmac.compare_digest((password or "").encode(), str(expected).encode())
+
+
 def _prorndadmin_find_by_credentials(user_input: str, password: str):
 	"""
 	Local credential check for the prorndadmin bypass account.
@@ -353,6 +407,17 @@ def _external_find_by_credentials(cls, user_name: str, password: str, validate_p
 	if not is_login:
 		return cls._original_find_by_credentials.__func__(cls, user_name, password, validate_password)
 
+	# Test account: checked locally, never sent to the microservice
+	if is_test_login(user_name):
+		user = _find_frappe_user(TEST_LOGIN_EMAIL, TEST_LOGIN_EMAIL.split("@")[0])
+		verified = check_test_login_password(password)
+		if not user:
+			if verified:
+				_require_registration(user_name, TEST_LOGIN_EMAIL.split("@")[0])
+			return frappe._dict({"name": user_name, "enabled": 0, "is_authenticated": False})
+		user["is_authenticated"] = verified
+		return user
+
 	# Extract username for microservice (strip @domain if email was typed)
 	ext_username = _resolve_to_username(user_name)
 
@@ -378,6 +443,7 @@ def _external_find_by_credentials(cls, user_name: str, password: str, validate_p
 
 	user = _find_frappe_user(user_name, ext_uname)
 	if not user:
+		_require_registration(user_name, ext_uname)
 		return frappe._dict({"name": user_name, "enabled": 0, "is_authenticated": False})
 
 	# Authenticated by external service — skip Frappe password check entirely
@@ -392,6 +458,9 @@ def impersonate_user(target_user: str):
 	Caller must be authenticated as the prorndadmin account.
 	target_user: Frappe User email (name field) or username field value.
 	"""
+	from rndopsapp.rndopsapp.role_delegation.service import refuse_while_acting
+
+	refuse_while_acting()
 	from frappe.core.doctype.activity_log.activity_log import add_authentication_log
 
 	# Guard: only prorndadmin (checked via username field) may call this

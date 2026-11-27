@@ -2557,6 +2557,13 @@ def get_active_delegations(user=None):
 
 
 @frappe.whitelist()
+def get_received_delegations():
+	from rndopsapp.rndopsapp.delegate_user.delegate_user import get_received_delegations as _impl
+
+	return _impl()
+
+
+@frappe.whitelist()
 def delegate_user(
 	delegate_user,
 	delegation_type=None,
@@ -2567,6 +2574,8 @@ def delegate_user(
 	remove_applications=None,
 	valid_from=None,
 	valid_to=None,
+	allowed_doctypes=None,
+	remove_allowed_doctypes=None,
 ):
 	from rndopsapp.rndopsapp.delegate_user.delegate_user import delegate_user as _impl
 
@@ -2580,6 +2589,8 @@ def delegate_user(
 		remove_applications=remove_applications,
 		valid_from=valid_from,
 		valid_to=valid_to,
+		allowed_doctypes=allowed_doctypes,
+		remove_allowed_doctypes=remove_allowed_doctypes,
 	)
 
 
@@ -3575,4 +3586,50 @@ def get_user_registration_profile(user=None, email=None, search=None, include_al
 		)
 
 	return profile
+
+
+# ----------------- ROLE DELEGATION (act as a delegated role) -----------------
+# All logic lives in role_delegation/service.py
+
+
+@frappe.whitelist()
+def get_acting_profiles():
+	from rndopsapp.rndopsapp.role_delegation.service import get_acting_profiles as _impl
+
+	return _impl()
+
+
+@frappe.whitelist(methods=["POST"])
+def switch_profile(delegation):
+	from rndopsapp.rndopsapp.role_delegation.service import switch_profile as _impl
+
+	return _impl(delegation)
+
+
+@frappe.whitelist(methods=["POST"])
+def switch_to_own_profile():
+	from rndopsapp.rndopsapp.role_delegation.service import switch_to_own_profile as _impl
+
+	return _impl()
+
+
+@frappe.whitelist(methods=["POST"])
+def create_role_delegation(delegate, roles, from_datetime, to_datetime, reason):
+	from rndopsapp.rndopsapp.role_delegation.service import create_role_delegation as _impl
+
+	return _impl(delegate, roles, from_datetime, to_datetime, reason)
+
+
+@frappe.whitelist(methods=["POST"])
+def revoke_role_delegation(delegation):
+	from rndopsapp.rndopsapp.role_delegation.service import revoke_role_delegation as _impl
+
+	return _impl(delegation)
+
+
+@frappe.whitelist()
+def get_role_delegations():
+	from rndopsapp.rndopsapp.role_delegation.service import get_role_delegations as _impl
+
+	return _impl()
 
