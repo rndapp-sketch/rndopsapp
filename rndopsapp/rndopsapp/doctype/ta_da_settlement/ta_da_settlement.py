@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 # "For Office Use" fields: filled in by `staff, RnD` only, while the document
 # sits at "Pending Staff Approval". Hidden from the applicant on the frontend;
@@ -686,6 +687,7 @@ def get_ta_da_settlement_commit_details(docname):
 
 
 @frappe.whitelist()
+@guarded_action("TA DA Settlement")
 def perform_ta_da_settlement_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

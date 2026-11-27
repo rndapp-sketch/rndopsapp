@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "creation": "2026-11-27 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "event",
+  "actual_user",
+  "delegator",
+  "delegated_roles",
+  "delegation",
+  "endpoint",
+  "ref_doctype",
+  "ref_name",
+  "workflow_action",
+  "result",
+  "message",
+  "ip_address",
+  "superseded"
+ ],
+ "fields": [
+  {
+   "fieldname": "event",
+   "label": "Event",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "actual_user",
+   "label": "Actual User",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "delegator",
+   "label": "Delegator",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "delegated_roles",
+   "label": "Delegated Roles",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delegation",
+   "label": "Delegation",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_standard_filter": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "endpoint",
+   "label": "Endpoint",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ref_doctype",
+   "label": "Reference DocType",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "ref_name",
+   "label": "Reference Name",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "workflow_action",
+   "label": "Workflow Action",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "result",
+   "label": "Result",
+   "fieldtype": "Select",
+   "read_only": 1,
+   "options": "Success\nFailed",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "message",
+   "label": "Message",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ip_address",
+   "label": "IP Address",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "superseded",
+   "label": "Superseded",
+   "fieldtype": "Check",
+   "read_only": 1,
+   "default": "0"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-27 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Rndopsapp",
+ "name": "Role Delegation Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "autoname": "hash",
+ "in_create": 1
+}

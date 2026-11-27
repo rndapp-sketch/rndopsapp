@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def extract_eval_expression(expression):
@@ -676,6 +677,7 @@ def _publish_po_stage_commits(doc, next_state, extra_data):
 
 
 @frappe.whitelist()
+@guarded_action("Direct Purchase")
 def perform_direct_purchase_action(docname, action, extra_data=None):
 	print("------=-==-=-=-=-=-=-=-=-=-=-=-DP-=-=-=-=-=-=-=-=-=-=-=-")
 	"""

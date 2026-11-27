@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 # =============================================================================
@@ -394,6 +395,7 @@ def get_standerdized_purchase_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("standerdized_purchase")
 def perform_standerdized_purchase_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

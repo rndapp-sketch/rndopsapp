@@ -8,6 +8,7 @@ from typing import Any
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 # =============================================================================
@@ -501,6 +502,7 @@ def get_employee_id_card_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Employee ID Card")
 def perform_employee_id_card_action(docname, action, comment=None):
 	"""Perform a workflow action on an Employee ID Card."""
 	try:

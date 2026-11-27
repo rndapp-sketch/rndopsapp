@@ -3,6 +3,10 @@
 
 import frappe
 from frappe.model.document import Document
+from rndopsapp.rndopsapp.role_delegation.context import (
+	acting,
+	delegated_document_names,
+)
 
 
 class ModuleRegistry(Document):
@@ -1074,7 +1078,9 @@ def get_categorized_task_registry(debug=0, page_name="pending-task"):
 	# A department head's registry covers every Project Registration under a
 	# department they head — applicant OR implementation department — not only the
 	# ones they personally acted on (same scope as get_head_dashboard_data).
-	if "Project Registration" in allowed:
+	# While acting, department scope applies only if the head role itself was delegated.
+	ctx = acting()
+	if "Project Registration" in allowed and (not ctx or "head_approver_1" in ctx.roles):
 		head_dept_ids = frappe.get_all(
 			"Department_prornd", filters={"dept_head": frappe.session.user}, pluck="name"
 		)
@@ -1149,6 +1155,8 @@ def get_task_registry(debug=0):
 	Endpoint: /api/method/rndopsapp.rndopsapp.doctype.module_registry.module_registry.get_task_registry
 
 	Returns all documents that were processed/moved/approved by the current user.
+	While acting under a role delegation the current user is the delegator; documents
+	acted on for them through a delegation are included too.
 	Only accessible by roles: staff, hos, dean, adornd, head of department.
 
 	Pass ?debug=1 to include per-doctype diagnostics (why each doctype was
@@ -1346,6 +1354,16 @@ def get_task_registry(debug=0):
 			except Exception as e:
 				print(f"Workflow Comment query error for {dt_name}: {str(e)}")
 
+			# Method 5: documents acted on for this delegator (only while acting).
+			delegated_docs = []
+			delegated_names = delegated_document_names(dt_name)
+			if delegated_names:
+				delegated_docs = frappe.get_all(
+					dt_name,
+					filters={"name": ["in", delegated_names], "docstatus": ["<", 2]},
+					fields=fields_to_fetch,
+				)
+
 			# Combine and deduplicate
 			all_doc_names = set()
 			combined_docs = []
@@ -1366,6 +1384,11 @@ def get_task_registry(debug=0):
 					combined_docs.append(doc)
 
 			for doc in wf_comment_docs:
+				if doc.name not in all_doc_names:
+					all_doc_names.add(doc.name)
+					combined_docs.append(doc)
+
+			for doc in delegated_docs:
 				if doc.name not in all_doc_names:
 					all_doc_names.add(doc.name)
 					combined_docs.append(doc)

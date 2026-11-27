@@ -1,5 +1,9 @@
 # Delegate User — Implementation Reference
 
+> **Updated 2026-11-27** — added the create-only
+> [`Specific Application`](#specific-application-delegations) delegation type,
+> `get_received_delegations` and the Delegation Audit Log.
+>
 > **Updated 2026-08-17** — application-level scope enforcement, create-on-behalf,
 > and the "any authenticated user" access model described here are all live.
 > See [application_level_delegation_backend_plan.md](application_level_delegation_backend_plan.md)
@@ -16,6 +20,45 @@ When B logs in, documents where `pi_webmail`, `head_approver`, or `owner` = A
 can be included in B's visible records, and B can act on them according to
 the delegation's `delegation_type` and `scope_type`.
 
+The exception is [`Specific Application`](#specific-application-delegations),
+which grants no visibility at all, only the right to create certain
+applications.
+
+---
+
+## Specific Application delegations
+
+A picks one or more projects and the application types B may create under them.
+
+| | View Only | View and Edit | Workflow Action | Specific Application |
+|---|---|---|---|---|
+| Read A's documents | yes | yes | yes | **no** |
+| Edit | no | yes | yes | **no** |
+| Workflow actions | no | no | yes | **no** |
+| Create on behalf | no | yes | yes | listed types and projects only |
+| Allowed `scope_type` | any | any | any | `project` only |
+| New document's `owner` | — | B | B | **A** |
+
+"No" means delegation grants nothing. It does not take away what B's roles
+already allow (see [Enforcement Reality](#enforcement-reality--what-this-system-does-and-doesnt-cover)).
+
+**Rules**
+
+- `allowed_doctypes` takes any of the 12 application doctypes.
+- Every project must be A's own as PI or owner (`pi_webmail`, `pi_userid`,
+  `owner`). `head_approver` alone does not count for this type.
+- Every project must be eligible: `workflow_state = 'Approved'` and a positive
+  commitable **or** actual balance in the ledger. Overhead (PDF / DPF) funds are
+  read from the overhead ledger. An unreadable ledger counts as ineligible.
+- Eligibility is checked when a project is added (only the `project_names` sent
+  on that call) and again on every create.
+- These delegations live in their own row and are never merged with the other
+  types, so one A→B pair can have two active rows. To change a delegation to or
+  from this type, revoke the old row and create a new one.
+- Access queries filter on `_ACCESS_FILTERS`, which excludes this type:
+  `get_visible_as_users()`, `is_active_delegation()`,
+  `_scoped_doc_names_for_doctype()` and everything built on them.
+
 ---
 
 ## Files
@@ -26,10 +69,13 @@ the delegation's `delegation_type` and `scope_type`.
 | `rndopsapp/rndopsapp/delegate_user/__init__.py` | Package marker |
 | `rndopsapp/rndopsapp/doctype/user_delegation/user_delegation.json` | DocType definition |
 | `rndopsapp/rndopsapp/doctype/user_delegation/user_delegation.py` | DocType controller |
-| `rndopsapp/rndopsapp/api.py` | 6 whitelisted wrappers (search_delegate_users through create_application_on_behalf) |
+| `rndopsapp/rndopsapp/api.py` | 7 whitelisted wrappers |
+| `rndopsapp/rndopsapp/doctype/delegation_audit_log/` | Audit log of create-on-behalf calls |
+| `rndopsapp/rndopsapp/doctype/user_delegation/test_user_delegation.py` | Tests |
+| `rndopsapp/hooks.py` | Permission hooks, plus `before_insert` / `before_save` doc events for create-on-behalf |
 | `rndopsapp/patchs/fix_delegation_application_scope.py` | Migrates `applications` from flat name arrays to `{doctype, name}` pairs |
 
-> After deploy run: `bench migrate`
+> After deploy run: `bench migrate`, `bench clear-cache`, then restart.
 
 ---
 
@@ -42,10 +88,11 @@ the delegation's `delegation_type` and `scope_type`.
 | `delegator_user` | Link → User | Always set to `session.user` on insert |
 | `delegate_user` | Link → User | The user receiving access |
 | `enabled` | Check | Default 1 |
-| `delegation_type` | Select | `View Only` / `View and Edit` / `Workflow Action` |
+| `delegation_type` | Select | `View Only` / `View and Edit` / `Workflow Action` / `Specific Application` |
 | `scope_type` | Select | `all` / `project` / `application` |
 | `project_names` | Long Text | JSON array of Project Registration names |
 | `applications` | Long Text | JSON array of `{"doctype": ..., "name": ...}` pairs (migrated from a flat name array — see the migration patch above) |
+| `allowed_doctypes` | Long Text | `Specific Application` only: JSON array of doctypes B may create |
 | `valid_from` | Datetime | Optional start of validity window |
 | `valid_to` | Datetime | Optional end of validity window |
 | `revoked_at` | Datetime | Set on revocation, read-only |
@@ -64,9 +111,27 @@ list every delegation in the system.
 
 ---
 
+## DocType — `Delegation Audit Log`
+
+One row for every authenticated `create_application_on_behalf` call, successful
+or failed. Read-only, visible to `System Manager`.
+
+| Field | Notes |
+|---|---|
+| `actual_user` | The session user (delegate) |
+| `delegator_user` | As requested |
+| `delegation` | The `User Delegation` that covered the call; empty if none did |
+| `application_doctype` | As requested |
+| `application_name` | The new document; empty on failure |
+| `project_name` | As requested |
+| `status` | `Success` / `Failed` |
+| `error` | Failure message |
+
+---
+
 ## Whitelisted API Endpoints
 
-All 6 endpoints are at `rndopsapp.rndopsapp.api.*`
+All 7 endpoints are at `rndopsapp.rndopsapp.api.*`
 
 ---
 
@@ -106,7 +171,7 @@ GET /api/method/rndopsapp.rndopsapp.api.get_delegate_scope
 
 **Auth:** Any authenticated user (not Guest).
 
-Returns all projects and applications belonging to / assigned to the current user, plus the users already delegated by them.
+Returns all projects and applications belonging to / assigned to the current user, plus the users already delegated by them and those delegations.
 
 **Project query matches:** `pi_webmail`, `pi_userid`, `owner`, `head_approver`
 
@@ -152,6 +217,18 @@ Returns all projects and applications belonging to / assigned to the current use
         "workflow_state": "Draft",
         "owner": "a@iitg.ac.in"
       }
+    ],
+    "delegations": [
+      {
+        "name": "DEL-2026-00001",
+        "delegate_user": "b@iitg.ac.in",
+        "delegation_type": "Specific Application",
+        "scope_type": "project",
+        "project_names": ["PRJ-0001"],
+        "allowed_doctypes": ["Travel"],
+        "valid_from": null,
+        "valid_to": null
+      }
     ]
   }
 }
@@ -168,7 +245,8 @@ GET /api/method/rndopsapp.rndopsapp.api.get_active_delegations
 
 **Auth:** Any authenticated user (not Guest).
 
-Returns all enabled, non-revoked delegations created by the current user.
+Returns all enabled, non-revoked delegations created by the current user,
+including expired and not-yet-started ones.
 
 **Response:**
 ```json
@@ -182,6 +260,7 @@ Returns all enabled, non-revoked delegations created by the current user.
       "scope_type": "project",
       "project_names": ["PRJ-2026-00003"],
       "applications": [{"doctype": "Travel", "name": "TRV-2026-00001"}],
+      "allowed_doctypes": [],
       "project_count": 1,
       "application_count": 1,
       "valid_from": null,
@@ -191,6 +270,8 @@ Returns all enabled, non-revoked delegations created by the current user.
   ]
 }
 ```
+
+`allowed_doctypes` is `[]` for every type except `Specific Application`.
 
 `project_names` / `applications` are the resolved, already-parsed arrays
 (added alongside the pre-existing counts) — no follow-up call needed to show
@@ -213,6 +294,8 @@ POST /api/method/rndopsapp.rndopsapp.api.delegate_user
 | `applications` | JSON array / string of `{doctype, name}` pairs | no | `[]` — **merged** into existing list |
 | `remove_project_names` | JSON array / string of names | no | `[]` — subtracted after the merge above |
 | `remove_applications` | JSON array / string of `{doctype, name}` pairs | no | `[]` — subtracted after the merge above |
+| `allowed_doctypes` | JSON array / string of doctypes | `Specific Application` only | `[]` — **merged** into existing list |
+| `remove_allowed_doctypes` | JSON array / string of doctypes | no | `[]` — subtracted after the merge above |
 | `valid_from` | Datetime string | no | null |
 | `valid_to` | Datetime string | no | null |
 
@@ -229,14 +312,42 @@ resending the rest.
 **Validations:**
 - `delegate_user` must exist and be enabled
 - Cannot delegate to self
-- `delegation_type` must be one of: `View Only`, `View and Edit`, `Workflow Action`
+- `delegation_type` must be one of: `View Only`, `View and Edit`, `Workflow Action`, `Specific Application`
 - `scope_type` must be one of: `all`, `project`, `application`
 - If `scope_type=project` — at least one project required; each must belong to session user
 - If `scope_type=application` — at least one application required
 - Each application entry's `doctype` must be a registered application doctype
 - `delegator_user` is always `frappe.session.user` — never taken from request
 
+**Additional validations for `Specific Application`:**
+- `scope_type` must be `project` (required on create, may be omitted on update)
+- The merged result must keep at least one project and one `allowed_doctypes`
+  entry; to remove the last one, revoke the delegation
+- Every `allowed_doctypes` entry must be a registered application doctype, else
+  `'{doctype}' is not a delegable application doctype.`
+- Every sent project must be the delegator's as PI or owner
+- Every sent project not also being removed must be eligible, else
+  `Project '{project_no}' is not eligible: {reason}.`
+- `applications` is ignored. For other types, `allowed_doctypes` is ignored.
+
+```json
+{
+  "delegate_user": "b@iitg.ac.in",
+  "delegation_type": "Specific Application",
+  "scope_type": "project",
+  "project_names": "[\"PRJ-REG-...\"]",
+  "applications": "[]",
+  "allowed_doctypes": "[\"Travel\", \"Direct Purchase\"]",
+  "valid_from": "2026-12-01 00:00:00",
+  "valid_to": "2026-12-31 23:59:59"
+}
+```
+
 Creates a new delegation or updates an existing active one for the same pair.
+`Specific Application` calls only update a `Specific Application` row; calls with
+another type only update a row of another type. A call with no `delegation_type`
+updates the other-type row if there is one, otherwise the `Specific Application`
+row, so **always send `delegation_type`** when editing the latter.
 If a name appears in both an add list and the corresponding remove list in
 the same call, removal wins (applied after the merge).
 
@@ -268,7 +379,43 @@ Sets `enabled=0`, `revoked_at=now`, `revoked_by=session.user`.
 
 ---
 
-### 6. `create_application_on_behalf`
+### 6. `get_received_delegations`
+
+```
+GET /api/method/rndopsapp.rndopsapp.api.get_received_delegations
+```
+
+**Auth:** Any authenticated user (not Guest). No parameters.
+
+Returns the enabled, non-revoked delegations of **every type** where the session
+user is the delegate and today is within the validity dates. `project_names` is
+resolved to project details, and is `[]` unless `scope_type` is `project`. A
+listed project may have become ineligible since; creation re-checks.
+
+**Response:**
+```json
+{
+  "message": [
+    {
+      "name": "DEL-2026-00001",
+      "delegator_user": "a@iitg.ac.in",
+      "delegator_user_name": "User A",
+      "delegation_type": "Specific Application",
+      "scope_type": "project",
+      "project_names": [
+        {"name": "PRJ-REG-...", "project_title": "...", "project_no": "..."}
+      ],
+      "allowed_doctypes": ["Travel", "Direct Purchase"],
+      "valid_from": "2026-12-01 00:00:00",
+      "valid_to": null
+    }
+  ]
+}
+```
+
+---
+
+### 7. `create_application_on_behalf`
 
 ```
 POST /api/method/rndopsapp.rndopsapp.api.create_application_on_behalf
@@ -278,32 +425,72 @@ POST /api/method/rndopsapp.rndopsapp.api.create_application_on_behalf
 |---|---|---|---|
 | `doctype` | string | yes | Must be one of the 12 registered application doctypes |
 | `delegator_user` | email | yes | The project owner this document is created for |
-| `project_name` | string | conditional | Required for doctypes with a `project_field` (Travel, TA DA Settlement, Temporary Advance, Advance Settlement, Reimbursement) |
-| `fields` | dict / JSON string | no | Field values for the new document |
+| `project_name` | string | conditional | Project Registration `name`. Always required under `Specific Application`; otherwise required for doctypes with a project field in the table above |
+| `fields` | dict / JSON string | no | Field values for the new document, including all mandatory ones |
 
-**Auth:** Any authenticated user (not Guest). Additionally requires an
-active `View and Edit` or `Workflow Action` delegation from `delegator_user`
-to the session user, with `scope_type='all'`, or `scope_type='project'` and
-`project_name` in that delegation's `project_names`. `scope_type='application'`
-delegations never grant this — they only cover pre-existing named documents,
-not future creation.
+**Auth:** Any authenticated user (not Guest), plus an enabled, in-date delegation
+from `delegator_user` that covers the call, either:
 
-**Ownership on the new document:** the owner-identifying field (e.g.
-`webmail_id_travel`) is force-set to `delegator_user` regardless of what
-`fields` contains — the caller cannot spoof this. Frappe's own `owner` field
-is left to default to the session user (the delegate), so who actually
-created the record stays traceable. A fixed blocklist (`name`, `owner`,
-`docstatus`, `workflow_state`, `creation`, `modified`, `modified_by`, `idx`)
-is stripped from `fields` before applying it, on top of the owner/project
-fields always being set by the server, not the caller.
+1. **`View and Edit` / `Workflow Action`** with `scope_type='all'`, or
+   `scope_type='project'` and `project_name` in `project_names`.
+   `scope_type='application'` never grants creation.
+2. **`Specific Application`** with `doctype` in `allowed_doctypes`,
+   `project_name` in `project_names`, and the project still eligible.
 
-**Validations:**
-- `doctype` must be a registered application doctype
-- `delegator_user` must exist and be enabled; cannot equal the session user
-- Project-field doctypes require `project_name`
-- Delegation scope check as above — throws `frappe.PermissionError` with
-  `"You are not authorised to create a {doctype} on behalf of {delegator_user}
-  for project '{project_name}'."` if it fails
+If both cover the call, the first applies.
+
+**The new document**
+
+| | Under (1) | Under (2) |
+|---|---|---|
+| Owner-identifying field (e.g. `webmail_id_travel`) | `delegator_user` | `delegator_user` |
+| Frappe `owner` | the delegate | `delegator_user` |
+| Project fields | the registry field only (none if the doctype has none) | all fields below, from `project_name` |
+| `fields` | blocklist removed | blocklist, unknown fields and server-set fields removed |
+
+Blocklist: `name`, `owner`, `docstatus`, `workflow_state`, `creation`,
+`modified`, `modified_by`, `idx`, `doctype`, `flags`.
+
+**Project fields under `Specific Application`** (`_ON_BEHALF_PROJECT_FIELDS`).
+The create form does not need to fill these.
+
+| DocType | Gets `name` | Gets `project_no` | Gets `project_title` |
+|---|---|---|---|
+| Travel | `travel_project_title` | `travel_project_number` | |
+| TA DA Settlement | | `project_no` | |
+| Temporary Advance | `project_name` | `project_code` | |
+| Advance Settlement | `project_name` | `project_code` | |
+| Reimbursement | `project_name` | `project_number` | |
+| Direct Purchase | | `project_no` | |
+| Disbursal of Consultancy | | `disbursal_project_number` | `project_title` |
+| Disbursal of Honorarium | `project_name` | `project_no` | |
+| Loan Request | `project_name` | `project_number` | |
+| Indent General Form | `igf_project_title` | `igf_project_code` | |
+| Indent Cum Sanction Sheet | `project_ref` | `project_no` | |
+| Recruitment Adhoc Contractual | | `upfa_project_code` | `upfa_project_title` |
+
+This mapping is deliberately separate from `_APPLICATION_DOCTYPES`: adding
+project fields there would widen what existing project-scoped delegations can
+read.
+
+Two doc events enforce this on insert: `apply_on_behalf_owner` (`before_insert`)
+sets `owner`, and `verify_on_behalf_scope` (`before_save`) rejects the document
+if `fetch_from` or a controller changed a server-set value, e.g. a TA DA
+Settlement linked to a Travel of another project.
+
+Under (2) the delegate gets no access to the document afterwards through
+delegation: they cannot reopen, edit, submit or attach files to it, so send
+everything in one call.
+
+**Errors**
+
+| Case | Error |
+|---|---|
+| Nothing covers the call | `PermissionError`: `You are not authorised to create a {doctype} on behalf of {delegator_user} for project '{project_name}'.` |
+| Project no longer eligible (`Specific Application`) | `ValidationError`: `Project '{project_no}' is not eligible: {reason}.` |
+| `project_name` missing where required | `ValidationError` |
+| A server-set value was overwritten (`Specific Application`) | `PermissionError` |
+| `doctype` not registered, `delegator_user` unknown, disabled or self | `ValidationError` |
 
 **Response:**
 ```json
@@ -313,7 +500,8 @@ fields always being set by the server, not the caller.
 > This endpoint writes via `doc.insert(ignore_permissions=True)` after its own
 > delegation check — same pattern as every other write in this app (see
 > `known_auth_gaps.md` for why that's the established convention here, not a
-> shortcut specific to this function).
+> shortcut specific to this function). Every call is recorded in
+> `Delegation Audit Log`.
 
 ---
 
@@ -328,7 +516,7 @@ visible = get_visible_as_users()
 # → ["a@iitg.ac.in", "b@iitg.ac.in"]
 ```
 
-Returns `[user, *delegator_users]` — all users whose documents should be visible to `user`. Filters out expired, disabled, or revoked delegations. Use this in `get_list` queries:
+Returns `[user, *delegator_users]` — all users whose documents should be visible to `user`. Filters out expired, disabled, or revoked delegations, and `Specific Application` ones. Use this in `get_list` queries:
 
 ```python
 frappe.get_all("Project Registration",
@@ -350,6 +538,8 @@ is_active_delegation("a@iitg.ac.in", "b@iitg.ac.in", action_type="write")
 | `read` | View Only, View and Edit, Workflow Action |
 | `write` | View and Edit, Workflow Action |
 | `workflow` | Workflow Action only |
+
+`Specific Application` never matches any action.
 
 Returns `True` if a valid, in-scope, in-window delegation exists. For
 `project`/`application` scope, `docname` is checked against the row's
@@ -378,9 +568,9 @@ delegation from an owner covering this action/document, or is System Manager
 functions** (`save_travel`, `get_travel_commit_details`, etc.) — they call
 `frappe.get_doc()` / `doc.save(ignore_permissions=True)` directly and never
 go through Frappe's native permission system, so `has_permission` hooks (see
-below) never run for them. As of 2026-08-17, `require_document_access()` is
-used by `create_application_on_behalf()` but has **not** been retrofitted
-into the pre-existing read/write functions across the 13 application
+below) never run for them. As of 2026-11-27, **nothing outside
+`delegate_user.py` calls `require_document_access()`**: it has not been
+retrofitted into the pre-existing read/write functions across the 13 application
 doctypes — see [known_auth_gaps.md](../security/known_auth_gaps.md) for the
 full inventory of what's still unguarded and why that was left out of scope.
 
@@ -410,7 +600,10 @@ enforcement of the app's own API functions — that's `require_document_access()
 | Expired / disabled / revoked rows excluded | `_ACTIVE_FILTERS` + `_row_is_time_valid()` applied everywhere |
 | System Manager can inspect any user's data | `_resolve_target_user()` allows override only for System Manager |
 | Frontend-provided `user` param ignored for non-managers | `_resolve_target_user()` falls back to `session.user` |
-| `create_application_on_behalf` requires scope-covering delegation | `_project_scope_allows_create()` |
+| `create_application_on_behalf` requires scope-covering delegation | `_access_delegation_for_create()` / `_specific_rows_for_doctype()` |
+| `Specific Application` grants no read, write or workflow access | `_ACCESS_FILTERS` |
+| `Specific Application` projects must be Approved and funded | `_require_eligible_project()`, on delegate and on create |
+| Every create-on-behalf call is audited | `Delegation Audit Log` |
 | Desk/report listing of `User Delegation` limited to parties involved | `user_delegation_permission_query()` |
 
 ---
@@ -422,6 +615,12 @@ enforcement of the app's own API functions — that's `require_document_access()
   visibility per delegation scope.
 - **`create_application_on_behalf`**: real, functional. Does its own
   delegation-scope check before `insert(ignore_permissions=True)`.
+- **Role permissions are independent of delegation** (observed on the
+  development site, 2026-11-27): `Custom DocPerm` gives roles such as
+  `Permanent Employee` and `All_ProRnd_User` read access with `if_owner=0` on
+  the application doctypes. A delegate holding such a role can read other
+  users' documents through generic Frappe access, including under a
+  `Specific Application` delegation.
 - **Single-document read/write via this app's own API functions**
   (`save_travel`, `get_loan_request_fields`, etc.): **not covered** by
   anything built for delegation. These functions predate delegation, bypass
@@ -451,7 +650,7 @@ duplicating field lists per function.
 
 ### Rule: Delegation never reduces existing access
 
-The two permission systems — Frappe role/if_owner and delegation — are completely independent. Delegation only **adds** visibility; it never restricts what a user could already see.
+`Specific Application` rows are ignored here altogether. The two permission systems — Frappe role/if_owner and delegation — are completely independent. Delegation only **adds** visibility; it never restricts what a user could already see.
 
 ### Decision tree inside `_build_permission_query`
 

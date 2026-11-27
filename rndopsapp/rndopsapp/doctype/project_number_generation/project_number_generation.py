@@ -1,6 +1,7 @@
 import frappe
 from frappe.model.document import Document
 import json
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 CATEGORY_BY_PROJECT_TYPE = {"Research": "R", "Consultancy": "C", "Other": "O"}
@@ -416,6 +417,7 @@ def save_project_number_generation_data(data, projrefno=None):
 
 
 @frappe.whitelist()
+@guarded_action("Project Number Generation")
 def perform_project_number_generation_action(docname, action):
     try:
         wf_name = frappe.db.get_value(

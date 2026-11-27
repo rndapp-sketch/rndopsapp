@@ -10,6 +10,7 @@ from frappe.model.document import Document
 from frappe.utils import flt, money_in_words, now_datetime
 
 from rndopsapp.static_config import ACCOUNT_PORTAL_COMMIT_PAYMENT
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 DOCTYPE = "Acc Head to Head Fund Transfer"
 WORKFLOW_NAME = "h2h_workflow"
@@ -743,6 +744,7 @@ def get_acc_head_to_head_fund_transfer_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Acc Head to Head Fund Transfer")
 def perform_acc_head_to_head_fund_transfer_action(docname, action):
 	"""Execute a workflow transition. Writes workflow_state + docstatus directly so
 	API callers (who lack desk roles) are not rejected by validate_workflow."""

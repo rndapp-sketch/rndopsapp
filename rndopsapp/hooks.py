@@ -169,9 +169,23 @@ has_permission = {
 
 doc_events = {
 	"*": {
-		# Locks an application while a Cancellation Request for it is pending.
-		"validate": ["rndopsapp.rndopsapp.cancellation_api.validate_original_document_not_locked"],
+		# Create-on-behalf under a "Specific Application" delegation: the delegator owns
+		# the new document, and its project must survive fetch_from / controllers.
+		# Both are no-ops for every other insert.
+		"before_insert": ["rndopsapp.rndopsapp.delegate_user.delegate_user.apply_on_behalf_owner"],
+		"before_save": ["rndopsapp.rndopsapp.delegate_user.delegate_user.verify_on_behalf_scope"],
+		"validate": [
+			# Role delegation: a delegate cannot change accounts or delegations.
+			"rndopsapp.rndopsapp.role_delegation.context.protect_accounts",
+			# Locks an application while a Cancellation Request for it is pending.
+			"rndopsapp.rndopsapp.cancellation_api.validate_original_document_not_locked",
+			# Role delegation: approval blocks for state changes outside the guarded handlers.
+			"rndopsapp.rndopsapp.role_delegation.context.check_workflow_change",
+		],
+		"before_update_after_submit": ["rndopsapp.rndopsapp.role_delegation.context.check_workflow_change"],
+		"before_cancel": ["rndopsapp.rndopsapp.role_delegation.context.check_workflow_change"],
 		"on_update": [
+			"rndopsapp.rndopsapp.role_delegation.context.record_write",
 			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.rndopsapp.activity_logger.log_workflow_transition",
@@ -183,24 +197,36 @@ doc_events = {
 		# on_update — most real approval-chain transitions happen post-submit,
 		# so without this entry Email Manager never sees them.
 		"on_update_after_submit": [
+			"rndopsapp.rndopsapp.role_delegation.context.record_write",
 			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
 		],
-		"after_insert": ["rndopsapp.external_auth.log_impersonated_action"],
+		"after_insert": [
+			"rndopsapp.rndopsapp.role_delegation.context.record_write",
+			"rndopsapp.external_auth.log_impersonated_action",
+		],
 		# Covers the case where workflow_state changes AT the moment a
 		# document is first submitted (docstatus 0 -> 1 via doc.submit())
 		# -- that is neither on_update nor on_update_after_submit, it is
 		# its own event. Same handler, same dedupe, so this is pure
 		# coverage, not a behavior change.
 		"on_submit": [
+			"rndopsapp.rndopsapp.role_delegation.context.record_write",
 			"rndopsapp.rndopsapp.commitPayment.check_workflow_and_publish",
 			"rndopsapp.rndopsapp.activity_logger.record_workflow_action_comment",
 			"rndopsapp.external_auth.log_impersonated_action",
 			"rndopsapp.rndopsapp.email.workflow_monitor.on_workflow_state_change",
 		],
-		"on_cancel": ["rndopsapp.external_auth.log_impersonated_action"],
-		"on_trash": ["rndopsapp.external_auth.log_impersonated_action"],
+		"on_cancel": [
+			"rndopsapp.rndopsapp.role_delegation.context.record_write",
+			"rndopsapp.external_auth.log_impersonated_action",
+		],
+		"on_trash": [
+			"rndopsapp.rndopsapp.role_delegation.context.protect_accounts",
+			"rndopsapp.rndopsapp.role_delegation.context.record_write",
+			"rndopsapp.external_auth.log_impersonated_action",
+		],
 	},
 }
 
@@ -290,8 +316,11 @@ before_login = [
 	"rndopsapp.external_auth.clear_admin_ip_lock",
 	"rndopsapp.external_auth.patch_find_by_credentials",
 ]
-on_logout = ["rndopsapp.external_auth.log_admin_logout"]
-# after_request = ["rndopsapp.utils.after_request"]
+on_logout = [
+	"rndopsapp.external_auth.log_admin_logout",
+	"rndopsapp.rndopsapp.role_delegation.service.on_logout",
+]
+after_request = ["rndopsapp.rndopsapp.role_delegation.context.log_acting_request"]
 
 # Job Events
 # ----------
@@ -325,9 +354,8 @@ on_logout = ["rndopsapp.external_auth.log_admin_logout"]
 # Authentication and authorization
 # --------------------------------
 
-# auth_hooks = [
-# 	"rndopsapp.auth.validate"
-# ]
+# Role delegation: applies the delegated roles for a request made while acting.
+auth_hooks = ["rndopsapp.rndopsapp.role_delegation.context.apply_acting_profile"]
 
 # Automatically update python controller files with type annotations for this app.
 # export_python_type_annotations = True

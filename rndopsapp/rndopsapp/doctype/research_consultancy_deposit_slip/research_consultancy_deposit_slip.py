@@ -12,6 +12,7 @@ from rndopsapp.rndopsapp.doctype.fund_received.deposit_slip_budget_validation im
 )
 from rndopsapp.rndopsapp.kafka.utils import record_publish_state
 from rndopsapp.rndopsapp.kafka.config import TOPIC_DEPOSIT_SLIP
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 def extract_eval_expression(expression):
 	"""Extracts the JavaScript expression from a Frappe 'eval:' string."""
@@ -334,6 +335,7 @@ def get_research_consultancy_deposit_slip_workflow_actions():
 # Import moved to top of file - using new kafka.producer module
 
 @frappe.whitelist()
+@guarded_action("Research Consultancy Deposit Slip")
 def perform_research_consultancy_deposit_slip_workflow_action(docname, action):
 	"""Perform a workflow action on a Research Consultancy Deposit Slip document."""
 	try:

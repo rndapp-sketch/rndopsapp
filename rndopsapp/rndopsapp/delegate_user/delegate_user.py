@@ -5,8 +5,10 @@ Public surface (called from api.py whitelisted wrappers):
   search_delegate_users(query="")
   get_delegate_scope(user=None)
   get_active_delegations(user=None)
+  get_received_delegations()
   delegate_user(delegate_user, delegation_type, scope_type, project_names, applications,
-                 remove_project_names, remove_applications, valid_from, valid_to)
+                 remove_project_names, remove_applications, valid_from, valid_to,
+                 allowed_doctypes, remove_allowed_doctypes)
   undelegate_user(delegation_name)
   create_application_on_behalf(doctype, delegator_user, project_name=None, fields=None)
 
@@ -19,8 +21,14 @@ Helpers available to the rest of the app:
       has_delegated_access()'s docstring below for why that hook alone isn't
       enough).
 
+"Specific Application" delegations are create-only: the delegate may create the
+listed application types under the listed projects and gets no read, write or
+workflow access to anything. Every access query below therefore filters on
+_ACCESS_FILTERS; only create_application_on_behalf() honours them.
+
 Registered in hooks.py:
   permission_query_conditions — list-view scope, via *_permission_query() below
+  doc_events                  — apply_on_behalf_owner / verify_on_behalf_scope
   has_permission              — matters only for generic Frappe desk/report
                                  access to these doctypes, via has_delegated_access()
 """
@@ -28,7 +36,8 @@ Registered in hooks.py:
 import json
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import flt, now_datetime
+from rndopsapp.rndopsapp.role_delegation.service import refuse_while_acting
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -73,12 +82,18 @@ def _resolve_target_user(user):
 
 _ACTIVE_FILTERS = {"enabled": 1, "revoked_at": ["is", "not set"]}
 
+_SPECIFIC_APPLICATION = "Specific Application"
+
+# Active rows that grant access to existing documents.
+_ACCESS_FILTERS = {**_ACTIVE_FILTERS, "delegation_type": ["!=", _SPECIFIC_APPLICATION]}
+
 
 def _active_rows_for_delegate(delegate_user):
-    """All enabled, non-revoked User Delegation rows where delegate_user matches."""
+    """All enabled, non-revoked, access-granting User Delegation rows where
+    delegate_user matches."""
     return frappe.get_all(
         "User Delegation",
-        filters={"delegate_user": delegate_user, **_ACTIVE_FILTERS},
+        filters={"delegate_user": delegate_user, **_ACCESS_FILTERS},
         fields=["delegator_user", "valid_from", "valid_to", "delegation_type",
                 "scope_type", "project_names", "applications"],
         limit=0,
@@ -126,7 +141,7 @@ def is_active_delegation(
         filters={
             "delegator_user": delegator_user,
             "delegate_user": delegate_user,
-            **_ACTIVE_FILTERS,
+            **_ACCESS_FILTERS,
         },
         fields=["delegation_type", "scope_type", "project_names", "applications",
                 "valid_from", "valid_to"],
@@ -290,7 +305,7 @@ def _scoped_doc_names_for_doctype(delegator_user, delegate_user, doctype):
         filters={
             "delegator_user": delegator_user,
             "delegate_user": delegate_user,
-            **_ACTIVE_FILTERS,
+            **_ACCESS_FILTERS,
         },
         fields=["scope_type", "project_names", "applications", "valid_from", "valid_to"],
         limit=0,
@@ -363,12 +378,89 @@ def _query_applications(user):
     return results
 
 
+# Fields create_application_on_behalf() fills from the chosen project under a
+# "Specific Application" delegation: {fieldname: Project Registration column}.
+# Kept apart from _APPLICATION_DOCTYPES on purpose: adding project fields there
+# would widen what existing project-scoped delegations can read.
+_ON_BEHALF_PROJECT_FIELDS = {
+    "Travel":                        {"travel_project_title": "name", "travel_project_number": "project_no"},
+    "TA DA Settlement":              {"project_no": "project_no"},
+    "Temporary Advance":             {"project_name": "name", "project_code": "project_no"},
+    "Advance Settlement":            {"project_name": "name", "project_code": "project_no"},
+    "Reimbursement":                 {"project_name": "name", "project_number": "project_no"},
+    "Direct Purchase":               {"project_no": "project_no"},
+    "Disbursal of Consultancy":      {"disbursal_project_number": "project_no", "project_title": "project_title"},
+    "Disbursal of Honorarium":       {"project_name": "name", "project_no": "project_no"},
+    "Loan Request":                  {"project_name": "name", "project_number": "project_no"},
+    "Indent General Form":           {"igf_project_title": "name", "igf_project_code": "project_no"},
+    "Indent Cum Sanction Sheet":     {"project_ref": "name", "project_no": "project_no"},
+    "Recruitment Adhoc Contractual": {"upfa_project_code": "project_no", "upfa_project_title": "project_title"},
+}
+
+
 # ---------------------------------------------------------------------------
 # Validation constants
 # ---------------------------------------------------------------------------
 
-_VALID_DELEGATION_TYPES = {"View Only", "View and Edit", "Workflow Action"}
+_VALID_DELEGATION_TYPES = {"View Only", "View and Edit", "Workflow Action", _SPECIFIC_APPLICATION}
 _VALID_SCOPE_TYPES = {"all", "project", "application"}
+
+
+# ---------------------------------------------------------------------------
+# Project eligibility ("Specific Application")
+# ---------------------------------------------------------------------------
+
+def _fetch_project_balances(project_no):
+    """
+    Ledger balances for a project number, in get_project_available_amounts' shape.
+
+    Overhead (PDF / DPF) funds are read directly: get_project_available_amounts
+    ownership-checks them against the session user, which would refuse a delegate.
+    """
+    from rndopsapp.rndopsapp.commitPayment import get_project_available_amounts
+    from rndopsapp.rndopsapp.overhead_fund import get_overhead_summary, resolve_overhead_fund
+
+    overhead = resolve_overhead_fund(project_no)
+    if overhead:
+        return get_overhead_summary(overhead[0], overhead[1])
+    return get_project_available_amounts(project_no)
+
+
+def _require_eligible_project(project_name):
+    """Throw unless the project is Approved and the ledger shows a positive
+    commitable or actual balance. An unreadable ledger counts as ineligible."""
+    project = frappe.db.get_value(
+        "Project Registration",
+        project_name,
+        ["name", "project_no", "project_title", "workflow_state"],
+        as_dict=True,
+    )
+    if not project:
+        frappe.throw(f"Project '{project_name}' does not exist.")
+
+    label = project.project_no or project.name
+
+    def _reject(reason):
+        frappe.throw(f"Project '{label}' is not eligible: {reason}.")
+
+    if project.workflow_state != "Approved":
+        _reject(f"it is not approved (current state: {project.workflow_state or 'none'})")
+
+    if not project.project_no:
+        _reject("it has no project number, so it has no funds in the ledger")
+
+    try:
+        result = _fetch_project_balances(project.project_no) or {}
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Delegation: project balance check failed")
+        result = {}
+
+    if result.get("status") != "success":
+        _reject("its funds could not be verified with the ledger, please try again shortly")
+
+    data = result.get("data") or {}
+    if flt(data.get("committable")) <= 0 and flt(data.get("actualBalance")) <= 0:
+        _reject("it has no available funds")
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +516,7 @@ def search_delegate_users(query=""):
 def get_delegate_scope(user=None):
     """
     Return projects and applications that belong to / are assigned to *user*,
-    plus the list of users already delegated by *user*.
+    plus the list of users already delegated by *user* and those delegations.
     """
     _require_authenticated_user()
     target = _resolve_target_user(user)
@@ -433,7 +525,8 @@ def get_delegate_scope(user=None):
     delegations = frappe.get_all(
         "User Delegation",
         filters={"delegator_user": target, **_ACTIVE_FILTERS},
-        fields=["delegate_user"],
+        fields=["name", "delegate_user", "delegation_type", "scope_type",
+                "project_names", "allowed_doctypes", "valid_from", "valid_to"],
         limit=0,
     )
     delegate_names = [d.delegate_user for d in delegations]
@@ -484,7 +577,16 @@ def get_delegate_scope(user=None):
     # ── Applications ──────────────────────────────────────────────────────────
     applications = _query_applications(target)
 
-    return {"users": users, "projects": projects, "applications": applications}
+    for d in delegations:
+        d["project_names"] = _safe_json_list(d.project_names)
+        d["allowed_doctypes"] = _safe_json_list(d.allowed_doctypes)
+
+    return {
+        "users": users,
+        "projects": projects,
+        "applications": applications,
+        "delegations": delegations,
+    }
 
 
 def get_active_delegations(user=None):
@@ -499,7 +601,8 @@ def get_active_delegations(user=None):
         filters={"delegator_user": target, **_ACTIVE_FILTERS},
         fields=[
             "name", "delegate_user", "delegation_type", "scope_type",
-            "project_names", "applications", "valid_from", "valid_to", "enabled",
+            "project_names", "applications", "allowed_doctypes",
+            "valid_from", "valid_to", "enabled",
         ],
         limit=0,
     )
@@ -525,6 +628,7 @@ def get_active_delegations(user=None):
             "scope_type":         r.scope_type,
             "project_names":      _safe_json_list(r.project_names),
             "applications":       _safe_json_list(r.applications),
+            "allowed_doctypes":   _safe_json_list(r.allowed_doctypes),
             "project_count":      len(_safe_json_list(r.project_names)),
             "application_count":  len(_safe_json_list(r.applications)),
             "valid_from":         r.valid_from,
@@ -533,6 +637,95 @@ def get_active_delegations(user=None):
         }
         for r in rows
     ]
+
+
+def get_received_delegations():
+    """
+    Active delegations, currently within their validity dates, where the session
+    user is the delegate.  project_names is resolved to project details.
+    """
+    _require_authenticated_user()
+    now = now_datetime()
+
+    rows = [
+        r for r in frappe.get_all(
+            "User Delegation",
+            filters={"delegate_user": frappe.session.user, **_ACTIVE_FILTERS},
+            fields=["name", "delegator_user", "delegation_type", "scope_type",
+                    "project_names", "allowed_doctypes", "valid_from", "valid_to"],
+            limit=0,
+        )
+        if _row_is_time_valid(r, now)
+    ]
+    if not rows:
+        return []
+
+    name_map = {
+        u.name: u.full_name or u.name
+        for u in frappe.get_all(
+            "User",
+            filters={"name": ["in", [r.delegator_user for r in rows]]},
+            fields=["name", "full_name"],
+            limit=0,
+        )
+    }
+
+    # project_names is only meaningful for project scope; merged rows can carry
+    # stale entries under other scopes.
+    projects_by_row = {
+        r.name: _safe_json_list(r.project_names) if r.scope_type == "project" else []
+        for r in rows
+    }
+    all_projects = {p for names in projects_by_row.values() for p in names}
+    project_map = {}
+    if all_projects:
+        project_map = {
+            p.name: p
+            for p in frappe.get_all(
+                "Project Registration",
+                filters={"name": ["in", list(all_projects)]},
+                fields=["name", "project_title", "project_no"],
+                limit=0,
+            )
+        }
+
+    return [
+        {
+            "name":                r.name,
+            "delegator_user":      r.delegator_user,
+            "delegator_user_name": name_map.get(r.delegator_user, r.delegator_user),
+            "delegation_type":     r.delegation_type,
+            "scope_type":          r.scope_type,
+            "project_names":       [project_map[p] for p in projects_by_row[r.name] if p in project_map],
+            "allowed_doctypes":    _safe_json_list(r.allowed_doctypes),
+            "valid_from":          r.valid_from,
+            "valid_to":            r.valid_to,
+        }
+        for r in rows
+    ]
+
+
+def _find_active_delegation(delegator_user, delegate_user, delegation_type):
+    """
+    Name of the row delegate_user() should merge into, or None.
+
+    "Specific Application" lives in its own row, never merged with the access
+    types: merging would turn a create-only project list into read access, or
+    silently strip an existing delegation's access.  With no delegation_type the
+    access row is preferred, falling back to whatever exists.
+    """
+    base = {"delegator_user": delegator_user, "delegate_user": delegate_user, **_ACTIVE_FILTERS}
+
+    def _lookup(extra):
+        return frappe.db.get_value("User Delegation", {**base, **extra}, "name")
+
+    if delegation_type == _SPECIFIC_APPLICATION:
+        return _lookup({"delegation_type": _SPECIFIC_APPLICATION})
+
+    access_row = _lookup({"delegation_type": ["!=", _SPECIFIC_APPLICATION]})
+    if access_row or delegation_type:
+        return access_row
+    return _lookup({})
 
 
 def _dedupe_applications(entries):
@@ -564,6 +757,8 @@ def delegate_user(
     remove_applications=None,
     valid_from=None,
     valid_to=None,
+    allowed_doctypes=None,
+    remove_allowed_doctypes=None,
 ):
     """
     Create or merge a User Delegation row.
@@ -581,9 +776,15 @@ def delegate_user(
     applications entries use the shape {"doctype": ..., "name": ...} — see
     docs/delegate_user/application_level_delegation_backend_plan.md.
 
+    "Specific Application" requires scope_type="project", at least one project
+    and at least one allowed_doctypes entry (checked on the merged result), and
+    every newly sent project must be the delegator's own (PI or owner),
+    Approved and funded.  allowed_doctypes is ignored for other types.
+
     delegator_user is always frappe.session.user — never trusted from the frontend.
     """
     _require_authenticated_user()
+    refuse_while_acting()
 
     current_user = frappe.session.user
 
@@ -630,14 +831,44 @@ def delegate_user(
         )
     }
 
+    incoming_doctypes = _safe_json_list(allowed_doctypes)
+    removed_doctypes = _safe_json_list(remove_allowed_doctypes)
+
+    existing_name = _find_active_delegation(current_user, delegate_user, delegation_type)
+    existing = frappe.get_doc("User Delegation", existing_name) if existing_name else None
+    effective_type = delegation_type or (existing.delegation_type if existing else "View Only")
+    is_specific = effective_type == _SPECIFIC_APPLICATION
+
     # ── Validate application doctypes against the registry ───────────────────
     valid_app_doctypes = {doctype for _, doctype, _, _ in _APPLICATION_DOCTYPES}
     for entry in incoming_apps:
         if entry["doctype"] not in valid_app_doctypes:
             frappe.throw(f"'{entry['doctype']}' is not a delegable application doctype.")
 
+    if is_specific:
+        for doctype in incoming_doctypes:
+            if doctype not in valid_app_doctypes:
+                frappe.throw(f"'{doctype}' is not a delegable application doctype.")
+
+        effective_scope = scope_type or (existing.scope_type if existing else None)
+        if effective_scope != "project":
+            frappe.throw("scope_type must be 'project' for a Specific Application delegation.")
+
+        merged = lambda field, incoming, removed: [
+            v for v in dict.fromkeys(
+                (_safe_json_list(existing.get(field)) if existing else []) + incoming
+            )
+            if v not in removed
+        ]
+        if not merged("project_names", incoming_projects, removed_projects):
+            frappe.throw("At least one project is required for a Specific Application delegation.")
+        if not merged("allowed_doctypes", incoming_doctypes, removed_doctypes):
+            frappe.throw(
+                "At least one entry in allowed_doctypes is required for a Specific Application delegation."
+            )
+
     # Scope list requirements only enforced when scope_type is explicitly set
-    if scope_type == "project" and not incoming_projects:
+    elif scope_type == "project" and not incoming_projects:
         frappe.throw("At least one project is required when scope_type is 'project'.")
 
     if scope_type == "application" and not incoming_apps:
@@ -645,15 +876,13 @@ def delegate_user(
 
     # ── Verify ownership of any incoming projects ─────────────────────────────
     if incoming_projects:
+        ownership_fields = ["pi_webmail", "pi_userid", "owner"]
+        if not is_specific:
+            ownership_fields.append("head_approver")
         owned = set(
             frappe.get_all(
                 "Project Registration",
-                or_filters=[
-                    ["pi_webmail",    "=", current_user],
-                    ["pi_userid",     "=", current_user],
-                    ["owner",         "=", current_user],
-                    ["head_approver", "=", current_user],
-                ],
+                or_filters=[[field, "=", current_user] for field in ownership_fields],
                 pluck="name",
                 limit=0,
             )
@@ -664,21 +893,16 @@ def delegate_user(
                     f"Project '{prj}' does not belong to or is not assigned to you."
                 )
 
-    # ── Find existing active delegation ───────────────────────────────────────
-    existing_name = frappe.db.get_value(
-        "User Delegation",
-        {
-            "delegator_user": current_user,
-            "delegate_user":  delegate_user,
-            "enabled":        1,
-            "revoked_at":     ["is", "not set"],
-        },
-        "name",
-    )
+    # Only newly sent projects: one that has since run out of funds must not
+    # block removing it, or editing the rest.  Creation re-checks every time.
+    if is_specific:
+        for prj in incoming_projects:
+            if prj not in removed_projects:
+                _require_eligible_project(prj)
 
-    if existing_name:
+    if existing:
         # ── MERGE into existing delegation ────────────────────────────────────
-        doc = frappe.get_doc("User Delegation", existing_name)
+        doc = existing
 
         # Merge project_names — deduplicated, order preserved
         merged_projects = list(
@@ -706,8 +930,14 @@ def delegate_user(
         if valid_to:
             doc.valid_to = valid_to
 
+        merged_doctypes = [
+            d for d in dict.fromkeys(_safe_json_list(doc.allowed_doctypes) + incoming_doctypes)
+            if d not in removed_doctypes
+        ]
+
         doc.project_names = json.dumps(merged_projects) if merged_projects else ""
         doc.applications  = json.dumps(merged_apps)     if merged_apps     else ""
+        doc.allowed_doctypes = json.dumps(merged_doctypes) if merged_doctypes else ""
         doc.revoked_at    = None
         doc.revoked_by    = None
 
@@ -717,12 +947,20 @@ def delegate_user(
         doc.delegator_user  = current_user
         doc.delegate_user   = delegate_user
         doc.enabled         = 1
-        doc.delegation_type = delegation_type or "View Only"
+        doc.delegation_type = effective_type
         doc.scope_type      = scope_type      or "all"
-        doc.project_names   = json.dumps(incoming_projects) if incoming_projects else ""
-        doc.applications    = json.dumps(incoming_apps)     if incoming_apps     else ""
+        projects = [p for p in dict.fromkeys(incoming_projects) if not (is_specific and p in removed_projects)]
+        doctypes = [d for d in dict.fromkeys(incoming_doctypes) if d not in removed_doctypes]
+        doc.project_names   = json.dumps(projects)      if projects      else ""
+        doc.applications    = json.dumps(incoming_apps) if incoming_apps else ""
+        doc.allowed_doctypes = json.dumps(doctypes)     if doctypes      else ""
         doc.valid_from      = valid_from or None
         doc.valid_to        = valid_to   or None
+
+    if is_specific:
+        doc.applications = ""
+    else:
+        doc.allowed_doctypes = ""
 
     doc.enabled = 1
     doc.save(ignore_permissions=True)
@@ -949,19 +1187,36 @@ def require_document_access(doc, action_type="read"):
 
 
 # ---------------------------------------------------------------------------
-# Create on behalf — a delegate with View and Edit / Workflow Action
-# delegation scoped to a project (or "all") may create a new application
-# document for that project, attributed to the project owner.
+# Create on behalf — two ways in:
+#   1. View and Edit / Workflow Action, scope "all" or a covering project.
+#   2. Specific Application: listed doctype under a listed, Approved, funded
+#      project.  The new document is owned by the delegator, so the delegate
+#      gets no access to it.
+# Every call is recorded in Delegation Audit Log.
 # ---------------------------------------------------------------------------
 
-_BLOCKED_CREATE_FIELDS = {"name", "owner", "docstatus", "workflow_state", "creation", "modified", "modified_by", "idx"}
+_BLOCKED_CREATE_FIELDS = {
+    "name", "owner", "docstatus", "workflow_state", "creation", "modified",
+    "modified_by", "idx", "doctype", "flags",
+}
 
 
-def _project_scope_allows_create(delegator_user, delegate_user, target_project):
+def _active_create_rows(delegator_user, delegate_user):
+    """Enabled, non-revoked, in-date rows from delegator_user to delegate_user."""
+    now = now_datetime()
+    rows = frappe.get_all(
+        "User Delegation",
+        filters={"delegator_user": delegator_user, "delegate_user": delegate_user, **_ACTIVE_FILTERS},
+        fields=["name", "delegation_type", "scope_type", "project_names",
+                "allowed_doctypes", "valid_from", "valid_to"],
+        limit=0,
+    )
+    return [r for r in rows if _row_is_time_valid(r, now)]
+
+
+def _access_delegation_for_create(rows, target_project):
     """
-    Return True if delegate_user may create a new application document on
-    behalf of delegator_user for *target_project* (a Project Registration
-    name), under an active View and Edit / Workflow Action delegation.
+    Name of a View and Edit / Workflow Action row allowing creation, or None.
 
     scope_type='all'         -> always allowed.
     scope_type='project'     -> allowed only if target_project is in
@@ -969,40 +1224,78 @@ def _project_scope_allows_create(delegator_user, delegate_user, target_project):
     scope_type='application' -> never allowed (no forward-looking scope; it
                                  only lists specific existing documents).
     """
-    now = now_datetime()
-    rows = frappe.get_all(
-        "User Delegation",
-        filters={"delegator_user": delegator_user, "delegate_user": delegate_user, **_ACTIVE_FILTERS},
-        fields=["delegation_type", "scope_type", "project_names", "valid_from", "valid_to"],
-        limit=0,
-    )
     for row in rows:
-        if not _row_is_time_valid(row, now):
-            continue
         if row.delegation_type not in ("View and Edit", "Workflow Action"):
             continue
         if row.scope_type == "all":
-            return True
+            return row.name
         if row.scope_type == "project" and target_project and target_project in _safe_json_list(row.project_names):
-            return True
-    return False
+            return row.name
+    return None
+
+
+def _specific_rows_for_doctype(rows, doctype):
+    return [
+        r for r in rows
+        if r.delegation_type == _SPECIFIC_APPLICATION
+        and r.scope_type == "project"
+        and doctype in _safe_json_list(r.allowed_doctypes)
+    ]
 
 
 def create_application_on_behalf(doctype, delegator_user, project_name=None, fields=None):
     """
-    Create a new application document (one of _APPLICATION_DOCTYPES) on
-    behalf of delegator_user.  Requires an active View and Edit / Workflow
-    Action delegation from delegator_user to the session user, covering
-    project_name (scope_type='all', or scope_type='project' with project_name
-    in project_names).
+    Create a new application document (one of _APPLICATION_DOCTYPES) on behalf
+    of delegator_user, and audit the attempt whether or not it succeeds.
 
-    The new document's owner-identifying field (webmail_id_travel /
-    applicant_webmail / etc.) is force-set to delegator_user regardless of
-    what *fields* contains — the caller cannot spoof this. Frappe's own
-    `owner` field is left to default to the session user (the delegate),
-    preserving an audit trail of who actually created the record.
+    project_name is a Project Registration `name`.  Returns only the new
+    document's name.
     """
     _require_authenticated_user()
+
+    audit = {
+        "actual_user": frappe.session.user,
+        "delegator_user": delegator_user,
+        "application_doctype": doctype,
+        "project_name": project_name,
+    }
+    savepoint = "create_on_behalf"
+    frappe.db.savepoint(savepoint)
+
+    try:
+        doc = _create_on_behalf(doctype, delegator_user, project_name, fields, audit)
+    except Exception as e:
+        try:
+            frappe.db.rollback(save_point=savepoint)
+        except Exception:
+            # A controller committed mid-insert, which discards the savepoint.
+            frappe.db.rollback()
+        try:
+            _write_audit_log(audit, status="Failed", error=str(e))
+            frappe.db.commit()
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Delegation Audit Log write failed")
+        raise
+
+    _write_audit_log(audit, status="Success", application_name=doc.name)
+    frappe.db.commit()
+
+    return {"status": "success", "name": doc.name}
+
+
+def _write_audit_log(audit, status, application_name=None, error=None):
+    entry = {**audit, "status": status, "application_name": application_name}
+    entry = {k: str(v)[:140] if v else None for k, v in entry.items()}
+    frappe.get_doc({
+        "doctype": "Delegation Audit Log",
+        **entry,
+        "error": error,
+    }).insert(ignore_permissions=True)
+    frappe.logger("delegation").info({**entry, "error": error})
+
+
+def _create_on_behalf(doctype, delegator_user, project_name, fields, audit):
+    """Validate, authorise and insert. Sets audit["delegation"]; does not commit."""
     session_user = frappe.session.user
 
     valid_app_doctypes = {dt for _, dt, _, _ in _APPLICATION_DOCTYPES}
@@ -1021,13 +1314,42 @@ def create_application_on_behalf(doctype, delegator_user, project_name=None, fie
     if project_field and not project_name:
         frappe.throw(f"'{doctype}' requires project_name to create on behalf of another user.")
 
-    if not _project_scope_allows_create(delegator_user, session_user, project_name):
+    rows = _active_create_rows(delegator_user, session_user)
+    access_delegation = _access_delegation_for_create(rows, project_name)
+
+    if access_delegation:
+        audit["delegation"] = access_delegation
+        return _insert_with_access_delegation(
+            doctype, delegator_user, project_name, fields, owner_field, project_field
+        )
+
+    specific_rows = _specific_rows_for_doctype(rows, doctype)
+    if specific_rows and not project_name:
+        frappe.throw(f"'{doctype}' requires project_name to create on behalf of another user.")
+
+    covering = next(
+        (r for r in specific_rows if project_name in _safe_json_list(r.project_names)), None
+    )
+    if not covering:
         detail = f" for project '{project_name}'" if project_name else ""
         frappe.throw(
             f"You are not authorised to create a {doctype} on behalf of {delegator_user}{detail}.",
             frappe.PermissionError,
         )
 
+    audit["delegation"] = covering.name
+    _require_eligible_project(project_name)
+    return _insert_with_specific_delegation(
+        doctype, delegator_user, project_name, fields, owner_field
+    )
+
+
+def _insert_with_access_delegation(doctype, delegator_user, project_name, fields, owner_field, project_field):
+    """
+    The delegator is force-set on the owner-identifying field (webmail_id_travel
+    / applicant_webmail / etc.). Frappe's own `owner` stays the session user
+    (the delegate), who has access through the delegation anyway.
+    """
     doc = frappe.new_doc(doctype)
     safe_fields = {
         k: v for k, v in (fields or {}).items()
@@ -1049,9 +1371,66 @@ def create_application_on_behalf(doctype, delegator_user, project_name=None, fie
             doc.set(project_field, project_name)
 
     doc.insert(ignore_permissions=True)
-    frappe.db.commit()
+    return doc
 
-    return {"status": "success", "name": doc.name}
+
+def _insert_with_specific_delegation(doctype, delegator_user, project_name, fields, owner_field):
+    """
+    Insert with the delegator as Frappe `owner` and on the owner-identifying
+    field, and every project field derived from project_name.
+    """
+    project = frappe.db.get_value(
+        "Project Registration",
+        project_name,
+        ["name", "project_no", "project_title"],
+        as_dict=True,
+    )
+    meta = frappe.get_meta(doctype)
+    forced = {
+        field: project[column]
+        for field, column in _ON_BEHALF_PROJECT_FIELDS[doctype].items()
+        if meta.has_field(field)
+    }
+    if owner_field:
+        forced[owner_field] = delegator_user
+
+    doc = frappe.new_doc(doctype)
+    doc.update({
+        k: v for k, v in (fields or {}).items()
+        if meta.has_field(k) and k not in _BLOCKED_CREATE_FIELDS and k not in forced
+    })
+    doc.update(forced)
+    doc.flags.on_behalf = {"owner": delegator_user, "forced": forced}
+
+    doc.insert(ignore_permissions=True)
+    return doc
+
+
+def apply_on_behalf_owner(doc, method=None):
+    """before_insert hook. Frappe stamps `owner` with the session user just
+    before this, so reassign it before naming, validation and on_update run."""
+    on_behalf = doc.flags.get("on_behalf")
+    if not on_behalf:
+        return
+    doc.owner = on_behalf["owner"]
+    for child in doc.get_all_children():
+        child.owner = on_behalf["owner"]
+
+
+def verify_on_behalf_scope(doc, method=None):
+    """before_save hook. fetch_from and controllers can overwrite the forced
+    values (e.g. TA DA Settlement copies project_no from the linked Travel), so
+    check them once everything else has run."""
+    on_behalf = doc.flags.get("on_behalf")
+    if not on_behalf or not doc.is_new():
+        return
+    for field, value in on_behalf["forced"].items():
+        if (doc.get(field) or "") != (value or ""):
+            frappe.throw(
+                f"'{field}' resolved to '{doc.get(field)}', which does not match the delegated "
+                "project and delegator. Check the linked records in the form.",
+                frappe.PermissionError,
+            )
 
 
 def undelegate_user(delegation_name):
@@ -1059,6 +1438,7 @@ def undelegate_user(delegation_name):
     Revoke a delegation.  Only the original delegator or a System Manager may do this.
     """
     _require_authenticated_user()
+    refuse_while_acting()
 
     if not frappe.db.exists("User Delegation", delegation_name):
         frappe.throw(f"Delegation '{delegation_name}' not found.")

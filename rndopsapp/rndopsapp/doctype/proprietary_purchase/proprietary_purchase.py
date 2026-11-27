@@ -7,6 +7,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 # =============================================================================
@@ -409,6 +410,7 @@ def _deprecated_get_proprietary_purchase_workflow_actions(docname):
 
 
 # @frappe.whitelist()
+@guarded_action("proprietary_purchase")
 def _deprecated_perform_proprietary_purchase_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

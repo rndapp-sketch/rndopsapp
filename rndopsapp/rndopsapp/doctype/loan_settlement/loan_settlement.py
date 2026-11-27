@@ -27,6 +27,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import flt, nowdate
 from rndopsapp.static_config import ACCOUNT_PORTAL_API
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 # Accounts service (ledger) base — same host as commitPayment.LEDGER_API_BASE_URL
 ACCOUNTS_API_BASE_URL = ACCOUNT_PORTAL_API
@@ -705,6 +706,7 @@ def _publish_and_record(doc):
 
 
 @frappe.whitelist()
+@guarded_action("Loan Settlement")
 def perform_loan_settlement_action(docname, action, settlement_mode=None, remarks=None):
 	"""
 	Execute a workflow action.

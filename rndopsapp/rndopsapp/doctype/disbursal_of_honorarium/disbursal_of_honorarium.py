@@ -5,6 +5,7 @@ import frappe
 import json
 from frappe.model.document import Document
 from frappe import _
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 class DisbursalofHonorarium(Document):
 	def validate(self):
@@ -421,6 +422,7 @@ def _migrate_local_to_minio(file_url, project_docname, field):
 	return file_url  # Fallback to original local URL
 
 @frappe.whitelist()
+@guarded_action("Disbursal of Honorarium")
 def perform_disbursal_of_honorarium_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

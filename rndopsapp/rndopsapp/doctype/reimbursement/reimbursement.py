@@ -3,6 +3,7 @@ from frappe.model.document import Document
 import json
 from frappe import _
 from frappe.utils.file_manager import save_file
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 class Reimbursement(Document):
@@ -634,6 +635,7 @@ def get_reimbursement_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Reimbursement")
 def perform_reimbursement_action(docname, action, extra_data=None):
 	"""
 	Executes the selected workflow action and updates the document state.

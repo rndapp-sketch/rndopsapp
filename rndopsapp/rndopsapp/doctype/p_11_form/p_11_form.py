@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 def extract_eval_expression(expression):
 	"""
@@ -275,6 +276,7 @@ def get_p_11_form_workflow_actions(docname):
 	return list(dict.fromkeys(allowed_actions))
 
 @frappe.whitelist()
+@guarded_action("P_11 Form")
 def perform_p_11_form_action(docname, action):
 	try:
 		doc = frappe.get_doc("P_11 Form", docname)

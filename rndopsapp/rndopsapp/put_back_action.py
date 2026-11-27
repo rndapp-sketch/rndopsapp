@@ -9,6 +9,7 @@
 
 import frappe
 from frappe.utils import cint, now_datetime
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 # Some workflow states are entered only by automation — a Kafka consumer
 # writing workflow_state straight to the DB, never a Workflow Transition a
@@ -166,6 +167,7 @@ def get_put_back_document_states(doctype, docname):
 
 
 @frappe.whitelist()
+@guarded_action(default_action="Put Back")
 def set_put_back_workflow_state(doctype, docname, state, username, comment=None):
 	"""
 	Forces workflow_state back to an earlier state. Writes straight to the

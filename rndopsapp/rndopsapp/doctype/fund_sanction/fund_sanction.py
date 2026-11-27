@@ -16,6 +16,7 @@ from rndopsapp.rndopsapp.kafka.producer import publish_fund_sanction as publish_
 from rndopsapp.rndopsapp.kafka.utils import record_publish_state
 from rndopsapp.rndopsapp.kafka.config import TOPIC_SANCTION
 from rndopsapp.static_config import ACCOUNT_PORTAL_SANCTION_DETAILS
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 # from frappe.workflow.doctype.workflow.workflow import get_workflow_name
 
@@ -922,6 +923,7 @@ def get_fund_sanction_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Fund Sanction")
 def perform_fund_sanction_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

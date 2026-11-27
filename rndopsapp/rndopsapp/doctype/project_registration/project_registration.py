@@ -19,6 +19,7 @@ import requests
 from rndopsapp.rndopsapp.kafka.producer import publish_project_registration as publish_project
 from rndopsapp.minio import get_rnd_file_service
 from rndopsapp.file_handler import get_file_category_for_doctype
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 class ProjectRegistration(Document):
@@ -593,6 +594,7 @@ def log_available_workflow_actions(docname):
 
 # /home/prornd/project/frappe_dev/prornd/apps/rndopsapp/rndopsapp/rndopsapp/doctype/project_registration/project_registration.py
 @frappe.whitelist()
+@guarded_action()
 def handle_dynamic_workflow_action(doctype, docname, action, comment=None, endorsement=False):
 	doc = frappe.get_doc(doctype, docname)
 
@@ -901,6 +903,7 @@ def get_available_workflow_actions(docname=None):
 
 
 @frappe.whitelist()
+@guarded_action("Project Registration")
 def perform_workflow_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

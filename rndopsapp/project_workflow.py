@@ -4,6 +4,7 @@ Handles workflow state transitions, role-based access control, and action valida
 """
 
 import frappe
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 class ProjectWorkflow:
@@ -201,6 +202,7 @@ def get_available_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Project Registration")
 def perform_workflow_action(docname, action):
     """
     Execute workflow action and transition document state.

@@ -8,6 +8,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import date_diff, flt
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 class LeaveModule(Document):
@@ -717,6 +718,7 @@ def get_leave_module_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Leave Module")
 def perform_leave_module_action(docname, action, comment=None):
 	try:
 		doc = frappe.get_doc("Leave Module", docname)

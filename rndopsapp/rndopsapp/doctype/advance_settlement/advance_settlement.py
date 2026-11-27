@@ -6,6 +6,7 @@ import json
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 def extract_eval_expression(expression):
@@ -541,6 +542,7 @@ def get_advance_settlement_workflow_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Advance Settlement")
 def perform_advance_settlement_action(docname, action):
 	"""
 	Executes the selected workflow action and updates the document state.

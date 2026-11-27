@@ -7,6 +7,7 @@ import base64
 from frappe.model.document import Document
 from frappe.utils.file_manager import save_file
 from rndopsapp.minio import get_rnd_file_service
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 DOCTYPE = "Indent General Form"
@@ -275,6 +276,7 @@ def get_igf_pi_projects(pi=None):
 
 
 @frappe.whitelist()
+@guarded_action("Indent General Form")
 def perform_indent_general_form_action(docname, action, extra_data=None):
     # 1. Get Workflow
     wf_name = frappe.db.get_value("Workflow", {"document_type": DOCTYPE, "is_active": 1}, "name")
@@ -443,6 +445,7 @@ def get_available_back_actions(docname):
 
 
 @frappe.whitelist()
+@guarded_action("Indent General Form", default_action="Put Back")
 def put_back(docname, target):
     """Apply a put-back action. Validates role + from-state + target."""
     if target not in PUT_BACK_TARGETS:

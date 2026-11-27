@@ -16,6 +16,7 @@ from typing import Iterable, List, Optional
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
+from rndopsapp.rndopsapp.role_delegation.context import guarded_action
 
 
 class WorkflowError(frappe.ValidationError):
@@ -330,6 +331,7 @@ def get_available_workflow_actions(docname: str, doctype: Optional[str] = None) 
 
 
 @frappe.whitelist()
+@guarded_action("Project Registration")
 def perform_workflow_action(docname: str, action: str, doctype: Optional[str] = None) -> str:
 	"""
 	Perform an action and return the new workflow state.
